@@ -2,7 +2,7 @@
 
 [![CodeQL Advanced](https://github.com/hyp3rd/maqro/actions/workflows/codeql.yml/badge.svg)](https://github.com/hyp3rd/maqro/actions/workflows/codeql.yml) [![gitleaks](https://github.com/hyp3rd/maqro/actions/workflows/gitleaks.yml/badge.svg)](https://github.com/hyp3rd/maqro/actions/workflows/gitleaks.yml)
 
-## Join and use it for free at [macro.app](https://maqro.app)
+## Join and use it for free at [maqro.app](https://maqro.app)
 
 A personal macro calculator, meal planner, and weight-tracking journal.
 Next.js app with a Supabase-backed optional account for multi-device
