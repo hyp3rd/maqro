@@ -9,7 +9,6 @@ import { ImageResponse } from "next/og";
  *  the mark fills more of the canvas (~70%) than the Android-side
  *  [icon.tsx](./icon.tsx). The home-screen rounded-rectangle mask
  *  is applied by the OS at install time. */
-export const runtime = "edge";
 export const size = { width: 180, height: 180 };
 export const contentType = "image/png";
 

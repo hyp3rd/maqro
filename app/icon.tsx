@@ -16,7 +16,6 @@ import { ImageResponse } from "next/og";
  *  crop (up to 20% per edge) never clips it. Light glyph on the
  *  brand background (#0a0a0c) matches the public/logo-mark-inverse
  *  asset and the in-app dark theme. */
-export const runtime = "edge";
 export const size = { width: 512, height: 512 };
 export const contentType = "image/png";
 
