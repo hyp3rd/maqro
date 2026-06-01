@@ -2,6 +2,13 @@
 
 @config "../tailwind.config.mjs";
 
+/* Touch-pointer variant: `coarse:` applies only on devices whose
+ * primary input is a finger (phones/tablets), so we can grow tap
+ * targets to the ~44px Apple-HIG / WCAG minimum on touch without
+ * inflating the denser pointer-precise desktop layout. Pairs with the
+ * `useCoarsePointer()` hook used elsewhere for gesture gating. */
+@custom-variant coarse (@media (pointer: coarse));
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

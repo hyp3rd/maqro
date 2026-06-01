@@ -89,7 +89,7 @@ export function DateNavigator({ date, today, onSelect }: Props) {
         type="button"
         size="icon"
         variant="ghost"
-        className="h-8 w-8"
+        className="h-8 w-8 coarse:h-11 coarse:w-11"
         onClick={() => onSelect(shiftDays(date, -1))}
         aria-label="Previous day"
       >
@@ -100,7 +100,7 @@ export function DateNavigator({ date, today, onSelect }: Props) {
         <label
           htmlFor={inputId}
           className={cn(
-            "flex h-8 cursor-pointer items-center rounded-md px-3 text-sm font-medium tabular-nums transition-colors",
+            "flex h-8 cursor-pointer items-center rounded-md px-3 text-sm font-medium tabular-nums transition-colors coarse:h-11",
             "hover:bg-accent hover:text-accent-foreground",
             !isToday && "text-foreground",
           )}
@@ -131,7 +131,7 @@ export function DateNavigator({ date, today, onSelect }: Props) {
         type="button"
         size="icon"
         variant="ghost"
-        className="h-8 w-8"
+        className="h-8 w-8 coarse:h-11 coarse:w-11"
         onClick={() => onSelect(shiftDays(date, 1))}
         disabled={!canGoForward}
         aria-label="Next day"

@@ -62,7 +62,7 @@ export function NotificationBell({ onSelectView }: Props) {
               : "Notifications"
           }
           title="Notifications"
-          className="relative h-8 w-8"
+          className="relative h-8 w-8 coarse:size-10"
         >
           <Bell className="h-4 w-4" />
           {unreadCount > 0 && (

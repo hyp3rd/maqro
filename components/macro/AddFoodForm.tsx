@@ -144,7 +144,7 @@ const AddFoodForm: React.FC<AddFoodFormProps> = ({
             variant="outline"
             size="sm"
             onClick={onOpenCamera}
-            className="h-8 gap-1.5"
+            className="h-8 gap-1.5 coarse:h-10"
             title="Scan a product barcode"
           >
             <ScanLine className="h-3.5 w-3.5" />
@@ -156,7 +156,7 @@ const AddFoodForm: React.FC<AddFoodFormProps> = ({
               variant="outline"
               size="sm"
               onClick={onOpenVoice}
-              className="h-8 gap-1.5"
+              className="h-8 gap-1.5 coarse:h-10"
               title="Talk to log a meal"
             >
               <Mic className="h-3.5 w-3.5" />
@@ -168,7 +168,7 @@ const AddFoodForm: React.FC<AddFoodFormProps> = ({
             variant="outline"
             size="sm"
             onClick={onOpenCustomFoodForm}
-            className="h-8 gap-1.5"
+            className="h-8 gap-1.5 coarse:h-10"
           >
             <Plus className="h-3.5 w-3.5" />
             Custom food
