@@ -1,3 +1,4 @@
+import { recordAndShouldLog } from "@/lib/error-sampling";
 import { APP_VERSION } from "@/lib/version";
 
 /** Privacy-preserving error reporter. Fire-and-forget — never
@@ -134,6 +135,13 @@ export function reportClientError(
   // deployment level via env without rebuilding the bundle.
   if (process.env.NEXT_PUBLIC_ERROR_LOG_DISABLED === "1") return;
   const payload = makePayload(err, opts, "client");
+  // Protective sampling: one client can emit the SAME report thousands of
+  // times a session (render loop, or a hydration mismatch the user keeps
+  // reloading into). Log the first few, then a thin sample — keyed by
+  // level+route+message so distinct problems each keep their own budget.
+  // See lib/error-sampling.ts.
+  const signature = `${payload.level}|${payload.route}|${payload.message}`;
+  if (!recordAndShouldLog(signature)) return;
   // `keepalive: true` lets the request survive page unload, which
   // matters for errors fired during navigation away from a route.
   void fetch("/api/errors", {
