@@ -49,16 +49,51 @@ const MAX_REPORTED = 5;
  *  report. The mismatched value itself is almost always short. */
 const MAX_TEXT = 200;
 
-/** Collapse whitespace and clip, so server/client values compare and read
- *  cleanly (SSR text often carries different incidental whitespace). */
-function clip(value: string): string {
-  const t = value.replace(/\s+/g, " ").trim();
-  return t.length > MAX_TEXT ? `${t.slice(0, MAX_TEXT)}…` : t;
+/** Context kept on each side of the divergence in a focused excerpt. */
+const DIFF_CONTEXT = 40;
+
+/** Collapse incidental whitespace (SSR text often differs only in
+ *  whitespace) and trim, so the two sides compare on real content. */
+function normalize(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
 }
 
-/** Pure: normalize, drop no-op / whitespace-only diffs, dedupe, and rank
- *  (text first, then attributes, then node swaps; larger diffs first),
- *  capping the count. DOM-free so it's unit-testable in isolation. */
+/** Cap a single value at MAX_TEXT, adding a trailing ellipsis. */
+function cap(value: string): string {
+  return value.length > MAX_TEXT ? `${value.slice(0, MAX_TEXT)}…` : value;
+}
+
+/** Trim the shared prefix/suffix of two differing strings and return a
+ *  focused excerpt of each, centered on where they diverge. Without this,
+ *  a recoverable mismatch that regenerates a whole subtree yields one big
+ *  near-identical `server`/`client` blob, and a plain head-clip would cut
+ *  off the actual difference (often deep in the blob). Inputs are assumed
+ *  already normalized and known to differ. */
+function focusDiff(a: string, b: string): { server: string; client: string } {
+  const min = Math.min(a.length, b.length);
+  let prefix = 0;
+  while (prefix < min && a[prefix] === b[prefix]) prefix += 1;
+  let suffix = 0;
+  while (
+    suffix < a.length - prefix &&
+    suffix < b.length - prefix &&
+    a[a.length - 1 - suffix] === b[b.length - 1 - suffix]
+  ) {
+    suffix += 1;
+  }
+  const excerpt = (str: string): string => {
+    const start = Math.max(0, prefix - DIFF_CONTEXT);
+    const end = Math.min(str.length, str.length - suffix + DIFF_CONTEXT);
+    const body = str.slice(start, end);
+    return cap(`${start > 0 ? "…" : ""}${body}${end < str.length ? "…" : ""}`);
+  };
+  return { server: excerpt(a), client: excerpt(b) };
+}
+
+/** Pure: normalize, drop no-op / whitespace-only diffs, focus each
+ *  divergence on the differing region, dedupe, and rank (text first, then
+ *  attributes, then node swaps; larger diffs first), capping the count.
+ *  DOM-free so it's unit-testable in isolation. */
 export function rankHydrationMutations(
   muts: readonly HydrationMutation[],
 ): HydrationMutation[] {
@@ -69,12 +104,18 @@ export function rankHydrationMutations(
   };
   const seen = new Set<string>();
   const meaningful = muts
-    .map((m) => ({ ...m, server: clip(m.server), client: clip(m.client) }))
-    // Only real divergences — equal values are React re-attaching identical
-    // content, not a mismatch.
+    .map((m) => ({
+      ...m,
+      server: normalize(m.server),
+      client: normalize(m.client),
+    }))
+    // Compare on the FULL normalized values — only real divergences
+    // survive. (Comparing after a head-clip would mask diffs past the
+    // clip and let identical-looking blobs through.)
     .filter((m) => m.server !== m.client)
     // Both-empty carries no signal (e.g. a comment-marker shuffle).
     .filter((m) => m.server !== "" || m.client !== "")
+    .map((m) => ({ ...m, ...focusDiff(m.server, m.client) }))
     .filter((m) => {
       const key = `${m.kind}|${m.path}|${m.server}|${m.client}`;
       if (seen.has(key)) return false;
@@ -178,7 +219,9 @@ let observer: MutationObserver | null = null;
  *  recently-delivered records covers the "after" ordering. Trimmed to a
  *  bound so it can't grow with normal app churn. */
 let recent: MutationRecord[] = [];
-const RECENT_MAX = 200;
+// A recoverable mismatch can regenerate a whole subtree, so allow a
+// generous lookback; ranking + dedupe collapse the volume back down.
+const RECENT_MAX = 500;
 
 /** Arm the observer before React hydrates. Idempotent + SSR-safe. The
  *  observer watches the whole document for the three recovery shapes; the
