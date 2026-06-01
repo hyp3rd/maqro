@@ -6,6 +6,7 @@ const base = {
   htmlClassList: [] as string[],
   htmlAttributeNames: ["lang", "class"],
   bodyAttributeNames: ["class"],
+  bodyChildTags: ["DIV", "SCRIPT"] as string[],
   navigatorLanguage: "en-US",
 };
 
@@ -93,6 +94,22 @@ describe("collectHydrationEnvironment — extension signals", () => {
       ],
     });
     expect(env.extensionSignals).toEqual(["Grammarly"]);
+  });
+
+  it("names password-manager extensions from injected body elements", () => {
+    const env = collectHydrationEnvironment({
+      ...base,
+      bodyChildTags: ["DIV", "PROTONPASS-ROOT-3B89", "SCRIPT"],
+    });
+    expect(env.extensionSignals).toContain("ProtonPass");
+  });
+
+  it("detects 1Password's injected element too", () => {
+    const env = collectHydrationEnvironment({
+      ...base,
+      bodyChildTags: ["DIV", "COM-1PASSWORD-BUTTON"],
+    });
+    expect(env.extensionSignals).toContain("1Password");
   });
 
   it("returns an empty list when the DOM is clean", () => {
