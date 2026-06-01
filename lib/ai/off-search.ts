@@ -17,7 +17,7 @@ const OFF_PRODUCT_URL = "https://world.openfoodfacts.org/api/v0/product";
 const FIELDS = ["code", "product_name", "brands", "nutriments"].join(",");
 const MAX_LIMIT = 10;
 const USER_AGENT =
-  "macro-calculator/0.1 (https://github.com/hyp3rd/macro-calculator)";
+  "macro-calculator/0.1 (https://github.com/hyp3rd/maqro)";
 const OFF_TIMEOUT_MS = 5_000;
 
 /** Shape we extract from an Open Food Facts product blob. Exported so

@@ -1,7 +1,7 @@
 /** Centralized external links — keeps the GitHub URL in one place
  *  rather than scattered across the footer, bug-report form, and the
  *  OFF User-Agent string. Update here when the canonical URL changes. */
-export const GITHUB_REPO_URL = "https://github.com/hyp3rd/macro-calculator";
+export const GITHUB_REPO_URL = "https://github.com/hyp3rd/maqro";
 
 /** Build a pre-filled GitHub "new issue" URL. Title and body are URL-
  *  encoded; labels are comma-separated. Length is capped (~7 KB) because

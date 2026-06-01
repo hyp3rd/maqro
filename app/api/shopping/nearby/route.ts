@@ -66,7 +66,7 @@ export async function GET(request: Request): Promise<NextResponse> {
         Accept: "application/json",
         "Content-Type": "application/x-www-form-urlencoded",
         "User-Agent":
-          "macro-calculator/0.1 (https://github.com/hyp3rd/macro-calculator)",
+          "macro-calculator/0.1 (https://github.com/hyp3rd/maqro)",
       },
       body: `data=${encodeURIComponent(buildOverpassQuery(lat, lon, radius))}`,
       signal: request.signal,

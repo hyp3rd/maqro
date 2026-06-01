@@ -31,7 +31,7 @@ export async function GET(request: Request) {
       headers: {
         Accept: "application/json",
         "User-Agent":
-          "macro-calculator/0.1 (https://github.com/hyp3rd/macro-calculator)",
+          "macro-calculator/0.1 (https://github.com/hyp3rd/maqro)",
       },
       signal: request.signal,
     });

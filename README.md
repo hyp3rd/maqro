@@ -1,6 +1,6 @@
 # Maqro
 
-[![CodeQL Advanced](https://github.com/hyp3rd/macro-calculator/actions/workflows/codeql.yml/badge.svg)](https://github.com/hyp3rd/macro-calculator/actions/workflows/codeql.yml) [![gitleaks](https://github.com/hyp3rd/macro-calculator/actions/workflows/gitleaks.yml/badge.svg)](https://github.com/hyp3rd/macro-calculator/actions/workflows/gitleaks.yml)
+[![CodeQL Advanced](https://github.com/hyp3rd/maqro/actions/workflows/codeql.yml/badge.svg)](https://github.com/hyp3rd/maqro/actions/workflows/codeql.yml) [![gitleaks](https://github.com/hyp3rd/maqro/actions/workflows/gitleaks.yml/badge.svg)](https://github.com/hyp3rd/maqro/actions/workflows/gitleaks.yml)
 
 ## Join and use it for free at [macro.app](https://macro.app)
 

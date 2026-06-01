@@ -10,7 +10,7 @@ matter most.
 
 Open a **private security advisory** on GitHub:
 
-→ <https://github.com/hyp3rd/macro-calculator/security/advisories/new>
+→ <https://github.com/hyp3rd/maqro/security/advisories/new>
 
 That keeps the report off the public issue tracker until we've had a
 chance to triage and patch.

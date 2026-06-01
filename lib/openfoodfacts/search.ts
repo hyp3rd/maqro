@@ -46,7 +46,7 @@ export async function searchOpenFoodFacts(
       headers: {
         Accept: "application/json",
         "User-Agent":
-          "macro-calculator/0.1 (https://github.com/hyp3rd/macro-calculator)",
+          "macro-calculator/0.1 (https://github.com/hyp3rd/maqro)",
       },
       signal,
       // Edge runtime: don't hold up the AI loop too long if OFF is slow.

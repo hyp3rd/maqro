@@ -35,7 +35,7 @@ export function StructuredData() {
         name: "Maqro",
         url: base,
         logo: `${base}/logo-mark.svg`,
-        sameAs: ["https://github.com/hyp3rd/macro-calculator"],
+        sameAs: ["https://github.com/hyp3rd/maqro"],
       },
       {
         "@type": "WebSite",
