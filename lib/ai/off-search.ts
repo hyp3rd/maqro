@@ -16,8 +16,7 @@ const OFF_PRODUCT_URL = "https://world.openfoodfacts.org/api/v0/product";
 // so no extra field needs listing here.
 const FIELDS = ["code", "product_name", "brands", "nutriments"].join(",");
 const MAX_LIMIT = 10;
-const USER_AGENT =
-  "macro-calculator/0.1 (https://github.com/hyp3rd/maqro)";
+const USER_AGENT = "maqro/0.1 (https://github.com/hyp3rd/maqro)";
 const OFF_TIMEOUT_MS = 5_000;
 
 /** Shape we extract from an Open Food Facts product blob. Exported so

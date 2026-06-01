@@ -10,7 +10,7 @@ import type { ShoppingAisle } from "@/lib/shopping/categorize";
 import { notifyDataChanged } from "@/lib/sync/data-bus";
 import { type DBSchema, type IDBPDatabase, openDB } from "idb";
 
-const DB_NAME = "macro-calculator";
+const DB_NAME = "maqro";
 const DB_VERSION = 14;
 
 const STORE_CUSTOM_FOODS = "customFoods";

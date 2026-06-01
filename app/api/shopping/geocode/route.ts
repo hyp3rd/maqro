@@ -29,8 +29,7 @@ export async function GET(request: Request): Promise<NextResponse> {
     res = await fetch(upstream.toString(), {
       headers: {
         Accept: "application/json",
-        "User-Agent":
-          "macro-calculator/0.1 (https://github.com/hyp3rd/maqro)",
+        "User-Agent": "maqro/0.1 (https://github.com/hyp3rd/maqro)",
       },
       signal: request.signal,
     });

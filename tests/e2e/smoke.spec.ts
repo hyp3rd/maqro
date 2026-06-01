@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test";
  * failures the unit tests can't see: SSR/CSR mismatches, hook-order
  * errors, missing client directives, broken sidebar nav, and the
  * Auto-fill (was: Generate Meal Plan) flow. */
-test.describe("macro-calculator happy path", () => {
+test.describe("maqro happy path", () => {
   test("renders the calculator with daily targets", async ({ page }) => {
     await page.goto("/app");
     // Sidebar shows the section names as buttons; topbar shows the title.

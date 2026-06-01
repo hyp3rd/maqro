@@ -11,8 +11,7 @@ import { NextResponse } from "next/server";
 
 const OFF_PRODUCT_URL = "https://world.openfoodfacts.org/api/v0/product";
 const TIMEOUT_MS = 5_000;
-const USER_AGENT =
-  "macro-calculator/0.1 (https://github.com/hyp3rd/maqro)";
+const USER_AGENT = "maqro/0.1 (https://github.com/hyp3rd/maqro)";
 
 type OffProductResponse = {
   /** OFF returns `1` when the barcode is recognized, `0` otherwise. */

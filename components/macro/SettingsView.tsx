@@ -769,7 +769,7 @@ function AboutSection() {
             rel="noopener noreferrer"
             className="underline-offset-2 hover:underline"
           >
-            github.com/hyp3rd/macro-calculator
+            github.com/hyp3rd/maqro
           </a>
         </dd>
         <dt className="text-muted-foreground">Help</dt>
