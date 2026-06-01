@@ -76,4 +76,36 @@ describe("rankHydrationMutations", () => {
     );
     expect(rankHydrationMutations(many)).toHaveLength(5);
   });
+
+  it("focuses the excerpt on the differing region of a large blob", () => {
+    const prefix = "shared-context ".repeat(20); // long common prefix
+    const suffix = " trailing-context".repeat(20); // long common suffix
+    const server = `${prefix}Jun 1, 2026${suffix}`;
+    const client = `${prefix}May 31, 2026${suffix}`;
+    const [out] = rankHydrationMutations([
+      { kind: "node", path: "main", server, client },
+    ]);
+    // The actual divergence survives, on both sides…
+    expect(out?.server).toContain("Jun 1, 2026");
+    expect(out?.client).toContain("May 31, 2026");
+    // …and the shared prefix/suffix is trimmed to an ellipsis instead of
+    // burying the diff or being clipped off the front.
+    expect(out?.server.startsWith("…")).toBe(true);
+    expect(out?.server.endsWith("…")).toBe(true);
+    expect(out?.server.length).toBeLessThan(server.length);
+  });
+
+  it("detects a divergence that only differs past the head-clip window", () => {
+    // Two values identical for the first 300 chars, differing only after —
+    // a naive head-clip-then-compare would call these equal and drop them.
+    const head = "a".repeat(300);
+    const server = `${head}SERVER`;
+    const client = `${head}CLIENT`;
+    const out = rankHydrationMutations([
+      { kind: "text", path: "main > p", server, client },
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0]?.server).toContain("SERVER");
+    expect(out[0]?.client).toContain("CLIENT");
+  });
 });

@@ -38,24 +38,30 @@ function readHydrationEnvironment(): HydrationEnvironment | undefined {
  *  rejections, and React hydration mismatches.
  *
  *  Called from [instrumentation-client.ts](../instrumentation-client.ts)
- *  so it runs ONCE, on every page, BEFORE React hydrates. That timing
- *  is the whole point:
+ *  so it runs ONCE, on every page, BEFORE React hydrates. That timing is
+ *  the whole point — the DOM watcher has to be armed before React patches
+ *  the mismatched tree, and this capture must exist app-wide (login,
+ *  marketing, `/app`), not only where a shell component happened to mount.
  *
- *    - A hydration mismatch (React #418/#423/#425) is a RECOVERABLE
- *      error — React logs it via `console.error` and quietly
- *      regenerates the tree. It never throws to `window.error` and
- *      never reaches a React error boundary, so a `useEffect`-mounted
- *      handler (the old approach) can't see it AND, worse, the mismatch
- *      fires DURING hydration, before any effect runs. The interceptor
- *      has to exist before hydration to catch it. Instrumentation-
- *      client is the only place that's guaranteed.
- *    - It also means this capture is app-wide (login, marketing,
- *      `/app`) instead of only where a shell component happened to
- *      mount.
+ *  How a hydration mismatch (#418/#423/#425) actually surfaces — this is
+ *  subtle and we got it wrong once: it is a RECOVERABLE error, so React
+ *  regenerates the tree and reports it through `onRecoverableError`. The
+ *  default `onRecoverableError`:
  *
- *  Idempotent + permanent: a module-level guard means a second call is
- *  a no-op, and the listeners live for the page's lifetime (no
- *  teardown — there's nothing to clean up before navigation away). */
+ *    - in PRODUCTION calls `reportError(err)`, which dispatches a window
+ *      `error` event (NOT `console.error`). So in prod the mismatch is
+ *      invisible to a `console.error` interceptor — it only reaches the
+ *      `window.addEventListener("error", …)` handler.
+ *    - in DEV additionally logs a verbose `console.error` with the
+ *      component stack.
+ *
+ *  So we route BOTH entry points into the same `reportHydrationMismatch`
+ *  (deduped by a one-shot guard). The earlier code hooked only
+ *  `console.error`, which is why prod #418s landed as anonymous
+ *  `global:error-event` rows and never carried the diagnostic.
+ *
+ *  Idempotent + permanent: a module-level guard means a second call is a
+ *  no-op, and the listeners live for the page's lifetime. */
 let installed = false;
 
 export function installErrorCapture(): void {
@@ -63,12 +69,88 @@ export function installErrorCapture(): void {
   installed = true;
 
   // Arm the DOM watcher BEFORE hydration so it records the server→client
-  // patch React makes when it recovers a mismatch. Read back below at the
-  // instant the mismatch is detected. See lib/hydration-dom-watch.ts.
+  // patch React makes when it recovers a mismatch. Read back inside
+  // reportHydrationMismatch. See lib/hydration-dom-watch.ts.
   installHydrationWatch();
 
+  // Keep a handle to the real console.error: the diagnostic line is
+  // printed through it (so it shows even if server reporting is down) and
+  // the interceptor below must call it without re-entering itself.
+  const originalConsoleError = console.error;
+
+  // Report a hydration mismatch at most once per page session — the same
+  // mismatch can re-surface on each recovery attempt, and one report
+  // carries all the signal. `message`/`componentStack` differ by entry
+  // point (window-error has neither a readable message nor a stack; the
+  // console path has both), so they're passed in.
+  let hydrationReported = false;
+  function reportHydrationMismatch(
+    message: string,
+    componentStack: string | undefined,
+  ): void {
+    if (hydrationReported) return;
+    hydrationReported = true;
+    // Snapshot the synchronous signals NOW: a translator/extension that
+    // mutated the server HTML has already left its marks, and the timing
+    // is only meaningful at this instant.
+    const env = readHydrationEnvironment();
+    const base = {
+      path: window.location.pathname,
+      // `?view=` lives in the search string, not the pathname — the SPA
+      // renders every view under `/app`, so this is the only way the log
+      // can tell which screen actually mismatched.
+      search: window.location.search,
+      componentStack: componentStack ?? "(unavailable in this build)",
+      // Milliseconds from navigation start to the mismatch. Small (≈ first
+      // paint) ⇒ initial hydration; large ⇒ a deferred Suspense boundary
+      // hydrated late (the "no error, then flicker seconds later" shape).
+      msSincePageLoad: Math.round(performance.now()),
+      // External-cause attribution — see lib/hydration-environment.ts.
+      // When `translationActive` or `extensionSignals` is set, the
+      // mismatch originates outside the app, not in our render path.
+      htmlLang: env?.htmlLang,
+      navigatorLanguage: env?.navigatorLanguage,
+      localeMismatch: env?.localeMismatch,
+      translationActive: env?.translationActive,
+      extensionSignals: env?.extensionSignals,
+    };
+    // The LITERAL server-vs-client divergence(s) React patched are read
+    // one frame later (see lib/hydration-dom-watch.ts for the timing) —
+    // this is what names the offending value when the component stack is
+    // stripped in prod. The report is emitted inside the callback so it
+    // carries them; the guard above already prevents a double report.
+    collectHydrationMutations((mutations) => {
+      disconnectHydrationWatch();
+      // Empty `mutations` means React recovered without a text/attr/node
+      // change the observer could see (e.g. a structural-only mismatch).
+      const context = { ...base, mutations };
+      // Surface the diagnostic in the BROWSER CONSOLE too, right next to
+      // React's (minified, uninformative) #418, using the ORIGINAL
+      // console.error to avoid re-entering the interceptor.
+      originalConsoleError(
+        "⚠️ [Maqro] hydration-mismatch diagnostic — copy this line:",
+        JSON.stringify(context),
+      );
+      reportClientError(message, { route: "hydration-mismatch", context });
+    });
+  }
+
   window.addEventListener("error", (event) => {
-    reportClientError(event.error ?? event.message, {
+    const raisedError = event.error ?? event.message;
+    // In production this is how a React hydration mismatch arrives (see
+    // the function doc): `reportError()` → a window `error` event. Route
+    // it to the enriched path instead of logging an anonymous global
+    // error.
+    if (isHydrationError([raisedError])) {
+      reportHydrationMismatch(
+        raisedError instanceof Error
+          ? raisedError.message
+          : String(raisedError),
+        undefined, // the window-error path carries no component stack
+      );
+      return;
+    }
+    reportClientError(raisedError, {
       route: "global:error-event",
       context: {
         filename: event.filename,
@@ -82,68 +164,15 @@ export function installErrorCapture(): void {
     reportClientError(event.reason, { route: "global:unhandled-rejection" });
   });
 
-  // Intercept console.error to catch hydration mismatches. Report at
-  // most once per page session — the same mismatch can re-log on each
-  // recovery attempt, and one report carries all the signal (component
-  // stack + path). The original console.error is always called so dev
+  // The DEV entry point: React logs the verbose mismatch (with component
+  // stack) through console.error. The original is always called so dev
   // logging is untouched.
-  let hydrationReported = false;
-  const originalConsoleError = console.error;
   console.error = (...args: unknown[]) => {
-    if (!hydrationReported && isHydrationError(args)) {
-      hydrationReported = true;
-      // Snapshot the synchronous signals NOW: a translator/extension that
-      // mutated the server HTML has already left its marks, and the
-      // component stack / timing are only meaningful at this instant.
-      const env = readHydrationEnvironment();
-      const base = {
-        path: window.location.pathname,
-        // `?view=` lives in the search string, not the pathname — the
-        // SPA renders every view under `/app`, so this is the only way
-        // the log can tell which screen actually mismatched.
-        search: window.location.search,
-        componentStack:
-          extractComponentStack(args) ?? "(unavailable in this build)",
-        // Milliseconds from navigation start to the mismatch. Small (≈ first
-        // paint) ⇒ initial hydration; large ⇒ a deferred Suspense boundary
-        // hydrated late (the "no error, then flicker seconds later" shape).
-        msSincePageLoad: Math.round(performance.now()),
-        // External-cause attribution — see lib/hydration-environment.ts.
-        // When `translationActive` or `extensionSignals` is set, the
-        // mismatch originates outside the app, not in our render path.
-        htmlLang: env?.htmlLang,
-        navigatorLanguage: env?.navigatorLanguage,
-        localeMismatch: env?.localeMismatch,
-        translationActive: env?.translationActive,
-        extensionSignals: env?.extensionSignals,
-      };
-      // The LITERAL server-vs-client divergence(s) React patched are read
-      // one frame later (see lib/hydration-dom-watch.ts for the timing) —
-      // this is what names the offending value when the component stack is
-      // stripped in prod. The report is emitted inside the callback so it
-      // carries them; the `hydrationReported` guard already prevents a
-      // double report.
-      collectHydrationMutations((mutations) => {
-        disconnectHydrationWatch();
-        // Empty `mutations` means React recovered without a text/attr/node
-        // change the observer could see (e.g. a structural-only mismatch).
-        const context = { ...base, mutations };
-        // Also surface the diagnostic in the BROWSER CONSOLE, right next to
-        // React's (minified, uninformative) #418. The server-side error log
-        // can be unreachable (missing secret, disabled), and the console is
-        // where the mismatch is actually seen — printing a single
-        // diagnostic line here means the attribution travels with the error
-        // no matter how it's reported. Uses the ORIGINAL console.error to
-        // avoid re-entering this interceptor.
-        originalConsoleError(
-          "⚠️ [Maqro] hydration-mismatch diagnostic — copy this line:",
-          JSON.stringify(context),
-        );
-        reportClientError(summarizeHydrationArgs(args), {
-          route: "hydration-mismatch",
-          context,
-        });
-      });
+    if (isHydrationError(args)) {
+      reportHydrationMismatch(
+        summarizeHydrationArgs(args),
+        extractComponentStack(args),
+      );
     }
     originalConsoleError.apply(console, args as never[]);
   };
