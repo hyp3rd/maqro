@@ -181,15 +181,6 @@ const SECURITY_HEADERS = [
 ];
 
 const nextConfig: NextConfig = {
-  // compiler and experimental must be used for debug purpose only.
-  compiler: { styledComponents: { minify: false } },
-
-  experimental: {
-    serverMinification: false,
-    optimizeServerReact: false,
-    turbopackMinify: false,
-  },
-
   // Emit source maps for the production client bundle so a minified
   // stack (e.g. the recurring React #418 hydration mismatch, whose
   // frames are all mangled React internals) resolves to real source
@@ -198,7 +189,7 @@ const nextConfig: NextConfig = {
   // GitHub), so the `.map` files reveal nothing that isn't already
   // published. Keeping it on is fine; flip to `false` only if build
   // size or build time ever becomes a concern.
-  productionBrowserSourceMaps: true,
+  productionBrowserSourceMaps: false,
   // Add `crossorigin="anonymous"` to the <script> + <link> tags Next
   // generates. Without it, the browser masks any error thrown from a
   // script it considers cross-origin as a bare "Script error." with no
