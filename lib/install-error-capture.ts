@@ -27,6 +27,9 @@ function readHydrationEnvironment(): HydrationEnvironment | undefined {
       htmlClassList: Array.from(html.classList),
       htmlAttributeNames: html.getAttributeNames(),
       bodyAttributeNames: document.body?.getAttributeNames() ?? [],
+      bodyChildTags: Array.from(document.body?.children ?? []).map(
+        (el) => el.tagName,
+      ),
       navigatorLanguage: navigator.language ?? "",
     });
   } catch {
@@ -119,11 +122,19 @@ export function installErrorCapture(): void {
     // this is what names the offending value when the component stack is
     // stripped in prod. The report is emitted inside the callback so it
     // carries them; the guard above already prevents a double report.
+    // When a translator or a DOM-injecting extension is present, the
+    // mismatch originates OUTSIDE our render path (React's own #418 docs
+    // call this out) and there's nothing app-side to fix. Downgrade those
+    // to "warning" so they don't alert/pollute the Errors view, while
+    // still capturing them for visibility.
+    const externallyCaused =
+      env?.translationActive === true ||
+      (env?.extensionSignals?.length ?? 0) > 0;
     collectHydrationMutations((mutations) => {
       disconnectHydrationWatch();
       // Empty `mutations` means React recovered without a text/attr/node
       // change the observer could see (e.g. a structural-only mismatch).
-      const context = { ...base, mutations };
+      const context = { ...base, mutations, externallyCaused };
       // Surface the diagnostic in the BROWSER CONSOLE too, right next to
       // React's (minified, uninformative) #418, using the ORIGINAL
       // console.error to avoid re-entering the interceptor.
@@ -131,7 +142,11 @@ export function installErrorCapture(): void {
         "⚠️ [Maqro] hydration-mismatch diagnostic — copy this line:",
         JSON.stringify(context),
       );
-      reportClientError(message, { route: "hydration-mismatch", context });
+      reportClientError(message, {
+        route: "hydration-mismatch",
+        level: externallyCaused ? "warning" : "error",
+        context,
+      });
     });
   }
 

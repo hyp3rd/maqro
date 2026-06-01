@@ -42,8 +42,8 @@ export type HydrationEnvironment = {
    *  not the app. */
   translationActive: boolean;
   /** Names of DOM-mutating browser extensions inferred from the marker
-   *  attributes they inject on `<html>`/`<body>`. Empty when none are
-   *  detected. */
+   *  attributes they inject on `<html>`/`<body>` OR the custom elements
+   *  they append to `<body>`. Empty when none are detected. */
   extensionSignals: string[];
 };
 
@@ -62,6 +62,22 @@ const EXTENSION_ATTR_MARKERS: ReadonlyArray<{ prefix: string; name: string }> =
     { prefix: "data-honey-", name: "Honey" },
   ];
 
+/** Password managers and similar extensions don't stamp attributes — they
+ *  APPEND a custom element to `<body>` (e.g. ProtonPass's
+ *  `<protonpass-root-…>`) before React hydrates, which shifts `<body>`'s
+ *  children and is a leading cause of #418 on extension-heavy browsers.
+ *  Matched by custom-element tag-name prefix. */
+const EXTENSION_ELEMENT_MARKERS: ReadonlyArray<{
+  prefix: string;
+  name: string;
+}> = [
+  { prefix: "protonpass-", name: "ProtonPass" },
+  { prefix: "com-1password-", name: "1Password" },
+  { prefix: "dashlane-", name: "Dashlane" },
+  { prefix: "bw-", name: "Bitwarden" },
+  { prefix: "lastpass-", name: "LastPass" },
+];
+
 /** Primary subtag of a BCP-47 tag, lowercased ("it-IT" → "it"). Empty
  *  string stays empty. */
 function primarySubtag(tag: string): string {
@@ -73,6 +89,9 @@ export type HydrationEnvironmentInput = {
   htmlClassList: readonly string[];
   htmlAttributeNames: readonly string[];
   bodyAttributeNames: readonly string[];
+  /** Tag names of `<body>`'s direct children — used to spot extension
+   *  custom elements (ProtonPass, 1Password, …) appended to the body. */
+  bodyChildTags: readonly string[];
   navigatorLanguage: string;
 };
 
@@ -104,12 +123,16 @@ export function collectHydrationEnvironment(
   );
   const translationActive = googleTranslate || edgeTranslate;
 
+  const childTags = input.bodyChildTags.map((t) => t.toLowerCase());
   const extensionSignals = Array.from(
-    new Set(
-      EXTENSION_ATTR_MARKERS.filter(({ prefix }) =>
+    new Set([
+      ...EXTENSION_ATTR_MARKERS.filter(({ prefix }) =>
         allAttrs.some((a) => a.toLowerCase().startsWith(prefix.toLowerCase())),
       ).map(({ name }) => name),
-    ),
+      ...EXTENSION_ELEMENT_MARKERS.filter(({ prefix }) =>
+        childTags.some((t) => t.startsWith(prefix.toLowerCase())),
+      ).map(({ name }) => name),
+    ]),
   );
 
   return {
