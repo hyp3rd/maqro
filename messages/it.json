@@ -1,0 +1,449 @@
+{
+  "header": {
+    "openApp": "Apri l'app",
+    "signIn": "Accedi",
+    "features": "Funzionalità",
+    "pricing": "Prezzi",
+    "faq": "FAQ",
+    "homeAria": "Home di Maqro"
+  },
+  "hero": {
+    "tag": "Ora con pianificazione pasti AI + riconoscimento foto",
+    "headlineLine1": "Calibra i tuoi macro.",
+    "headlineLine2": "Pianifica i pasti. Misura i progressi.",
+    "subtitle": "Un'app nutrizionale personale che rispetta il tuo tempo e i tuoi dati. Imposta gli obiettivi, registra i pasti e segui i numeri - senza un solo pixel di tracciamento.",
+    "ctaPrimary": "Apri l'app",
+    "ctaSecondary": "Scopri le funzionalità →",
+    "ctaSample": "O prova con dati di esempio →",
+    "ctaFootnote": "Gratis, open-source, funziona offline. Niente carta, niente registrazione per provarla."
+  },
+  "macroCard": {
+    "aria": "Esempio di scheda macro giornaliera",
+    "dayLabel": "Oggi · Martedì",
+    "calories": "1.847 / 2.100 kcal",
+    "protein": "Proteine",
+    "carbs": "Carboidrati",
+    "fat": "Grassi"
+  },
+  "trust": {
+    "localFirst": "Local-first",
+    "offline": "Funziona offline",
+    "noAnalytics": "Nessun analytics",
+    "noAds": "Nessuna pubblicità",
+    "openSource": "Open source"
+  },
+  "features": {
+    "eyebrow": "Pensata per come mangi davvero",
+    "title": "Tutto quel che serve. Niente di superfluo.",
+    "items": {
+      "mealPlanning": {
+        "title": "Pianificazione pasti intelligente",
+        "body": "Completa la giornata sui tuoi target macro con un solver deterministico - oppure lascia che Claude Sonnet componga un piano coerente. Rigenerazione per singolo pasto quando una porzione non torna."
+      },
+      "photoId": {
+        "title": "Riconoscimento da foto",
+        "body": "Inquadra un'etichetta o un piatto. L'AI restituisce macro strutturati; un tocco e li salvi tra i tuoi alimenti."
+      },
+      "recipes": {
+        "title": "Ricette che calcolano",
+        "body": "Crea o genera ricette. I macro vengono calcolati in modo deterministico dagli ingredienti - l'AI non inventa mai valori nutrizionali."
+      },
+      "trends": {
+        "title": "Trend + rilevamento dei plateau",
+        "body": "Media mobile del peso, rilevamento dei plateau e ricalibrazione del TDEE quando il cambiamento osservato si scosta dal previsto."
+      },
+      "ownership": {
+        "title": "I tuoi dati, sul tuo dispositivo",
+        "body": "IndexedDB di default. Sincronizzazione opzionale via Supabase tra dispositivi per il piano Pro. Export JSON in ogni momento - nessun lock-in."
+      },
+      "pwa": {
+        "title": "PWA installabile",
+        "body": "Aggiungila alla schermata home su iOS o Android. Funziona offline dopo la prima visita. Niente app store, niente shell nativa."
+      }
+    }
+  },
+  "howItWorks": {
+    "title": "Tre passi. Cinque minuti.",
+    "steps": {
+      "set": {
+        "title": "Imposta gli obiettivi",
+        "body": "BMR Mifflin-St Jeor, TDEE pesato sull'attività, obiettivo calorico ancorato a un tasso settimanale di variazione del peso."
+      },
+      "log": {
+        "title": "Registra quel che mangi",
+        "body": "Catalogo integrato, i tuoi alimenti, o ricerca live su Open Food Facts - tre fonti, una sola casella."
+      },
+      "see": {
+        "title": "Osserva i trend",
+        "body": "Aderenza ai macro, streak e grafico del peso calibrato che corregge il TDEE quando la realtà diverge dalla formula."
+      }
+    }
+  },
+  "pricing": {
+    "eyebrow": "Prezzi",
+    "title": "Gratis per sempre. Paghi solo se se lo merita.",
+    "trialNote": "Tutti i piani a pagamento includono 7 giorni di prova gratuita - nessuna carta richiesta in anticipo.",
+    "recommended": "Consigliato",
+    "perMonth": "al mese",
+    "forever": "per sempre",
+    "plans": {
+      "free": {
+        "name": "Free",
+        "tagline": "Calcolatore + pianificatore completi. I tuoi dati restano locali.",
+        "features": [
+          "Calcolatore macro + pianificatore pasti",
+          "Storico giornaliero / peso",
+          "Editor ricette",
+          "25 generazioni AI / mese"
+        ],
+        "cta": "Apri l'app"
+      },
+      "plus": {
+        "name": "AI Plus",
+        "tagline": "Alza il limite AI. Disdici quando vuoi.",
+        "features": [
+          "Tutto del piano Free",
+          "500 generazioni AI / mese",
+          "Coda API prioritaria",
+          "7 giorni di prova gratuita"
+        ],
+        "cta": "Inizia la prova gratuita"
+      },
+      "pro": {
+        "name": "Pro",
+        "tagline": "Sincronizzazione tra dispositivi. Backup cloud. Email di engagement.",
+        "features": [
+          "Tutto del piano AI Plus",
+          "Generazioni AI illimitate",
+          "Sincronizzazione su tutti i tuoi dispositivi",
+          "Backup cloud + export JSON",
+          "Promemoria giornalieri + riepilogo settimanale"
+        ],
+        "cta": "Inizia la prova gratuita"
+      }
+    }
+  },
+  "faq": {
+    "title": "Risposte alle domande più frequenti.",
+    "items": {
+      "storage": {
+        "q": "Dove vengono salvati i miei dati?",
+        "a": "Sul tuo dispositivo, in IndexedDB. Se accedi, gli stessi dati si sincronizzano su un progetto Supabase privato (con RLS, solo tu puoi leggerli). Per default nulla esce dal tuo dispositivo."
+      },
+      "account": {
+        "q": "Serve un account per usarla?",
+        "a": "No. La modalità ospite è l'app completa. L'accesso aggiunge solo la sincronizzazione tra dispositivi e le email di engagement."
+      },
+      "auth": {
+        "q": "Come accedo?",
+        "a": "In quattro modi. Email senza password (ti inviamo un codice), Google, Apple, oppure una passkey — Face ID / Touch ID / Windows Hello / chiave hardware. Aggiungendo una passkey dalle Impostazioni, il prossimo accesso salta sia la mail con codice sia il prompt di secondo fattore su quel dispositivo."
+      },
+      "ai": {
+        "q": "L'AI è obbligatoria?",
+        "a": "Niente affatto. Il pianificatore deterministico raggiunge i tuoi target macro senza alcuna AI. I piani AI Plus / Pro esistono per chi vuole l'auto-fill AI e il riconoscimento da foto."
+      },
+      "cancel": {
+        "q": "Posso disdire quando voglio?",
+        "a": "Sì - Impostazioni → Fatturazione include un portale a un clic per disdire, cambiare piano o aggiornare il pagamento. Mantieni l'accesso fino al termine del periodo pagato."
+      },
+      "offline": {
+        "q": "Funziona offline?",
+        "a": "Sì. Dopo la prima visita il service worker mette in cache la shell dell'app, così puoi aprirla e usarla senza rete. Le nuove generazioni AI e la sincronizzazione richiedono connettività."
+      },
+      "gdpr": {
+        "q": "E il GDPR?",
+        "a": "I tuoi dati sono esportabili in JSON in ogni momento, cancellabili con un clic, e non eseguiamo analytics o tracker. Vedi /privacy per il quadro completo e i tuoi diritti ai sensi della normativa UE/UK."
+      },
+      "source": {
+        "q": "Il codice sorgente è pubblico?",
+        "a": "Sì - Apache 2.0 su GitHub. Puoi auto-ospitare o ispezionare ogni riga."
+      }
+    }
+  },
+  "finalCta": {
+    "title": "Cinque minuti. Niente carta. Niente fregature.",
+    "body": "Apri l'app, imposta gli obiettivi e registra il prossimo pasto. Se non ti piace, i tuoi dati sono locali - svuota il browser e hai chiuso.",
+    "primary": "Apri l'app",
+    "secondary": "O accedi per sincronizzare →"
+  },
+  "footer": {
+    "tagline": "Open source · Gratuita",
+    "appVersionTitle": "Versione dell'app",
+    "about": "Chi siamo",
+    "pricing": "Prezzi",
+    "status": "Stato",
+    "terms": "Termini",
+    "privacy": "Privacy",
+    "contact": "Contatti",
+    "reportBug": "Segnala un bug",
+    "reportBugAria": "Segnala un bug",
+    "githubAria": "Codice sorgente su GitHub",
+    "githubTitle": "Codice sorgente su GitHub"
+  },
+  "pageTopBar": {
+    "backToHome": "Torna alla home",
+    "backToApp": "Torna all'app"
+  },
+  "changelogIndicator": {
+    "whatsNew": "Novità",
+    "newBadge": "Nuovo",
+    "ariaWithEntries": "Novità — {count} aggiornamenti dall'ultima visita",
+    "ariaNoEntries": "Novità"
+  },
+  "bugReport": {
+    "title": "Segnala un bug",
+    "description": "Apriremo GitHub in una nuova scheda con il tuo testo pre-compilato. La segnalazione la apri tu da lì — nulla viene inviato da questa app.",
+    "fields": {
+      "titleLabel": "Titolo (facoltativo)",
+      "titlePlaceholder": "Riassunto breve",
+      "descriptionLabel": "Cosa è successo?",
+      "descriptionCount": "{count}/{max}",
+      "descriptionPlaceholder": "Descrivi il bug in modo chiaro. Passi per riprodurlo, cosa ti aspettavi, cosa è successo davvero."
+    },
+    "context": {
+      "checkbox": "Includi automaticamente browser + versione (consigliato). Potrai vederlo e modificarlo su GitHub prima di inviare.",
+      "describe": "Descrivi il bug",
+      "describePlaceholder": "(descrivi cosa è andato storto)",
+      "stepsTitle": "Passi per riprodurre",
+      "expectedTitle": "Comportamento atteso vs reale",
+      "autoIncluded": "Contesto incluso automaticamente (controlla prima di inviare):",
+      "appVersion": "Versione app",
+      "browser": "Browser",
+      "page": "Pagina",
+      "defaultTitle": "Segnalazione bug"
+    },
+    "actions": { "cancel": "Annulla", "openIssue": "Apri issue su GitHub" }
+  },
+  "aboutPage": {
+    "title": "Chi è Maqro",
+    "tagline": "Un calcolatore di macro e pianificatore pasti personale che rispetta il tuo tempo e i tuoi dati. Open source, niente analytics, local-first.",
+    "buildLabel": "Build",
+    "sections": {
+      "service": "Servizio",
+      "help": "Aiuto",
+      "legal": "Legale",
+      "sourceSocials": "Codice & social"
+    },
+    "items": {
+      "status": {
+        "label": "Stato del sistema",
+        "detail": "Uptime + incidenti recenti"
+      },
+      "pricing": { "label": "Prezzi", "detail": "Confronto Free / Plus / Pro" },
+      "changelog": {
+        "label": "Changelog",
+        "detail": "Le novità di ogni release"
+      },
+      "contact": {
+        "label": "Contatta il supporto",
+        "detail": "Una persona vera legge ogni messaggio"
+      },
+      "featureRequest": {
+        "label": "Richiedi una funzionalità",
+        "detail": "Issue su GitHub, già impostato"
+      },
+      "bugReport": {
+        "label": "Segnala un bug",
+        "detail": "Issue su GitHub, già impostato"
+      },
+      "browseIssues": {
+        "label": "Sfoglia le issue aperte",
+        "detail": "Vedi cosa è già segnalato / pianificato"
+      },
+      "privacy": {
+        "label": "Privacy policy",
+        "detail": "Cosa salviamo, cosa no"
+      },
+      "terms": {
+        "label": "Termini e condizioni",
+        "detail": "Disclaimer sanitario, nessuna garanzia, …"
+      },
+      "github": {
+        "label": "Codice sorgente su GitHub",
+        "detail": "Licenza Apache-2.0, ispezionabile"
+      },
+      "twitter": {
+        "label": "Segui {handle} su X",
+        "detail": "Aggiornamenti del servizio + note di rilascio"
+      },
+      "linkedin": {
+        "label": "Maintainer su LinkedIn",
+        "detail": "Francesco Cosentino — la persona dietro Maqro"
+      },
+      "manifest": {
+        "label": "Manifest PWA",
+        "detail": "Installa sulla schermata home su iOS / Android"
+      }
+    },
+    "thanks": {
+      "title": "Grazie per usare Maqro.",
+      "body": "È open source e gratuita nel core perché il maintainer vuole usarla senza ad tech, non perché ci sia un piano per cambiare rotta. I piani a pagamento coprono la bolletta AI + l'hosting; il core resta gratis comunque."
+    }
+  },
+  "pricingPage": {
+    "header": {
+      "eyebrow": "Prezzi",
+      "title": "Gratis per sempre. Paghi solo se se lo merita.",
+      "subtitle": "Il calcolatore + pianificatore di base è gratis per sempre. I piani a pagamento sbloccano limiti AI più alti, sincronizzazione ed email di engagement. Tutti i piani a pagamento includono 7 giorni di prova gratuita — nessuna carta richiesta in anticipo."
+    },
+    "cycle": {
+      "ariaLabel": "Ciclo di fatturazione",
+      "monthly": "Mensile",
+      "yearly": "Annuale",
+      "yearlyBadge": "Risparmia ~20%"
+    },
+    "card": {
+      "recommended": "Consigliato",
+      "forever": "per sempre",
+      "month": "mese",
+      "yearlyBilledNote": "Fatturato €{yearly}/anno — {discount}% in meno rispetto al mensile.",
+      "monthlySaveNote": "O €{yearly}/anno — risparmi il {discount}%."
+    },
+    "matrix": {
+      "title": "Confronto completo delle funzionalità",
+      "subtitle": "Ogni funzionalità a pagamento, elencata una volta. Le righe booleane sono sì/no; le righe numeriche sono il limite per piano.",
+      "headers": {
+        "feature": "Funzionalità",
+        "free": "Free",
+        "plus": "AI Plus",
+        "pro": "Pro"
+      },
+      "cellIncluded": "Incluso",
+      "cellNotIncluded": "Non incluso",
+      "values": { "unlimited": "Illimitate" },
+      "sections": {
+        "core": "Base",
+        "aiFeatures": "Funzionalità AI",
+        "syncData": "Sync e dati",
+        "communication": "Comunicazione",
+        "support": "Supporto"
+      },
+      "rows": {
+        "macroCalculator": { "label": "Calcolatore macro + target" },
+        "mealPlanner": { "label": "Pianificatore pasti (manuale + solver)" },
+        "weightHistory": { "label": "Storico peso + log giornaliero" },
+        "recipeBuilder": { "label": "Editor ricette + macro calcolati" },
+        "trends": { "label": "Trend + rilevamento dei plateau" },
+        "barcode": {
+          "label": "Scansione codice a barre (lookup etichette)",
+          "detail": "`BarcodeDetector` live (o fallback zxing) → Open Food Facts. Nessun utilizzo AI."
+        },
+        "photoMealId": {
+          "label": "Identificazione del pasto da foto",
+          "detail": "Conta verso le tue generazioni AI mensili."
+        },
+        "aiGenerations": {
+          "label": "Generazioni AI al mese",
+          "detail": "Piani pasto, ricette e identificazioni da foto generati, sommati."
+        },
+        "importRecipesUrl": {
+          "label": "Importa ricette da un URL",
+          "detail": "Fetch lato server + strutturazione AI. Solo Plus + Pro."
+        },
+        "priorityQueue": { "label": "Coda API prioritaria" },
+        "localStorage": { "label": "Storage local-first (IndexedDB)" },
+        "syncDevices": {
+          "label": "Sincronizzazione tra dispositivi (Supabase)"
+        },
+        "cloudBackup": { "label": "Backup cloud (export JSON)" },
+        "manualJsonExport": {
+          "label": "Export + import JSON manuali",
+          "detail": "Funziona senza account su ogni piano."
+        },
+        "dailyReminder": { "label": "Email di promemoria giornaliero" },
+        "weeklyRecap": { "label": "Email di riepilogo settimanale" },
+        "customRecipeSlugs": {
+          "label": "Slug personalizzati per le ricette condivise",
+          "detail": "Gli slug auto-generati sono disponibili per tutti."
+        },
+        "contactForm": { "label": "Modulo di contatto + supporto email" },
+        "sourceGithub": {
+          "label": "Codice sorgente su GitHub",
+          "detail": "Maqro è open source — forkalo, eseguilo, ispezionalo."
+        }
+      }
+    },
+    "plans": {
+      "free": {
+        "name": "Free",
+        "tagline": "Calcolatore + pianificatore completi. I tuoi dati restano locali.",
+        "cta": "Apri l'app",
+        "features": {
+          "macroCalculator": "Calcolatore macro + pianificatore pasti",
+          "weightDailyHistory": "Storico peso + log giornaliero",
+          "recipeBuilder": "Editor ricette",
+          "aiGenerations25": "25 generazioni AI al mese"
+        }
+      },
+      "plus": {
+        "name": "AI Plus",
+        "tagline": "Alza il limite AI. Importa ricette da qualsiasi URL.",
+        "cta": "Inizia la prova di 7 giorni",
+        "features": {
+          "everythingInFree": "Tutto del piano Free",
+          "aiGenerations500": "500 generazioni AI al mese",
+          "importRecipesUrl": "Importa ricette da URL",
+          "priorityQueue": "Coda API prioritaria"
+        }
+      },
+      "pro": {
+        "name": "Pro",
+        "tagline": "Sincronizzazione tra dispositivi. Backup cloud. Email di engagement.",
+        "cta": "Inizia la prova di 7 giorni",
+        "features": {
+          "everythingInPlus": "Tutto del piano AI Plus",
+          "aiGenerationsUnlimited": "Generazioni AI illimitate",
+          "syncDevices": "Sincronizzazione su tutti i tuoi dispositivi",
+          "cloudBackup": "Backup cloud + export JSON",
+          "engagementEmail": "Promemoria giornalieri + riepilogo settimanale",
+          "customRecipeSlugs": "Slug personalizzati per le ricette condivise"
+        }
+      }
+    },
+    "faqsTitle": "Domande frequenti",
+    "faqs": {
+      "freeTier": {
+        "q": "Esiste davvero un piano gratis per sempre?",
+        "a": "Sì. Calcolatore macro, pianificatore pasti, storico peso e log, editor ricette e 25 generazioni AI al mese sono gratis senza limiti di tempo. Non strangoliamo il piano free per forzare un upgrade — se non hai bisogno della sincronizzazione cloud o di più AI, non hai bisogno di un piano a pagamento."
+      },
+      "trialHowItWorks": {
+        "q": "Come funziona la prova di 7 giorni?",
+        "a": "Clicca Inizia prova, accedi, inserisci una carta. Stripe non addebita fino al 7º giorno. Puoi disdire dal portale di fatturazione in qualsiasi momento durante la prova — in quel caso la carta non viene addebitata."
+      },
+      "switchPlans": {
+        "q": "Posso passare tra Plus e Pro?",
+        "a": "Sì, da Impostazioni → Fatturazione. Gli upgrade sono prorata; i downgrade hanno effetto a fine periodo. Nessun contratto — mese per mese, o anno per anno."
+      },
+      "aiGenerationCount": {
+        "q": "Cosa conta come generazione AI?",
+        "a": "Tutto ciò che chiama l'API Anthropic: generazioni di piani pasto AI, identificazioni da foto, generazioni di ricette AI e import di ricette da URL. Il contatore si azzera il 1° di ogni mese di calendario."
+      },
+      "dataStorage": {
+        "q": "Dove vengono salvati i miei dati?",
+        "a": "Sul tuo dispositivo, nell'IndexedDB del browser. Se sei sul piano Pro e hai effettuato l'accesso, le stesse righe vengono sincronizzate anche su un progetto Supabase (controlli tu il deployment; row-level security lega ogni riga al tuo id utente). I piani Free e Plus girano completamente local-first. Vedi la privacy policy su /privacy per il quadro completo."
+      },
+      "refunds": {
+        "q": "Offrite rimborsi?",
+        "a": "Entro i primi 14 giorni di un nuovo abbonamento a pagamento, sì — scrivici dal modulo di contatto e procediamo via Stripe. Oltre quel periodo valutiamo caso per caso."
+      }
+    },
+    "stillUnsure": {
+      "title": "Ancora indeciso?",
+      "body": "L'intera app funziona senza account. Provala in locale — se merita un piano, fai l'upgrade dopo. Le domande passano dal form di contatto; una persona vera legge ogni messaggio.",
+      "openApp": "Apri l'app",
+      "askQuestion": "Fai una domanda"
+    }
+  },
+  "contactPage": {
+    "title": "Mettiti in contatto",
+    "subtitle": "Una persona vera legge ogni messaggio. Scegli il canale che ti torna comodo — la maggior parte delle risposte arriva entro una giornata lavorativa."
+  },
+  "changelogPage": {
+    "title": "Novità",
+    "subtitle": "Modifiche notevoli, ordinate dalla più recente. Le release senza cambiamenti visibili all'utente sono omesse."
+  },
+  "statusPage": { "title": "Stato del sistema" },
+  "legalPage": {
+    "authoritativeNote": "La versione inglese di questo documento è la sola fa fede. Le traduzioni sono fornite solo per comodità; in caso di discrepanze prevale il testo inglese."
+  }
+}

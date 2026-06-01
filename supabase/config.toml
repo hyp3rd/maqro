@@ -1,0 +1,43 @@
+# Supabase project configuration. Required for the supabase CLI even when
+# we're only operating against the remote project (db push / db pull). The
+# local-dev sections (api, studio, realtime, etc.) are set to disabled or
+# minimal because we don't currently run a local Supabase stack via Docker
+# — only `db push` against the remote project. If you want the full
+# local stack later, run `supabase init` to regenerate this file.
+
+project_id = "macro-calculator"
+
+[api]
+enabled = false
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[db.migrations]
+enabled = true
+
+[db.seed]
+enabled = false
+
+[realtime]
+enabled = false
+
+[studio]
+enabled = false
+
+[inbucket]
+enabled = false
+
+[storage]
+enabled = false
+
+[auth]
+enabled = false
+
+[edge_runtime]
+enabled = false
+
+[analytics]
+enabled = false

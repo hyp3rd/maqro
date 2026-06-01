@@ -1,0 +1,14 @@
+---
+blank_issues_enabled: false
+contact_links:
+  - name: Security report
+    url: mailto:security@maqro.app
+    about: |
+      Report a vulnerability or security concern privately. Please don't
+      open a public issue for security-sensitive reports.
+  - name: Contact / general support
+    url: https://maqro.app/contact
+    about: |
+      Account questions, billing, "how do I do X" - the contact form
+      routes to a real person. Faster than a GitHub issue for non-bug
+      conversations.

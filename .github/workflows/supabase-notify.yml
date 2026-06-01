@@ -1,0 +1,31 @@
+---
+name: Branch Status
+
+permissions:
+    contents: read
+
+on:
+    pull_request:
+        types:
+            - opened
+            - reopened
+            - synchronize
+        branches:
+            - main
+            - develop
+        paths:
+            - "supabase/**"
+
+jobs:
+    failed:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: fountainhead/action-wait-for-check@v1.2.0
+              id: check
+              with:
+                  checkName: Supabase Preview
+                  ref: ${{ github.event.pull_request.head.sha || github.sha }}
+                  token: ${{ secrets.GITHUB_TOKEN }}
+
+            - if: ${{ steps.check.outputs.conclusion == 'failure' }}
+              run: exit 1

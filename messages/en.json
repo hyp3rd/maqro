@@ -1,0 +1,447 @@
+{
+  "header": {
+    "openApp": "Open the app",
+    "signIn": "Sign in",
+    "features": "Features",
+    "pricing": "Pricing",
+    "faq": "FAQ",
+    "homeAria": "Maqro home"
+  },
+  "hero": {
+    "tag": "Now with AI meal planning + photo identification",
+    "headlineLine1": "Tune your macros.",
+    "headlineLine2": "Plan your meals. See your progress.",
+    "subtitle": "A personal nutrition app that respects your time and your data. Set targets, log meals, and watch the numbers - without a single tracking pixel.",
+    "ctaPrimary": "Open the app",
+    "ctaSecondary": "See features →",
+    "ctaSample": "Or try with sample data →",
+    "ctaFootnote": "Free, open-source, runs offline. No card, no sign-up required to try."
+  },
+  "macroCard": {
+    "aria": "Sample daily macros card",
+    "dayLabel": "Today · Tuesday",
+    "calories": "1,847 / 2,100 kcal",
+    "protein": "Protein",
+    "carbs": "Carbs",
+    "fat": "Fat"
+  },
+  "trust": {
+    "localFirst": "Local-first",
+    "offline": "Works offline",
+    "noAnalytics": "No analytics",
+    "noAds": "No ads",
+    "openSource": "Open source"
+  },
+  "features": {
+    "eyebrow": "Built around how you actually eat",
+    "title": "Everything you need. Nothing you don't.",
+    "items": {
+      "mealPlanning": {
+        "title": "Smart meal planning",
+        "body": "Auto-fill a day to your macro targets with a deterministic solver - or let Claude Sonnet draft a coherent plan. Per-meal regenerate when one slot doesn't fit."
+      },
+      "photoId": {
+        "title": "Photo identification",
+        "body": "Point your camera at a label or meal. AI returns structured macros; one tap saves it to your foods."
+      },
+      "recipes": {
+        "title": "Recipes that compute",
+        "body": "Build or generate recipes. Macros are computed deterministically from ingredients - the AI never invents nutrient values."
+      },
+      "trends": {
+        "title": "Trends + plateau detection",
+        "body": "Moving-average weight, plateau detection, and TDEE recalibration when your observed change diverges from expected."
+      },
+      "ownership": {
+        "title": "Your data, your device",
+        "body": "IndexedDB by default. Optional Supabase sync across devices for Pro. JSON export anytime - no lock-in."
+      },
+      "pwa": {
+        "title": "Installable PWA",
+        "body": "Add to home screen on iOS or Android. Works offline once visited. No app store, no native shell."
+      }
+    }
+  },
+  "howItWorks": {
+    "title": "Three steps. Five minutes.",
+    "steps": {
+      "set": {
+        "title": "Set your targets",
+        "body": "Mifflin–St Jeor BMR, activity-weighted TDEE, calorie goal anchored to a weekly weight-change rate."
+      },
+      "log": {
+        "title": "Log what you eat",
+        "body": "Built-in catalog, your own foods, or live Open Food Facts search - three sources, one box."
+      },
+      "see": {
+        "title": "See your trends",
+        "body": "Macro adherence, streaks, and a calibrated weight chart that adjusts your TDEE when reality diverges from formula."
+      }
+    }
+  },
+  "pricing": {
+    "eyebrow": "Pricing",
+    "title": "Free forever. Pay if it earns it.",
+    "trialNote": "All paid plans include a 7-day free trial - no card up front.",
+    "recommended": "Recommended",
+    "perMonth": "per month",
+    "forever": "forever",
+    "plans": {
+      "free": {
+        "name": "Free",
+        "tagline": "The full calculator + planner. Your data stays local.",
+        "features": [
+          "Macro calculator + meal planner",
+          "Daily / weight history",
+          "Recipe builder",
+          "25 AI generations / month"
+        ],
+        "cta": "Open the app"
+      },
+      "plus": {
+        "name": "AI Plus",
+        "tagline": "Lift the AI cap. Cancel any time.",
+        "features": [
+          "Everything in Free",
+          "500 AI generations / month",
+          "Priority API queue",
+          "7-day free trial"
+        ],
+        "cta": "Start free trial"
+      },
+      "pro": {
+        "name": "Pro",
+        "tagline": "Sync across devices. Cloud backups. Engagement email.",
+        "features": [
+          "Everything in AI Plus",
+          "Unlimited AI generations",
+          "Sync across all your devices",
+          "Cloud backups + JSON export",
+          "Daily reminders + weekly recap"
+        ],
+        "cta": "Start free trial"
+      }
+    }
+  },
+  "faq": {
+    "title": "Questions, answered.",
+    "items": {
+      "storage": {
+        "q": "Where is my data stored?",
+        "a": "On your device, in IndexedDB. If you sign in, the same data syncs to a private Supabase project (RLS-scoped, only you can read it). Nothing leaves your device by default."
+      },
+      "account": {
+        "q": "Do I need an account to use it?",
+        "a": "No. Guest mode is the full app. Signing in only adds cross-device sync and engagement emails."
+      },
+      "auth": {
+        "q": "How do I sign in?",
+        "a": "Four ways. Passwordless email (we send you a code), Google, Apple, or a passkey — Face ID / Touch ID / Windows Hello / hardware key. Add one passkey from Settings and the next sign-in skips both the email round-trip and the two-factor prompt on that device."
+      },
+      "ai": {
+        "q": "Is the AI required?",
+        "a": "Not at all. The deterministic meal-planner hits your macro targets without any AI. The AI Plus / Pro tiers exist for people who want AI auto-fill and photo identification."
+      },
+      "cancel": {
+        "q": "Can I cancel any time?",
+        "a": "Yes - Settings → Billing has a one-click portal to cancel, change plan, or update payment. You keep access until the end of the paid period."
+      },
+      "offline": {
+        "q": "Does it work offline?",
+        "a": "Yes. Once visited, the service worker caches the app shell so you can open and use it without a network. New AI generations and sync require connectivity."
+      },
+      "gdpr": {
+        "q": "What about GDPR?",
+        "a": "Your data is exportable as JSON anytime, deletable in one click, and we don't run analytics or trackers. See /privacy for the full picture and your rights under EU/UK law."
+      },
+      "source": {
+        "q": "Is the source code public?",
+        "a": "Yes - Apache 2.0 on GitHub. You can self-host or audit any line."
+      }
+    }
+  },
+  "finalCta": {
+    "title": "Five minutes. No card. No catch.",
+    "body": "Open the app, set your targets, and log your next meal. If you don't like it, your data is local - clear your browser and you're done.",
+    "primary": "Open the app",
+    "secondary": "Or sign in to sync →"
+  },
+  "footer": {
+    "tagline": "Open source · Free of charge",
+    "appVersionTitle": "App version",
+    "about": "About",
+    "pricing": "Pricing",
+    "status": "Status",
+    "terms": "Terms",
+    "privacy": "Privacy",
+    "contact": "Contact",
+    "reportBug": "Report a bug",
+    "reportBugAria": "Report a bug",
+    "githubAria": "Source code on GitHub",
+    "githubTitle": "Source code on GitHub"
+  },
+  "pageTopBar": { "backToHome": "Back to home", "backToApp": "Back to app" },
+  "changelogIndicator": {
+    "whatsNew": "What's new",
+    "newBadge": "New",
+    "ariaWithEntries": "What's new — {count} entries since you last checked",
+    "ariaNoEntries": "What's new"
+  },
+  "bugReport": {
+    "title": "Report a bug",
+    "description": "We'll open GitHub in a new tab with your text pre-filled. You file the issue from there — nothing is sent from this app.",
+    "fields": {
+      "titleLabel": "Title (optional)",
+      "titlePlaceholder": "Short summary",
+      "descriptionLabel": "What happened?",
+      "descriptionCount": "{count}/{max}",
+      "descriptionPlaceholder": "Describe the bug in plain language. Steps to reproduce, what you expected, what actually happened."
+    },
+    "context": {
+      "checkbox": "Auto-include browser + version (recommended). You'll see and can edit it on GitHub before submitting.",
+      "describe": "Describe the bug",
+      "describePlaceholder": "(please describe what went wrong)",
+      "stepsTitle": "Steps to reproduce",
+      "expectedTitle": "Expected vs actual behavior",
+      "autoIncluded": "Auto-included context (please review before submitting):",
+      "appVersion": "App version",
+      "browser": "Browser",
+      "page": "Page",
+      "defaultTitle": "Bug report"
+    },
+    "actions": { "cancel": "Cancel", "openIssue": "Open GitHub issue" }
+  },
+  "aboutPage": {
+    "title": "About Maqro",
+    "tagline": "A personal macro calculator + meal planner that respects your time and your data. Open source, no analytics, local-first.",
+    "buildLabel": "Build",
+    "sections": {
+      "service": "Service",
+      "help": "Help",
+      "legal": "Legal",
+      "sourceSocials": "Source & socials"
+    },
+    "items": {
+      "status": {
+        "label": "System status",
+        "detail": "Uptime + recent incidents"
+      },
+      "pricing": {
+        "label": "Pricing",
+        "detail": "Free / Plus / Pro comparison"
+      },
+      "changelog": {
+        "label": "Changelog",
+        "detail": "What's new in each release"
+      },
+      "contact": {
+        "label": "Contact support",
+        "detail": "A real person reads every message"
+      },
+      "featureRequest": {
+        "label": "Request a feature",
+        "detail": "GitHub issue, pre-templated"
+      },
+      "bugReport": {
+        "label": "Report a bug",
+        "detail": "GitHub issue, pre-templated"
+      },
+      "browseIssues": {
+        "label": "Browse open issues",
+        "detail": "See what's already reported / planned"
+      },
+      "privacy": {
+        "label": "Privacy policy",
+        "detail": "What we store, what we don't"
+      },
+      "terms": {
+        "label": "Terms & conditions",
+        "detail": "Health disclaimer, no warranties, …"
+      },
+      "github": {
+        "label": "Source code on GitHub",
+        "detail": "Apache-2.0 licensed, audit-friendly"
+      },
+      "twitter": {
+        "label": "Follow {handle} on X",
+        "detail": "Service updates + release notes"
+      },
+      "linkedin": {
+        "label": "Maintainer on LinkedIn",
+        "detail": "Francesco Cosentino — the human behind Maqro"
+      },
+      "manifest": {
+        "label": "PWA manifest",
+        "detail": "Install to home screen on iOS / Android"
+      }
+    },
+    "thanks": {
+      "title": "Thanks for using Maqro.",
+      "body": "It's open source and free at the core because the maintainer wants to use it without ad tech, not because there's a plan to flip it. The paid plans cover the AI bill + hosting; the core stays free regardless."
+    }
+  },
+  "pricingPage": {
+    "header": {
+      "eyebrow": "Pricing",
+      "title": "Free forever. Pay if it earns it.",
+      "subtitle": "The core calculator + planner is free forever. Paid plans unlock higher AI limits, sync, and engagement email. All paid plans include a 7-day free trial — no card up front."
+    },
+    "cycle": {
+      "ariaLabel": "Billing cycle",
+      "monthly": "Monthly",
+      "yearly": "Yearly",
+      "yearlyBadge": "Save ~20%"
+    },
+    "card": {
+      "recommended": "Recommended",
+      "forever": "forever",
+      "month": "month",
+      "yearlyBilledNote": "Billed €{yearly} yearly — {discount}% off the monthly rate.",
+      "monthlySaveNote": "Or €{yearly}/year — save {discount}%."
+    },
+    "matrix": {
+      "title": "Full feature comparison",
+      "subtitle": "Every gated feature, listed once. Boolean rows are yes/no; numeric rows are the per-tier cap.",
+      "headers": {
+        "feature": "Feature",
+        "free": "Free",
+        "plus": "AI Plus",
+        "pro": "Pro"
+      },
+      "cellIncluded": "Included",
+      "cellNotIncluded": "Not included",
+      "values": { "unlimited": "Unlimited" },
+      "sections": {
+        "core": "Core",
+        "aiFeatures": "AI features",
+        "syncData": "Sync & data",
+        "communication": "Communication",
+        "support": "Support"
+      },
+      "rows": {
+        "macroCalculator": { "label": "Macro calculator + targets" },
+        "mealPlanner": { "label": "Meal planner (manual + solver)" },
+        "weightHistory": { "label": "Weight + daily-log history" },
+        "recipeBuilder": { "label": "Recipe builder + computed macros" },
+        "trends": { "label": "Trends + plateau detection" },
+        "barcode": {
+          "label": "Barcode scan (label lookup)",
+          "detail": "Live `BarcodeDetector` (or zxing fallback) → Open Food Facts. No AI usage."
+        },
+        "photoMealId": {
+          "label": "Photo meal identification",
+          "detail": "Counts toward your monthly AI generations."
+        },
+        "aiGenerations": {
+          "label": "AI generations per month",
+          "detail": "Generated meal plans, recipes, and photo IDs combined."
+        },
+        "importRecipesUrl": {
+          "label": "Import recipes from a URL",
+          "detail": "Server-side fetch + AI structuring. Plus + Pro only."
+        },
+        "priorityQueue": { "label": "Priority API queue" },
+        "localStorage": { "label": "Local-first storage (IndexedDB)" },
+        "syncDevices": { "label": "Sync across devices (Supabase)" },
+        "cloudBackup": { "label": "Cloud backups (JSON export)" },
+        "manualJsonExport": {
+          "label": "Manual JSON export + import",
+          "detail": "Works without an account on every plan."
+        },
+        "dailyReminder": { "label": "Daily reminder emails" },
+        "weeklyRecap": { "label": "Weekly recap email" },
+        "customRecipeSlugs": {
+          "label": "Custom recipe share slugs",
+          "detail": "Auto-generated slugs are available to everyone."
+        },
+        "contactForm": { "label": "Contact form + email support" },
+        "sourceGithub": {
+          "label": "Source code on GitHub",
+          "detail": "Maqro is open source — fork it, run it, audit it."
+        }
+      }
+    },
+    "plans": {
+      "free": {
+        "name": "Free",
+        "tagline": "The full calculator + planner. Your data stays local.",
+        "cta": "Open the app",
+        "features": {
+          "macroCalculator": "Macro calculator + meal planner",
+          "weightDailyHistory": "Weight + daily-log history",
+          "recipeBuilder": "Recipe builder",
+          "aiGenerations25": "25 AI generations per month"
+        }
+      },
+      "plus": {
+        "name": "AI Plus",
+        "tagline": "Lift the AI cap. Import recipes from any URL.",
+        "cta": "Start 7-day trial",
+        "features": {
+          "everythingInFree": "Everything in Free",
+          "aiGenerations500": "500 AI generations per month",
+          "importRecipesUrl": "Import recipes from URL",
+          "priorityQueue": "Priority API queue"
+        }
+      },
+      "pro": {
+        "name": "Pro",
+        "tagline": "Sync across devices. Cloud backups. Engagement email.",
+        "cta": "Start 7-day trial",
+        "features": {
+          "everythingInPlus": "Everything in AI Plus",
+          "aiGenerationsUnlimited": "Unlimited AI generations",
+          "syncDevices": "Sync across all your devices",
+          "cloudBackup": "Cloud backups + JSON export",
+          "engagementEmail": "Daily reminders + weekly recap",
+          "customRecipeSlugs": "Custom recipe share slugs"
+        }
+      }
+    },
+    "faqsTitle": "Common questions",
+    "faqs": {
+      "freeTier": {
+        "q": "Is there really a free tier forever?",
+        "a": "Yes. The core macro calculator, meal planner, weight + log history, recipe builder, and 25 AI generations per month are free with no time limit. We don't cripple the free tier to force an upgrade — if you don't need cloud sync or more AI than that, you don't need a paid plan."
+      },
+      "trialHowItWorks": {
+        "q": "How does the 7-day trial work?",
+        "a": "Click Start trial, sign in, enter a card. Stripe doesn't charge until day 7. You can cancel from the billing portal at any time during the trial — the card is never charged in that case."
+      },
+      "switchPlans": {
+        "q": "Can I switch between Plus and Pro?",
+        "a": "Yes, from Settings → Billing. Upgrades are prorated; downgrades take effect at the end of the current period. There's no contract — month to month, or year to year."
+      },
+      "aiGenerationCount": {
+        "q": "What counts as an AI generation?",
+        "a": "Anything that calls the Anthropic API: AI meal plan generations, photo identifications, AI recipe generations, and URL recipe imports. The counter resets on the 1st of each calendar month."
+      },
+      "dataStorage": {
+        "q": "Where is my data stored?",
+        "a": "On your device, in your browser's IndexedDB. If you're on the Pro plan and signed in, the same rows are also synced to a Supabase project (you control the deployment; row-level security pins each row to your user id). The free and Plus tiers run entirely local-first. See the privacy policy at /privacy for the full picture."
+      },
+      "refunds": {
+        "q": "Do you offer refunds?",
+        "a": "Within the first 14 days of a new paid subscription, yes — message us via the contact form and we'll process it through Stripe. Beyond that we evaluate case by case."
+      }
+    },
+    "stillUnsure": {
+      "title": "Still on the fence?",
+      "body": "The whole app runs without an account. Try it locally — if it earns a plan, upgrade later. Questions go through the contact form; a real person reads every message.",
+      "openApp": "Open the app",
+      "askQuestion": "Ask a question"
+    }
+  },
+  "contactPage": {
+    "title": "Get in touch",
+    "subtitle": "A real person reads every message. Pick the path that fits — most replies go out within a working day."
+  },
+  "changelogPage": {
+    "title": "What's new",
+    "subtitle": "Notable changes, ordered newest first. Releases without a user-visible change are omitted."
+  },
+  "statusPage": { "title": "System status" },
+  "legalPage": {
+    "authoritativeNote": "The English version of this document is authoritative. Translations are provided for convenience only; in case of any discrepancy, the English text prevails."
+  }
+}

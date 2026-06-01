@@ -1,0 +1,185 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const {
+  mockGetSupabaseSecretConfig,
+  mockSendEmail,
+  mockReportServerError,
+  mockProfileMaybeSingle,
+  mockGetUserById,
+  mockGenerateLink,
+} = vi.hoisted(() => ({
+  mockGetSupabaseSecretConfig: vi.fn(() => ({
+    url: "https://x.supabase.co",
+    secretKey: "sb_secret_x",
+  })),
+  mockSendEmail: vi.fn(async () => ({ ok: true, id: "msg-1" })),
+  mockReportServerError: vi.fn(async () => {}),
+  mockProfileMaybeSingle: vi.fn(),
+  mockGetUserById: vi.fn(),
+  mockGenerateLink: vi.fn(),
+}));
+
+vi.mock("@/lib/supabase/env", () => ({
+  getSupabaseSecretConfig: mockGetSupabaseSecretConfig,
+}));
+vi.mock("@/lib/email/resend", () => ({ sendEmail: mockSendEmail }));
+vi.mock("@/lib/error-reporter", () => ({
+  reportServerError: mockReportServerError,
+}));
+vi.mock("@/lib/bot-protection", () => ({
+  requireHumanDeep: vi.fn(async () => ({ ok: true })),
+}));
+
+/** The route makes a chained call:
+ *    .from("profiles").select(...).eq("backup_email", ...).not(...).maybeSingle()
+ *  Build a chain that records nothing and returns whatever the test
+ *  loaded into mockProfileMaybeSingle. */
+vi.mock("@supabase/supabase-js", () => ({
+  createClient: vi.fn(() => ({
+    auth: {
+      admin: { getUserById: mockGetUserById, generateLink: mockGenerateLink },
+    },
+    from: () => ({
+      select: () => ({
+        eq: () => ({ not: () => ({ maybeSingle: mockProfileMaybeSingle }) }),
+      }),
+    }),
+  })),
+}));
+
+async function loadRoute() {
+  vi.resetModules();
+  return await import("./route");
+}
+
+function req(body: unknown): Request {
+  return new Request("http://localhost/api/auth/recovery", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
+describe("POST /api/auth/recovery", () => {
+  it("returns 400 when either address is missing or malformed", async () => {
+    const { POST } = await loadRoute();
+    expect((await POST(req({}))).status).toBe(400);
+    expect(
+      (await POST(req({ primaryEmail: "x", backupEmail: "y" }))).status,
+    ).toBe(400);
+  });
+
+  it("returns 202 on a clean miss (no backup row found)", async () => {
+    mockProfileMaybeSingle.mockResolvedValue({ data: null, error: null });
+    const { POST } = await loadRoute();
+    const res = await POST(
+      req({
+        primaryEmail: "alice@example.com",
+        backupEmail: "alice-bkp@example.com",
+      }),
+    );
+    expect(res.status).toBe(202);
+    // Critically: no Resend send, no generateLink call when the
+    // backup row doesn't exist.
+    expect(mockSendEmail).not.toHaveBeenCalled();
+    expect(mockGenerateLink).not.toHaveBeenCalled();
+  });
+
+  it("returns 202 silent miss when backup belongs to a different user", async () => {
+    mockProfileMaybeSingle.mockResolvedValue({
+      data: { user_id: "user-2" },
+      error: null,
+    });
+    mockGetUserById.mockResolvedValueOnce({
+      data: { user: { email: "different-primary@example.com" } },
+      error: null,
+    });
+    const { POST } = await loadRoute();
+    const res = await POST(
+      req({
+        primaryEmail: "alice@example.com",
+        backupEmail: "alice-bkp@example.com",
+      }),
+    );
+    expect(res.status).toBe(202);
+    expect(mockGenerateLink).not.toHaveBeenCalled();
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+
+  it("sends a magic-link to the backup on a full match", async () => {
+    mockProfileMaybeSingle.mockResolvedValue({
+      data: { user_id: "user-1" },
+      error: null,
+    });
+    mockGetUserById.mockResolvedValueOnce({
+      data: { user: { id: "user-1", email: "alice@example.com" } },
+      error: null,
+    });
+    mockGenerateLink.mockResolvedValueOnce({
+      data: {
+        properties: {
+          action_link: "https://maqro.app/auth/v1/verify?token=abc",
+        },
+      },
+      error: null,
+    });
+    const { POST } = await loadRoute();
+    const res = await POST(
+      req({
+        primaryEmail: "alice@example.com",
+        backupEmail: "alice-bkp@example.com",
+      }),
+    );
+    expect(res.status).toBe(202);
+
+    // generateLink was invoked for the PRIMARY email.
+    expect(mockGenerateLink).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "magiclink",
+        email: "alice@example.com",
+      }),
+    );
+    // The Resend send went to the BACKUP — not the primary.
+    expect(mockSendEmail).toHaveBeenCalledTimes(1);
+    // The mock isn't typed at the hoisted-declaration site, so
+    // TypeScript widens `mock.calls` to `[][]`. Cast the whole
+    // calls array to the shape the route uses.
+    const calls = mockSendEmail.mock.calls as unknown as Array<
+      [{ to: string; html: string }]
+    >;
+    expect(calls[0]?.[0].to).toBe("alice-bkp@example.com");
+    expect(calls[0]?.[0].html).toContain(
+      "https://maqro.app/auth/v1/verify?token=abc",
+    );
+  });
+
+  it("returns 202 even when generateLink fails (no leak via timing)", async () => {
+    mockProfileMaybeSingle.mockResolvedValue({
+      data: { user_id: "user-1" },
+      error: null,
+    });
+    mockGetUserById.mockResolvedValueOnce({
+      data: { user: { id: "user-1", email: "alice@example.com" } },
+      error: null,
+    });
+    mockGenerateLink.mockResolvedValueOnce({
+      data: null,
+      error: { message: "rate limited" },
+    });
+    const { POST } = await loadRoute();
+    const res = await POST(
+      req({
+        primaryEmail: "alice@example.com",
+        backupEmail: "alice-bkp@example.com",
+      }),
+    );
+    expect(res.status).toBe(202);
+    expect(mockSendEmail).not.toHaveBeenCalled();
+    // But the failure IS logged for the operator to see.
+    expect(mockReportServerError).toHaveBeenCalled();
+  });
+});

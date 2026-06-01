@@ -1,0 +1,96 @@
+---
+name: Bug report
+description: Report something broken or behaving unexpectedly
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Sorry for the trouble. The more we can reproduce the bug from your
+        report, the faster we can fix it - please include the steps and
+        the version below.
+
+        For security issues, please email
+        [security@maqro.app](mailto:security@maqro.app) instead so the
+        report stays out of the public tracker.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: A clear, concise description of the bug.
+      placeholder: |
+        Example: After signing in on iOS Safari, the meal planner shows
+        my targets as 0 kcal until I refresh the page.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can we reproduce it?
+      description: |
+        Step-by-step. If the bug is intermittent, note that - and any
+        pattern you've noticed (time of day, network conditions, specific
+        data).
+      placeholder: |
+        1. Open https://maqro.app on iOS Safari
+        2. Sign in with email OTP
+        3. Land on the Calculator tab
+        4. Notice the protein/carbs/fat targets all show 0
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: |
+        Visible in the footer or on the /about page (e.g. `v0.1.55`).
+      placeholder: "v0.1.55"
+    validations:
+      required: true
+  - type: dropdown
+    id: device
+    attributes:
+      label: Device type
+      options:
+        - "Desktop browser"
+        - "Mobile browser"
+        - "Installed PWA (iOS Add to Home Screen)"
+        - "Installed PWA (Android)"
+        - "Installed PWA (desktop)"
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Browser + OS
+      description: |
+        e.g. "Safari 17.4 on iOS 17.5", "Chrome 130 on macOS 14.6".
+      placeholder: "Safari 17.4 on iOS 17.5"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: |
+        Screenshots, console errors, network tab snapshots, anything else
+        that might help. Please redact any personal data.
+    validations:
+      required: false
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirm
+      options:
+        - label: I've searched existing issues and this isn't a duplicate.
+          required: true
+        - label: This isn't a security issue (those go to
+            security@maqro.app, not the public tracker).
+          required: true

@@ -1,0 +1,70 @@
+---
+# Pushes pending Supabase migrations to the linked production project.
+# On `push` to main: applies any new migration files via `supabase db push`.
+# On `pull_request`: dry-run (lists pending migrations) so reviewers can
+# see exactly what will be applied at merge time without touching the
+# remote database.
+#
+# Required GitHub secrets (Settings → Secrets and variables → Actions):
+#   - SUPABASE_ACCESS_TOKEN  — personal token from
+#       https://supabase.com/dashboard/account/tokens
+#   - SUPABASE_PROJECT_ID    — the project ref (subdomain in your project
+#       URL, e.g. "xlhadpxnprtmiblgxprg")
+#   - SUPABASE_DB_PASSWORD   — the database password set when the project
+#       was created (or rotate at Project Settings → Database)
+
+name: Supabase migrations
+
+permissions:
+    contents: read
+
+on:
+    push:
+        branches:
+            - main
+        paths:
+            - "supabase/migrations/**"
+            - "supabase/config.toml"
+            - ".github/workflows/supabase-migrations.yml"
+    pull_request:
+        paths:
+            - "supabase/migrations/**"
+            - "supabase/config.toml"
+    workflow_dispatch:
+
+concurrency:
+    group: supabase-migrations-${{ github.ref }}
+    cancel-in-progress: false
+
+jobs:
+    push:
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        # Don't try to push from forks — they don't have access to the
+        # secrets anyway. Dry-run still runs for own-repo PRs.
+        if: |
+            github.event_name == 'push'
+            || github.event_name == 'workflow_dispatch'
+            || (github.event_name == 'pull_request'
+                && github.event.pull_request.head.repo.full_name == github.repository)
+        env:
+            SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+            SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+            SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+        steps:
+            - uses: actions/checkout@v6
+
+            - name: Install Supabase CLI
+              uses: supabase/setup-cli@v2
+              with:
+                  version: latest
+
+            - name: Link project
+              run: supabase link --project-ref "$SUPABASE_PROJECT_ID"
+
+            - name: List pending migrations (dry run)
+              run: supabase migration list
+
+            - name: Push migrations
+              if: github.event_name != 'pull_request'
+              run: supabase db push

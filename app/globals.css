@@ -1,0 +1,400 @@
+@import "tailwindcss";
+
+@config "../tailwind.config.mjs";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Linear/Vercel monochrome palette - light. */
+    --background: 0 0% 100%;
+    --foreground: 240 10% 4%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 4%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 4%;
+
+    --primary: 240 6% 10%;
+    --primary-foreground: 0 0% 98%;
+
+    --secondary: 240 5% 96%;
+    --secondary-foreground: 240 6% 10%;
+
+    --muted: 240 5% 96%;
+    --muted-foreground: 240 4% 46%;
+
+    --accent: 240 5% 96%;
+    --accent-foreground: 240 6% 10%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 240 6% 90%;
+    --input: 240 6% 90%;
+    --ring: 240 5% 65%;
+
+    /* Macro accents - desaturated, monochrome-friendly. */
+    --macro-protein: 200 80% 45%;
+    --macro-carbs: 35 90% 50%;
+    --macro-fat: 340 70% 55%;
+
+    /* Micronutrient accents - spread around the wheel so the report's
+       ten progress bars + trend lines stay distinguishable. Same
+       HSL-components convention as the macro vars (consumed via
+       `hsl(var(--micro-*))`). */
+    --micro-fiber: 140 55% 42%;
+    --micro-sodium: 210 60% 50%;
+    --micro-potassium: 270 50% 55%;
+    --micro-calcium: 190 60% 45%;
+    --micro-iron: 0 65% 52%;
+    --micro-magnesium: 168 55% 42%;
+    --micro-zinc: 240 45% 58%;
+    --micro-vitamin-c: 28 90% 52%;
+    --micro-vitamin-d: 45 90% 50%;
+    --micro-vitamin-b12: 320 55% 55%;
+
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 240 10% 4%;
+    --foreground: 0 0% 98%;
+
+    --card: 240 6% 6%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 240 6% 6%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 6% 10%;
+
+    --secondary: 240 4% 12%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 240 4% 12%;
+    --muted-foreground: 240 5% 65%;
+
+    --accent: 240 4% 14%;
+    --accent-foreground: 0 0% 98%;
+
+    --destructive: 0 63% 50%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 240 4% 14%;
+    --input: 240 4% 14%;
+    --ring: 240 5% 65%;
+
+    --macro-protein: 200 75% 60%;
+    --macro-carbs: 35 90% 60%;
+    --macro-fat: 340 70% 65%;
+
+    /* Micronutrient accents - lifted lightness for dark-surface
+       contrast, same hues as the light theme. */
+    --micro-fiber: 140 55% 58%;
+    --micro-sodium: 210 65% 62%;
+    --micro-potassium: 270 55% 68%;
+    --micro-calcium: 190 60% 58%;
+    --micro-iron: 0 70% 64%;
+    --micro-magnesium: 168 55% 56%;
+    --micro-zinc: 240 50% 70%;
+    --micro-vitamin-c: 28 90% 62%;
+    --micro-vitamin-d: 45 90% 60%;
+    --micro-vitamin-b12: 320 60% 66%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html,
+  body {
+    @apply bg-background text-foreground;
+    /* Kill the dimmable grey overlay iOS Safari draws on every
+       tappable element by default - it looks foreign in an app shell
+       where we already render our own active/hover states. */
+    -webkit-tap-highlight-color: transparent;
+    /* Disable text inflation iOS Safari does in portrait when it
+       thinks paragraphs are too small. We pick our own sizes; let
+       them stand. */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  body {
+    /* Inter OpenType features we want app-wide:
+     *
+     *   rlig - required ligatures (default on, explicit anyway)
+     *   calt - contextual alternates (kerning-like adjustments)
+     *   cv11 - single-storey "a" (more modern, less storybook)
+     *   ss03 - alternate "G" (less fishhook, more geometric)
+     *   ss04 - alternate "0" (zero with dot, distinguishes from O
+     *           in mixed contexts like share slugs and capture IDs)
+     *
+     * These are all subtle - none of them change the texture of
+     * body text in a way the casual user would notice. They make
+     * the *display* of numbers and edge-case glyphs nicer without
+     * shifting the overall feel. */
+    font-feature-settings:
+      "rlig" 1,
+      "calt" 1,
+      "cv11" 1,
+      "ss03" 1,
+      "ss04" 1;
+    /* Smoother momentum scrolling inside scroll containers on iOS. */
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Display typeface for headings + heading-shaped content.
+   * `font-display` resolves to Manrope via the Tailwind config; the
+   * fallback chain in that config covers the FOUT window with a
+   * metric-similar system font so widths don't visibly shift.
+   *
+   * `text-wrap: balance` keeps multi-line headings visually
+   * symmetric - the polish that separates "good" from "considered".
+   * Falls back gracefully on older browsers. */
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display), var(--font-sans), system-ui, sans-serif;
+    font-feature-settings:
+      "ss01" 1,
+      "ss03" 1,
+      "ss04" 1,
+      "calt" 1;
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+  }
+  h1 {
+    line-height: 1.1;
+  }
+  h2,
+  h3 {
+    line-height: 1.2;
+  }
+  /* iOS Safari auto-zooms on focus when the input's computed font-size
+     is below 16px. Many of our inputs use h-8 + text-xs (12px) for
+     density, which then triggers the zoom and never zooms back out
+     cleanly. Bump the *base* size to 16px on coarse pointers (phones,
+     touch laptops) without touching the desktop visual. The padding
+     stays the same; only the typed text grows.
+
+     This is a global rule on purpose - there are dozens of inputs in
+     this app and tagging every one is fragile. Density-critical inputs
+     (the macro tables) opt out with `.no-mobile-zoom-fix`.
+
+     `!important` is load-bearing. Without it, Tailwind's per-input
+     `text-sm`/`text-xs` classes (class-specificity 1,0) beat this
+     rule's element-specificity (0,1) and iOS keeps zooming on
+     focus. The MealItem inline-edit input (`text-sm` = 14 px) and
+     the daily-log portion field were the visible offenders before
+     this `!important` landed. */
+  @media (pointer: coarse) {
+    input:not([type="range"]):not([type="checkbox"]):not([type="radio"]):not(
+        [type="color"]
+      ):not(.no-mobile-zoom-fix),
+    select:not(.no-mobile-zoom-fix),
+    textarea:not(.no-mobile-zoom-fix) {
+      font-size: 16px !important;
+    }
+  }
+  /* Use tabular numerals for any element that wants stable digit width. */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+  ::selection {
+    @apply bg-foreground/15;
+  }
+  /* Headroom on the html element so `min-h-screen` / `h-screen`
+     accounts for the iOS notch and home indicator. Inherits via
+     `flex h-screen` and similar root containers across the app. */
+  html {
+    height: 100%;
+  }
+  body {
+    min-height: 100%;
+    /* Block horizontal page-level scroll. The wobble the user sees on
+     * mobile is almost always one of: a long URL/email in a font-mono
+     * cell, a `pre` block of code, or a `<table>` that's wider than
+     * the viewport - those should scroll inside their own container
+     * (`overflow-x-auto` on the wrapper) rather than push the whole
+     * page sideways. Clipping at the body keeps the rest of the
+     * layout stable; the inner scroll containers still work because
+     * `position: sticky` only requires that ITS scroll container has
+     * `overflow: visible`, which body doesn't claim to be a scroll
+     * container for. */
+    overflow-x: hidden;
+  }
+}
+
+/* Safe-area helpers. Tailwind doesn't ship these by default and the
+   inline `pt-[env(safe-area-inset-top)]` ergonomics are awful. */
+@layer utilities {
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .pl-safe {
+    padding-left: env(safe-area-inset-left);
+  }
+  .pr-safe {
+    padding-right: env(safe-area-inset-right);
+  }
+  .px-safe {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+  /* Absolute-`top` offset that clears the safe-area inset — for elements
+   * pinned to the top edge of a top/left/right-anchored overlay (e.g. a
+   * Sheet's close button), which would otherwise sit under the notch /
+   * status bar on mobile. `top-4` equivalent (1rem) on non-notched
+   * screens. NOT for bottom-anchored panels: the inset is the device's
+   * top notch regardless of the element's position. */
+  .top-safe-4 {
+    top: calc(env(safe-area-inset-top) + 1rem);
+  }
+  /* Add to existing padding rather than replacing it. */
+  .pt-safe-plus-2 {
+    padding-top: calc(env(safe-area-inset-top) + 0.5rem);
+  }
+  .pb-safe-plus-2 {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 0.5rem);
+  }
+  /* Pick whichever is larger: the safe-area inset (notch in
+   * landscape) or the baseline horizontal padding (px-5 = 1.25rem).
+   * The pure `.pl-safe` / `.pr-safe` utilities REPLACE the existing
+   * padding instead of taking the max, which makes notched phones
+   * actually lose padding on non-landscape orientations where the
+   * inset is 0. Using `max()` keeps the design padding as the floor.
+   *
+   * Use cases: the admin layout header + any other top-bar chrome
+   * that needs to span edge-to-edge AND honour landscape notches. */
+  .px-safe-or-5 {
+    padding-left: max(env(safe-area-inset-left), 1.25rem);
+    padding-right: max(env(safe-area-inset-right), 1.25rem);
+  }
+  .px-safe-or-6 {
+    padding-left: max(env(safe-area-inset-left), 1.5rem);
+    padding-right: max(env(safe-area-inset-right), 1.5rem);
+  }
+}
+
+/* Subtle scrollbar styling for a more "app-like" feel. */
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+}
+
+/* Animated stripe for progress bars / skeletons. */
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* Print styles. The canonical print target is `/report` — a
+ *  dedicated route that already renders a single-column, form-
+ *  free layout; these rules just tighten that for paper output
+ *  and force a light colour scheme so dark-mode users don't
+ *  print white text on white paper.
+ *
+ *  Two utilities the page tree uses:
+ *
+ *    - `print-hide`  → hidden when printing (the report's
+ *                      sticky "Save as PDF" toolbar, etc.).
+ *    - `print-only`  → hidden on screen, visible when printing.
+ *
+ *  Form controls (`input`, `textarea`, `select`, `button:not(.print-keep)`)
+ *  are universally hidden — the report doesn't render them anyway,
+ *  and accidentally landing one in the PDF (the old `window.print()`
+ *  on /progress used to print the Log weigh-in date input) is
+ *  always a regression. */
+
+.print-only {
+  display: none;
+}
+
+@media print {
+  /* Use the user's full paper width. The on-screen `max-w-3xl`
+   * leaves big margins that read as wasted paper. */
+  @page {
+    margin: 12mm 14mm;
+  }
+
+  /* Force light colour scheme regardless of theme. Matches the
+   * existing light-mode token values so CSS variables resolve to
+   * the right HSL channels — no separate paper palette to keep
+   * in sync. */
+  :root,
+  .dark {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 4%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 4%;
+    --muted: 240 5% 96%;
+    --muted-foreground: 240 4% 35%;
+    --border: 240 6% 80%;
+  }
+  html,
+  body {
+    background: white !important;
+    color: black !important;
+  }
+
+  /* Hide chrome, interactive controls, and anything explicitly
+   * opted in via `print-hide`. The report page's toolbar uses
+   * `print-hide`; the rule covers any third-party portal-rendered
+   * UI (sonner toasts) that might leak in too. */
+  .print-hide,
+  nav,
+  aside,
+  footer:not(.print-keep),
+  button:not(.print-keep),
+  input,
+  textarea,
+  select,
+  .toaster,
+  [data-sonner-toaster] {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  /* Avoid breaking sections / charts across pages when they fit. */
+  section,
+  article,
+  table,
+  ul {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Solid grey borders so the design-system translucent tokens
+   * don't fade to invisibility on paper. */
+  .border,
+  .border-t,
+  .border-b,
+  .border-l,
+  .border-r,
+  .border-border\/60,
+  .border-border\/40,
+  .border-foreground\/30 {
+    border-color: #c9c9d0 !important;
+  }
+
+  /* SVG charts use `currentColor`. Force dark grey so the line +
+   * gradient stay legible after a colour-scheme swap. */
+  svg {
+    color: #1f1f23 !important;
+  }
+}

@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <radialGradient id="halo" cx="50%" cy="0%" r="60%">
+      <stop offset="0%" stop-color="rgba(120,120,140,0.10)"></stop>
+      <stop offset="70%" stop-color="rgba(120,120,140,0)"></stop>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="#ffffff"></rect>
+  <rect width="1200" height="630" fill="url(#halo)"></rect>
+
+
+  <g transform="translate(96 92)">
+    <g transform="scale(0.6)">
+      <rect x="10" y="14" width="8" height="56" fill="#0a0a0c"></rect>
+      <rect x="42" y="14" width="8" height="42" fill="#0a0a0c"></rect>
+      <rect x="10" y="48" width="40" height="8" fill="#0a0a0c"></rect>
+      <circle cx="58" cy="10" r="3" fill="#0a0a0c"></circle>
+    </g>
+    <text x="56" y="36" font-family="Manrope, sans-serif" font-size="22" font-weight="700" letter-spacing="4.5" fill="#0a0a0c">MAQRO</text>
+  </g>
+
+
+  <text x="96" y="280" font-family="Manrope, sans-serif" font-size="74" font-weight="600" fill="#0a0a0c" letter-spacing="-1.5">Tune your macros.</text>
+  <text x="96" y="364" font-family="Manrope, sans-serif" font-size="74" font-weight="600" fill="#78787e" letter-spacing="-1.5">Plan your meals.</text>
+
+
+  <text x="96" y="430" font-family="Inter, sans-serif" font-size="24" font-weight="400" fill="#78787e">A personal nutrition app that respects your time and your data.</text>
+
+
+  <text x="96" y="540" font-family="Inter, sans-serif" font-size="14" font-weight="500" fill="#78787e" letter-spacing="0.8">LOCAL-FIRST  ·  WORKS OFFLINE  ·  NO ANALYTICS  ·  OPEN SOURCE</text>
+</svg>

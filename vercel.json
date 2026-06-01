@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    { "path": "/api/cron/daily-reminder", "schedule": "0 * * * *" },
+    { "path": "/api/cron/weekly-recap", "schedule": "0 8 * * 1" },
+    { "path": "/api/cron/retention", "schedule": "0 4 * * *" },
+    { "path": "/api/cron/trial-ending", "schedule": "0 10 * * *" },
+    { "path": "/api/cron/status-probe", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/enrich-micronutrients", "schedule": "0 * * * *" }
+  ]
+}

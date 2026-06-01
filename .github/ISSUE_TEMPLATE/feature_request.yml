@@ -1,0 +1,88 @@
+---
+name: Feature request
+description: Suggest an idea or improvement for Maqro
+title: "[Feature]: "
+labels: ["enhancement", "feature-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to suggest a feature. A clear request gets
+        a clearer answer - the more specific you can be about *what* and
+        *why*, the easier it is to evaluate against the rest of the backlog.
+
+        Please search [existing issues](https://github.com/hyp3rd/macro-calculator/issues?q=is%3Aissue+label%3Afeature-request)
+        first; if your request is close to an open one, please add to that
+        thread instead of opening a duplicate.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: |
+        Describe the situation, not the solution. "I want X" is fine, but
+        "When I'm doing Y, I get stuck because Z" is much more useful - it
+        lets us consider solutions you may not have thought of.
+      placeholder: |
+        Example: When I'm meal-planning for the week on Sunday, I have to
+        manually copy yesterday's macros into today's targets because the
+        planner always starts from the global defaults. I'd love a "copy
+        from previous day" option.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to see?
+      description: |
+        Describe the feature or change as concretely as you can. UI sketches,
+        wireframes, links to similar features in other apps - all welcome.
+      placeholder: |
+        Example: A "Copy from yesterday" button at the top of the planner
+        that pre-fills today's macros + meals from the previous day's log.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What alternatives have you considered?
+      description: |
+        Optional. If you've thought about other ways to solve this, it helps
+        us understand the design space.
+      placeholder: |
+        Example: A weekly template view would solve a similar problem but
+        would be heavier to build and use.
+    validations:
+      required: false
+  - type: dropdown
+    id: tier
+    attributes:
+      label: Which plan are you on?
+      description: |
+        Optional. Helps us understand who feels the pain - and prioritize
+        accordingly.
+      options:
+        - "Free"
+        - "AI Plus"
+        - "Pro"
+        - "Not signed in / not sure"
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: |
+        Anything else? Screenshots, links to related discussions, notes on
+        what you've already tried.
+    validations:
+      required: false
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirm
+      options:
+        - label: I've searched existing issues and this isn't a duplicate.
+          required: true
+        - label: I'm requesting a feature for Maqro itself, not a fork or
+            modified deployment.
+          required: true
