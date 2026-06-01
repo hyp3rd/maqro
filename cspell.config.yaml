@@ -20,6 +20,7 @@ words:
   - aelig
   - affordances
   - agrave
+  - apikey
   - apos
   - Appétit
   - appinstalled
@@ -87,6 +88,7 @@ words:
   - dont
   - doordash
   - dotall
+  - dotenvx
   - doxxing
   - DPEHPK
   - eacute
@@ -135,6 +137,7 @@ words:
   - Guanciale
   - harissa
   - hasn
+  - hcaptcha
   - hellip
   - HMAC
   - Hodgdon
@@ -185,6 +188,7 @@ words:
   - Maqro
   - maxage
   - Menlo
+  - messagebird
   - microdata
   - micronutrients
   - middot
@@ -222,9 +226,11 @@ words:
   - oelig
   - ograve
   - Olllll
+  - oneshot
   - openfoodfacts
   - optimisation
   - optimised
+  - orioledb
   - oslash
   - otilde
   - otpauth
@@ -240,12 +246,14 @@ words:
   - Pecorino
   - pescatarian
   - pgcrypto
+  - pgdelta
   - PGRST
   - PKCE
   - playsinline
   - plpgsql
   - plusmn
   - polyols
+  - pooler
   - Portalling
   - Postgrest
   - precached
@@ -279,6 +287,8 @@ words:
   - sanitisation
   - schemaname
   - Segoe
+  - sendgrid
+  - SENDGRID
   - sess
   - Shiki
   - shoppable
@@ -286,6 +296,8 @@ words:
   - Siri
   - Siri's
   - sitelinks
+  - SIWS
+  - Solana
   - sonner
   - sparkline
   - sparklines
@@ -303,6 +315,8 @@ words:
   - supabase
   - szlig
   - TDEE
+  - textlocal
+  - timebox
   - timeboxed
   - tmpl
   - TOCTOU
@@ -340,6 +354,7 @@ words:
   - vaul
   - vercel
   - viewports
+  - vonage
   - wakeup
   - Wallclock
   - webauthn
@@ -351,6 +366,7 @@ words:
   - wildcarding
   - wireframes
   - wordmark
+  - workos
   - xtest
   - yacute
   - yopmail

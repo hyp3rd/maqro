@@ -46,7 +46,7 @@ describe("/api/shopping/geocode GET", () => {
     // Hits Photon with a User-Agent.
     const [calledUrl, init] = fetchMock.mock.calls[0];
     expect(calledUrl).toContain("photon.komoot.io");
-    expect(init.headers["User-Agent"]).toContain("macro-calculator");
+    expect(init.headers["User-Agent"]).toContain("maqro");
   });
 
   it("returns empty results for a blank query without calling upstream", async () => {

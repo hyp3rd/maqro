@@ -48,7 +48,7 @@ describe("/api/shopping/nearby GET", () => {
     const [calledUrl, init] = fetchMock.mock.calls[0];
     expect(calledUrl).toContain("overpass-api.de");
     expect(init.method).toBe("POST");
-    expect(init.headers["User-Agent"]).toContain("macro-calculator");
+    expect(init.headers["User-Agent"]).toContain("maqro");
     expect(init.body).toContain("around%3A3000%2C51.5%2C-0.12");
   });
 

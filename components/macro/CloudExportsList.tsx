@@ -111,7 +111,7 @@ export function CloudExportsList({ refreshKey, onPickForImport }: Props) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `macro-calculator-export-${entry.exportedAt.slice(0, 10)}.json`;
+      a.download = `maqro-export-${entry.exportedAt.slice(0, 10)}.json`;
       document.body.appendChild(a);
       a.click();
       a.remove();

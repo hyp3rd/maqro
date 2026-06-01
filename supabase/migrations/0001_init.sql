@@ -1,4 +1,4 @@
--- Schema for the macro-calculator. One row per (user, key) with RLS so
+-- Schema for maqro. One row per (user, key) with RLS so
 -- users only see their own rows. All tables track `updated_at` for
 -- last-write-wins conflict resolution during sync.
 

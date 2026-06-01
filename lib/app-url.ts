@@ -10,7 +10,7 @@
  *
  *    2. `VERCEL_PROJECT_PRODUCTION_URL` — Vercel injects this on
  *       every deployment of the project; it's the *project's*
- *       production alias (e.g. `macro-calculator.vercel.app`),
+ *       production alias (e.g. `maqro.vercel.app`),
  *       stable across deploys. Preferred over VERCEL_URL because
  *       VERCEL_URL is the per-build alias (`…-9tr8pbgs9-….vercel.app`)
  *       which churns on every commit and is the wrong target for
