@@ -2,7 +2,7 @@
 
 [![CodeQL Advanced](https://github.com/hyp3rd/maqro/actions/workflows/codeql.yml/badge.svg)](https://github.com/hyp3rd/maqro/actions/workflows/codeql.yml) [![gitleaks](https://github.com/hyp3rd/maqro/actions/workflows/gitleaks.yml/badge.svg)](https://github.com/hyp3rd/maqro/actions/workflows/gitleaks.yml)
 
-## Join and use it for free at [macro.app](https://macro.app)
+## Join and use it for free at [maqro.app](https://maqro.app)
 
 A personal macro calculator, meal planner, and weight-tracking journal.
 Next.js app with a Supabase-backed optional account for multi-device
@@ -751,6 +751,23 @@ tests/e2e/                                 # Playwright smoke + gated auth-sync 
   IP. The session token rotates per browser session via
   `sessionStorage` so errors from the same tab correlate but never
   link to a specific user.
+- **Hydration mismatches (React #418/#423/#425)** are captured with a
+  before-hydration `MutationObserver` that records the literal
+  server→client diff (`lib/hydration-dom-watch.ts`), since prod React
+  strips the component stack. Many are **not app bugs**: a DOM-mutating
+  browser extension (password managers such as ProtonPass/1Password
+  inject an element into `<body>`) or a page translator rewrites the
+  HTML before React hydrates. Those are fingerprinted
+  (`lib/hydration-environment.ts`), flagged `externallyCaused`, and
+  logged at `warning` rather than `error` — visible for triage but not
+  treated as actionable. They cannot be fixed app-side (React's own
+  #418 docs call this out), so they are **parked by design**.
+- **Sampling** protects the table from a single client emitting the
+  same report thousands of times (a render loop, or a mismatch a user
+  keeps reloading into): identical reports — keyed by level + route +
+  message — are logged in full for the first few occurrences, then
+  down-sampled to ≈1% (`lib/error-sampling.ts`), counted per tab
+  session in `sessionStorage`.
 - **Cron security**: Vercel cron hits the routes with a
   `Bearer ${CRON_SECRET}` header; the routes reject anything else
   with 401. All cron routes (daily-reminder, weekly-recap,
