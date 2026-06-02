@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
 import { useAiUsage } from "@/hooks/use-ai-usage";
 import { useNotificationPrefs } from "@/hooks/use-notification-prefs";
 import { useUser } from "@/hooks/use-user";
@@ -34,6 +35,14 @@ import {
   uploadExport,
 } from "@/lib/storage/exports";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
+import {
+  MAX_INTERVAL_MIN,
+  MIN_INTERVAL_MIN,
+  setAutoSaveInterval,
+  setSyncMode,
+  useSyncMode,
+  type SyncMode,
+} from "@/lib/sync-mode";
 import type { UnitSystem } from "@/lib/units";
 import { APP_VERSION } from "@/lib/version";
 import { useEffect, useRef, useState } from "react";
@@ -318,6 +327,8 @@ export function SettingsView({
       {user && <TrustedDevicesSection signedIn={Boolean(user)} />}
 
       {user && <ConnectedAccountsSection signedIn={Boolean(user)} />}
+
+      {user && <SyncSection />}
 
       {user && <AiUsageSection />}
 
@@ -1379,6 +1390,114 @@ function UnitRadio({
       <span className="text-xs font-medium">{label}</span>
       <span className="text-[10px] opacity-70">{sub}</span>
     </button>
+  );
+}
+
+const SYNC_MODE_OPTIONS: {
+  value: SyncMode;
+  label: string;
+  description: string;
+}[] = [
+  {
+    value: "local-first",
+    label: "Local-first",
+    description:
+      "Keep edits on this device and save manually. We'll gently remind you if you forget. Most private; nothing leaves until you say so.",
+  },
+  {
+    value: "auto-save",
+    label: "Auto-save",
+    description:
+      "Push automatically on a timer while you have unsaved changes — set the interval below.",
+  },
+  {
+    value: "remote-only",
+    label: "Always sync",
+    description:
+      "Push shortly after every change so your account stays current on all your devices. Simplest — you never think about saving.",
+  },
+];
+
+/** Per-device sync-behaviour picker. Stored in localStorage (a device
+ *  preference, not synced) via `lib/sync-mode`; the SyncModeController
+ *  reads the same store to drive auto-save / remote-only / the
+ *  local-first reminder. */
+function SyncSection() {
+  const { mode, intervalMinutes } = useSyncMode();
+  return (
+    <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
+      <header className="border-b border-border/60 px-5 py-3">
+        <h3 className="text-sm font-semibold tracking-tight">Sync</h3>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          How this device uploads your changes to your account. A per-device
+          preference — it changes <em>when</em> data syncs, never the data
+          itself.
+        </p>
+      </header>
+      <div
+        role="radiogroup"
+        aria-label="Sync mode"
+        className="divide-y divide-border/60"
+      >
+        {SYNC_MODE_OPTIONS.map((opt) => {
+          const active = mode === opt.value;
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              onClick={() => setSyncMode(opt.value)}
+              className="flex w-full items-start gap-3 px-5 py-4 text-left transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+            >
+              <span
+                className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
+                  active ? "border-foreground" : "border-input"
+                }`}
+              >
+                {active && (
+                  <span className="h-2 w-2 rounded-full bg-foreground" />
+                )}
+              </span>
+              <span className="min-w-0 flex-1 space-y-0.5">
+                <span className="block text-sm font-medium text-foreground">
+                  {opt.label}
+                </span>
+                <span className="block text-xs leading-relaxed text-muted-foreground">
+                  {opt.description}
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {mode === "auto-save" && (
+        <div className="space-y-2 border-t border-border/60 px-5 py-4">
+          <div className="flex items-baseline justify-between">
+            <Label className="text-xs font-medium text-muted-foreground">
+              Save every
+            </Label>
+            <span className="font-mono text-sm tabular-nums text-foreground">
+              {intervalMinutes} min
+            </span>
+          </div>
+          <Slider
+            value={[intervalMinutes]}
+            min={MIN_INTERVAL_MIN}
+            max={MAX_INTERVAL_MIN}
+            step={1}
+            onValueChange={([v]) => {
+              if (typeof v === "number") setAutoSaveInterval(v);
+            }}
+            aria-label="Auto-save interval in minutes"
+          />
+          <div className="flex justify-between text-[10px] text-muted-foreground/70">
+            <span>{MIN_INTERVAL_MIN} min</span>
+            <span>{MAX_INTERVAL_MIN} min</span>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 
