@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { RotateCcw, X } from "lucide-react";
+import { motion } from "motion/react";
 
 /** Track portrait vs landscape so we only rotate the chart 90° when the
  *  viewport is portrait. If the user has orientation unlocked and turns
@@ -22,7 +23,6 @@ function useIsPortrait(): boolean {
 }
 
 type Props = {
-  open: boolean;
   onClose: () => void;
   title: string;
   /** The same chart subtree rendered inline — re-rendered here at a
@@ -52,7 +52,7 @@ function clamp(v: number, lo: number, hi: number) {
  *  pinch math is unaffected by the inner 90° rotation. Portal to
  *  <body> to escape any clipping/stacking ancestor (same rationale as
  *  CameraSheet). */
-export function ChartFullscreen({ open, onClose, title, children }: Props) {
+export function ChartFullscreen({ onClose, title, children }: Props) {
   const [t, setT] = useState<Transform>(IDENTITY);
   const stageRef = useRef<HTMLDivElement>(null);
   // Live pointer positions by id; gesture state snapshots taken at the
@@ -71,10 +71,9 @@ export function ChartFullscreen({ open, onClose, title, children }: Props) {
 
   // Lock body scroll and wire Escape, matching CameraSheet /
   // FoodSearchSheet. The overlay is mounted only while open (by the
-  // parent), so transform state starts fresh from `IDENTITY` — no
-  // reset effect needed.
+  // parent, via AnimatePresence), so transform state starts fresh from
+  // `IDENTITY` — no reset effect needed.
   useEffect(() => {
-    if (!open) return;
     const html = document.documentElement;
     const body = document.body;
     const prevHtml = html.style.overflow;
@@ -90,9 +89,9 @@ export function ChartFullscreen({ open, onClose, title, children }: Props) {
       body.style.overflow = prevBody;
       window.removeEventListener("keydown", onKey);
     };
-  }, [open, onClose]);
+  }, [onClose]);
 
-  if (!open || typeof document === "undefined") return null;
+  if (typeof document === "undefined") return null;
 
   // Both only run with ≥2 active pointers; the guard satisfies
   // noUncheckedIndexedAccess without a non-null assertion.
@@ -175,7 +174,13 @@ export function ChartFullscreen({ open, onClose, title, children }: Props) {
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-[70] flex flex-col bg-background pt-safe">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.18 }}
+      className="fixed inset-0 z-[70] flex flex-col bg-background pt-safe"
+    >
       <header className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-3">
         <p className="truncate text-sm font-semibold text-foreground">
           {title}
@@ -217,24 +222,25 @@ export function ChartFullscreen({ open, onClose, title, children }: Props) {
           {/* Portrait: rotate the chart 90° so its time axis uses the
               phone's long (vertical) edge — width tied to viewport
               height so the rotated chart fills the screen. Landscape:
-              render upright, full-width. */}
-          <div
+              render upright, full-width. The rotation animates in (and
+              back out) for a native "flip to landscape" feel. */}
+          <motion.div
             className="origin-center"
-            style={
-              portrait
-                ? { width: "86dvh", transform: "rotate(90deg)" }
-                : { width: "94vw" }
-            }
+            style={{ width: portrait ? "86dvh" : "94vw" }}
+            initial={{ rotate: 0, scale: 0.86 }}
+            animate={{ rotate: portrait ? 90 : 0, scale: 1 }}
+            exit={{ rotate: 0, scale: 0.86 }}
+            transition={{ type: "spring", stiffness: 230, damping: 26 }}
           >
             {children}
-          </div>
+          </motion.div>
         </div>
       </div>
 
       <p className="border-t border-border/60 py-2 text-center text-[11px] text-muted-foreground pb-safe">
         Pinch to zoom · drag to pan · double-tap to reset
       </p>
-    </div>,
+    </motion.div>,
     document.body,
   );
 }

@@ -515,8 +515,8 @@ function WeightSection({
   return (
     <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
       <header className="border-b border-border/60 px-5 py-3">
-        <div className="flex items-baseline justify-between gap-3">
-          <div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
+          <div className="min-w-0">
             <h3 className="text-sm font-semibold tracking-tight">Weight</h3>
             <p className="mt-0.5 text-xs text-muted-foreground">
               Last {targetWindow} days. Auto-logs when you change your weight on
@@ -524,8 +524,8 @@ function WeightSection({
             </p>
           </div>
           {hasData && latest && first && (
-            <div className="flex items-baseline gap-3">
-              <p className="font-mono text-2xl font-semibold tabular-nums text-foreground">
+            <div className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-0.5 sm:flex-nowrap sm:justify-end">
+              <p className="font-mono text-2xl font-semibold tabular-nums leading-none text-foreground">
                 <NumberTicker
                   value={latestDisplay}
                   decimals={1}
@@ -533,11 +533,7 @@ function WeightSection({
                 />
               </p>
               {windowed.length > 1 && (
-                <p
-                  className={cn(
-                    "flex items-center gap-1 font-mono text-xs tabular-nums text-muted-foreground",
-                  )}
-                >
+                <p className="flex items-center gap-1 font-mono text-xs tabular-nums text-muted-foreground">
                   {deltaKg < 0 ? (
                     <TrendingDown className="h-3 w-3" />
                   ) : deltaKg > 0 ? (
@@ -638,8 +634,8 @@ function CalorieSection({
   return (
     <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
       <header className="border-b border-border/60 px-5 py-3">
-        <div className="flex items-baseline justify-between gap-3">
-          <div>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
+          <div className="min-w-0">
             <h3 className="text-sm font-semibold tracking-tight">
               Calorie adherence
             </h3>
@@ -649,8 +645,8 @@ function CalorieSection({
             </p>
           </div>
           {hasData && (
-            <div className="flex items-baseline gap-3">
-              <p className="font-mono text-2xl font-semibold tabular-nums text-foreground">
+            <div className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-0.5 sm:flex-nowrap sm:justify-end">
+              <p className="font-mono text-2xl font-semibold tabular-nums leading-none text-foreground">
                 <NumberTicker value={Math.round(avg7)} />
                 <span className="ml-1 text-sm text-muted-foreground">
                   / 7d avg

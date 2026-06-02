@@ -69,11 +69,18 @@ export function Topbar({ current, onSelectView }: Props) {
         <TopbarSearchButton />
         <SyncModeIndicator onSelectView={onSelectView} />
         <SyncStatusPill />
-        <NotificationBell onSelectView={onSelectView} />
-        <ThemeToggle />
+        {/* Notifications + theme are dedicated controls on desktop. On
+            mobile the bar gets crowded next to the sync chips, so both
+            move into the avatar menu below (and the unread count moves
+            onto the avatar as a red badge). */}
+        <div className="hidden items-center gap-2 md:flex sm:gap-3">
+          <NotificationBell onSelectView={onSelectView} />
+          <ThemeToggle />
+        </div>
         {/* The UserMenu lives in the desktop sidebar footer; mirror it in
             the topbar on mobile so sign-out / display-name stay reachable
-            without scrolling around for them. */}
+            without scrolling around for them. On mobile it also hosts the
+            theme + notifications controls moved out of the bar above. */}
         <div className="md:hidden">
           <UserMenu
             compact

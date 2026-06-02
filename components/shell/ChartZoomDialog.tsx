@@ -11,6 +11,7 @@ import {
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import * as React from "react";
 import { Maximize2 } from "lucide-react";
+import { AnimatePresence } from "motion/react";
 
 /** Tap-to-expand wrapper for the SVG charts in ProgressView.
  *
@@ -72,16 +73,19 @@ export function ChartZoomDialog({ children, title, description }: Props) {
       </button>
 
       {isCoarse ? (
-        // Mounted only while open so its pan/zoom state starts fresh.
-        open && (
-          <ChartFullscreen
-            open
-            onClose={() => setOpen(false)}
-            title={title}
-          >
-            {children}
-          </ChartFullscreen>
-        )
+        // Mounted only while open so its pan/zoom state starts fresh;
+        // AnimatePresence lets the close flip play before unmount.
+        <AnimatePresence>
+          {open && (
+            <ChartFullscreen
+              key="chart-fullscreen"
+              onClose={() => setOpen(false)}
+              title={title}
+            >
+              {children}
+            </ChartFullscreen>
+          )}
+        </AnimatePresence>
       ) : (
         <Dialog
           open={open}

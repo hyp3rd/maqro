@@ -1,18 +1,11 @@
 "use client";
 
 import type { PantryItem } from "@/lib/db";
+import { mealIcon } from "@/lib/meal-icon";
 import { matchPantryItem } from "@/lib/pantry/consume";
 import { cn } from "@/lib/utils";
 import React, { useState } from "react";
-import {
-  Loader2,
-  Mic,
-  Plus,
-  Save,
-  ScanLine,
-  Search,
-  Utensils,
-} from "lucide-react";
+import { Loader2, Mic, Plus, Save, ScanLine, Search } from "lucide-react";
 import { toast } from "sonner";
 import { Food, FoodItem, Meal } from "../../components/macro/types";
 import { Badge } from "../ui/badge";
@@ -330,6 +323,7 @@ const AddFoodForm: React.FC<AddFoodFormProps> = ({
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {meals.map((meal) => {
                 const selected = newFood.selectedMealId === meal.id;
+                const Icon = mealIcon(meal.name);
                 return (
                   <button
                     key={meal.id}
@@ -345,7 +339,7 @@ const AddFoodForm: React.FC<AddFoodFormProps> = ({
                         : "border-border/60 bg-card text-foreground hover:bg-accent",
                     )}
                   >
-                    <Utensils className="h-4 w-4 shrink-0" />
+                    <Icon className="h-4 w-4 shrink-0" />
                     <span className="truncate">{meal.name}</span>
                   </button>
                 );

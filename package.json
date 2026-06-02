@@ -1,6 +1,6 @@
 {
   "name": "maqro",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "description": "A personal nutrition app that respects your time and your data.",
   "engines": {
