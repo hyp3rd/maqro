@@ -21,7 +21,14 @@ import {
   type Recognizer,
 } from "@/lib/voice/recognition";
 import { useEffect, useRef, useState } from "react";
-import { AlertCircle, Loader2, Mic, Send, Square } from "lucide-react";
+import {
+  AlertCircle,
+  ChevronLeft,
+  Loader2,
+  Mic,
+  Send,
+  Square,
+} from "lucide-react";
 
 /** "Talk to log" sheet. The fastest path from "I just ate
  *  something" to "it's in my meal plan."
@@ -59,6 +66,10 @@ type Props = {
   /** Fires once the AI returns a parsed result; parent opens
    *  `MealPhotoReviewDialog` with it. */
   onResolved: (result: ResolvedMealPhoto) => void;
+  /** When set, shows a back affordance returning to the guided
+   *  Log-meal method step. Omitted when opened standalone (desktop
+   *  Talk button). */
+  onBack?: () => void;
 };
 
 type Phase =
@@ -74,6 +85,7 @@ export function VoiceLogSheet({
   aiAvailable,
   dietPreference,
   onResolved,
+  onBack,
 }: Props) {
   return (
     <Dialog
@@ -81,6 +93,16 @@ export function VoiceLogSheet({
       onOpenChange={onOpenChange}
     >
       <DialogContent className="max-w-lg">
+        {open && onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Back"
+            className="absolute left-4 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent active:bg-muted"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+        )}
         {open && (
           <VoiceLogBody
             aiAvailable={aiAvailable}

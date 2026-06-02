@@ -2,21 +2,23 @@
 
 import type { PantryItem } from "@/lib/db";
 import { matchPantryItem } from "@/lib/pantry/consume";
+import { cn } from "@/lib/utils";
 import React, { useState } from "react";
-import { Loader2, Mic, Plus, Save, ScanLine, Search } from "lucide-react";
+import {
+  Loader2,
+  Mic,
+  Plus,
+  Save,
+  ScanLine,
+  Search,
+  Utensils,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Food, FoodItem, Meal } from "../../components/macro/types";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../ui/select";
 import { OffSavePreviewDialog } from "./OffSavePreviewDialog";
 
 interface AddFoodFormProps {
@@ -317,46 +319,49 @@ const AddFoodForm: React.FC<AddFoodFormProps> = ({
           />
         </div>
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <div className="flex-1 space-y-1.5">
-            <Label
-              htmlFor="selectedMealId"
-              className="text-xs font-medium text-muted-foreground"
-            >
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium text-muted-foreground">
               Add to Meal
             </Label>
-            <Select
-              value={newFood.selectedMealId?.toString() || ""}
-              onValueChange={(value) =>
-                setNewFood({
-                  ...newFood,
-                  selectedMealId: Number.parseInt(value, 10),
-                })
-              }
-            >
-              <SelectTrigger id="selectedMealId">
-                <SelectValue placeholder="Select meal" />
-              </SelectTrigger>
-              <SelectContent>
-                {meals.map((meal) => (
-                  <SelectItem
+            {/* Icon tiles instead of a dropdown — the target meal is one
+                tap away and the selection is visible at a glance, matching
+                the mobile guided "Log meal" flow. */}
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {meals.map((meal) => {
+                const selected = newFood.selectedMealId === meal.id;
+                return (
+                  <button
                     key={meal.id}
-                    value={meal.id.toString()}
+                    type="button"
+                    onClick={() =>
+                      setNewFood({ ...newFood, selectedMealId: meal.id })
+                    }
+                    aria-pressed={selected}
+                    className={cn(
+                      "flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors",
+                      selected
+                        ? "border-foreground bg-foreground text-background"
+                        : "border-border/60 bg-card text-foreground hover:bg-accent",
+                    )}
                   >
-                    {meal.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                    <Utensils className="h-4 w-4 shrink-0" />
+                    <span className="truncate">{meal.name}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <Button
-            type="button"
-            onClick={handleAddFood}
-            className="h-10 gap-1.5 sm:h-9"
-          >
-            <Plus className="h-4 w-4" />
-            Add to meal
-          </Button>
+          <div className="flex sm:justify-end">
+            <Button
+              type="button"
+              onClick={handleAddFood}
+              className="h-10 w-full gap-1.5 sm:h-9 sm:w-auto"
+            >
+              <Plus className="h-4 w-4" />
+              Add to meal
+            </Button>
+          </div>
         </div>
       </div>
 

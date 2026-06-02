@@ -8,7 +8,7 @@ import { clientFetch } from "@/lib/auth/client-fetch";
 import { listCustomFoods } from "@/lib/db";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertCircle, Loader2, X } from "lucide-react";
+import { AlertCircle, ChevronLeft, Loader2, X } from "lucide-react";
 
 /** Full-screen camera sheet. Replaces the previous shadcn `Dialog`
  *  layout because the small modal cramped both the barcode reticle
@@ -60,6 +60,10 @@ type Props = {
   onFoodPicked: (food: Food) => void;
   onMealPhotoResolved: (result: ResolvedMealPhoto) => void;
   onSwitchToPairPhone: () => void;
+  /** When set, the top-left control becomes a "Back" affordance
+   *  (returning to the guided Log-meal method step) instead of an
+   *  outright close. Omitted when opened standalone (desktop Scan). */
+  onBack?: () => void;
 };
 
 type Phase =
@@ -78,6 +82,7 @@ export function CameraSheet({
   onFoodPicked,
   onMealPhotoResolved,
   onSwitchToPairPhone,
+  onBack,
 }: Props) {
   // Body-scroll lock while open. Mobile Safari is particularly
   // bad about scrolling the page behind a fixed overlay; setting
@@ -131,6 +136,7 @@ export function CameraSheet({
         initialMode={initialMode}
         dietPreference={dietPreference}
         pairPhoneAvailable={pairPhoneAvailable}
+        onBack={onBack}
         onClose={() => onOpenChange(false)}
         onPicked={(food) => {
           onFoodPicked(food);
@@ -155,6 +161,7 @@ function CameraSheetBody({
   initialMode,
   dietPreference,
   pairPhoneAvailable,
+  onBack,
   onClose,
   onPicked,
   onMealPhotoResolved,
@@ -164,6 +171,7 @@ function CameraSheetBody({
   initialMode?: "scan" | "photo";
   dietPreference?: DietPreference;
   pairPhoneAvailable: boolean;
+  onBack?: () => void;
   onClose: () => void;
   onPicked: (food: Food) => void;
   onMealPhotoResolved: (result: ResolvedMealPhoto) => void;
@@ -241,12 +249,13 @@ function CameraSheetBody({
 
   return (
     <>
-      {/* Close button. Safe-area padded so the notch doesn't eat
-          the tap target. */}
+      {/* Top-left control. In the guided Log-meal flow it's a "Back"
+          that returns to the method step; standalone it's an outright
+          close. Safe-area padded so the notch doesn't eat the target. */}
       <button
         type="button"
-        onClick={onClose}
-        aria-label="Close camera"
+        onClick={onBack ?? onClose}
+        aria-label={onBack ? "Back" : "Close camera"}
         // Arbitrary `top-[calc(...)]` rather than a new utility:
         // we use this expression in exactly one place and adding
         // a `top-safe-plus-2` to globals.css would mirror the
@@ -254,7 +263,11 @@ function CameraSheetBody({
         // honest until a third caller appears.
         className="absolute left-3 top-[calc(env(safe-area-inset-top)+0.75rem)] z-20 inline-flex h-9 w-9 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
       >
-        <X className="h-4 w-4" />
+        {onBack ? (
+          <ChevronLeft className="h-5 w-5" />
+        ) : (
+          <X className="h-4 w-4" />
+        )}
       </button>
 
       {phase.kind === "capture" && (

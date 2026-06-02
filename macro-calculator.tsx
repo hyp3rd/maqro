@@ -1193,6 +1193,8 @@ const MacroCalculator = () => {
     setFoodSearchOpen(false);
     setApplyRecipeMealId(null);
     setTemplateDialog(null);
+    setCameraSheetOpen(false);
+    setVoiceSheetOpen(false);
     setLogMealOpen(true);
   };
 
@@ -1897,8 +1899,10 @@ const MacroCalculator = () => {
           onOpenCustomFoodForm={() => setCustomFoodOpen(true)}
           onOpenCamera={() => {
             // Desktop inline Scan: clear any guided target so a scanned
-            // barcode seeds the inline form (visible on desktop).
+            // barcode seeds the inline form (visible on desktop) and no
+            // "Back to method" appears.
             setLogTargetMealId(null);
+            setLogFlowMealId(null);
             setCameraMode("scan");
             setCameraSheetOpen(true);
           }}
@@ -1906,6 +1910,7 @@ const MacroCalculator = () => {
             user
               ? () => {
                   setLogTargetMealId(null);
+                  setLogFlowMealId(null);
                   setVoiceSheetOpen(true);
                 }
               : undefined
@@ -1922,7 +1927,12 @@ const MacroCalculator = () => {
             setLogFlowMealId(null);
             setApplyRecipeMealId(mealId);
           }}
-          onOpenLogMeal={() => setLogMealOpen(true)}
+          onOpenLogMeal={() => {
+            // Fresh entry from the FAB / "Log meal" button always starts
+            // at the meal step, never a stale method step.
+            setLogFlowMealId(null);
+            setLogMealOpen(true);
+          }}
         />
       )}
 
@@ -1988,6 +1998,7 @@ const MacroCalculator = () => {
         }}
         onMealPhotoResolved={(result) => setMealPhotoResult(result)}
         onSwitchToPairPhone={() => setPairPhoneOpen(true)}
+        onBack={logFlowMealId !== null ? backToMethod : undefined}
       />
 
       <VoiceLogSheet
@@ -2000,6 +2011,7 @@ const MacroCalculator = () => {
         // `setMealPhotoResult`. The user can edit grams and pick
         // a meal slot before anything actually writes to IDB.
         onResolved={(result) => setMealPhotoResult(result)}
+        onBack={logFlowMealId !== null ? backToMethod : undefined}
       />
 
       <PairPhoneDialog
