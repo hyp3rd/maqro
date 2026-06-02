@@ -350,6 +350,7 @@ words:
   - unsub
   - Unticked
   - updatefound
+  - Upsell
   - upserted
   - upserting
   - upserts
@@ -377,6 +378,7 @@ words:
   - yuml
   - Zabcdefghijkmnpqrstuvwxyz
   - Zilla
+  - zoomable
   - zxing
 ignoreWords: []
 import: []

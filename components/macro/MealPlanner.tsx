@@ -143,6 +143,8 @@ interface MealPlannerProps {
   onSaveAsTemplate: (mealId: number) => void;
   onAddFromTemplate: (mealId: number) => void;
   onApplyRecipe: (mealId: number) => void;
+  /** Open the meal-detail sheet for a slot (macro/micro breakdown). */
+  onOpenMealDetail: (mealId: number) => void;
   /** Open the guided "Log meal" sheet — the mobile add-food entry
    *  point. The dense inline AddFoodForm is desktop-only; on mobile
    *  this drives a step-by-step bottom-sheet instead. */
@@ -201,6 +203,7 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
   onSaveAsTemplate,
   onAddFromTemplate,
   onApplyRecipe,
+  onOpenMealDetail,
   onOpenLogMeal,
 }) => {
   const isError = mealPlanMessage.toLowerCase().includes("error");
@@ -523,6 +526,7 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
                 onSaveAsTemplate={onSaveAsTemplate}
                 onAddFromTemplate={onAddFromTemplate}
                 onApplyRecipe={onApplyRecipe}
+                onOpenDetail={onOpenMealDetail}
                 onRegenerate={onRegenerateMeal}
                 regenerating={isGeneratingMealPlan}
                 regeneratingThisMeal={generatingMealId === meal.id}
