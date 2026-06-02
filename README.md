@@ -4,7 +4,8 @@
 
 ## Join and use it for free at [maqro.app](https://maqro.app)
 
-A personal macro calculator, meal planner, and weight-tracking journal.
+A personal macro calculator, meal planner, pantry, and weight-tracking
+journal.
 Next.js app with a Supabase-backed optional account for multi-device
 sync - or run it fully local in **guest mode** and everything lives in
 your browser's IndexedDB. Installable as a PWA, works offline, and
@@ -36,6 +37,20 @@ ships with privacy-respecting operational logging.
   Plans are **personalized** with a soft bias toward foods you've
   actually been eating (top of the last ~30 days of logs) so the
   generated rotation looks like your rotation.
+- **Log a meal (guided)** - on mobile, a step-by-step bottom-sheet:
+  pick a meal slot, then pick _how_ — search foods, apply a recipe or
+  template, scan a barcode, photograph the plate, or talk — and the
+  right full-screen tool opens, pre-targeted to that slot (with a
+  "back to method" affordance throughout). Desktop keeps the inline
+  Add Food form, with the meal picker as icon tiles.
+- **Meal insights** - tap any logged meal for a detail sheet: macro
+  share + sub-macros, a micronutrient read (Pro), and a deterministic
+  **balance check** that flags imbalances ("fat-heavy", "low fiber",
+  "high saturated fat / added sugar", "great source of vitamin C") and
+  **goal fit** (share of your daily calories, protein adequacy vs your
+  target). Optional one-tap **suggestions for next time** (Pro, Claude
+  Haiku) behind a one-line "uses a monthly request" consent with a
+  remember-my-choice option, plus a not-medical-advice note.
 - **Daily logs** - every day's meals are persisted by `YYYY-MM-DD`
   key, with a date navigator to browse history without losing today's
   state.
@@ -59,15 +74,36 @@ ships with privacy-respecting operational logging.
   celebrations** (3, 7, 14, 30, 60, 100, 180, 365 days), **plateau
   detection** (14-day flat run within ±0.5 kg), and **TDEE
   recalibration** suggestion when your observed weight change
-  diverges from expected by more than 50 kcal/day. Charts are
-  tap-to-expand on mobile for readable axis labels.
+  diverges from expected by more than 50 kcal/day. Charts open
+  **fullscreen in landscape** on mobile with **pinch-to-zoom**,
+  drag-to-pan, and double-tap reset; desktop expands to a wide modal.
 - **Body measurements** - optional waist / neck / hip log with a
   Catmull-Rom smoothed trend chart and a US Navy / Hodgdon–Beckett
   body-fat estimate (metric form). Stored locally and synced to
   Supabase like the rest of the journal data.
+- **Micronutrients (Pro)** - 10 tracked vitamins / minerals / fiber
+  charted against age- and sex-aware daily targets (NIH RDA, FDA Daily
+  Value fallback). Values fill in from Open Food Facts as your foods
+  are enriched by a background cron, so the panel honestly shows
+  partial coverage instead of misleading zeros. Per-nutrient daily
+  trend + an average-intake view on Progress, and a per-meal read in
+  the meal-detail sheet.
 - **Shopping list** - aggregated from the meals you've planned across
-  Today / This week / Next 7 days / Last 7 days. Copy-as-text for a
-  partner's message thread or notes app.
+  Today / This week / Next 7 days / Last 7 days. On touch, each row
+  taps open to a bottom-sheet (quantity / note / send-to-pantry) with
+  swipe-to-remove and an **undo** toast. Copy-as-text or open a
+  printable PDF report.
+- **Pantry** - track what's on hand (name / quantity / unit / aisle /
+  density / low-stock threshold), synced across devices, with
+  **low-stock notifications**, swipe actions, and a **photo scan**
+  (Claude vision) that fills the pantry from a fridge/shelf snapshot.
+  Logging a food that matches a pantry item draws it down automatically.
+- **Shop for me** - turn the pantry's low/empty items into a clean,
+  aisle-grouped restock list. Hand off to **Instacart** (a real
+  pre-filled cart) or search on Uber Eats / DoorDash / Glovo, find
+  **nearby stores** by location or postcode, and save **favourite
+  stores**. AI-assisted with a deterministic fallback so it always
+  works offline.
 - **Food search** - three sources merged into one box:
   - **Built-in** curated catalog
   - **My foods** (IndexedDB, custom entries via manual form, OFF
@@ -124,6 +160,10 @@ ships with privacy-respecting operational logging.
   list and pantry rows; horizontal swipe on the date strip
   advances days in the meal log. Touch-only (gated on
   `pointer: coarse`); desktop keeps the explicit buttons.
+- **Mobile-first sheets** - dense desktop grids become clean tap-row →
+  bottom-sheet flows on touch (meal log, pantry, shopping list), and
+  every destructive action is a consistent bottom-sheet confirmation
+  or an undo toast — no stray native `confirm()` dialogs.
 - **Multilingual** - English + Italian on the marketing pages with
   a locale switcher in the header. First visit auto-detects from
   the browser's Accept-Language; explicit picks persist via
@@ -294,7 +334,9 @@ feature it backs - the app stays runnable on a bare-minimum config.
 
 ### AI (Claude) setup - optional
 
-Three routes use Anthropic; all are opt-in by `ANTHROPIC_API_KEY`:
+Several routes use Anthropic; all are opt-in by `ANTHROPIC_API_KEY`
+(absent → the buttons hide / fall back) and metered against the
+monthly AI cap:
 
 - **`/api/meal-plan`** - Sonnet 4.6 multi-turn agent loop with
   programmatic coherence validation (rejects single-fat meals,
@@ -303,12 +345,21 @@ Three routes use Anthropic; all are opt-in by `ANTHROPIC_API_KEY`:
 - **`/api/recipes/generate`** - Haiku 4.5 generates one recipe
   (4–10 ingredients) honoring diet / cuisine / allergy settings.
 - **`/api/identify-meal`** - Sonnet 4.6 vision: photo → structured
-  macros, used by the camera identification flow in My Foods.
+  macros, used by the camera identification flow.
+- **`/api/identify-pantry`** - vision: fridge/shelf photo → pantry
+  items to review and add.
+- **`/api/voice-log`** - Haiku 4.5 parses a spoken meal ("200g
+  chicken and a banana") into structured foods.
+- **`/api/shopping/suggest`** - turns pantry gaps into an
+  aisle-grouped restock list (deterministic fallback when AI is off).
+- **`/api/meal-insights`** - Haiku 4.5 "suggestions for next time"
+  for one meal (Pro-gated). The deterministic balance check works
+  offline; this is the optional richer layer.
 
-All three share the same hardening: catalog-bounded names (macros
-computed server-side from catalog × portion, never invented), prompt
-caching, in-loop validation feedback, OFF-search fallback with
-timeout, forced-submit on the final iteration.
+The food/recipe routes share the same hardening: catalog-bounded
+names (macros computed server-side from catalog × portion, never
+invented), prompt caching, in-loop validation feedback, OFF-search
+fallback with timeout, forced-submit on the final iteration.
 
 ```env
 ANTHROPIC_API_KEY=sk-ant-…
@@ -326,6 +377,10 @@ Two paid tiers:
 | **Free**    | -       | -      | 25                  | -    | -            | -                |
 | **AI Plus** | €5      | €48    | 500                 | -    | -            | ✓                |
 | **Pro**     | €12     | €120   | unlimited           | ✓    | ✓            | ✓                |
+
+In addition to sync / cloud export / engagement email, **micronutrient
+tracking** and **per-meal AI suggestions** are Pro-only; free and Plus
+users see an upgrade prompt in their place.
 
 Existing users at launch are auto-grandfathered to Pro for 12 months
 (see [migration 0017](supabase/migrations/0017_tiered_billing.sql)).
@@ -480,8 +535,8 @@ merge. `make help` prints the full list.
 
 ## Tests
 
-494 unit tests across 46 files (Vitest), plus 3 Playwright smoke
-tests and a gated auth-sync E2E spec. Highlights:
+1,500+ unit + component tests across 140+ files (Vitest), plus
+Playwright smoke tests and a gated auth-sync E2E spec. Highlights:
 
 - **Macros / planner** - `lib/macros.test.ts`, `lib/meal-planner.test.ts`
 - **Trends** - `lib/trends.test.ts` (smoothing, plateau detection,
@@ -489,6 +544,10 @@ tests and a gated auth-sync E2E spec. Highlights:
 - **Streaks + weekly recap** - `lib/streaks.test.ts`,
   `lib/weekly-recap.test.ts`
 - **Shopping list** - `lib/shopping-list.test.ts`
+- **Meal insights** - `lib/meal-insights.test.ts` (deterministic
+  balance + goal-fit flags)
+- **Micronutrients** - `lib/micronutrients/aggregate.test.ts`
+  (per-portion scaling + partial-coverage contracts)
 - **Diet classifier** - `lib/diet.test.ts`
 - **IndexedDB layer** - `lib/db.test.ts`
 - **Sync mappers** - `lib/sync/mappers.test.ts`
@@ -517,7 +576,9 @@ sidebar-driven `AppShell`. Persistence is layered:
 1. **IndexedDB (always)** - [`lib/db.ts`](lib/db.ts) is the source of
    truth on each device. Stores: `profile`, `dailyLogs`,
    `weightHistory`, `bodyMeasurements`, `customFoods`,
-   `mealTemplates`, `recipes`, `deletions`. All IDs are
+   `mealTemplates`, `recipes`, `pantryItems`, `pantryNotifications`,
+   `shoppingListMeta`, `micronutrientProfiles`, `favoriteStores`,
+   `deletions`. All IDs are
    client-minted UUIDs so the same row exists locally and on the
    server under the same key.
 1. **Supabase (when signed in)** - same tables, RLS-scoped to owner.
@@ -577,6 +638,10 @@ app/
     off-search/route.ts             # Same-origin OFF proxy
     off-barcode/[code]/route.ts     # OFF barcode lookup
     identify-meal/route.ts          # Sonnet 4.6 vision (camera identify)
+    identify-pantry/route.ts        # Vision: fridge/shelf photo → pantry items
+    voice-log/route.ts              # Haiku 4.5: spoken meal → structured foods
+    meal-insights/route.ts          # Haiku 4.5: per-meal "next time" suggestions (Pro)
+    shopping/{suggest,nearby,geocode,instacart-cart}/route.ts  # Restock list, store search, geocode, Instacart cart
     meal-plan/route.ts              # Sonnet 4.6 agent loop + coherence validator
     recipes/generate/route.ts       # Haiku 4.5 recipe generator
     recipes/[id]/share/route.ts     # Toggle visibility + mint slug
@@ -618,6 +683,8 @@ components/
                                     #   StorageBanner, Footer, BugReportDialog,
                                     #   PageTopBar (public-page back-to-app chrome),
                                     #   MiniLineChart (Catmull-Rom sparklines),
+                                    #   ChartZoomDialog + ChartFullscreen (mobile
+                                    #   landscape pinch-zoom), DateNavigator,
                                     #   PastDueBanner (Stripe dunning),
                                     #   CookieNotice (informational, no analytics)
   macro/                            # Calculator, Meal Plan, ProgressView (with
@@ -631,7 +698,12 @@ components/
                                     #   TDEE / safety-floor explainers),
                                     #   UpgradeDialog (Plus / Pro selector),
                                     #   OnboardingWizard, ShareRecipeDialog,
-                                    #   CameraIdentifyDialog, ImportPreviewDialog
+                                    #   CameraIdentifyDialog, ImportPreviewDialog,
+                                    #   PantryView (+ PantryScanSheet/ReviewDialog),
+                                    #   ShopForMeDialog, NearbyStores, FavoriteStores,
+                                    #   MicronutrientsSection, MealDetailSheet,
+                                    #   LogMealSheet + FoodSearchSheet (guided mobile
+                                    #   add-food), SheetAction (shared sheet primitives)
   icons/                            # In-tree SVGs (e.g. GoogleLogo for OAuth button)
   marketing/                        # StructuredData (JSON-LD for landing SEO)
   ui/                               # shadcn primitives
@@ -656,6 +728,11 @@ lib/
   streaks.ts                        # Consecutive-logged-days computation
   weekly-recap.ts                   # 7-day rollup for Progress + email
   shopping-list.ts                  # Aggregate foods across a date range
+  meal-insights.ts                  # Deterministic per-meal balance + goal-fit flags
+  rda.ts                            # Micronutrient metadata + age/sex RDA targets
+  micronutrients/                   # Per-portion micro aggregation + window/averages
+  pantry/                           # Pantry draw-down + consume planning
+  shopping/                         # Aisle categorize + delivery providers + gaps
   diet.ts                           # Diet classifier (catalog + AI)
   app-url.ts                        # Canonical app URL helper
   app-settings.ts                   # Key/value runtime config (60s in-memory cache, fail-OPEN read)
@@ -735,6 +812,17 @@ supabase/migrations/
   0041_admin_sent_emails.sql               # Outgoing email log (Resend id ↔ admin who sent it, scheduled_at)
   0042_onboarding_telemetry.sql            # Aggregate-only onboarding funnel counters (no PII; see migration comment)
   0043_status_probes.sql                   # Public status-probe history (5-min cron, 90-day retention, RLS-readable)
+  0044_pantry_items.sql                    # Pantry inventory table + RLS + Realtime
+  0045_pantry_notifications.sql            # Low-stock notification rows
+  0046_pantry_item_category.sql            # Aisle/category column on pantry items
+  0047_favorite_stores.sql                 # Saved favourite stores for Shop-for-me
+  0048_pantry_item_density.sql             # Density (g/ml) for unit conversions
+  0049_pantry_low_threshold.sql            # Per-item low-stock threshold
+  0050_captures_size_limit.sql             # Upload size cap on camera-capture handoff
+  0051_micronutrient_queue.sql             # Enrichment work queue (name → OFF lookup)
+  0052_micronutrient_profiles.sql          # Name-keyed per-100g micronutrient profiles
+  0053_custom_food_micronutrients.sql      # Micronutrients on custom foods
+  0054_micronutrient_source_ai.sql         # Mark AI-estimated micro profiles distinctly
 tests/e2e/                                 # Playwright smoke + gated auth-sync spec
 ```
 
@@ -905,12 +993,27 @@ Done (in roughly chronological order):
     (with a custom lint rule guarding it), Zod-validated request
     bodies, and "Trust this device for 7 days" honored at both the
     proxy and the API gates
+- **Phase 21 (Pantry, micronutrients + mobile-first UX)** -
+  - **Pantry** inventory (quantity / unit / aisle / density /
+    low-stock threshold) with low-stock notifications, a vision
+    **photo-scan fill**, and automatic draw-down when a logged food
+    matches an item on hand
+  - **Shop for me** - pantry gaps → aisle-grouped restock list with
+    an **Instacart** pre-filled cart, Uber Eats / DoorDash / Glovo
+    search, **nearby stores** by location, and **favourite stores**
+  - **Micronutrient tracking** (Pro) - 10 nutrients vs age/sex RDA
+    targets, OFF-enriched in the background, charted on Progress and
+    in the per-meal detail sheet
+  - **Meal detail & insights** - tap a meal for a macro / micro
+    breakdown, a deterministic balance + goal-fit check, and optional
+    Pro AI "suggestions for next time" behind a metered-request consent
+  - **Mobile-first sheets** - guided "Log meal" flow (meal → method →
+    full-screen tool with a back affordance), tap-row → bottom-sheet
+    editing across the list views, consistent delete confirmations
+    with undo, and **fullscreen landscape pinch-zoom** charts
 
 Possibly next (not committed):
 
-- **Pantry inventory** - track what's on hand (name + quantity +
-  unit), synced across devices, with photo recognition to fill it
-  from a fridge/shelf snapshot.
 - **Weekly target adherence** - UX shift from per-day to per-week
   calorie targets for users on aggressive cuts.
 - **Cross-instance OFF cache** - Redis / Vercel KV layer so a
