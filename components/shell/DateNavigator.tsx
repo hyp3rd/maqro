@@ -100,14 +100,17 @@ export function DateNavigator({ date, today, onSelect }: Props) {
         <label
           htmlFor={inputId}
           className={cn(
-            "flex h-8 cursor-pointer items-center rounded-md px-3 text-sm font-medium tabular-nums transition-colors coarse:h-11",
+            "flex h-8 cursor-pointer items-center whitespace-nowrap rounded-md px-3 text-sm font-medium tabular-nums transition-colors coarse:h-11",
             "hover:bg-accent hover:text-accent-foreground",
             !isToday && "text-foreground",
           )}
         >
           <span>{formatLabel(date, today)}</span>
           {!isToday && (
-            <span className="ml-2 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+            // The exact ISO date is supplementary to the human label
+            // ("Yesterday" / "Mon, Jun 2"); hide it on narrow screens so
+            // it can't wrap and shove the Today button off-row.
+            <span className="ml-2 hidden whitespace-nowrap font-mono text-[10px] uppercase tracking-wide text-muted-foreground sm:inline">
               {date}
             </span>
           )}

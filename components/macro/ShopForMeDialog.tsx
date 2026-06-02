@@ -25,6 +25,7 @@ import {
 import { useMemo, useState } from "react";
 import {
   Check,
+  ChevronLeft,
   Copy,
   ExternalLink,
   Loader2,
@@ -302,16 +303,22 @@ export function ShopForMeDialog({
               Build my list ({selected.length})
             </Button>
           ) : (
-            <div className="flex w-full flex-wrap items-center justify-between gap-2">
+            // Mobile: stack so each control is a clear, full-width tap
+            // target (the old ghost "Back" centered on its own wrapped
+            // row read as a heading, not a button). Desktop: one row,
+            // Back on the left, actions on the right.
+            <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <Button
                 type="button"
-                variant="ghost"
+                variant="outline"
                 size="sm"
                 onClick={() => setResult(null)}
+                className="justify-center gap-1.5 sm:justify-start"
               >
-                Back
+                <ChevronLeft className="h-4 w-4" />
+                Back to picks
               </Button>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <Button
                   type="button"
                   variant="outline"

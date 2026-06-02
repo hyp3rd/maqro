@@ -182,16 +182,12 @@ export function ShoppingListView({ onGoToPlan }: Props = {}) {
   const [pantryByName, setPantryByName] = useState<Map<string, PantryItem>>(
     new Map(),
   );
-  /** Which row currently has its notes textarea open. Single
-   *  expansion at a time keeps the layout calm and matches how
-   *  every other inline editor in the app behaves. */
-  const [editingNotesFor, setEditingNotesFor] = useState<string | null>(null);
-  const [noteDraft, setNoteDraft] = useState<string>("");
-  /** Which row currently has its qty input open (single-row at a
-   *  time, same calm-layout rationale as the notes editor). Editing
-   *  is opt-in via clicking the meta line — the input replaces the
-   *  meta text in place so the row doesn't grow in height. */
-  const [editingQtyFor, setEditingQtyFor] = useState<string | null>(null);
+  /** Which row's action sheet is open, by item name. The sheet hosts
+   *  all per-item editing (quantity, note, send-to-pantry, remove) so
+   *  the row itself stays a clean tap target — matching the pantry /
+   *  meal-log grids. Keyed by name (not the DisplayItem) so the sheet
+   *  reflects live edits after each save. */
+  const [sheetItemName, setSheetItemName] = useState<string | null>(null);
   /** The item the user is currently dragging — drives the
    *  `DragOverlay` so the dragged card visibly follows the cursor
    *  across the screen. Without this, `useDraggable` flags the
@@ -201,11 +197,6 @@ export function ShoppingListView({ onGoToPlan }: Props = {}) {
   const [activeDragItem, setActiveDragItem] = useState<DisplayItem | null>(
     null,
   );
-  const [qtyDraft, setQtyDraft] = useState<string>("");
-  /** Computed-row companion to `qtyDraft` — the "N×" count input.
-   *  Extras have no concept of appearances, so this draft is
-   *  ignored for `isExtra` rows. */
-  const [countDraft, setCountDraft] = useState<string>("");
 
   const dailyLogsRev = useDataRev("dailyLogs");
   const metaRev = useDataRev("shoppingListMeta");
@@ -394,14 +385,9 @@ export function ShoppingListView({ onGoToPlan }: Props = {}) {
     }
   }
 
-  function openNoteEditor(itemName: string) {
-    const key = nameKey(itemName);
-    setEditingNotesFor(itemName);
-    setNoteDraft(meta.get(key)?.notes ?? "");
-  }
-
-  async function saveNote(itemName: string) {
-    const trimmed = noteDraft.trim();
+  async function saveNote(item: DisplayItem, note: string) {
+    const itemName = item.name;
+    const trimmed = note.trim();
     try {
       await upsertShoppingListMeta(itemName, { notes: trimmed });
       const key = nameKey(itemName);
@@ -416,7 +402,6 @@ export function ShoppingListView({ onGoToPlan }: Props = {}) {
         });
         return next;
       });
-      setEditingNotesFor(null);
     } catch (err) {
       reportStorageError(err);
       toast.error("Couldn't save the note. Try again.");
