@@ -16,7 +16,14 @@ import { discardPendingChanges, triggerSync } from "@/lib/sync";
 import { useSyncSnapshot } from "@/lib/sync-status";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
-import { AlertTriangle, Check, Cloud, Loader2, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  Cloud,
+  CloudUpload,
+  Loader2,
+  Trash2,
+} from "lucide-react";
 
 /** Sync indicator + manual trigger shown in the topbar. Only renders when
  * a user is signed in — when signed out the sync engine isn't running so
@@ -124,14 +131,14 @@ export function SyncStatusPill() {
           <button
             type="button"
             onClick={onClick}
-            className={cn(styles, "text-foreground")}
-            title={`${pending} unsynced change${pending === 1 ? "" : "s"} on this device${titleSuffix} — click to sync now`}
+            className={cn(
+              styles,
+              "border border-amber-500/30 bg-amber-500/10 font-medium text-amber-700 hover:bg-amber-500/20 dark:text-amber-300",
+            )}
+            title={`${pending} unsaved change${pending === 1 ? "" : "s"} on this device${titleSuffix} — click to save now`}
           >
-            <span
-              className="h-1.5 w-1.5 rounded-full bg-amber-500"
-              aria-hidden
-            />
-            Pending
+            <CloudUpload className="h-3 w-3" />
+            Save{pending > 1 ? ` ${pending}` : ""}
           </button>
           <DiscardButton onClick={() => setDiscardConfirmOpen(true)} />
         </div>

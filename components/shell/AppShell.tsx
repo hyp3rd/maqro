@@ -14,6 +14,7 @@ import { ServiceWorkerProvider } from "./ServiceWorkerProvider";
 import { Sidebar, type ViewKey } from "./Sidebar";
 import { StorageBanner } from "./StorageBanner";
 import { SyncManager } from "./SyncManager";
+import { SyncModeController } from "./SyncModeController";
 import { Topbar } from "./Topbar";
 import { UpdateBanner } from "./UpdateBanner";
 
@@ -37,6 +38,7 @@ export function AppShell({ current, onSelect, children }: Props) {
       <DemoSeed />
       <ServiceWorkerProvider />
       <SyncManager />
+      <SyncModeController />
       <Sidebar
         current={current}
         onSelect={onSelect}
