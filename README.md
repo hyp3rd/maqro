@@ -132,7 +132,16 @@ ships with privacy-respecting operational logging.
   hand-crafted URLs from stamping fake numbers under the brand.
 - **Account (optional)** - passwordless email OTP via Supabase.
   Profile, daily logs, weight history, body measurements, custom
-  foods, meal templates, and recipes all sync across devices.
+  foods, meal templates, recipes, pantry, and shopping-list metadata
+  all sync across devices.
+- **Sync modes** - a per-device choice (Settings → Sync) for how
+  edits reach your account: **Local-first** (stay on this device, save
+  manually — with a gentle reminder after a quiet spell of unsaved
+  changes), **Auto-save** (push on a 1–30 min interval), or **Always
+  sync** (push moments after each change). The topbar shows a clear
+  "Save N" button when there are unsaved changes plus a chip for the
+  active mode. Stored in `localStorage` (it's device behaviour, not a
+  synced setting).
 - **Passkeys (optional)** - WebAuthn sign-in via Face ID, Touch ID,
   Windows Hello, or a hardware key. Adding a passkey from
   Settings → Passkeys replaces both the email-code login AND the
@@ -678,7 +687,10 @@ app/
     cron/{daily-reminder,weekly-recap,trial-ending,retention,status-probe}/route.ts  # Vercel cron handlers
 components/
   shell/                            # AppShell, Sidebar, Topbar, MobileBottomNav,
-                                    #   SyncManager, InstallPrompt, UpdateBanner,
+                                    #   SyncManager, SyncModeController (auto-save /
+                                    #   always-sync push + local-first reminder),
+                                    #   SyncStatusPill + SyncModeIndicator + the
+                                    #   SaveReminderDialog, InstallPrompt, UpdateBanner,
                                     #   ServiceWorkerProvider, GlobalErrorHandler,
                                     #   StorageBanner, Footer, BugReportDialog,
                                     #   PageTopBar (public-page back-to-app chrome),
@@ -761,6 +773,7 @@ lib/
   demo-data.ts                      # Sample dataset + clearDemoModeData() reset path
   storage/                          # Supabase Storage helpers (exports bucket)
   capture/                          # QR-flow capture state machine
+  sync-mode.ts                      # Per-device sync-mode preference (localStorage)
   sync/                             # IDB ↔ Supabase reconciler
   supabase/                         # env / client / server / proxy
 data/food-database.ts               # Built-in foods
@@ -1011,6 +1024,9 @@ Done (in roughly chronological order):
     full-screen tool with a back affordance), tap-row → bottom-sheet
     editing across the list views, consistent delete confirmations
     with undo, and **fullscreen landscape pinch-zoom** charts
+  - **Sync modes** - a per-device choice of local-first (manual save +
+    reminder) / auto-save (1–30 min interval) / always-sync, with a
+    clearer "Save" affordance and a topbar mode indicator
 
 Possibly next (not committed):
 

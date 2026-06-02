@@ -39,6 +39,41 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    id: "2026-06-02-sync-modes",
+    date: "2026-06-02",
+    version: "0.2.1",
+    title: "Choose how your data syncs",
+    body: `You can now choose how this device saves your changes to your account, under Settings → Sync.
+
+- Local-first keeps every edit on this device until you save — most private, nothing leaves until you say so. A gentle reminder appears if you've had unsaved changes for a while.
+- Auto-save uploads on a timer you choose (1–30 minutes) whenever there are unsaved changes.
+- Always sync uploads moments after each change, so your account and other devices stay current without you thinking about it.
+
+The sync control in the top bar now shows a clear "Save" button when you have unsaved changes, with a small chip beside it showing which mode you're in — tap it to change.`,
+  },
+  {
+    id: "2026-06-02-meal-detail",
+    date: "2026-06-02",
+    version: "0.2.0",
+    title: "Dive into any meal",
+    body: `Tap the Insights chip on any logged meal to open a full breakdown.
+
+- See the macro split and sub-macros (fiber, sugars, saturated fat) at a glance, plus how the meal fits your day — its share of your calorie and protein goals.
+- A balance check flags what's worth knowing: low fiber, high saturated fat, a fat-heavy split, or a great source of a vitamin. Pro adds a per-meal micronutrient read.
+- Want ideas? Pro users can request tailored "next time" suggestions, with a quick heads-up that it uses one of your monthly requests.`,
+  },
+  {
+    id: "2026-06-01-mobile-logging",
+    date: "2026-06-01",
+    title: "A cleaner way to log on your phone",
+    body: `A round of mobile polish across the app.
+
+- Logging a meal on a phone is now a guided flow: pick the meal, then pick how — search, a recipe or template, barcode, photo, or voice — and the right tool opens full-screen.
+- The meal log, pantry, and shopping list use tap-to-open sheets instead of cramped rows of tiny icons, and removing a shopping item now offers an Undo.
+- Charts open full-screen in landscape with pinch-to-zoom, so a 60-day trend is finally readable on a phone.
+- Every "are you sure?" is a consistent confirmation sheet now — no more stray browser pop-ups.`,
+  },
+  {
     id: "2026-05-30-gestures-dri-ai-enrichment",
     date: "2026-05-30",
     version: "0.1.123",
