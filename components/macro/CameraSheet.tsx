@@ -46,6 +46,11 @@ type Props = {
    *  the Photo tab is hidden so the user isn't presented with a
    *  button that 503s. The barcode path always works (no AI). */
   aiAvailable: boolean;
+  /** Which capture tab to open on. The guided Log-meal launcher uses
+   *  this so "Scan barcode" and "Photo" land on the right mode instead
+   *  of always defaulting to scan. Ignored when the mode isn't
+   *  available (e.g. `photo` while `aiAvailable` is false). */
+  initialMode?: "scan" | "photo";
   /** Profile's diet preference — sent to /api/identify-meal so the
    *  seed catalog the AI sees matches the user's universe. */
   dietPreference?: DietPreference;
@@ -67,6 +72,7 @@ export function CameraSheet({
   open,
   onOpenChange,
   aiAvailable,
+  initialMode,
   dietPreference,
   pairPhoneAvailable,
   onFoodPicked,
@@ -122,6 +128,7 @@ export function CameraSheet({
     >
       <CameraSheetBody
         aiAvailable={aiAvailable}
+        initialMode={initialMode}
         dietPreference={dietPreference}
         pairPhoneAvailable={pairPhoneAvailable}
         onClose={() => onOpenChange(false)}
@@ -145,6 +152,7 @@ export function CameraSheet({
 
 function CameraSheetBody({
   aiAvailable,
+  initialMode,
   dietPreference,
   pairPhoneAvailable,
   onClose,
@@ -153,6 +161,7 @@ function CameraSheetBody({
   onSwitchToPairPhone,
 }: {
   aiAvailable: boolean;
+  initialMode?: "scan" | "photo";
   dietPreference?: DietPreference;
   pairPhoneAvailable: boolean;
   onClose: () => void;
@@ -253,6 +262,7 @@ function CameraSheetBody({
           <CameraView
             key={resetKey}
             modes={modes}
+            initialMode={initialMode}
             layout="fullscreen"
             onBarcode={lookupBarcode}
             onManualBarcode={lookupBarcode}

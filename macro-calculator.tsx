@@ -8,6 +8,8 @@ import { ApplyRecipeDialog } from "./components/macro/ApplyRecipeDialog";
 import { ApplyTemplateDialog } from "./components/macro/ApplyTemplateDialog";
 import { CameraSheet } from "./components/macro/CameraSheet";
 import { CustomFoodForm } from "./components/macro/CustomFoodForm";
+import { FoodSearchSheet } from "./components/macro/FoodSearchSheet";
+import { LogMealSheet, type LogMethod } from "./components/macro/LogMealSheet";
 import MacroResults from "./components/macro/MacroResults";
 import { MealPhotoReviewDialog } from "./components/macro/MealPhotoReviewDialog";
 import MealPlanner from "./components/macro/MealPlanner";
@@ -404,6 +406,24 @@ const MacroCalculator = () => {
   const [applyRecipeMealId, setApplyRecipeMealId] = useState<number | null>(
     null,
   );
+  // Guided "Log meal" flow — the mobile-first add-food entry point. The
+  // launcher (`logMealOpen`) picks a meal + method, then opens the
+  // matching full-screen tool, pre-targeted to `logTargetMealId`:
+  //   - search  → FoodSearchSheet (`foodSearchOpen`) → logFoodToMeal
+  //   - barcode/photo → CameraSheet (`cameraMode` seeds the tab)
+  //   - voice   → VoiceLogSheet
+  //   - recipe/template → the existing pickers (applyRecipeMealId / templateDialog)
+  // `logTargetMealId` lets the camera barcode + photo/voice review route
+  // back to the chosen meal instead of the (mobile-hidden) inline form.
+  const [logMealOpen, setLogMealOpen] = useState(false);
+  const [foodSearchOpen, setFoodSearchOpen] = useState(false);
+  const [logTargetMealId, setLogTargetMealId] = useState<number | null>(null);
+  const [cameraMode, setCameraMode] = useState<"scan" | "photo">("scan");
+  // Non-null while a tool was launched from the guided launcher: it
+  // names the meal to return to, so each tool can show a "Back" that
+  // reopens the launcher at the method step. Meal-menu entries leave it
+  // null (those tools just close).
+  const [logFlowMealId, setLogFlowMealId] = useState<number | null>(null);
   // Initial view honors `?view=…` if present, so links from emails
   // ("Manage email preferences" → /app?view=settings, weekly recap →
   // /app?view=progress) and the Stripe Customer Portal's return URL
@@ -1082,6 +1102,98 @@ const MacroCalculator = () => {
     });
     setFoodSearch("");
     setPortionSize(100);
+  };
+
+  // Append a search-result food to a meal at an explicit portion — the
+  // guided "Log meal" sheet's add path. Mirrors addFood's per-100g →
+  // per-portion scaling and pantry draw-down, but takes food + meal +
+  // grams as arguments instead of reading the shared inline-form state.
+  const logFoodToMeal = (food: Food, mealId: number, grams: number) => {
+    if (grams <= 0) return;
+    const ratio = grams / 100;
+    const scaleOpt = (v: number | undefined) =>
+      typeof v === "number"
+        ? Number.parseFloat((v * ratio).toFixed(1))
+        : undefined;
+    const drawDown = planFoodDrawDown(food.name, grams);
+    const item: FoodItem = {
+      id: Date.now(),
+      name: food.name,
+      protein: Number.parseFloat((food.protein * ratio).toFixed(1)),
+      carbs: Number.parseFloat((food.carbs * ratio).toFixed(1)),
+      fat: Number.parseFloat((food.fat * ratio).toFixed(1)),
+      calories: Math.round(food.calories * ratio),
+      portionSize: grams,
+      sugars: scaleOpt(food.sugars),
+      addedSugars: scaleOpt(food.addedSugars),
+      fiber: scaleOpt(food.fiber),
+      saturatedFat: scaleOpt(food.saturatedFat),
+      transFat: scaleOpt(food.transFat),
+      monoFat: scaleOpt(food.monoFat),
+      polyFat: scaleOpt(food.polyFat),
+      micronutrients: food.micronutrients,
+      pantrySource: drawDown ?? undefined,
+      originalValues: {
+        proteinPer100g: food.protein,
+        carbsPer100g: food.carbs,
+        fatPer100g: food.fat,
+        caloriesPer100g: food.calories,
+      },
+    };
+    setMeals(
+      meals.map((meal) =>
+        meal.id === mealId ? { ...meal, foods: [...meal.foods, item] } : meal,
+      ),
+    );
+    if (drawDown) applyPantryDelta(drawDown.itemId, drawDown.consumedQty);
+  };
+
+  // Expand a recipe into a single meal — the "Log meal" sheet's recipe
+  // path. A focused, single-day version of handleApplyRecipe (no
+  // meal-prep batch): clone each ingredient into a per-portion FoodItem,
+  // Dispatch a guided "Log meal" method to its full-screen tool, each
+  // pre-targeted to the meal the user chose in the launcher. Recipe and
+  // template reuse the existing full pickers; barcode/photo/voice route
+  // back to the target meal via `logTargetMealId`.
+  const handleLogMethod = (method: LogMethod, mealId: number) => {
+    setLogMealOpen(false);
+    // Remember the meal so each tool can offer "Back" to the method step.
+    setLogFlowMealId(mealId);
+    switch (method) {
+      case "search":
+        setLogTargetMealId(mealId);
+        setFoodSearchOpen(true);
+        break;
+      case "recipe":
+        setApplyRecipeMealId(mealId);
+        break;
+      case "template":
+        setTemplateDialog({ kind: "apply", mealId });
+        break;
+      case "barcode":
+        setLogTargetMealId(mealId);
+        setCameraMode("scan");
+        setCameraSheetOpen(true);
+        break;
+      case "photo":
+        setLogTargetMealId(mealId);
+        setCameraMode("photo");
+        setCameraSheetOpen(true);
+        break;
+      case "voice":
+        setLogTargetMealId(mealId);
+        setVoiceSheetOpen(true);
+        break;
+    }
+  };
+
+  // A tool's "Back": close it and reopen the launcher at the method step
+  // for the same meal (`logFlowMealId` seeds the launcher's initial meal).
+  const backToMethod = () => {
+    setFoodSearchOpen(false);
+    setApplyRecipeMealId(null);
+    setTemplateDialog(null);
+    setLogMealOpen(true);
   };
 
   // Remove a food from a meal
@@ -1783,15 +1895,34 @@ const MacroCalculator = () => {
           onRegenerateMeal={handleRegenerateMeal}
           onSaveOffToCustom={handleSaveOffToCustom}
           onOpenCustomFoodForm={() => setCustomFoodOpen(true)}
-          onOpenCamera={() => setCameraSheetOpen(true)}
-          onOpenVoice={user ? () => setVoiceSheetOpen(true) : undefined}
+          onOpenCamera={() => {
+            // Desktop inline Scan: clear any guided target so a scanned
+            // barcode seeds the inline form (visible on desktop).
+            setLogTargetMealId(null);
+            setCameraMode("scan");
+            setCameraSheetOpen(true);
+          }}
+          onOpenVoice={
+            user
+              ? () => {
+                  setLogTargetMealId(null);
+                  setVoiceSheetOpen(true);
+                }
+              : undefined
+          }
           onSaveAsTemplate={(mealId) =>
             setTemplateDialog({ kind: "save", mealId })
           }
-          onAddFromTemplate={(mealId) =>
-            setTemplateDialog({ kind: "apply", mealId })
-          }
-          onApplyRecipe={(mealId) => setApplyRecipeMealId(mealId)}
+          onAddFromTemplate={(mealId) => {
+            // Opened from a meal's menu — not the guided flow, so no Back.
+            setLogFlowMealId(null);
+            setTemplateDialog({ kind: "apply", mealId });
+          }}
+          onApplyRecipe={(mealId) => {
+            setLogFlowMealId(null);
+            setApplyRecipeMealId(mealId);
+          }}
+          onOpenLogMeal={() => setLogMealOpen(true)}
         />
       )}
 
@@ -1839,9 +1970,22 @@ const MacroCalculator = () => {
         open={cameraSheetOpen}
         onOpenChange={setCameraSheetOpen}
         aiAvailable={!!user}
+        initialMode={cameraMode}
         dietPreference={personalInfo.dietPreference}
         pairPhoneAvailable={!!user && !isMobile}
-        onFoodPicked={handleFoodSelect}
+        onFoodPicked={(food) => {
+          // From the guided launcher (target meal set) a scanned barcode
+          // logs straight to that meal — the inline form it would
+          // otherwise populate is hidden on mobile. Otherwise (desktop
+          // inline Scan) fall back to seeding the inline form.
+          if (logTargetMealId !== null) {
+            const dest = meals.find((m) => m.id === logTargetMealId);
+            logFoodToMeal(food, logTargetMealId, 100);
+            if (dest) toast.success(`Added ${food.name} to ${dest.name}`);
+          } else {
+            handleFoodSelect(food);
+          }
+        }}
         onMealPhotoResolved={(result) => setMealPhotoResult(result)}
         onSwitchToPairPhone={() => setPairPhoneOpen(true)}
       />
@@ -1873,6 +2017,7 @@ const MacroCalculator = () => {
         }}
         result={mealPhotoResult}
         meals={meals}
+        defaultMealId={logTargetMealId ?? undefined}
         onConfirm={(mealId, foods, newCustomFoods) => {
           // Persist the AI-estimated foods first so they're indexed for
           // the next time the user photographs the same item. addCustomFood
@@ -1927,7 +2072,10 @@ const MacroCalculator = () => {
       <ApplyTemplateDialog
         open={templateDialog?.kind === "apply"}
         onOpenChange={(o) => {
-          if (!o) setTemplateDialog(null);
+          if (!o) {
+            setTemplateDialog(null);
+            setLogFlowMealId(null);
+          }
         }}
         targetMealName={
           templateDialog?.kind === "apply"
@@ -1936,12 +2084,16 @@ const MacroCalculator = () => {
             : "Meal"
         }
         onApply={handleApplyTemplate}
+        onBack={logFlowMealId !== null ? backToMethod : undefined}
       />
 
       <ApplyRecipeDialog
         open={applyRecipeMealId !== null}
         onOpenChange={(o) => {
-          if (!o) setApplyRecipeMealId(null);
+          if (!o) {
+            setApplyRecipeMealId(null);
+            setLogFlowMealId(null);
+          }
         }}
         targetMealName={
           applyRecipeMealId !== null
@@ -1964,6 +2116,33 @@ const MacroCalculator = () => {
           meals.length,
         )}
         onApply={handleApplyRecipe}
+        onBack={logFlowMealId !== null ? backToMethod : undefined}
+      />
+
+      <LogMealSheet
+        open={logMealOpen}
+        onOpenChange={(o) => {
+          setLogMealOpen(o);
+          // Dismissing the launcher itself (X / Escape) ends the flow.
+          if (!o) setLogFlowMealId(null);
+        }}
+        meals={meals}
+        aiAvailable={!!user}
+        initialMealId={logFlowMealId}
+        onMethod={handleLogMethod}
+      />
+
+      <FoodSearchSheet
+        open={foodSearchOpen}
+        onOpenChange={(o) => {
+          setFoodSearchOpen(o);
+          if (!o) setLogFlowMealId(null);
+        }}
+        mealId={logTargetMealId}
+        mealName={meals.find((m) => m.id === logTargetMealId)?.name ?? "meal"}
+        customFoodsRev={customFoodsRev}
+        onLogFood={logFoodToMeal}
+        onBack={backToMethod}
       />
 
       <OnboardingWizard
