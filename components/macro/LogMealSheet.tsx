@@ -1,5 +1,6 @@
 "use client";
 
+import { mealIcon } from "@/lib/meal-icon";
 import { useState } from "react";
 import {
   Camera,
@@ -10,7 +11,6 @@ import {
   Search,
   ScanLine,
   Soup,
-  Utensils,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import {
@@ -163,6 +163,7 @@ function LogMealFlow({
           >
             {meals.map((meal) => {
               const kcal = meal.foods.reduce((s, f) => s + f.calories, 0);
+              const Icon = mealIcon(meal.name);
               return (
                 <button
                   key={meal.id}
@@ -170,7 +171,7 @@ function LogMealFlow({
                   onClick={() => setMealId(meal.id)}
                   className="flex min-h-20 flex-col items-start justify-between rounded-xl border border-border/60 bg-card p-3 text-left transition-colors active:bg-muted"
                 >
-                  <Utensils className="h-5 w-5 text-muted-foreground" />
+                  <Icon className="h-5 w-5 text-muted-foreground" />
                   <span className="mt-2 w-full">
                     <span className="block text-sm font-medium text-foreground">
                       {meal.name}
