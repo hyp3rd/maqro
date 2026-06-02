@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton, SkeletonSettingRows } from "@/components/ui/skeleton";
 import { Slider } from "@/components/ui/slider";
 import { useAiUsage } from "@/hooks/use-ai-usage";
 import { useNotificationPrefs } from "@/hooks/use-notification-prefs";
@@ -1227,8 +1228,51 @@ function DeleteAccountSection({
 function AiUsageSection() {
   const { state: usage, refresh } = useAiUsage();
 
-  if (usage.status === "anon" || usage.status === "loading") return null;
-  if (usage.status === "error") return null;
+  if (usage.status === "anon" || usage.status === "error") return null;
+
+  const header = (
+    <header className="flex items-center justify-between gap-2 border-b border-border/60 px-5 py-3">
+      <div>
+        <h3 className="text-sm font-semibold tracking-tight">AI usage</h3>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          AI features (Auto-fill meal plans, Generate recipes, Identify meal
+          photos) share one monthly quota.
+        </p>
+      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={refresh}
+        className="h-8 shrink-0 text-xs text-muted-foreground"
+        title="Re-fetch the current counter from the server"
+      >
+        Refresh
+      </Button>
+    </header>
+  );
+
+  // Reserve the meter's height while the counter loads, so the card holds
+  // its place instead of popping in from nothing when it resolves.
+  if (usage.status === "loading") {
+    return (
+      <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
+        {header}
+        <div className="space-y-3 px-5 py-4">
+          <div className="flex items-baseline justify-between gap-2">
+            <Skeleton className="h-4 w-40" />
+            <Skeleton className="h-3 w-10" />
+          </div>
+          <Skeleton className="h-1 w-full rounded-full" />
+          <div className="space-y-1.5">
+            <Skeleton className="h-2.5 w-full" />
+            <Skeleton className="h-2.5 w-11/12" />
+            <Skeleton className="h-2.5 w-2/3" />
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   const data = usage.data;
   const cap = data.cap;
@@ -1238,25 +1282,7 @@ function AiUsageSection() {
 
   return (
     <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
-      <header className="flex items-center justify-between gap-2 border-b border-border/60 px-5 py-3">
-        <div>
-          <h3 className="text-sm font-semibold tracking-tight">AI usage</h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            AI features (Auto-fill meal plans, Generate recipes, Identify meal
-            photos) share one monthly quota.
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={refresh}
-          className="h-8 shrink-0 text-xs text-muted-foreground"
-          title="Re-fetch the current counter from the server"
-        >
-          Refresh
-        </Button>
-      </header>
+      {header}
 
       <div className="px-5 py-4">
         {data.isPremium || cap === null ? (
@@ -1523,17 +1549,19 @@ function NotificationsSection() {
   const { state, update } = useNotificationPrefs();
 
   if (state.status === "loading") {
+    // Match the loaded header (incl. the description line) and reserve the
+    // three toggle rows, so the card keeps its size when prefs arrive.
     return (
       <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
         <header className="border-b border-border/60 px-5 py-3">
           <h3 className="text-sm font-semibold tracking-tight">
             Email notifications
           </h3>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Two transactional emails, both opt-in. We never send anything else.
+          </p>
         </header>
-        <div className="space-y-2 px-5 py-4">
-          <div className="h-3 w-40 animate-pulse rounded bg-muted" />
-          <div className="h-3 w-48 animate-pulse rounded bg-muted/50" />
-        </div>
+        <SkeletonSettingRows rows={3} />
       </section>
     );
   }

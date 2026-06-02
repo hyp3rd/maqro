@@ -301,9 +301,14 @@ export function BillingDetails() {
   return (
     <div className="space-y-4 border-t border-border/60 px-5 py-4">
       {subState.kind === "loading" ? (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          Loading billing details…
+        // Reserve the subscription panel's height so the invoices below
+        // don't jump when the plan summary arrives.
+        <div className="flex items-center justify-between gap-3">
+          <div className="space-y-1.5">
+            <div className="h-4 w-28 animate-pulse rounded bg-muted" />
+            <div className="h-3 w-44 animate-pulse rounded bg-muted/70" />
+          </div>
+          <div className="h-8 w-24 animate-pulse rounded-md bg-muted" />
         </div>
       ) : subState.kind === "error" ? (
         <p

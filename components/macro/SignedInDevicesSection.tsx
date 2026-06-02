@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SkeletonSettingRows } from "@/components/ui/skeleton";
 import { clientFetch } from "@/lib/auth/client-fetch";
 import { getCurrentSessionId, type DeviceRow } from "@/lib/devices/registry";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
@@ -317,10 +318,7 @@ export function SignedInDevicesSection({ signedIn }: { signedIn: boolean }) {
       </header>
       <div className="divide-y divide-border/60">
         {devices === null ? (
-          <p className="px-5 py-6 text-center text-xs text-muted-foreground">
-            <Loader2 className="mx-auto mb-2 h-4 w-4 animate-spin" />
-            Loading devices…
-          </p>
+          <SkeletonSettingRows rows={2} />
         ) : devices.length === 0 ? (
           <p className="px-5 py-6 text-center text-xs text-muted-foreground">
             No devices yet - the next sync will register this one.
