@@ -1,5 +1,6 @@
 "use client";
 
+import { ChartFullscreen } from "@/components/shell/ChartFullscreen";
 import {
   Dialog,
   DialogContent,
@@ -7,6 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
 import * as React from "react";
 import { Maximize2 } from "lucide-react";
 
@@ -39,6 +41,11 @@ type Props = {
 
 export function ChartZoomDialog({ children, title, description }: Props) {
   const [open, setOpen] = React.useState(false);
+  // Touch devices get the fullscreen, landscape, pinch-zoomable viewer
+  // (a 60-day series is unreadable in a portrait card). Mouse/desktop
+  // keeps the simpler widened modal — there's already screen real
+  // estate and no pinch gesture.
+  const isCoarse = useCoarsePointer();
 
   return (
     <>
@@ -64,29 +71,36 @@ export function ChartZoomDialog({ children, title, description }: Props) {
         </span>
       </button>
 
-      <Dialog
-        open={open}
-        onOpenChange={setOpen}
-      >
-        {/* Override the default dialog max-width so the chart gets
-            real estate. On mobile the dialog already goes
-            full-width via the responsive bottom-sheet pattern in
-            [components/ui/dialog.tsx](../ui/dialog.tsx); on sm+
-            we widen to 90 vw so the chart breathes. */}
-        <DialogContent className="max-w-[95vw] sm:max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>{title}</DialogTitle>
-            {description && (
-              <DialogDescription>{description}</DialogDescription>
-            )}
-          </DialogHeader>
-          {/* Re-render the same chart subtree inside the dialog.
-              Because the SVG uses viewBox + `w-full h-auto`, it
-              scales to fill the new container — no separate
-              "large" variant needed. */}
-          <div className="py-3">{children}</div>
-        </DialogContent>
-      </Dialog>
+      {isCoarse ? (
+        // Mounted only while open so its pan/zoom state starts fresh.
+        open && (
+          <ChartFullscreen
+            open
+            onClose={() => setOpen(false)}
+            title={title}
+          >
+            {children}
+          </ChartFullscreen>
+        )
+      ) : (
+        <Dialog
+          open={open}
+          onOpenChange={setOpen}
+        >
+          {/* Desktop: widen the modal so the chart breathes. The SVG
+              uses viewBox + `w-full h-auto`, so it scales to fill the
+              new container — no separate "large" variant needed. */}
+          <DialogContent className="max-w-[95vw] sm:max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>{title}</DialogTitle>
+              {description && (
+                <DialogDescription>{description}</DialogDescription>
+              )}
+            </DialogHeader>
+            <div className="py-3">{children}</div>
+          </DialogContent>
+        </Dialog>
+      )}
     </>
   );
 }

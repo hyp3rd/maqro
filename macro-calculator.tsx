@@ -11,6 +11,7 @@ import { CustomFoodForm } from "./components/macro/CustomFoodForm";
 import { FoodSearchSheet } from "./components/macro/FoodSearchSheet";
 import { LogMealSheet, type LogMethod } from "./components/macro/LogMealSheet";
 import MacroResults from "./components/macro/MacroResults";
+import { MealDetailSheet } from "./components/macro/MealDetailSheet";
 import { MealPhotoReviewDialog } from "./components/macro/MealPhotoReviewDialog";
 import MealPlanner from "./components/macro/MealPlanner";
 import { MyFoodsView } from "./components/macro/MyFoodsView";
@@ -424,6 +425,8 @@ const MacroCalculator = () => {
   // reopens the launcher at the method step. Meal-menu entries leave it
   // null (those tools just close).
   const [logFlowMealId, setLogFlowMealId] = useState<number | null>(null);
+  // Meal-detail sheet: which meal slot's breakdown is open (by id).
+  const [mealDetailId, setMealDetailId] = useState<number | null>(null);
   // Initial view honors `?view=…` if present, so links from emails
   // ("Manage email preferences" → /app?view=settings, weekly recap →
   // /app?view=progress) and the Stripe Customer Portal's return URL
@@ -1927,6 +1930,7 @@ const MacroCalculator = () => {
             setLogFlowMealId(null);
             setApplyRecipeMealId(mealId);
           }}
+          onOpenMealDetail={(mealId) => setMealDetailId(mealId)}
           onOpenLogMeal={() => {
             // Fresh entry from the FAB / "Log meal" button always starts
             // at the meal step, never a stale method step.
@@ -2129,6 +2133,19 @@ const MacroCalculator = () => {
         )}
         onApply={handleApplyRecipe}
         onBack={logFlowMealId !== null ? backToMethod : undefined}
+      />
+
+      <MealDetailSheet
+        meal={meals.find((m) => m.id === mealDetailId) ?? null}
+        goal={{
+          calories: calculatedValues.targetCalories,
+          protein: calculatedValues.protein,
+          carbs: calculatedValues.carbs,
+          fat: calculatedValues.fat,
+        }}
+        onOpenChange={(o) => {
+          if (!o) setMealDetailId(null);
+        }}
       />
 
       <LogMealSheet

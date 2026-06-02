@@ -61,6 +61,8 @@ interface MealItemProps {
   onSaveAsTemplate: (mealId: number) => void;
   onAddFromTemplate: (mealId: number) => void;
   onApplyRecipe: (mealId: number) => void;
+  /** Open the meal-detail sheet (macro/micro breakdown + insights). */
+  onOpenDetail: (mealId: number) => void;
   /** AI-regenerate ONLY this meal slot. The parent calls the
    *  meal-plan route with `targetMealName` set and replaces just this
    *  meal's foods on success. */
@@ -100,6 +102,7 @@ const MealItem: React.FC<MealItemProps> = ({
   onSaveAsTemplate,
   onAddFromTemplate,
   onApplyRecipe,
+  onOpenDetail,
   onRegenerate,
   regenerating,
   regeneratingThisMeal,
@@ -145,6 +148,17 @@ const MealItem: React.FC<MealItemProps> = ({
           {meal.name}
         </h4>
         <div className="flex items-center gap-1.5">
+          {meal.foods.length > 0 && !regeneratingThisMeal && (
+            <button
+              type="button"
+              onClick={() => onOpenDetail(meal.id)}
+              aria-label={`${meal.name} insights`}
+              className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 transition-colors hover:bg-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-amber-300"
+            >
+              <Sparkles className="h-3 w-3" />
+              Insights
+            </button>
+          )}
           {regeneratingThisMeal ? (
             <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground sm:text-xs">
               <Loader2 className="h-3 w-3 animate-spin" />
