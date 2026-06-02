@@ -1,5 +1,15 @@
 "use client";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SkeletonListRow } from "@/components/ui/skeleton";
@@ -69,6 +79,7 @@ export function TemplatesView({ onGoToPlan }: Props = {}) {
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [renaming, setRenaming] = useState<MealTemplate | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<MealTemplate | null>(null);
   // Templates don't have a meaningful "type" axis (no cuisine field),
   // so only expose three of the four modes.
   const [sortMode, setSortMode] = useSortMode("sort:templates", "recent");
@@ -147,7 +158,6 @@ export function TemplatesView({ onGoToPlan }: Props = {}) {
   }
 
   async function handleDelete(t: MealTemplate) {
-    if (!confirm(`Delete "${t.name}"?`)) return;
     const prev = templates;
     setTemplates((rs) => (rs ? rs.filter((r) => r.id !== t.id) : rs));
     try {
@@ -361,7 +371,7 @@ export function TemplatesView({ onGoToPlan }: Props = {}) {
                     onRename={() => setRenaming(t)}
                     onSaveAsRecipe={() => void handleSaveAsRecipe(t)}
                     onShare={() => void handleShare(t)}
-                    onDelete={() => handleDelete(t)}
+                    onDelete={() => setPendingDelete(t)}
                   />
                 );
               })}
@@ -381,6 +391,35 @@ export function TemplatesView({ onGoToPlan }: Props = {}) {
           onSave={(next) => handleSaveEdit(renaming, next)}
         />
       )}
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(o) => {
+          if (!o) setPendingDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete template?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDelete
+                ? `"${pendingDelete.name}" will be permanently deleted on all your devices.`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingDelete) void handleDelete(pendingDelete);
+                setPendingDelete(null);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -1,5 +1,15 @@
 "use client";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -129,6 +139,7 @@ function ShareBody({
   >(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingRevoke, setConfirmingRevoke] = useState(false);
 
   const url =
     slug && typeof window !== "undefined"
@@ -213,13 +224,6 @@ function ShareBody({
 
   async function revoke() {
     if (working || !slug) return;
-    if (
-      !confirm(
-        "Revoke this link? Anyone with the URL will get a 404. You can create a new link later, but it'll be a different URL.",
-      )
-    ) {
-      return;
-    }
     setWorking("revoke");
     setError(null);
     try {
@@ -362,7 +366,7 @@ function ShareBody({
               type="button"
               variant="outline"
               size="sm"
-              onClick={revoke}
+              onClick={() => setConfirmingRevoke(true)}
               disabled={working !== null}
               className="h-10 gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive sm:h-9"
             >
@@ -414,6 +418,33 @@ function ShareBody({
           Done
         </Button>
       </DialogFooter>
+
+      <AlertDialog
+        open={confirmingRevoke}
+        onOpenChange={setConfirmingRevoke}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Revoke this link?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Anyone with the URL will get a 404. You can create a new link
+              later, but it&apos;ll be a different URL.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmingRevoke(false);
+                void revoke();
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Revoke link
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }
