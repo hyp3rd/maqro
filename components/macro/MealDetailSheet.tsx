@@ -613,6 +613,11 @@ function AiAdvice({
                 ) : null,
               )}
           </div>
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            General guidance, not medical advice — double-check anything
+            important and adapt it to any medical condition, allergy, or dietary
+            need.
+          </p>
         </div>
       ) : (
         <>
