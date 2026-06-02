@@ -30,6 +30,7 @@ import {
 } from "@/lib/export";
 import { planFromFile, planImport, type ImportPlan } from "@/lib/import";
 import { GITHUB_REPO_URL } from "@/lib/links";
+import { consumeSettingsScroll } from "@/lib/settings-anchor";
 import {
   downloadExport as downloadCloudExport,
   uploadExport,
@@ -1424,8 +1425,25 @@ const SYNC_MODE_OPTIONS: {
  *  local-first reminder. */
 function SyncSection() {
   const { mode, intervalMinutes } = useSyncMode();
+  const ref = useRef<HTMLElement>(null);
+
+  // When Settings was opened from the topbar sync chip, scroll this
+  // section into view. The delay lets the view-switch transition
+  // (AnimatePresence mode="wait") settle so the target has its final
+  // layout position before we smooth-scroll to it.
+  useEffect(() => {
+    if (consumeSettingsScroll() !== "sync") return;
+    const id = window.setTimeout(() => {
+      ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 240);
+    return () => window.clearTimeout(id);
+  }, []);
+
   return (
-    <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
+    <section
+      ref={ref}
+      className="overflow-hidden rounded-lg border border-border/60 bg-card"
+    >
       <header className="border-b border-border/60 px-5 py-3">
         <h3 className="text-sm font-semibold tracking-tight">Sync</h3>
         <p className="mt-0.5 text-xs text-muted-foreground">

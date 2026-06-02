@@ -1,6 +1,7 @@
 "use client";
 
 import { useUser } from "@/hooks/use-user";
+import { requestSettingsScroll } from "@/lib/settings-anchor";
 import { useSyncMode } from "@/lib/sync-mode";
 import { HardDrive, RefreshCw, Timer } from "lucide-react";
 import type { ViewKey } from "./Sidebar";
@@ -47,7 +48,12 @@ export function SyncModeIndicator({
   return (
     <button
       type="button"
-      onClick={() => onSelectView?.("settings")}
+      onClick={() => {
+        // Queue the scroll before the view swaps; the Sync section reads
+        // it once it mounts (see lib/settings-anchor).
+        requestSettingsScroll("sync");
+        onSelectView?.("settings");
+      }}
       title={meta.title}
       aria-label={`Sync mode: ${label}. Tap to change.`}
       className="flex h-9 items-center gap-1.5 rounded-md px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-7"
