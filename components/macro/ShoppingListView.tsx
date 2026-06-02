@@ -34,14 +34,13 @@ import {
   Apple,
   Beef,
   Box,
-  Check,
+  ChevronRight,
   Copy,
   Croissant,
   CupSoda,
   Egg,
   FileDown,
   GripVertical,
-  MessageSquare,
   Package,
   PackagePlus,
   ShoppingCart,
@@ -65,6 +64,7 @@ import {
 } from "@dnd-kit/core";
 import { FavoriteStores } from "./FavoriteStores";
 import { NearbyStores } from "./NearbyStores";
+import { ShoppingItemSheet } from "./ShoppingItemSheet";
 
 const nameKey = sharedNameKey;
 
@@ -417,35 +417,24 @@ export function ShoppingListView({ onGoToPlan }: Props = {}) {
     });
   }
 
-  /** Open the inline qty editor for a row. Pre-fills with the
-   *  currently-displayed qty (the override if set, the aggregate
-   *  total otherwise) so editing reads as "tweak this number"
-   *  rather than "type the qty from scratch". */
-  function openQtyEditor(item: DisplayItem) {
-    setEditingQtyFor(item.name);
-    setQtyDraft(String(item.totalGrams));
-    // Extras have no count; reset to 0 so the unused field doesn't
-    // carry over from a previous computed-row edit.
-    setCountDraft(item.isExtra ? "" : String(item.appearances));
-  }
-
-  /** Save the qty edit. Routes to `extraQty` for extras (which is
-   *  the source of truth) or `qtyOverride` / `appearancesOverride`
-   *  for computed rows (preserving the original aggregates). An
-   *  empty / zero / NaN draft on a computed row clears the
-   *  corresponding override and reverts to the underlying value. */
-  async function saveQty(item: DisplayItem) {
-    const parsedQty = Number.parseFloat(qtyDraft.replace(",", ".").trim());
+  /** Save a qty edit from the action sheet. Routes to `extraQty` for
+   *  extras (their source of truth) or `qtyOverride` /
+   *  `appearancesOverride` for computed rows (preserving the original
+   *  aggregates). An empty / zero / NaN value on a computed row clears
+   *  the corresponding override and reverts to the underlying value. */
+  async function saveQty(
+    item: DisplayItem,
+    gramsStr: string,
+    countStr: string,
+  ) {
+    const parsedQty = Number.parseFloat(gramsStr.replace(",", ".").trim());
     const qtyValid = Number.isFinite(parsedQty) && parsedQty > 0;
     const key = nameKey(item.name);
     try {
       if (item.isExtra) {
-        if (!qtyValid) {
-          // Extras require a qty; clearing would orphan the row.
-          // Just close the editor without saving.
-          setEditingQtyFor(null);
-          return;
-        }
+        // Extras require a qty; clearing would orphan the row — keep
+        // the existing value rather than saving an empty one.
+        if (!qtyValid) return;
         const rounded = Math.round(parsedQty * 1000) / 1000;
         await upsertShoppingListMeta(item.name, { extraQty: rounded });
         setMeta((prev) => {
@@ -460,7 +449,7 @@ export function ShoppingListView({ onGoToPlan }: Props = {}) {
         const qtyRounded = qtyValid
           ? Math.round(parsedQty * 1000) / 1000
           : null;
-        const parsedCount = Number.parseInt(countDraft.trim(), 10);
+        const parsedCount = Number.parseInt(countStr.trim(), 10);
         const countValid = Number.isFinite(parsedCount) && parsedCount > 0;
         const countRounded = countValid ? parsedCount : null;
         await upsertShoppingListMeta(item.name, {
@@ -479,7 +468,6 @@ export function ShoppingListView({ onGoToPlan }: Props = {}) {
           return next;
         });
       }
-      setEditingQtyFor(null);
     } catch (err) {
       reportStorageError(err);
       toast.error("Couldn't save the quantity. Try again.");
@@ -550,6 +538,8 @@ export function ShoppingListView({ onGoToPlan }: Props = {}) {
    *  the escape hatch. */
   async function removeFromList(item: DisplayItem) {
     const key = nameKey(item.name);
+    // Snapshot so the undo toast can put the row back exactly.
+    const prior = meta.get(key);
     try {
       if (item.isExtra) {
         await upsertShoppingListMeta(item.name, {
@@ -587,9 +577,55 @@ export function ShoppingListView({ onGoToPlan }: Props = {}) {
           return next;
         });
       }
+      toast.success(`Removed ${item.name}`, {
+        action: { label: "Undo", onClick: () => void undoRemove(item, prior) },
+      });
     } catch (err) {
       reportStorageError(err);
       toast.error("Couldn't remove the item. Try again.");
+    }
+  }
+
+  /** Reverse a `removeFromList`: extras get their quantity back,
+   *  computed rows clear the `excluded` flag. Driven by the undo toast. */
+  async function undoRemove(
+    item: DisplayItem,
+    prior: ShoppingListMeta | undefined,
+  ) {
+    const key = nameKey(item.name);
+    try {
+      if (item.isExtra) {
+        const qty = prior?.extraQty ?? item.totalGrams;
+        const unit = prior?.extraUnit ?? item.extraUnit ?? "g";
+        await upsertShoppingListMeta(item.name, {
+          extraQty: qty,
+          extraUnit: unit,
+        });
+        setMeta((prev) => {
+          const next = new Map(prev);
+          const m = next.get(key) ?? { name: key, updatedAt: Date.now() };
+          next.set(key, {
+            ...m,
+            extraQty: qty,
+            extraUnit: unit,
+            updatedAt: Date.now(),
+          });
+          return next;
+        });
+      } else {
+        await upsertShoppingListMeta(item.name, { excluded: null });
+        setMeta((prev) => {
+          const next = new Map(prev);
+          const m = next.get(key);
+          if (m) {
+            next.set(key, { ...m, excluded: undefined, updatedAt: Date.now() });
+          }
+          return next;
+        });
+      }
+    } catch (err) {
+      reportStorageError(err);
+      toast.error("Couldn't restore the item. Try again.");
     }
   }
 
@@ -681,6 +717,12 @@ export function ShoppingListView({ onGoToPlan }: Props = {}) {
   }
 
   const remaining = items.length - checked.size;
+
+  // Resolve the open sheet's item from the live display set so it
+  // reflects edits (e.g. a qty change) without a stale snapshot.
+  const sheetItem = sheetItemName
+    ? (displayItems.find((d) => d.name === sheetItemName) ?? null)
+    : null;
 
   return (
     // Split on large screens: list takes the flexible column, nearby
@@ -816,22 +858,9 @@ export function ShoppingListView({ onGoToPlan }: Props = {}) {
                   checked={checked}
                   onToggleChecked={toggle}
                   meta={meta}
-                  editingNotesFor={editingNotesFor}
-                  noteDraft={noteDraft}
-                  onOpenNoteEditor={openNoteEditor}
-                  onCloseNoteEditor={() => setEditingNotesFor(null)}
-                  onNoteDraftChange={setNoteDraft}
-                  onSaveNote={(name) => void saveNote(name)}
                   onSendToPantry={(it) => void sendToPantry(it)}
                   onRemoveFromList={(it) => void removeFromList(it)}
-                  editingQtyFor={editingQtyFor}
-                  qtyDraft={qtyDraft}
-                  countDraft={countDraft}
-                  onOpenQtyEditor={openQtyEditor}
-                  onCloseQtyEditor={() => setEditingQtyFor(null)}
-                  onQtyDraftChange={setQtyDraft}
-                  onCountDraftChange={setCountDraft}
-                  onSaveQty={(it) => void saveQty(it)}
+                  onOpenSheet={(name) => setSheetItemName(name)}
                 />
               ))}
             </div>
@@ -937,6 +966,18 @@ export function ShoppingListView({ onGoToPlan }: Props = {}) {
           <FavoriteStores />
         </section>
       </div>
+
+      <ShoppingItemSheet
+        item={sheetItem}
+        note={sheetItem ? meta.get(nameKey(sheetItem.name))?.notes : undefined}
+        onOpenChange={(o) => {
+          if (!o) setSheetItemName(null);
+        }}
+        onSaveQty={(it, grams, count) => void saveQty(it, grams, count)}
+        onSendToPantry={(it) => void sendToPantry(it)}
+        onSaveNote={(it, note) => void saveNote(it, note)}
+        onRemove={(it) => void removeFromList(it)}
+      />
     </div>
   );
 }
@@ -947,22 +988,9 @@ type AisleSectionProps = {
   checked: Set<string>;
   onToggleChecked: (name: string) => void;
   meta: Map<string, ShoppingListMeta>;
-  editingNotesFor: string | null;
-  noteDraft: string;
-  onOpenNoteEditor: (name: string) => void;
-  onCloseNoteEditor: () => void;
-  onNoteDraftChange: (value: string) => void;
-  onSaveNote: (name: string) => void;
   onSendToPantry: (item: DisplayItem) => void;
   onRemoveFromList: (item: DisplayItem) => void;
-  editingQtyFor: string | null;
-  qtyDraft: string;
-  countDraft: string;
-  onOpenQtyEditor: (item: DisplayItem) => void;
-  onCloseQtyEditor: () => void;
-  onQtyDraftChange: (value: string) => void;
-  onCountDraftChange: (value: string) => void;
-  onSaveQty: (item: DisplayItem) => void;
+  onOpenSheet: (name: string) => void;
 };
 
 /** One aisle group. Wraps a Droppable (so a row dropped anywhere in
@@ -974,22 +1002,9 @@ function AisleSection({
   checked,
   onToggleChecked,
   meta,
-  editingNotesFor,
-  noteDraft,
-  onOpenNoteEditor,
-  onCloseNoteEditor,
-  onNoteDraftChange,
-  onSaveNote,
   onSendToPantry,
   onRemoveFromList,
-  editingQtyFor,
-  qtyDraft,
-  countDraft,
-  onOpenQtyEditor,
-  onCloseQtyEditor,
-  onQtyDraftChange,
-  onCountDraftChange,
-  onSaveQty,
+  onOpenSheet,
 }: AisleSectionProps) {
   const Icon = AISLE_ICON[aisle];
   const color = AISLE_COLORS[aisle];
@@ -1035,22 +1050,9 @@ function AisleSection({
             isChecked={checked.has(it.name)}
             onToggleChecked={onToggleChecked}
             note={meta.get(nameKey(it.name))?.notes}
-            isEditingNote={editingNotesFor === it.name}
-            noteDraft={noteDraft}
-            onOpenNoteEditor={onOpenNoteEditor}
-            onCloseNoteEditor={onCloseNoteEditor}
-            onNoteDraftChange={onNoteDraftChange}
-            onSaveNote={onSaveNote}
             onSendToPantry={onSendToPantry}
             onRemoveFromList={onRemoveFromList}
-            isEditingQty={editingQtyFor === it.name}
-            qtyDraft={qtyDraft}
-            countDraft={countDraft}
-            onOpenQtyEditor={onOpenQtyEditor}
-            onCloseQtyEditor={onCloseQtyEditor}
-            onQtyDraftChange={onQtyDraftChange}
-            onCountDraftChange={onCountDraftChange}
-            onSaveQty={onSaveQty}
+            onOpenSheet={onOpenSheet}
           />
         ))}
       </ul>
@@ -1063,49 +1065,25 @@ type ShoppingRowProps = {
   isChecked: boolean;
   onToggleChecked: (name: string) => void;
   note: string | undefined;
-  isEditingNote: boolean;
-  noteDraft: string;
-  onOpenNoteEditor: (name: string) => void;
-  onCloseNoteEditor: () => void;
-  onNoteDraftChange: (value: string) => void;
-  onSaveNote: (name: string) => void;
   onSendToPantry: (item: DisplayItem) => void;
   onRemoveFromList: (item: DisplayItem) => void;
-  isEditingQty: boolean;
-  qtyDraft: string;
-  countDraft: string;
-  onOpenQtyEditor: (item: DisplayItem) => void;
-  onCloseQtyEditor: () => void;
-  onQtyDraftChange: (value: string) => void;
-  onCountDraftChange: (value: string) => void;
-  onSaveQty: (item: DisplayItem) => void;
+  onOpenSheet: (name: string) => void;
 };
 
-/** Single row in the shopping list. Draggable as a whole (the grip
- *  on the left listens for the drag), but pointer events on the
- *  checkbox / notes button / textarea still work because dnd-kit's
- *  activationConstraint requires a 6-px move before the drag arms. */
+/** Single row in the shopping list — a clean tap target matching the
+ *  pantry / meal-log grids: grip (drag to aisle) + checkbox (mark
+ *  bought) + name/quantity that opens the action sheet. All editing
+ *  (quantity, note, send-to-pantry, remove) lives in the sheet, so the
+ *  row stays calm instead of crowding inline inputs and an icon cluster.
+ *  Swipe still works (left = remove with undo, right = to pantry). */
 function ShoppingRow({
   item,
   isChecked,
   onToggleChecked,
   note,
-  isEditingNote,
-  noteDraft,
-  onOpenNoteEditor,
-  onCloseNoteEditor,
-  onNoteDraftChange,
-  onSaveNote,
   onSendToPantry,
   onRemoveFromList,
-  isEditingQty,
-  qtyDraft,
-  countDraft,
-  onOpenQtyEditor,
-  onCloseQtyEditor,
-  onQtyDraftChange,
-  onCountDraftChange,
-  onSaveQty,
+  onOpenSheet,
 }: ShoppingRowProps) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `item:${nameKey(item.name)}`,
@@ -1134,10 +1112,6 @@ function ShoppingRow({
           intent: "info",
           icon: <PackagePlus className="h-3.5 w-3.5" />,
         }}
-        // When the row is in edit mode (qty or note), suppress swipe
-        // so an accidental horizontal drag doesn't blow the editor
-        // away. The user already has explicit Save / Cancel.
-        disabled={isEditingQty || isEditingNote}
         surfaceClassName="bg-card px-3 py-2.5 sm:px-5 sm:py-3"
       >
         <div className="flex items-center gap-3">
@@ -1157,204 +1131,39 @@ function ShoppingRow({
             className="h-4 w-4 shrink-0 cursor-pointer accent-foreground"
             aria-label={`Mark ${item.name} as bought`}
           />
-          <div className="min-w-0 flex-1">
-            <p
-              className={`flex items-center gap-2 truncate text-sm ${
-                isChecked
-                  ? "text-muted-foreground line-through"
-                  : "font-medium text-foreground"
-              }`}
-            >
-              <span className="truncate">{item.name}</span>
-              {item.isExtra && (
-                /* Small "Restock" pill so an extra is visually
-                 distinguishable from a computed-from-logs row. Uses
-                 a muted amber to match the low-stock palette
-                 elsewhere without shouting. */
-                <span className="shrink-0 rounded-full bg-amber-500/10 px-1.5 py-px text-[10px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400">
-                  Restock
-                </span>
-              )}
-            </p>
-          </div>
-          {isEditingQty ? (
-            <div className="flex shrink-0 items-center gap-1">
-              <input
-                type="number"
-                inputMode="decimal"
-                step="0.1"
-                min="0"
-                value={qtyDraft}
-                onChange={(e) => onQtyDraftChange(e.target.value)}
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    onSaveQty(item);
-                  } else if (e.key === "Escape") {
-                    e.preventDefault();
-                    onCloseQtyEditor();
-                  }
-                }}
-                onBlur={(e) => {
-                  // Only commit the save when focus leaves the entire
-                  // editor — not when moving between the qty input and
-                  // the count input. relatedTarget is the element about
-                  // to receive focus; if it's still inside the wrapper,
-                  // hold off saving.
-                  if (
-                    e.relatedTarget instanceof Node &&
-                    e.currentTarget.parentElement?.contains(e.relatedTarget)
-                  ) {
-                    return;
-                  }
-                  onSaveQty(item);
-                }}
-                className="h-7 w-16 rounded border border-border/60 bg-background px-1.5 text-right font-mono text-[11px] tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                aria-label={`Quantity for ${item.name}`}
-              />
-              <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-                {item.isExtra ? (item.extraUnit ?? "g") : "g"}
+          {/* The whole name + quantity area is the tap target → opens
+              the action sheet. */}
+          <button
+            type="button"
+            onClick={() => onOpenSheet(item.name)}
+            aria-label={`${item.name} — open actions`}
+            className="flex min-w-0 flex-1 items-center gap-2 rounded py-0.5 text-left transition-colors active:bg-muted/40"
+          >
+            <span className="min-w-0 flex-1">
+              <span
+                className={`flex items-center gap-2 ${
+                  isChecked
+                    ? "text-muted-foreground line-through"
+                    : "font-medium text-foreground"
+                }`}
+              >
+                <span className="truncate text-sm">{item.name}</span>
+                {item.isExtra && (
+                  <span className="shrink-0 rounded-full bg-amber-500/10 px-1.5 py-px text-[10px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400">
+                    Restock
+                  </span>
+                )}
               </span>
-              {/* Count input — only for computed rows. Extras have no
-                concept of "N times logged", so the cell stays as
-                `qty unit` only. */}
-              {!item.isExtra && (
-                <>
-                  <span className="px-0.5 font-mono text-[11px] tabular-nums text-muted-foreground/70">
-                    ·
-                  </span>
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    step="1"
-                    min="0"
-                    value={countDraft}
-                    onChange={(e) => onCountDraftChange(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        onSaveQty(item);
-                      } else if (e.key === "Escape") {
-                        e.preventDefault();
-                        onCloseQtyEditor();
-                      }
-                    }}
-                    onBlur={(e) => {
-                      if (
-                        e.relatedTarget instanceof Node &&
-                        e.currentTarget.parentElement?.contains(e.relatedTarget)
-                      ) {
-                        return;
-                      }
-                      onSaveQty(item);
-                    }}
-                    className="h-7 w-10 rounded border border-border/60 bg-background px-1.5 text-right font-mono text-[11px] tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    aria-label={`Count for ${item.name}`}
-                  />
-                  <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-                    ×
-                  </span>
-                </>
-              )}
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => onOpenQtyEditor(item)}
-              aria-label={`Edit quantity for ${item.name}`}
-              title="Edit quantity"
-              className="shrink-0 rounded font-mono text-[11px] tabular-nums text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-            >
-              {item.isExtra
-                ? `${item.totalGrams} ${item.extraUnit ?? "g"} · restock`
-                : `${item.totalGrams} g · ${item.appearances}×`}
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => onSendToPantry(item)}
-            aria-label={`Send ${item.name} to pantry`}
-            title="Send to pantry"
-            className="shrink-0 rounded p-1 text-muted-foreground/60 transition-colors hover:bg-accent/40 hover:text-foreground"
-          >
-            <PackagePlus className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => onOpenNoteEditor(item.name)}
-            aria-label={
-              note ? `Edit note for ${item.name}` : `Add note to ${item.name}`
-            }
-            title={note ? "Edit note" : "Add note"}
-            className={`shrink-0 rounded p-1 transition-colors hover:bg-accent/40 hover:text-foreground ${
-              note ? "text-foreground" : "text-muted-foreground/60"
-            }`}
-          >
-            <MessageSquare className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => onRemoveFromList(item)}
-            aria-label={`Remove ${item.name} from shopping list`}
-            title="Remove from shopping list"
-            className="shrink-0 rounded p-1 text-muted-foreground/60 transition-colors hover:bg-accent/40 hover:text-destructive"
-          >
-            <X className="h-3.5 w-3.5" />
+              <span className="mt-0.5 block truncate font-mono text-[11px] tabular-nums text-muted-foreground">
+                {item.isExtra
+                  ? `${item.totalGrams} ${item.extraUnit ?? "g"} · restock`
+                  : `${item.totalGrams} g · ${item.appearances}×`}
+                {note ? ` · ${note}` : ""}
+              </span>
+            </span>
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/50" />
           </button>
         </div>
-        {note && !isEditingNote && (
-          <button
-            type="button"
-            onClick={() => onOpenNoteEditor(item.name)}
-            className="mt-1 ml-12 block w-full truncate text-left text-[11px] italic text-muted-foreground hover:text-foreground"
-          >
-            {note}
-          </button>
-        )}
-        {isEditingNote && (
-          <div className="mt-2 ml-12 space-y-1.5">
-            <textarea
-              value={noteDraft}
-              onChange={(e) => onNoteDraftChange(e.target.value)}
-              placeholder="e.g. 1 kg pack, ask staff if missing"
-              rows={2}
-              autoFocus
-              className="w-full resize-y rounded-md border border-border/60 bg-background px-2 py-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  onCloseNoteEditor();
-                }
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                  e.preventDefault();
-                  onSaveNote(item.name);
-                }
-              }}
-            />
-            <div className="flex items-center gap-1.5">
-              <Button
-                type="button"
-                size="sm"
-                className="h-7 gap-1 text-xs"
-                onClick={() => onSaveNote(item.name)}
-              >
-                <Check className="h-3 w-3" />
-                Save
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-7 gap-1 text-xs"
-                onClick={onCloseNoteEditor}
-              >
-                <X className="h-3 w-3" />
-                Cancel
-              </Button>
-            </div>
-          </div>
-        )}
       </SwipeRow>
     </li>
   );
