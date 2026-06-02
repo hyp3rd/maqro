@@ -256,7 +256,7 @@ const FoodMobileCard: React.FC<Props> = ({
               onClick={() => startReplacingFood(mealId, food)}
               variant="ghost"
               size="icon"
-              className="h-9 w-9 text-muted-foreground"
+              className="h-9 w-9 coarse:size-10 text-muted-foreground"
               aria-label={`Replace ${food.name}`}
             >
               <Search className="h-4 w-4" />
@@ -266,7 +266,7 @@ const FoodMobileCard: React.FC<Props> = ({
               onClick={() => startEditingFood(mealId, food)}
               variant="ghost"
               size="icon"
-              className="h-9 w-9 text-muted-foreground"
+              className="h-9 w-9 coarse:size-10 text-muted-foreground"
               aria-label={`Edit portion of ${food.name}`}
             >
               <Edit2 className="h-4 w-4" />
@@ -276,7 +276,7 @@ const FoodMobileCard: React.FC<Props> = ({
               onClick={() => removeFood(mealId, food.id)}
               variant="ghost"
               size="icon"
-              className="h-9 w-9 text-muted-foreground hover:text-destructive"
+              className="h-9 w-9 coarse:size-10 text-muted-foreground hover:text-destructive"
               aria-label={`Remove ${food.name}`}
             >
               <Trash2 className="h-4 w-4" />

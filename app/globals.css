@@ -2,6 +2,13 @@
 
 @config "../tailwind.config.mjs";
 
+/* Touch-pointer variant: `coarse:` applies only on devices whose
+ * primary input is a finger (phones/tablets), so we can grow tap
+ * targets to the ~44px Apple-HIG / WCAG minimum on touch without
+ * inflating the denser pointer-precise desktop layout. Pairs with the
+ * `useCoarsePointer()` hook used elsewhere for gesture gating. */
+@custom-variant coarse (@media (pointer: coarse));
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -200,6 +207,26 @@
     select:not(.no-mobile-zoom-fix),
     textarea:not(.no-mobile-zoom-fix) {
       font-size: 16px !important;
+    }
+  }
+  /* Readability floor for touch. The dense desktop UI leans on sub-12px
+     literal sizes (text-[9px]/[10px]/[11px]) for meta + label text; at
+     phone arm's-length those fall below comfortable reading size. Nudge
+     each up on coarse pointers, capped at 12px (= text-xs) so the small-
+     text hierarchy never inverts against an adjacent text-xs. Desktop
+     density is untouched. Same `!important` reasoning as the input
+     zoom-fix above — these override Tailwind's per-element
+     arbitrary-size utilities (specificity tie, later layer otherwise
+     wins). */
+  @media (pointer: coarse) {
+    .text-\[9px\] {
+      font-size: 10.5px !important;
+    }
+    .text-\[10px\] {
+      font-size: 11px !important;
+    }
+    .text-\[11px\] {
+      font-size: 12px !important;
     }
   }
   /* Use tabular numerals for any element that wants stable digit width. */

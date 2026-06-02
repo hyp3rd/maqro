@@ -332,7 +332,7 @@ function ShareTodayButton({
       type="button"
       onClick={() => void share()}
       disabled={busy}
-      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border/60 bg-background text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border/60 bg-background text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 coarse:h-10 coarse:w-10"
       aria-label="Share today's macros"
       title="Share today's macros"
     >
