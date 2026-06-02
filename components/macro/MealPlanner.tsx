@@ -40,6 +40,7 @@ import {
   PreDiabeticDisclaimerDialog,
   hasDismissedPreDiabeticDisclaimer,
 } from "./PreDiabeticDisclaimerDialog";
+import { QuickAddFab } from "./QuickAddFab";
 
 interface MealPlannerProps {
   calculatedValues: CalculatedValues;
@@ -387,7 +388,7 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
              vertical space is cheaper than the friction of a hidden
              scroll target. `-mx-` + `px-` is the classic "scrollable
              strip flush to card edges but pads its content" trick. */
-          <div className="-mx-3 flex items-center gap-1.5 overflow-x-auto border-b border-border/60 bg-muted/20 px-3 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-0 sm:flex-wrap sm:overflow-x-visible sm:px-5 sm:py-2.5">
+          <div className="-mx-3 flex items-center gap-1.5 overflow-x-auto border-b border-border/60 bg-muted/20 px-3 py-2 [mask-image:linear-gradient(to_right,black_calc(100%_-_1.75rem),transparent)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-0 sm:flex-wrap sm:overflow-x-visible sm:px-5 sm:py-2.5 sm:[mask-image:none]">
             <span className="mr-1 flex shrink-0 items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
               <Sparkles className="h-3 w-3" />
               Refine
@@ -523,6 +524,10 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
           if (text) void onRefineMealPlan(text);
         }}
       />
+
+      {/* Thumb-zone quick-add: jumps focus back to the food search once
+          the add form has scrolled out of view. Mobile-only. */}
+      <QuickAddFab />
     </div>
   );
 };

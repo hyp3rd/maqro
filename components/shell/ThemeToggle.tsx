@@ -37,7 +37,7 @@ export function ThemeToggle() {
       onClick={cycle}
       aria-label={`Theme: ${current} (click to cycle)`}
       title={`Theme: ${current}`}
-      className="h-8 w-8 coarse:size-10"
+      className="h-8 w-8"
     >
       <Icon className="h-4 w-4" />
     </Button>

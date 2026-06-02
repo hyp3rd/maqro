@@ -9,8 +9,19 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { usePwaInstall } from "@/hooks/use-pwa-install";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { Download, Share, X } from "lucide-react";
+
+/** `false` during SSR + the first client render, `true` after hydration —
+ *  via `useSyncExternalStore` so there's no `setState`-in-effect (which
+ *  the repo's lint forbids). Mirrors the same helper in ThemeToggle. */
+function useMounted(): boolean {
+  return useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
+}
 
 /** localStorage key recording the user's "not now" dismissal. We
  *  back off for 30 days before re-prompting — long enough that the
@@ -86,6 +97,16 @@ export function InstallPrompt() {
   const [dismissedSession, setDismissedSession] = useState(0);
   const [iosOpen, setIosOpen] = useState(false);
 
+  // The banner's visibility depends on client-only signals — PWA
+  // installability (`navigator`-derived), standalone mode, and the
+  // localStorage dismissal timestamp. On the server they're all absent,
+  // so the server renders `null`; on the first client render they resolve
+  // and the banner would appear, which is a hydration mismatch (#418, and
+  // it regenerates the whole tree). Gate on `mounted` so the first client
+  // render also yields `null` — matching the server — and the banner then
+  // appears on the post-hydration re-render.
+  const mounted = useMounted();
+
   const hidden = computeHidden({
     canInstall,
     isIOS,
@@ -116,7 +137,7 @@ export function InstallPrompt() {
     setDismissedSession((n) => n + 1);
   }
 
-  if (hidden) return null;
+  if (!mounted || hidden) return null;
 
   return (
     <>

@@ -35,7 +35,7 @@ export function TopbarSearchButton() {
       type="button"
       onClick={openCommandPalette}
       aria-label="Search (Cmd-K)"
-      className="group inline-flex h-8 items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-2.5 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground coarse:h-10 sm:w-56 sm:justify-between"
+      className="group inline-flex h-8 items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-2.5 text-xs text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground sm:w-56 sm:justify-between"
     >
       <span className="flex items-center gap-2">
         <Search className="h-3.5 w-3.5" />
