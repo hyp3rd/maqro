@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SkeletonSettingRows } from "@/components/ui/skeleton";
 import { useDisplayName } from "@/hooks/use-display-name";
 import { useWebAuthnSupported } from "@/hooks/use-webauthn-supported";
 import { humanizePasskeyError } from "@/lib/auth/passkey-errors";
@@ -248,10 +249,7 @@ export function PasskeysSection({ signedIn }: { signedIn: boolean }) {
     return withIntro(
       <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
         {header}
-        <div className="px-5 py-6 text-center text-xs text-muted-foreground">
-          <Loader2 className="mx-auto mb-1.5 h-4 w-4 animate-spin" />
-          Loading…
-        </div>
+        <SkeletonSettingRows rows={2} />
       </section>,
     );
   }
@@ -298,7 +296,7 @@ export function PasskeysSection({ signedIn }: { signedIn: boolean }) {
     <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
       {header}
       {state.passkeys.length === 0 ? (
-        <div className="space-y-3 px-5 py-4">
+        <div className="animate-in fade-in space-y-3 px-5 py-4 duration-300">
           <p className="text-xs text-muted-foreground">
             No passkeys yet. Add one from this device to skip the email-code
             sign-in on your next visit.
@@ -320,7 +318,7 @@ export function PasskeysSection({ signedIn }: { signedIn: boolean }) {
         </div>
       ) : (
         <>
-          <ul className="divide-y divide-border/60">
+          <ul className="animate-in fade-in divide-y divide-border/60 duration-300">
             {state.passkeys.map((row) => {
               const isRenaming = renamingId === row.id;
               return (

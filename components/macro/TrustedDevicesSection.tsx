@@ -14,7 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { clientFetch } from "@/lib/auth/client-fetch";
 import { useEffect, useState } from "react";
-import { Loader2, ShieldOff, Trash2 } from "lucide-react";
+import { ShieldOff, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 /** Settings → Trusted devices.
@@ -189,15 +189,12 @@ export function TrustedDevicesSection({ signedIn }: { signedIn: boolean }) {
   );
 
   if (state.kind === "loading") {
-    return (
-      <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
-        {header}
-        <div className="px-5 py-6 text-center text-xs text-muted-foreground">
-          <Loader2 className="mx-auto mb-1.5 h-4 w-4 animate-spin" />
-          Loading…
-        </div>
-      </section>
-    );
+    // Render nothing while loading rather than a placeholder card: this
+    // section hides itself entirely when there are no trusted devices
+    // (the common case), so a skeleton would only flash a card that then
+    // collapses — the worse shift. The section appears (and the deep-link
+    // scroll re-pins) only if devices come back.
+    return null;
   }
 
   if (state.kind === "error") {
@@ -224,7 +221,7 @@ export function TrustedDevicesSection({ signedIn }: { signedIn: boolean }) {
   return (
     <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
       {header}
-      <ul className="divide-y divide-border/60">
+      <ul className="animate-in fade-in divide-y divide-border/60 duration-300">
         {state.rows.map((row) => {
           const isBusy = busyId === row.id;
           const label = row.device_label ?? row.user_agent ?? "Unknown device";
