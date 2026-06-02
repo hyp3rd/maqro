@@ -933,9 +933,21 @@ function BodyMeasurementsSection({
       </header>
 
       {entries === null ? (
-        <p className="px-5 py-8 text-center text-xs text-muted-foreground">
-          Loading…
-        </p>
+        // Reserve the metric grid's height (mirrors the Metric cells), so
+        // the card holds its size on load like the sibling chart sections.
+        <div className="px-5 py-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div
+                key={i}
+                className="rounded-md border border-border/40 bg-background/60 px-3 py-2.5"
+              >
+                <div className="h-2.5 w-12 animate-pulse rounded bg-muted/70" />
+                <div className="mt-1.5 h-5 w-16 animate-pulse rounded bg-muted" />
+              </div>
+            ))}
+          </div>
+        </div>
       ) : latest === null ? (
         <EmptyState
           title="No measurements yet"
