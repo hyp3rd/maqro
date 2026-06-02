@@ -150,7 +150,26 @@ export function CloudExportsList({ refreshKey, onPickForImport }: Props) {
   }
 
   if (entries === null) {
-    return <p className="px-1 py-2 text-xs text-muted-foreground">Loading…</p>;
+    // Mirror the export-row shape so the list doesn't pop when entries
+    // arrive (icon + two lines + two actions, same row chrome).
+    return (
+      <ul className="space-y-1.5">
+        {Array.from({ length: 2 }).map((_, i) => (
+          <li
+            key={i}
+            className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2"
+          >
+            <div className="h-3.5 w-3.5 shrink-0 animate-pulse rounded bg-muted" />
+            <div className="min-w-0 flex-1 space-y-1">
+              <div className="h-3 w-32 animate-pulse rounded bg-muted" />
+              <div className="h-2.5 w-16 animate-pulse rounded bg-muted/70" />
+            </div>
+            <div className="h-7 w-7 shrink-0 animate-pulse rounded bg-muted/70" />
+            <div className="h-7 w-7 shrink-0 animate-pulse rounded bg-muted/70" />
+          </li>
+        ))}
+      </ul>
+    );
   }
   if (error) {
     return (
