@@ -30,6 +30,7 @@ import {
 } from "@/lib/export";
 import { planFromFile, planImport, type ImportPlan } from "@/lib/import";
 import { GITHUB_REPO_URL } from "@/lib/links";
+import { scrollIntoViewUntilStable } from "@/lib/scroll-into-view";
 import { consumeSettingsScroll } from "@/lib/settings-anchor";
 import {
   downloadExport as downloadCloudExport,
@@ -1428,21 +1429,20 @@ function SyncSection() {
   const ref = useRef<HTMLElement>(null);
 
   // When Settings was opened from the topbar sync chip, scroll this
-  // section into view. The delay lets the view-switch transition
-  // (AnimatePresence mode="wait") settle so the target has its final
-  // layout position before we smooth-scroll to it.
+  // section into view — and keep it pinned while the sections above
+  // (connected devices, passkeys, MFA) finish loading and grow, which
+  // would otherwise push the target out from under a one-shot scroll.
   useEffect(() => {
     if (consumeSettingsScroll() !== "sync") return;
-    const id = window.setTimeout(() => {
-      ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 240);
-    return () => window.clearTimeout(id);
+    const el = ref.current;
+    if (!el) return;
+    return scrollIntoViewUntilStable(el);
   }, []);
 
   return (
     <section
       ref={ref}
-      className="overflow-hidden rounded-lg border border-border/60 bg-card"
+      className="scroll-mt-4 overflow-hidden rounded-lg border border-border/60 bg-card"
     >
       <header className="border-b border-border/60 px-5 py-3">
         <h3 className="text-sm font-semibold tracking-tight">Sync</h3>
