@@ -14,9 +14,10 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { SkeletonSettingRows } from "@/components/ui/skeleton";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import * as React from "react";
-import { CheckCircle2, Link2, Loader2, Unlink } from "lucide-react";
+import { CheckCircle2, Link2, Unlink } from "lucide-react";
 import { toast } from "sonner";
 import type { UserIdentity } from "@supabase/supabase-js";
 
@@ -154,13 +155,12 @@ export function ConnectedAccountsSection({ signedIn }: { signedIn: boolean }) {
   );
 
   if (state.kind === "loading") {
+    // Two provider rows (Google + Apple) is the exact loaded shape, so
+    // the skeleton reserves the body's final height — no shift on load.
     return (
       <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
         {header}
-        <div className="px-5 py-6 text-center text-xs text-muted-foreground">
-          <Loader2 className="mx-auto mb-1.5 h-4 w-4 animate-spin" />
-          Loading…
-        </div>
+        <SkeletonSettingRows rows={2} />
       </section>
     );
   }
@@ -186,7 +186,7 @@ export function ConnectedAccountsSection({ signedIn }: { signedIn: boolean }) {
   return (
     <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
       {header}
-      <ul className="divide-y divide-border/60">
+      <ul className="animate-in fade-in divide-y divide-border/60 duration-300">
         {PROVIDERS.map(({ key, label, Logo }) => {
           const identity = state.identities.find((i) => i.provider === key);
           const isLinked = identity !== undefined;

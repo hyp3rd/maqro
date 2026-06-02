@@ -15,16 +15,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SkeletonSettingRows } from "@/components/ui/skeleton";
 import { useDisplayName } from "@/hooks/use-display-name";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import * as React from "react";
-import {
-  CheckCircle2,
-  KeyRound,
-  Loader2,
-  ShieldCheck,
-  Trash2,
-} from "lucide-react";
+import { CheckCircle2, KeyRound, ShieldCheck, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { FeatureIntro } from "./FeatureIntro";
@@ -349,10 +344,7 @@ function MfaSectionBody({ signedIn }: { signedIn: boolean }) {
     return (
       <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
         {header}
-        <div className="px-5 py-6 text-center text-xs text-muted-foreground">
-          <Loader2 className="mx-auto mb-1.5 h-4 w-4 animate-spin" />
-          Loading…
-        </div>
+        <SkeletonSettingRows rows={2} />
       </section>
     );
   }
@@ -496,7 +488,7 @@ function MfaSectionBody({ signedIn }: { signedIn: boolean }) {
     return (
       <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
         {header}
-        <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex animate-in flex-col gap-3 px-5 py-4 fade-in duration-300 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-muted-foreground">
             Not set up. Adding a second factor makes it materially harder for
             anyone to take over your account, even if they intercept your

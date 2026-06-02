@@ -15,11 +15,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SkeletonSettingRows } from "@/components/ui/skeleton";
 import { useDisplayName } from "@/hooks/use-display-name";
 import { clientFetch } from "@/lib/auth/client-fetch";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import * as React from "react";
-import { CheckCircle2, LifeBuoy, Loader2, Mail, Trash2 } from "lucide-react";
+import { CheckCircle2, LifeBuoy, Mail, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { FeatureIntro } from "./FeatureIntro";
 
@@ -215,10 +216,7 @@ function BackupEmailSectionBody({ signedIn }: { signedIn: boolean }) {
     return (
       <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
         {header}
-        <div className="px-5 py-6 text-center text-xs text-muted-foreground">
-          <Loader2 className="mx-auto mb-1.5 h-4 w-4 animate-spin" />
-          Loading…
-        </div>
+        <SkeletonSettingRows rows={2} />
       </section>
     );
   }
@@ -241,7 +239,7 @@ function BackupEmailSectionBody({ signedIn }: { signedIn: boolean }) {
     return (
       <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
         {header}
-        <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex animate-in flex-col gap-3 px-5 py-4 fade-in duration-300 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2 text-sm">
             <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
             <span className="font-medium">{load.backupEmail}</span>
@@ -401,7 +399,7 @@ function BackupEmailSectionBody({ signedIn }: { signedIn: boolean }) {
   return (
     <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
       {header}
-      <div className="space-y-3 px-5 py-4">
+      <div className="animate-in space-y-3 px-5 py-4 fade-in duration-300">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
           <div className="flex-1 space-y-1.5">
             <Label
