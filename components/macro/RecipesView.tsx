@@ -5,6 +5,16 @@ import type {
   PersonalInfo,
   Recipe,
 } from "@/components/macro/types";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -105,6 +115,7 @@ export function RecipesView({ profile, currentMeals }: Props) {
   const [sharing, setSharing] = useState<Recipe | null>(null);
   const [viewing, setViewing] = useState<Recipe | null>(null);
   const [batchApplying, setBatchApplying] = useState<Recipe | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Recipe | null>(null);
   const [sharedOnly, setSharedOnly] = useState(false);
   const [sortMode, setSortMode] = useSortMode("sort:recipes", "recent");
   // Drag distance gate keeps the click handlers on the row (Edit /
@@ -266,7 +277,6 @@ export function RecipesView({ profile, currentMeals }: Props) {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this recipe?")) return;
     const prev = recipes;
     setRecipes((rs) => (rs ? rs.filter((r) => r.id !== id) : rs));
     try {
@@ -447,7 +457,7 @@ export function RecipesView({ profile, currentMeals }: Props) {
                   }}
                   onShare={() => setSharing(r)}
                   onBatchApply={() => setBatchApplying(r)}
-                  onDelete={() => handleDelete(r.id)}
+                  onDelete={() => setPendingDelete(r)}
                 />
               ))}
             </ul>
@@ -537,6 +547,35 @@ export function RecipesView({ profile, currentMeals }: Props) {
           currentMeals={currentMeals}
         />
       )}
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(o) => {
+          if (!o) setPendingDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete recipe?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDelete
+                ? `"${pendingDelete.name}" will be permanently deleted on all your devices.`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingDelete) void handleDelete(pendingDelete.id);
+                setPendingDelete(null);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -14,6 +14,13 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -47,6 +54,7 @@ import { useDataRev } from "@/lib/sync/data-bus";
 import { useEffect, useMemo, useState } from "react";
 import {
   Check,
+  ChevronRight,
   ListPlus,
   Package,
   Pencil,
@@ -63,6 +71,7 @@ import {
   type PantryDraftItem,
 } from "./PantryScanReviewDialog";
 import { PantryScanSheet } from "./PantryScanSheet";
+import { SheetAction } from "./SheetAction";
 import { ShopForMeDialog } from "./ShopForMeDialog";
 
 /** Mass / volume units the pantry knows by name (the rest go
@@ -95,6 +104,10 @@ export function PantryView({ aiAvailable = false }: { aiAvailable?: boolean }) {
   // id of the row being edited inline, or null.
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editFields, setEditFields] = useState<DraftFields>(EMPTY_DRAFT);
+  // Which item's action sheet is open (mobile tap-to-act). The sheet
+  // hosts the per-item actions and the multi-field editor, replacing the
+  // old cramped icon cluster + inline edit row.
+  const [sheetItemId, setSheetItemId] = useState<string | null>(null);
   // Photo-scan sheet + its review dialog. `scanResult` non-null opens
   // the review dialog; the sheet closes itself once it has a result.
   const [scanOpen, setScanOpen] = useState(false);
@@ -414,39 +427,40 @@ export function PantryView({ aiAvailable = false }: { aiAvailable?: boolean }) {
           </div>
         ) : (
           <ul className="divide-y divide-border/60">
-            {(paged ?? []).map((item) =>
-              editingId === item.id ? (
-                <li key={item.id}>
-                  <PantryItemEditor
-                    fields={editFields}
-                    onChange={setEditFields}
-                    onSave={() => handleSaveEdit(item, editFields)}
-                    onCancel={() => setEditingId(null)}
-                    saveLabel="Save"
-                  />
-                </li>
-              ) : (
-                <li key={item.id}>
-                  <SwipeRow
-                    onSwipeLeft={() => setPendingDelete(item)}
-                    onSwipeRight={() => void sendToShoppingList(item)}
-                    leftReveal={{
-                      label: "Delete",
-                      intent: "danger",
-                      icon: <Trash2 className="h-3.5 w-3.5" />,
+            {(paged ?? []).map((item) => (
+              <li key={item.id}>
+                <SwipeRow
+                  onSwipeLeft={() => setPendingDelete(item)}
+                  onSwipeRight={() => void sendToShoppingList(item)}
+                  leftReveal={{
+                    label: "Delete",
+                    intent: "danger",
+                    icon: <Trash2 className="h-3.5 w-3.5" />,
+                  }}
+                  rightReveal={{
+                    label: "To shopping list",
+                    intent: "info",
+                    icon: <ListPlus className="h-3.5 w-3.5" />,
+                  }}
+                  surfaceClassName="bg-card"
+                >
+                  {/* The whole row is a single tap target → opens the
+                      action sheet. `truncate` lives on the block-level
+                      <p> with a `min-w-0 flex-1` parent so long names clip
+                      instead of overrunning the quantity. */}
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`${item.name} — open actions`}
+                    onClick={() => setSheetItemId(item.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setSheetItemId(item.id);
+                      }
                     }}
-                    rightReveal={{
-                      label: "To shopping list",
-                      intent: "info",
-                      icon: <ListPlus className="h-3.5 w-3.5" />,
-                    }}
-                    surfaceClassName="bg-card flex items-center gap-2 px-5 py-2.5"
+                    className="flex cursor-pointer items-center gap-2 px-5 py-3 text-left transition-colors active:bg-muted/40"
                   >
-                    {/* `truncate` lives on the block-level <p> with a
-                      `min-w-0 flex-1` parent — an inline <span> won't
-                      clip inside a flex row, which let long names
-                      overrun the quantity + actions on narrow / mobile
-                      viewports. */}
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">
                         {item.name}
@@ -477,70 +491,11 @@ export function PantryView({ aiAvailable = false }: { aiAvailable?: boolean }) {
                     <span className="max-w-[40%] shrink-0 truncate font-mono text-xs tabular-nums text-muted-foreground">
                       {item.quantity} {item.unit}
                     </span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground"
-                      aria-label={`Edit ${item.name}`}
-                      onClick={() => {
-                        setEditingId(item.id);
-                        setEditFields({
-                          name: item.name,
-                          quantity: String(item.quantity),
-                          unit: item.unit,
-                          category: item.category ?? "",
-                          density:
-                            item.density != null ? String(item.density) : "",
-                          lowThreshold:
-                            item.lowThreshold != null
-                              ? String(item.lowThreshold)
-                              : "",
-                        });
-                        setDraft(null);
-                      }}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground"
-                      aria-label={`Send ${item.name} to shopping list`}
-                      title="Send to shopping list"
-                      onClick={() => void sendToShoppingList(item)}
-                    >
-                      <ListPlus className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground"
-                      aria-label={`Restock ${item.name}`}
-                      title="Restock with AI Shop for me"
-                      onClick={() => {
-                        setRestockItemId(item.id);
-                        setShopOpen(true);
-                      }}
-                    >
-                      <ShoppingCart className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                      aria-label={`Delete ${item.name}`}
-                      onClick={() => setPendingDelete(item)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </SwipeRow>
-                </li>
-              ),
-            )}
+                    <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground/50" />
+                  </div>
+                </SwipeRow>
+              </li>
+            ))}
           </ul>
         )}
 
@@ -594,6 +549,7 @@ export function PantryView({ aiAvailable = false }: { aiAvailable?: boolean }) {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => pendingDelete && handleDelete(pendingDelete)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Remove
             </AlertDialogAction>
@@ -628,6 +584,100 @@ export function PantryView({ aiAvailable = false }: { aiAvailable?: boolean }) {
         pantryItems={items ?? []}
         extraSeedItemId={restockItemId ?? undefined}
       />
+
+      {/* Tap-to-act sheet: per-item actions + the multi-field editor,
+          replacing the old per-row icon cluster and inline edit row. */}
+      <Dialog
+        open={sheetItemId !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            if (editingId === sheetItemId) setEditingId(null);
+            setSheetItemId(null);
+          }
+        }}
+      >
+        <DialogContent className="gap-3">
+          {(() => {
+            const item = (items ?? []).find((i) => i.id === sheetItemId);
+            if (!item) return null;
+            const editing = editingId === item.id;
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="truncate pr-6 text-left">
+                    {item.name}
+                  </DialogTitle>
+                  <DialogDescription className="text-left font-mono text-xs tabular-nums">
+                    {item.quantity} {item.unit}
+                  </DialogDescription>
+                </DialogHeader>
+                {editing ? (
+                  <PantryItemEditor
+                    fields={editFields}
+                    onChange={setEditFields}
+                    onSave={() => {
+                      void handleSaveEdit(item, editFields);
+                      setSheetItemId(null);
+                    }}
+                    onCancel={() => setEditingId(null)}
+                    saveLabel="Save"
+                  />
+                ) : (
+                  <div className="space-y-0.5 pt-1">
+                    <SheetAction
+                      icon={Pencil}
+                      label="Edit item"
+                      hasNext
+                      onClick={() => {
+                        setEditFields({
+                          name: item.name,
+                          quantity: String(item.quantity),
+                          unit: item.unit,
+                          category: item.category ?? "",
+                          density:
+                            item.density != null ? String(item.density) : "",
+                          lowThreshold:
+                            item.lowThreshold != null
+                              ? String(item.lowThreshold)
+                              : "",
+                        });
+                        setDraft(null);
+                        setEditingId(item.id);
+                      }}
+                    />
+                    <SheetAction
+                      icon={ListPlus}
+                      label="Send to shopping list"
+                      onClick={() => {
+                        void sendToShoppingList(item);
+                        setSheetItemId(null);
+                      }}
+                    />
+                    <SheetAction
+                      icon={ShoppingCart}
+                      label="Restock with AI"
+                      onClick={() => {
+                        setRestockItemId(item.id);
+                        setShopOpen(true);
+                        setSheetItemId(null);
+                      }}
+                    />
+                    <SheetAction
+                      icon={Trash2}
+                      label="Remove"
+                      destructive
+                      onClick={() => {
+                        setPendingDelete(item);
+                        setSheetItemId(null);
+                      }}
+                    />
+                  </div>
+                )}
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

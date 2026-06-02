@@ -1,5 +1,15 @@
 "use client";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   deleteExport,
@@ -44,6 +54,7 @@ export function CloudExportsList({ refreshKey, onPickForImport }: Props) {
   const [entries, setEntries] = useState<CloudExport[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [downloadingPath, setDownloadingPath] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<CloudExport | null>(null);
 
   // Load on mount + whenever refreshKey bumps. Every state write happens
   // inside the async IIFE — never synchronously in the effect body — so
@@ -124,12 +135,6 @@ export function CloudExportsList({ refreshKey, onPickForImport }: Props) {
   }
 
   async function remove(entry: CloudExport) {
-    if (
-      !confirm(
-        `Delete the cloud copy from ${formatExportedAt(entry.exportedAt)}? Local data is unaffected.`,
-      )
-    )
-      return;
     const supabase = getSupabaseBrowser();
     if (!supabase) return;
     // Optimistic remove.
@@ -168,58 +173,89 @@ export function CloudExportsList({ refreshKey, onPickForImport }: Props) {
   }
 
   return (
-    <ul className="space-y-1.5">
-      {entries.map((entry) => (
-        <li
-          key={entry.path}
-          className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2"
-        >
-          <FileJson className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          <div className="min-w-0 flex-1">
-            <div className="text-xs font-medium">
-              {formatExportedAt(entry.exportedAt)}
+    <>
+      <ul className="space-y-1.5">
+        {entries.map((entry) => (
+          <li
+            key={entry.path}
+            className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2"
+          >
+            <FileJson className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-medium">
+                {formatExportedAt(entry.exportedAt)}
+              </div>
+              <div className="font-mono text-[10px] tabular-nums text-muted-foreground">
+                {formatBytes(entry.sizeBytes)}
+              </div>
             </div>
-            <div className="font-mono text-[10px] tabular-nums text-muted-foreground">
-              {formatBytes(entry.sizeBytes)}
-            </div>
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => onPickForImport(entry)}
-            title="Download & review for import"
-          >
-            <Cloud className="h-3.5 w-3.5" />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => saveToDisk(entry)}
-            disabled={downloadingPath === entry.path}
-            title="Save to disk"
-          >
-            {downloadingPath === entry.path ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <CloudDownload className="h-3.5 w-3.5" />
-            )}
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-muted-foreground hover:text-destructive"
-            onClick={() => remove(entry)}
-            title="Delete cloud copy"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
-        </li>
-      ))}
-    </ul>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => onPickForImport(entry)}
+              title="Download & review for import"
+            >
+              <Cloud className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => saveToDisk(entry)}
+              disabled={downloadingPath === entry.path}
+              title="Save to disk"
+            >
+              {downloadingPath === entry.path ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <CloudDownload className="h-3.5 w-3.5" />
+              )}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+              onClick={() => setPendingDelete(entry)}
+              title="Delete cloud copy"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </li>
+        ))}
+      </ul>
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(o) => {
+          if (!o) setPendingDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete cloud copy?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDelete
+                ? `The cloud copy from ${formatExportedAt(pendingDelete.exportedAt)} will be deleted. Local data is unaffected.`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingDelete) void remove(pendingDelete);
+                setPendingDelete(null);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

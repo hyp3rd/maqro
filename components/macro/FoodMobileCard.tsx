@@ -1,23 +1,42 @@
 "use client";
 
-import { useDoubleTap } from "@/hooks/use-double-tap";
-import React from "react";
-import { Edit2, GripVertical, Search, Trash2 } from "lucide-react";
+import React, { useState } from "react";
+import {
+  ChevronRight,
+  Copy,
+  GripVertical,
+  Minus,
+  Plus,
+  RefreshCw,
+  Search,
+  SlidersHorizontal,
+  Trash2,
+} from "lucide-react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Button } from "../ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "../ui/dialog";
 import { Input } from "../ui/input";
+import { SheetAction, SheetConfirm } from "./SheetAction";
 import { Food, FoodItem as FoodItemType } from "./types";
 
-/** Mobile-first card layout for a food row in a meal slot. Counterpart
- *  to [FoodItem.tsx](./FoodItem.tsx) which renders the same data as a
- *  dense `<tr>` for sm+ viewports.
+/** Mobile-first food row in a meal slot.
  *
- *  MealItem mounts both - the mobile card under `sm:hidden`, the table
- *  row under `hidden sm:table-row` - so each viewport gets the layout
- *  built for it. dnd-kit's SortableContext sees both registrations per
- *  food id, but only the visible variant participates in hit-testing.
- *  Same pattern as MyFoodsView's FoodMobileCard / FoodTableRow split. */
+ *  The whole row is a single large tap target; tapping it opens a
+ *  bottom-sheet with big, labelled actions (Edit portion / Replace /
+ *  Duplicate / Remove) — instead of cramming a cluster of ~32px icon
+ *  buttons into the row the way the desktop table does. "Edit portion"
+ *  becomes a focused step inside the sheet (a stepper + numeric field, no
+ *  squinting at a tiny inline input). Drag-to-reorder stays on the left
+ *  grip; "Replace" still takes over the card with a search field (shared
+ *  with the desktop row). Counterpart to [FoodItem.tsx](./FoodItem.tsx),
+ *  the dense `<tr>` rendered for sm+ viewports. */
 interface Props {
   food: FoodItemType;
   mealId: number;
@@ -65,27 +84,11 @@ const FoodMobileCard: React.FC<Props> = ({
   removeFood,
   duplicateFood,
 }) => {
+  const [sheetOpen, setSheetOpen] = useState(false);
+  // Remove asks for an in-sheet confirm step before deleting, so every
+  // delete is a bottom-sheet confirmation (never a silent removal).
+  const [confirming, setConfirming] = useState(false);
   const isEditing = editingFood.foodId === food.id;
-  // Pull the edit row above the iOS soft keyboard once edit mode
-  // engages. Without this scroll, iOS just focuses the input and
-  // leaves the row covered by the keyboard + its prediction toolbar,
-  // hiding the Save / Cancel buttons. We wait one tick after focus
-  // so iOS finishes resizing the visual viewport before we scroll —
-  // measuring before the resize lands wrong every time. `block:
-  // 'center'` is the magic value: 'nearest' is a no-op here because
-  // the row is technically "in view" already (just under the
-  // keyboard), and 'start' jams the row against the top safe-area.
-  const editInputRef = React.useRef<HTMLInputElement>(null);
-  React.useEffect(() => {
-    if (!isEditing) return;
-    const t = setTimeout(() => {
-      editInputRef.current?.scrollIntoView({
-        block: "center",
-        behavior: "smooth",
-      });
-    }, 300);
-    return () => clearTimeout(t);
-  }, [isEditing]);
   const isReplacing = replacingFood.foodId === food.id;
   const sortableId = `${mealId}:${food.id}`;
   const {
@@ -106,13 +109,43 @@ const FoodMobileCard: React.FC<Props> = ({
     opacity: isDragging ? 0.4 : 1,
   };
 
-  // Double-tap the food's name / macros to duplicate it ("I ate two of
-  // these"). No single-tap action — the content area isn't otherwise
-  // interactive (the buttons handle replace / edit / remove), so the
-  // hook fires only on the double and never delays anything.
-  const { onPointerUp: onContentPointerUp } = useDoubleTap({
-    onDoubleTap: () => duplicateFood(mealId, food.id),
-  });
+  // The macro summary — reused verbatim in the collapsed row and the
+  // sheet header so the user sees the same line they tapped.
+  const macroLine = (
+    <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-xs tabular-nums">
+      <span className="text-foreground">
+        {food.portionSize ? `${food.portionSize} g` : "–"}
+      </span>
+      <span className="text-muted-foreground/50">·</span>
+      <span className="text-foreground">{food.calories} kcal</span>
+      <span className="text-muted-foreground/50">·</span>
+      <span style={{ color: "hsl(var(--macro-protein))" }}>
+        P{food.protein}
+      </span>
+      <span style={{ color: "hsl(var(--macro-carbs))" }}>C{food.carbs}</span>
+      <span style={{ color: "hsl(var(--macro-fat))" }}>F{food.fat}</span>
+    </span>
+  );
+
+  // Nudge the portion up/down in 5g steps from the stepper buttons. We
+  // reuse the parent's change handler (it owns the editingFood state +
+  // the live macro recompute) by handing it a synthetic input value.
+  function bumpPortion(delta: number) {
+    const next = Math.max(
+      1,
+      Math.min(2000, (editingFood.portionSize || 0) + delta),
+    );
+    handleEditPortionChange({
+      target: { value: String(next) },
+    } as React.ChangeEvent<HTMLInputElement>);
+  }
+
+  function closeSheet() {
+    // Closing mid-edit discards the edit (matches the old Cancel button).
+    if (isEditing) cancelEditing();
+    setConfirming(false);
+    setSheetOpen(false);
+  }
 
   // Replace mode takes over the whole card - search input + suggestion
   // dropdown. Same affordance as the desktop row.
@@ -172,118 +205,159 @@ const FoodMobileCard: React.FC<Props> = ({
     <li
       ref={setNodeRef}
       style={style}
-      className="flex items-start gap-2 px-3 py-3 active:bg-muted/30"
+      className="flex items-stretch gap-1 px-2"
     >
       <button
         type="button"
         aria-label={`Drag ${food.name}`}
-        className="flex h-10 w-6 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted-foreground hover:text-foreground active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-30"
-        disabled={isEditing}
+        className="flex w-7 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted-foreground/70 hover:text-foreground active:cursor-grabbing"
         {...attributes}
         {...listeners}
       >
         <GripVertical className="h-4 w-4" />
       </button>
 
-      {/* Double-tap target. Only armed when not editing (the edit input
-          lives here in edit mode and must receive taps normally). */}
-      <div
-        className="min-w-0 flex-1 space-y-1"
-        onPointerUp={isEditing ? undefined : onContentPointerUp}
+      {/* The whole content is the tap target → opens the action sheet. */}
+      <button
+        type="button"
+        onClick={() => setSheetOpen(true)}
+        aria-label={`${food.name} — open actions`}
+        className="flex min-w-0 flex-1 items-center gap-2 rounded-md py-2.5 pr-1 text-left transition-colors active:bg-muted/40"
       >
-        <p className="truncate text-sm font-medium text-foreground">
-          {food.name}
-        </p>
-        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 font-mono text-[11px] tabular-nums text-muted-foreground">
-          {isEditing ? (
-            <Input
-              ref={editInputRef}
-              type="number"
-              value={editingFood.portionSize}
-              onChange={handleEditPortionChange}
-              className="h-8 w-20 px-2 text-right font-mono text-sm tabular-nums"
-              min="1"
-              max="1000"
-              autoFocus
-            />
-          ) : (
-            <span className="font-medium text-foreground">
-              {food.portionSize ?? "–"}
-              {food.portionSize ? "g" : ""}
-            </span>
-          )}
-          <span className="text-muted-foreground/70">·</span>
-          <span className="font-medium text-foreground">
-            {food.calories} kcal
+        <span className="min-w-0 flex-1 space-y-1">
+          <span className="block truncate text-sm font-medium text-foreground">
+            {food.name}
           </span>
-          <span className="text-muted-foreground/70">·</span>
-          <span style={{ color: "hsl(var(--macro-protein))" }}>
-            P{food.protein}
-          </span>
-          <span style={{ color: "hsl(var(--macro-carbs))" }}>
-            C{food.carbs}
-          </span>
-          <span style={{ color: "hsl(var(--macro-fat))" }}>F{food.fat}</span>
-        </div>
-      </div>
+          {macroLine}
+        </span>
+        <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground/50" />
+      </button>
 
-      <div className="flex shrink-0 items-center gap-0.5">
-        {isEditing ? (
-          <>
-            <Button
-              type="button"
-              onClick={saveEditedPortion}
-              variant="default"
-              size="sm"
-              className="h-9 px-3 text-xs"
+      <Dialog
+        open={sheetOpen}
+        onOpenChange={(open) => {
+          if (!open) closeSheet();
+        }}
+      >
+        <DialogContent className="gap-3">
+          <DialogHeader>
+            <DialogTitle className="truncate pr-6 text-left">
+              {food.name}
+            </DialogTitle>
+            <DialogDescription
+              asChild
+              className="text-left"
             >
-              Save
-            </Button>
-            <Button
-              type="button"
-              onClick={cancelEditing}
-              variant="ghost"
-              size="sm"
-              className="h-9 px-2 text-xs"
-            >
-              Cancel
-            </Button>
-          </>
-        ) : (
-          <>
-            <Button
-              type="button"
-              onClick={() => startReplacingFood(mealId, food)}
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 coarse:size-10 text-muted-foreground"
-              aria-label={`Replace ${food.name}`}
-            >
-              <Search className="h-4 w-4" />
-            </Button>
-            <Button
-              type="button"
-              onClick={() => startEditingFood(mealId, food)}
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 coarse:size-10 text-muted-foreground"
-              aria-label={`Edit portion of ${food.name}`}
-            >
-              <Edit2 className="h-4 w-4" />
-            </Button>
-            <Button
-              type="button"
-              onClick={() => removeFood(mealId, food.id)}
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 coarse:size-10 text-muted-foreground hover:text-destructive"
-              aria-label={`Remove ${food.name}`}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </>
-        )}
-      </div>
+              <div>{macroLine}</div>
+            </DialogDescription>
+          </DialogHeader>
+
+          {confirming ? (
+            <SheetConfirm
+              title={`Remove ${food.name}?`}
+              description="This food will be removed from the meal."
+              onCancel={() => setConfirming(false)}
+              onConfirm={() => {
+                removeFood(mealId, food.id);
+                setConfirming(false);
+                setSheetOpen(false);
+              }}
+            />
+          ) : isEditing ? (
+            <div className="space-y-4 pt-1">
+              <div>
+                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Portion (grams)
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-12 w-12 shrink-0"
+                    onClick={() => bumpPortion(-5)}
+                    aria-label="Decrease portion by 5 grams"
+                  >
+                    <Minus className="h-5 w-5" />
+                  </Button>
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    value={editingFood.portionSize}
+                    onChange={handleEditPortionChange}
+                    className="h-12 flex-1 text-center font-mono text-lg tabular-nums"
+                    min="1"
+                    max="2000"
+                    autoFocus
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="h-12 w-12 shrink-0"
+                    onClick={() => bumpPortion(5)}
+                    aria-label="Increase portion by 5 grams"
+                  >
+                    <Plus className="h-5 w-5" />
+                  </Button>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-12 flex-1"
+                  onClick={() => cancelEditing()}
+                >
+                  Back
+                </Button>
+                <Button
+                  type="button"
+                  className="h-12 flex-1"
+                  onClick={() => {
+                    saveEditedPortion();
+                    setSheetOpen(false);
+                  }}
+                >
+                  Save
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-0.5 pt-1">
+              <SheetAction
+                icon={SlidersHorizontal}
+                label="Edit portion"
+                hasNext
+                onClick={() => startEditingFood(mealId, food)}
+              />
+              <SheetAction
+                icon={RefreshCw}
+                label="Replace food"
+                hasNext
+                onClick={() => {
+                  setSheetOpen(false);
+                  startReplacingFood(mealId, food);
+                }}
+              />
+              <SheetAction
+                icon={Copy}
+                label="Duplicate"
+                onClick={() => {
+                  duplicateFood(mealId, food.id);
+                  setSheetOpen(false);
+                }}
+              />
+              <SheetAction
+                icon={Trash2}
+                label="Remove"
+                destructive
+                onClick={() => setConfirming(true)}
+              />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </li>
   );
 };
