@@ -56,6 +56,10 @@ type Props = {
   result: ResolvedMealPhoto | null;
   /** The user's current meal slots - picker source. */
   meals: Meal[];
+  /** Pre-selected meal slot. Set by the guided Log-meal launcher so the
+   *  photo/voice review opens on the meal the user already chose;
+   *  falls back to the first slot when absent. */
+  defaultMealId?: number;
   /** Fires with the chosen meal id + the FoodItems to append AND
    *  (when the user opted in) the AI-estimated foods to persist as
    *  custom foods. The parent owns the actual writes. */
@@ -76,6 +80,7 @@ export function MealPhotoReviewDialog({
   onOpenChange,
   result,
   meals,
+  defaultMealId,
   onConfirm,
 }: Props) {
   return (
@@ -88,6 +93,7 @@ export function MealPhotoReviewDialog({
           <ReviewBody
             result={result}
             meals={meals}
+            defaultMealId={defaultMealId}
             onConfirm={(mealId, foods, newCustomFoods) => {
               onConfirm(mealId, foods, newCustomFoods);
               onOpenChange(false);
@@ -124,11 +130,13 @@ function buildFoodItem(row: Row, idBase: number, index: number): FoodItem {
 function ReviewBody({
   result,
   meals,
+  defaultMealId,
   onConfirm,
   onCancel,
 }: {
   result: ResolvedMealPhoto;
   meals: Meal[];
+  defaultMealId?: number;
   onConfirm: (
     mealId: number,
     foods: FoodItem[],
@@ -137,7 +145,9 @@ function ReviewBody({
   onCancel: () => void;
 }) {
   const [rows, setRows] = useState<Row[]>(result.foods);
-  const [mealId, setMealId] = useState<number | null>(meals[0]?.id ?? null);
+  const [mealId, setMealId] = useState<number | null>(
+    defaultMealId ?? meals[0]?.id ?? null,
+  );
   // Whether to persist AI-estimated rows as custom foods on confirm. The
   // default is on: the user just spent the effort to identify a tomato,
   // saving it means the next photo of the same item resolves to the

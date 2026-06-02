@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   GripVertical,
   Loader2,
+  Plus,
   RefreshCw,
   Sparkles,
 } from "lucide-react";
@@ -142,6 +143,10 @@ interface MealPlannerProps {
   onSaveAsTemplate: (mealId: number) => void;
   onAddFromTemplate: (mealId: number) => void;
   onApplyRecipe: (mealId: number) => void;
+  /** Open the guided "Log meal" sheet — the mobile add-food entry
+   *  point. The dense inline AddFoodForm is desktop-only; on mobile
+   *  this drives a step-by-step bottom-sheet instead. */
+  onOpenLogMeal: () => void;
 }
 
 const MealPlanner: React.FC<MealPlannerProps> = ({
@@ -196,6 +201,7 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
   onSaveAsTemplate,
   onAddFromTemplate,
   onApplyRecipe,
+  onOpenLogMeal,
 }) => {
   const isError = mealPlanMessage.toLowerCase().includes("error");
   const dayIsEmpty = meals.every((m) => m.foods.length === 0);
@@ -299,30 +305,44 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
         </div>
       </section>
 
-      <AddFoodForm
-        meals={meals}
-        newFood={newFood}
-        foodSearch={foodSearch}
-        foodSuggestions={foodSuggestions}
-        pantryItems={pantryItems}
-        showSuggestions={showSuggestions}
-        isSearchingRemote={isSearchingRemote}
-        portionSize={portionSize}
-        suggestionsRef={suggestionsRef}
-        setNewFood={setNewFood}
-        handleFoodSearch={handleFoodSearch}
-        handleFoodSelect={handleFoodSelect}
-        handlePortionChange={handlePortionChange}
-        handleFoodChange={handleFoodChange}
-        addFood={addFood}
-        setFoodSearch={setFoodSearch}
-        setShowSuggestions={() => {}}
-        setPortionSize={setPortionSize}
-        onSaveOffToCustom={onSaveOffToCustom}
-        onOpenCustomFoodForm={onOpenCustomFoodForm}
-        onOpenCamera={onOpenCamera}
-        onOpenVoice={onOpenVoice}
-      />
+      {/* Mobile add-food entry point: one prominent button that opens
+          the guided "Log meal" bottom-sheet. The dense inline form is
+          desktop-only — beta testers found it confusing on a phone. */}
+      <Button
+        type="button"
+        onClick={onOpenLogMeal}
+        className="h-12 w-full gap-1.5 text-base md:hidden"
+      >
+        <Plus className="h-5 w-5" />
+        Log meal
+      </Button>
+
+      <div className="hidden md:block">
+        <AddFoodForm
+          meals={meals}
+          newFood={newFood}
+          foodSearch={foodSearch}
+          foodSuggestions={foodSuggestions}
+          pantryItems={pantryItems}
+          showSuggestions={showSuggestions}
+          isSearchingRemote={isSearchingRemote}
+          portionSize={portionSize}
+          suggestionsRef={suggestionsRef}
+          setNewFood={setNewFood}
+          handleFoodSearch={handleFoodSearch}
+          handleFoodSelect={handleFoodSelect}
+          handlePortionChange={handlePortionChange}
+          handleFoodChange={handleFoodChange}
+          addFood={addFood}
+          setFoodSearch={setFoodSearch}
+          setShowSuggestions={() => {}}
+          setPortionSize={setPortionSize}
+          onSaveOffToCustom={onSaveOffToCustom}
+          onOpenCustomFoodForm={onOpenCustomFoodForm}
+          onOpenCamera={onOpenCamera}
+          onOpenVoice={onOpenVoice}
+        />
+      </div>
 
       <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
         {/* Header stays single-row at every breakpoint. On mobile the
@@ -525,9 +545,9 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
         }}
       />
 
-      {/* Thumb-zone quick-add: jumps focus back to the food search once
-          the add form has scrolled out of view. Mobile-only. */}
-      <QuickAddFab />
+      {/* Thumb-zone quick-add: opens the guided Log meal sheet from
+          anywhere in the list. Mobile-only. */}
+      <QuickAddFab onOpen={onOpenLogMeal} />
     </div>
   );
 };
