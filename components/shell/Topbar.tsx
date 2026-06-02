@@ -4,6 +4,7 @@ import Link from "next/link";
 import { LogoMark } from "./LogoMark";
 import { NotificationBell } from "./NotificationBell";
 import type { ViewKey } from "./Sidebar";
+import { SyncModeIndicator } from "./SyncModeIndicator";
 import { SyncStatusPill } from "./SyncStatusPill";
 import { ThemeToggle } from "./ThemeToggle";
 import { TopbarSearchButton } from "./TopbarSearchButton";
@@ -66,6 +67,7 @@ export function Topbar({ current, onSelectView }: Props) {
           the rest of the toolbar gets the remaining width. */}
       <div className="ml-auto flex items-center gap-2 sm:gap-3">
         <TopbarSearchButton />
+        <SyncModeIndicator onSelectView={onSelectView} />
         <SyncStatusPill />
         <NotificationBell onSelectView={onSelectView} />
         <ThemeToggle />
