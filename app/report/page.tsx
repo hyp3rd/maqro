@@ -27,7 +27,14 @@ import {
   type MicronutrientKey,
 } from "@/lib/rda";
 import { computeStreak, type StreakState } from "@/lib/streaks";
-import { detectPlateau, recalibrateTdee } from "@/lib/trends";
+import {
+  ADAPTIVE_DELTA_THRESHOLD,
+  confidenceLabel,
+  detectPlateau,
+  inferAdaptiveTdee,
+  recalibrateTdee,
+  type AdaptiveTdee,
+} from "@/lib/trends";
 import { cmToInches, kgToDisplay } from "@/lib/units";
 import { APP_VERSION } from "@/lib/version";
 import { computeWeeklyRecap, type WeeklyRecap } from "@/lib/weekly-recap";
@@ -228,6 +235,26 @@ function ReportBody({
       }),
     [weightsWindow, calc?.tdee, calc?.dailyDelta],
   );
+  // Adaptive TDEE matches the live Progress view: full history (the
+  // estimator windows internally), so the PDF shows the same maintenance
+  // number regardless of the report's selected date range.
+  const adaptive = useMemo<AdaptiveTdee>(() => {
+    const intake = logs
+      .filter((l) => l.date <= today)
+      .map((l) => ({
+        date: l.date,
+        calories: l.meals.reduce(
+          (s, m) => s + m.foods.reduce((ms, f) => ms + f.calories, 0),
+          0,
+        ),
+      }));
+    return inferAdaptiveTdee({ weights, intake });
+  }, [weights, logs, today]);
+  const currentTdee = calc?.tdee ?? 0;
+  const showAdaptive =
+    adaptive.observedTdee !== null &&
+    Math.abs(adaptive.observedTdee - currentTdee) >= ADAPTIVE_DELTA_THRESHOLD;
+  const showRecalibration = !showAdaptive && Boolean(tdeeReco.advisory);
 
   const units = profile?.units ?? "metric";
   const unitLabel = units === "imperial" ? "lb" : "kg";
@@ -315,14 +342,19 @@ function ReportBody({
           />
         )}
 
-        {enabled.has("trends") && (plateau.advisory || tdeeReco.advisory) && (
-          <TrendsSection
-            plateau={plateau}
-            tdeeReco={tdeeReco}
-            units={units}
-            unitLabel={unitLabel}
-          />
-        )}
+        {enabled.has("trends") &&
+          (plateau.advisory || showAdaptive || showRecalibration) && (
+            <TrendsSection
+              plateau={plateau}
+              adaptive={adaptive}
+              tdeeReco={tdeeReco}
+              currentTdee={currentTdee}
+              showAdaptive={showAdaptive}
+              showRecalibration={showRecalibration}
+              units={units}
+              unitLabel={unitLabel}
+            />
+          )}
 
         {enabled.has("weight") && (
           <WeightSection
@@ -446,15 +478,24 @@ function SummarySection({
 
 function TrendsSection({
   plateau,
+  adaptive,
   tdeeReco,
+  currentTdee,
+  showAdaptive,
+  showRecalibration,
   units,
   unitLabel,
 }: {
   plateau: ReturnType<typeof detectPlateau>;
+  adaptive: AdaptiveTdee;
   tdeeReco: ReturnType<typeof recalibrateTdee>;
+  currentTdee: number;
+  showAdaptive: boolean;
+  showRecalibration: boolean;
   units: "metric" | "imperial";
   unitLabel: string;
 }) {
+  const observed = adaptive.observedTdee;
   return (
     <ReportSection title="Trends">
       {plateau.advisory && (
@@ -470,7 +511,30 @@ function TrendsSection({
           )}
         </div>
       )}
-      {tdeeReco.advisory && (
+      {showAdaptive && observed !== null && (
+        <div className="mt-3 space-y-1">
+          <p className="text-sm font-medium">Adaptive TDEE</p>
+          <p className="text-sm text-muted-foreground">
+            Your last {adaptive.windowDays} days of logging put your maintenance
+            near {observed} kcal/day — about {Math.abs(observed - currentTdee)}{" "}
+            kcal {observed > currentTdee ? "higher" : "lower"} than the{" "}
+            {currentTdee.toLocaleString()} kcal your targets use now, measured
+            from logged intake.
+          </p>
+          <p className="font-mono text-[11px] text-muted-foreground">
+            {adaptive.loggedDays} logged days
+            {adaptive.weightSlopeKgPerWeek !== null &&
+              ` · trend ${adaptive.weightSlopeKgPerWeek > 0 ? "+" : ""}${kgToDisplay(
+                adaptive.weightSlopeKgPerWeek,
+                units,
+              ).toFixed(2)} ${unitLabel}/wk`}
+            {confidenceLabel(adaptive.confidence) &&
+              ` · ${confidenceLabel(adaptive.confidence)}`}
+            .
+          </p>
+        </div>
+      )}
+      {showRecalibration && (
         <div className="mt-3 space-y-1">
           <p className="text-sm font-medium">TDEE recalibration</p>
           <p className="text-sm text-muted-foreground">{tdeeReco.advisory}</p>

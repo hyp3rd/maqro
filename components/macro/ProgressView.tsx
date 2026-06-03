@@ -28,6 +28,8 @@ import { computeStreak, type StreakState } from "@/lib/streaks";
 import { bumpPending } from "@/lib/sync-status";
 import { useDataRev } from "@/lib/sync/data-bus";
 import {
+  ADAPTIVE_DELTA_THRESHOLD,
+  confidenceLabel,
   detectPlateau,
   inferAdaptiveTdee,
   recalibrateTdee,
@@ -50,12 +52,6 @@ import {
 import { ExportReportDialog } from "./ExportReportDialog";
 
 const WINDOW_DAYS = 60;
-
-/** Only surface the adaptive-TDEE suggestion when it differs from the
- *  current target basis by at least this much — below it, the user is
- *  already calibrated and a card would just be noise. Mirrors the
- *  ±50 kcal noise floor `recalibrateTdee` uses. */
-const ADAPTIVE_DELTA_THRESHOLD = 50;
 
 type Props = {
   /** Today's calorie target - drawn as a reference line on the calorie
@@ -296,13 +292,6 @@ function ProgressExportButton() {
  *  signal - a card with "no advisory" or "not enough data" is
  *  noise. Whole section hides when there's nothing to say AND
  *  isn't loading (avoids the "empty section ghost" pattern). */
-const CONFIDENCE_LABEL: Record<AdaptiveTdee["confidence"], string> = {
-  none: "",
-  low: "low confidence",
-  medium: "medium confidence",
-  high: "high confidence",
-};
-
 function TrendsSection({
   plateau,
   adaptive,
@@ -408,8 +397,8 @@ function TrendsSection({
                   {unitLabel}/wk
                 </>
               )}
-              {CONFIDENCE_LABEL[adaptive.confidence] &&
-                ` · ${CONFIDENCE_LABEL[adaptive.confidence]}`}
+              {confidenceLabel(adaptive.confidence) &&
+                ` · ${confidenceLabel(adaptive.confidence)}`}
             </span>
           </div>
         </div>
