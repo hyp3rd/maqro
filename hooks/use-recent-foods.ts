@@ -1,40 +1,49 @@
 "use client";
 
-import { listDailyLogs, todayKey } from "@/lib/db";
-import { recentLoggedFoods, type RecentFood } from "@/lib/recent-foods";
+import { listDailyLogs, todayKey, type DailyLog } from "@/lib/db";
+import {
+  recentLoggedFoods,
+  type RecentFood,
+  type RecentSort,
+} from "@/lib/recent-foods";
 import { reportStorageError } from "@/lib/storage-status";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-/** Recently-logged foods for the quick-add list, loaded from IDB once on
- *  mount. The food-search sheet mounts/unmounts with each open, so this
- *  re-reads fresh recents every time it's opened. `loaded` lets the UI
- *  avoid flashing the "start typing" hint before the (sub-millisecond)
- *  IDB read resolves. */
-export function useRecentFoods(limit?: number): {
+/** Recently-logged foods for the quick-add lists, loaded from IDB once on
+ *  mount and re-sorted in memory when the Recent⇄Frequent toggle flips (no
+ *  re-read). `loaded` lets the UI avoid flashing an empty state before the
+ *  (sub-millisecond) IDB read resolves. */
+export function useRecentFoods(opts?: { limit?: number; sort?: RecentSort }): {
   recents: RecentFood[];
   loaded: boolean;
 } {
-  const [recents, setRecents] = useState<RecentFood[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const [logs, setLogs] = useState<DailyLog[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     listDailyLogs()
-      .then((logs) => {
-        if (cancelled) return;
-        setRecents(recentLoggedFoods(logs, { todayKey: todayKey(), limit }));
-        setLoaded(true);
+      .then((rows) => {
+        if (!cancelled) setLogs(rows);
       })
       .catch((err) => {
         if (cancelled) return;
         reportStorageError(err);
-        setRecents([]);
-        setLoaded(true);
+        setLogs([]);
       });
     return () => {
       cancelled = true;
     };
-  }, [limit]);
+  }, []);
 
-  return { recents, loaded };
+  const limit = opts?.limit;
+  const sort = opts?.sort;
+  const recents = useMemo(
+    () =>
+      logs
+        ? recentLoggedFoods(logs, { todayKey: todayKey(), limit, sort })
+        : [],
+    [logs, limit, sort],
+  );
+
+  return { recents, loaded: logs !== null };
 }

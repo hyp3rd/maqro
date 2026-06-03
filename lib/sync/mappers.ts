@@ -3,6 +3,7 @@
  * snake_case + ISO timestamps. We keep these as plain functions so they
  * can be unit-tested without spinning up Supabase. */
 import type {
+  Food,
   FoodKind,
   Meal,
   PersonalInfo,
@@ -12,6 +13,7 @@ import type {
   BodyMeasurement,
   CustomFood,
   DailyLog,
+  FavoriteFood,
   FavoriteStore,
   MealTemplate,
   PantryItem,
@@ -509,6 +511,43 @@ export function favoriteStoreFromRow(row: FavoriteStoreRow): FavoriteStore {
     address: row.address ?? undefined,
     createdAt: Date.parse(row.created_at),
     updatedAt: Date.parse(row.updated_at),
+  };
+}
+
+// ─── Favourite foods ──────────────────────────────────────────────────────────
+
+export type FavoriteFoodRow = {
+  id: string;
+  user_id: string;
+  name_key: string;
+  /** The addable per-100g food, stored as a JSONB column. */
+  food: Food;
+  portion: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export function favoriteFoodToRow(
+  userId: string,
+  fav: FavoriteFood,
+): Omit<FavoriteFoodRow, "updated_at"> {
+  return {
+    id: fav.id,
+    user_id: userId,
+    name_key: fav.nameKey,
+    food: fav.food,
+    portion: fav.portion,
+    created_at: new Date(fav.createdAt).toISOString(),
+  };
+}
+
+export function favoriteFoodFromRow(row: FavoriteFoodRow): FavoriteFood {
+  return {
+    id: row.id,
+    nameKey: row.name_key,
+    food: row.food,
+    portion: row.portion,
+    createdAt: Date.parse(row.created_at),
   };
 }
 
