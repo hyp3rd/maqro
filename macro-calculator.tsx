@@ -11,7 +11,7 @@ import { CustomFoodForm } from "./components/macro/CustomFoodForm";
 import { FoodSearchSheet } from "./components/macro/FoodSearchSheet";
 import { LogMealSheet, type LogMethod } from "./components/macro/LogMealSheet";
 import MacroResults from "./components/macro/MacroResults";
-import { MealDetailSheet } from "./components/macro/MealDetailSheet";
+import { MealHubSheet } from "./components/macro/MealHubSheet";
 import { MealPhotoReviewDialog } from "./components/macro/MealPhotoReviewDialog";
 import MealPlanner from "./components/macro/MealPlanner";
 import { MyFoodsView } from "./components/macro/MyFoodsView";
@@ -2141,7 +2141,7 @@ const MacroCalculator = () => {
         onBack={logFlowMealId !== null ? backToMethod : undefined}
       />
 
-      <MealDetailSheet
+      <MealHubSheet
         meal={meals.find((m) => m.id === mealDetailId) ?? null}
         goal={{
           calories: calculatedValues.targetCalories,
@@ -2149,6 +2149,20 @@ const MacroCalculator = () => {
           carbs: calculatedValues.carbs,
           fat: calculatedValues.fat,
         }}
+        customFoodsRev={customFoodsRev}
+        onLogFood={logFoodToMeal}
+        onRemoveFood={removeFood}
+        onAddFromTemplate={(mealId) => {
+          setLogFlowMealId(null);
+          setTemplateDialog({ kind: "apply", mealId });
+        }}
+        onApplyRecipe={(mealId) => {
+          setLogFlowMealId(null);
+          setApplyRecipeMealId(mealId);
+        }}
+        onRegenerate={handleRegenerateMeal}
+        regenerating={isGeneratingMealPlan}
+        regeneratingThisMeal={generatingMealId === mealDetailId}
         onOpenChange={(o) => {
           if (!o) setMealDetailId(null);
         }}
