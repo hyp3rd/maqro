@@ -1949,6 +1949,12 @@ const MacroCalculator = () => {
           gender={personalInfo.gender}
           heightCm={personalInfo.height}
           units={personalInfo.units}
+          onApplyTdee={(tdee) => {
+            patchProfile("manualTdee", tdee);
+            toast.success(
+              `Maintenance set to ${tdee.toLocaleString()} kcal — targets recalculated.`,
+            );
+          }}
         />
       )}
 
