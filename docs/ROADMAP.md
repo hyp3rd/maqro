@@ -10,7 +10,7 @@
 Sequenced by leverage:
 
 1. **Adaptive TDEE loop** ✓ shipped
-1. **Logging quick‑add** (recent / favorites / copy‑a‑meal)
+1. **Logging quick‑add** — recent foods ✓ shipped; favorites / copy‑a‑meal next
 1. **Breadth** — water/hydration + meal timestamps → eating windows / fasting
 1. **Goal phases** (cut → diet break → maintenance → lean bulk)
 
@@ -88,30 +88,32 @@ Calculator manual‑TDEE "suggested from your trend" badge.
 
 ---
 
-## 2. Logging quick‑add — _planned_
+## 2. Logging quick‑add — _shipped (recent foods)_
 
 **Problem.** The highest‑frequency action is re‑logging the same foods. Templates
 exist but are heavyweight (explicit save, separate view). No recent/frequent list,
 no "copy yesterday's dinner."
 
-**Approach.**
+**Shipped — recent-foods quick-add (free, no migration).**
 
-- **Recent foods**: derive from `dailyLogs` (last N distinct `FoodItem`s) — no new
-  store; a ranked, de‑duplicated read.
-- **Frequent / favorites**: a lightweight `favoriteFoods` store _or_ a frequency
-  score over recent logs; one‑tap add to the current meal.
-- **Copy a meal**: "re‑add" a previous day's meal slot into today.
+- `recentLoggedFoods()` ([lib/recent-foods.ts](../lib/recent-foods.ts)) — derives
+  recent foods from `dailyLogs` (deduped by name, recency-ranked, 30‑day window),
+  reconstructing an addable per‑100g `Food` from each item's `originalValues`
+  snapshot (or backing it out of the scaled values). 9 unit tests.
+- `useRecentFoods()` hook + a **"Recent" list in the food‑search empty state**
+  ([FoodSearchSheet.tsx](../components/macro/FoodSearchSheet.tsx)): one tap re‑adds a
+  food at its last portion via the existing `logFoodToMeal` path (so it scales +
+  draws down the pantry identically), and the sheet stays open for rapid logging.
+  Search tile hint now reads "Recent + database."
 
-**Data model.** Possibly a small `favoriteFoods` IDB store (synced); recent foods
-need none.
+**Not done (fast follow-ups).**
 
-**UX.** Surface inside the existing guided log flow ([LogMealSheet.tsx](../components/macro/LogMealSheet.tsx))
-as a "Recent" / "Frequent" method tile, and a "Copy from a previous day" affordance.
+- **Frequent foods** (frequency-ranked view/toggle — `extractFoodPreferences`
+  already exists) and **explicit favorites** (a synced `favoriteFoods` store).
+- **Copy a meal**: re‑add a previous day's whole meal slot into today.
 
-**Gating.** Free (it's core ergonomics).
-
-**Open questions.** Favorites = explicit star vs. auto‑frequency? Recent‑foods
-window size.
+**Open questions (for the follow-ups).** Favorites = explicit star vs.
+auto‑frequency? Whether to add a recency↔frequency toggle.
 
 ---
 
@@ -163,6 +165,68 @@ dashboard; phase transitions surfaced in Trends.
 
 **Open questions.** Preset templates (e.g., "12‑wk cut → 2‑wk break") vs. fully
 custom; how aggressively to auto‑advance phases.
+
+---
+
+## 5. Activity-based TDEE & health-platform sync — _later (needs native apps)_
+
+**Goal.** Pull real activity (steps, active energy, workouts, sleep, scale weight)
+and push nutrition back, to ground TDEE in measured expenditure instead of a static
+activity dropdown.
+
+**Hard platform constraint (verified June 2026).** maqro is a web PWA, and the two
+OS health stores are **on-device, native-only** — there is no web path:
+
+- **Apple HealthKit** has no web/backend API; data only leaves the device through a
+  **native iOS app**. Even the wearable aggregators (Terra, Rook, Vital) require
+  _their mobile SDK inside a native app_ to read Apple Health.
+- **Google Fit's REST API is shutting down** (no new signups since May 2024, full
+  shutdown end of 2026). Its successor **Health Connect is an on-device Android API**
+  — also native-only.
+
+So Apple Health / Health Connect ⇒ **shipping a native companion app** (App Store /
+Play presence, native build + review + upkeep). That's a separate **native-app
+track**, deliberately deferred until the web product is further along.
+
+**Web-feasible subset (no native code).** First-party **cloud OAuth wearables** —
+**Fitbit Web API** (Google's own recommended migration target), **Oura v2**,
+**Withings**, **Garmin Health**, **Polar** — expose REST + webhooks the Next.js
+backend can use directly. Keeps data first-party (vendor → our backend), which fits
+the no-third-party-tracking positioning far better than an aggregator.
+
+**TDEE model (platform-agnostic — the valuable part).** Do **not** wire activity in
+as `TDEE = BMR + watch active-calories`: wearable active-energy runs ±20–30% off, so
+that's likely _worse_ than the adaptive loop (#1), which already measures true
+expenditure from `intake − weight trend` (the MacroFactor/RP approach, which
+deliberately ignores watch calories). Use activity instead to:
+
+- **bootstrap** the activity multiplier before there's enough weight/intake history;
+- map **steps** (more consistent across devices than the calorie estimate) → a
+  measured activity factor;
+- **detect** sustained activity-load changes to nudge the adaptive estimate faster
+  than the lagging weight trend;
+- show activity as **context** beside weight/intake.
+
+**Architecture.** A pluggable `ActivitySource` interface so vendors and (later)
+HealthKit/Health Connect are interchangeable adapters behind one model.
+
+**Phasing.**
+
+- **5a — web track (optional, no native):** direct OAuth with 1–2 cloud wearables
+  (Fitbit + Oura) → steps + active energy → feed the TDEE model as bootstrap +
+  change-detector.
+- **5b — native track (later):** wrap the existing PWA in **Capacitor** + HealthKit /
+  Health Connect plugins to read on-device activity (and optionally write
+  calories/macros/water back), POSTing to the backend. This is the App-Store/Play
+  commitment noted above.
+
+**Tensions.** Aggregators (Terra/Vital) add a third party in the health-data path +
+per-user cost + a privacy-positioning conflict → prefer **direct vendor OAuth**.
+
+**Sources.** [HealthKit (no web API)](https://developer.apple.com/documentation/healthkit)
+· [Google Fit → Health Connect migration](https://developer.android.com/health-and-fitness/health-connect/migration/fit)
+· [Fitbit Web API](https://dev.fitbit.com/build/reference/web-api/)
+· [Terra: Apple Health needs the mobile SDK](https://docs.tryterra.co/health-and-fitness-api/mobile-only-sources/ios-swift)
 
 ---
 

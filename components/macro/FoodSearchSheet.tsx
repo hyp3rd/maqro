@@ -1,6 +1,7 @@
 "use client";
 
 import { useFoodSearch } from "@/hooks/use-food-search";
+import { useRecentFoods } from "@/hooks/use-recent-foods";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -109,6 +110,7 @@ function FoodSearchBody({
   const [picked, setPicked] = useState<Food | null>(null);
   const [grams, setGrams] = useState(100);
   const search = useFoodSearch(query, customFoodsRev);
+  const { recents, loaded: recentsLoaded } = useRecentFoods();
 
   function handleAdd() {
     if (picked === null || mealId === null) return;
@@ -120,6 +122,18 @@ function FoodSearchBody({
     // Stay open to log more — clear the picked food + query.
     setPicked(null);
     setQuery("");
+  }
+
+  /** One-tap re-add of a recent food at its last portion — the quick path
+   *  that skips the portion step entirely. Reuses the same log path (and
+   *  toast shape) as `handleAdd`. */
+  function quickAdd(food: Food, portion: number) {
+    if (mealId === null) return;
+    onLogFood(food, mealId, portion);
+    const kcal = Math.round((food.calories * portion) / 100);
+    toast.success(
+      `Added ${food.name} (${portion} g, ${kcal} kcal) to ${mealName}`,
+    );
   }
 
   function bumpGrams(delta: number) {
@@ -296,11 +310,52 @@ function FoodSearchBody({
           </button>
         ))}
 
-        {query.trim() === "" && (
-          <p className="px-1 py-10 text-center text-sm text-muted-foreground">
-            Start typing to search foods.
-          </p>
-        )}
+        {query.trim() === "" &&
+          (mealId !== null && recents.length > 0 ? (
+            <div className="space-y-1.5">
+              <p className="px-1 pt-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Recent
+              </p>
+              {recents.map((r) => {
+                const kcal = Math.round(
+                  (r.food.calories * r.lastPortion) / 100,
+                );
+                return (
+                  <button
+                    key={r.name}
+                    type="button"
+                    onClick={() => quickAdd(r.food, r.lastPortion)}
+                    className="flex w-full items-center gap-3 rounded-lg border border-border/60 bg-card px-3 py-3 text-left transition-colors active:bg-muted"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-foreground">
+                        {r.name}
+                      </span>
+                      <span className="mt-0.5 block font-mono text-[11px] tabular-nums text-muted-foreground">
+                        {kcal} kcal · {r.lastPortion} g
+                        {r.count > 1 && (
+                          <span className="ml-1 text-muted-foreground/60">
+                            · ×{r.count}
+                          </span>
+                        )}
+                      </span>
+                    </span>
+                    {/* Plus (not chevron) signals one-tap add at the last
+                        portion, vs. search results that open the portion step. */}
+                    <Plus className="h-4 w-4 shrink-0 text-muted-foreground/60" />
+                  </button>
+                );
+              })}
+              <p className="px-1 pt-2 text-center text-[11px] text-muted-foreground">
+                Tap to re-add at your last portion, or search above for a
+                different food or amount.
+              </p>
+            </div>
+          ) : recentsLoaded ? (
+            <p className="px-1 py-10 text-center text-sm text-muted-foreground">
+              Start typing to search foods.
+            </p>
+          ) : null)}
         {query.trim() !== "" &&
           search.results.length === 0 &&
           !search.isSearchingRemote && (
