@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { FastingChip } from "./FastingChip";
 import { LogoMark } from "./LogoMark";
 import { NotificationBell } from "./NotificationBell";
 import type { ViewKey } from "./Sidebar";
@@ -14,6 +15,7 @@ const LABELS: Record<ViewKey, string> = {
   calculator: "Calculator",
   plan: "Meal Plan",
   progress: "Progress",
+  fasting: "Fasting",
   foods: "My Foods",
   recipes: "Recipes",
   templates: "Meal Templates",
@@ -67,6 +69,7 @@ export function Topbar({ current, onSelectView }: Props) {
           the rest of the toolbar gets the remaining width. */}
       <div className="ml-auto flex items-center gap-2 sm:gap-3">
         <TopbarSearchButton />
+        <FastingChip onSelectView={onSelectView} />
         <SyncModeIndicator onSelectView={onSelectView} />
         <SyncStatusPill />
         {/* Notifications + theme are dedicated controls on desktop. On

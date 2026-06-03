@@ -18,6 +18,7 @@ import {
   Calculator,
   ChefHat,
   HelpCircle,
+  Hourglass,
   LayoutGrid,
   LineChart,
   Moon,
@@ -66,6 +67,20 @@ const NAV_COMMANDS: NavCommand[] = [
     label: "Progress",
     icon: LineChart,
     keywords: ["weight", "graph", "trend", "plateau", "streak"],
+  },
+  {
+    key: "fasting",
+    label: "Fasting",
+    icon: Hourglass,
+    keywords: [
+      "intermittent",
+      "if",
+      "16:8",
+      "phase",
+      "autophagy",
+      "ketosis",
+      "eating window",
+    ],
   },
   {
     key: "foods",

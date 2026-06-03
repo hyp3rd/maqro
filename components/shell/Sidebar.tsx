@@ -9,6 +9,7 @@ import {
   ChefHat,
   ChevronLeft,
   ChevronRight,
+  Hourglass,
   LayoutGrid,
   LineChart,
   Package,
@@ -27,6 +28,7 @@ export type ViewKey =
   | "calculator"
   | "plan"
   | "progress"
+  | "fasting"
   | "foods"
   | "recipes"
   | "templates"
@@ -45,6 +47,7 @@ const NAV: NavItem[] = [
   { key: "calculator", label: "Calculator", icon: Calculator },
   { key: "plan", label: "Meal Plan", icon: Utensils },
   { key: "progress", label: "Progress", icon: LineChart },
+  { key: "fasting", label: "Fasting", icon: Hourglass },
   { key: "foods", label: "My Foods", icon: Activity },
   { key: "recipes", label: "Recipes", icon: ChefHat },
   { key: "templates", label: "Templates", icon: LayoutGrid },

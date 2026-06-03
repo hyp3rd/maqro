@@ -96,6 +96,15 @@ export type FoodItem = {
    *  `MacroBreakdown` sub-macros above — micronutrients are a separate,
    *  later subsystem with their own aggregation. */
   micronutrients?: MicronutrientValues;
+  /** Wall-clock time (ms epoch) this food was actually *logged as eaten*.
+   *  Set ONLY by real logging actions (manual add / search / quick-add /
+   *  photo·voice·barcode / copy-a-meal) and ONLY when logging to today —
+   *  never by AI-generated plans, templates, or recipes, which are intent
+   *  not consumption. The intermittent-fasting features read this to derive
+   *  eating windows + the fast timer; foods without it (plans, pre-feature
+   *  logs) are ignored. Rides the existing `meals` JSONB — no migration,
+   *  like `micronutrients` above. */
+  loggedAt?: number;
 } & MacroBreakdown;
 
 export type Meal = { id: number; name: string; foods: FoodItem[] };
@@ -277,6 +286,19 @@ export type PersonalInfo = {
    * clamped) — see [lib/hydration.ts](../../lib/hydration.ts). Stored in ml
    * regardless of the `units` display preference, like every other metric. */
   waterGoalMl?: number | null;
+  /** Intermittent-fasting config. Absent/`enabled:false` = the feature is
+   * off (no card, no Topbar chip). `protocol` sets the fasting-hours target
+   * (16:8 → 16h fast, etc.); `custom` reads `customFastingHours`.
+   * `fastStartedAt` is the manual "Start fast" anchor (ms epoch) that
+   * overrides the auto-derived last-meal time until a later real food log
+   * supersedes it. See [lib/fasting.ts](../../lib/fasting.ts). Rides the
+   * profile blob — no migration, like `waterGoalMl`. */
+  fasting?: {
+    enabled: boolean;
+    protocol: "16:8" | "18:6" | "20:4" | "custom";
+    customFastingHours?: number;
+    fastStartedAt?: number | null;
+  };
   /** Display preference for weight + height: metric (kg / cm) or
    *  imperial (lb / ft+in). Storage stays in kg / cm regardless;
    *  this only governs how values are presented and entered. See

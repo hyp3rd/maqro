@@ -10,6 +10,17 @@ import { useEffect, useRef, useState } from "react";
 
 const WRITE_DEBOUNCE_MS = 500;
 
+/** Cheap structural compare of two days' meals. Used to ignore our own
+ *  data-bus echo: `saveDailyLog` now notifies `dailyLogs` so other consumers
+ *  refresh on a local log, which re-runs this hook's load effect — but the
+ *  IDB re-read returns the value we just wrote, so we keep the existing
+ *  `meals` reference (no state churn, no save→notify→reload→save loop). A
+ *  genuine peer change has different content and still applies. Meal arrays
+ *  are one day's worth, so JSON serialization is negligible. */
+function sameMeals(a: Meal[], b: Meal[]): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 export type DailyLogState = {
   date: string;
   meals: Meal[];
@@ -52,7 +63,10 @@ export function useDailyLog(date: string, defaultMeals: Meal[]): DailyLogState {
     getDailyLog(date)
       .then((log) => {
         if (cancelled) return;
-        setMealsState(log?.meals ?? defaultMeals);
+        const next = log?.meals ?? defaultMeals;
+        // Keep the existing reference when nothing changed (our own save
+        // echo), so the save effect's `meals` dep doesn't re-fire.
+        setMealsState((prev) => (sameMeals(prev, next) ? prev : next));
         if (log) hasRealLocalData.current = true;
         setLoadedFor(date);
       })

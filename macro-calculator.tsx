@@ -8,6 +8,7 @@ import { ApplyRecipeDialog } from "./components/macro/ApplyRecipeDialog";
 import { ApplyTemplateDialog } from "./components/macro/ApplyTemplateDialog";
 import { CameraSheet } from "./components/macro/CameraSheet";
 import { CustomFoodForm } from "./components/macro/CustomFoodForm";
+import { FastingView } from "./components/macro/FastingView";
 import { FoodSearchSheet } from "./components/macro/FoodSearchSheet";
 import { LogMealSheet, type LogMethod } from "./components/macro/LogMealSheet";
 import MacroResults from "./components/macro/MacroResults";
@@ -215,6 +216,7 @@ const VIEW_PARAM_VALUES = [
   "calculator",
   "plan",
   "progress",
+  "fasting",
   "foods",
   "recipes",
   "templates",
@@ -1083,6 +1085,9 @@ const MacroCalculator = () => {
                 fatPer100g: newFood.fat / (portionSize / 100),
                 caloriesPer100g: newFood.calories / (portionSize / 100),
               },
+              // Real eating event → stamp the time, but only when logging to
+              // today (back-filling a past day would record a wrong hour).
+              loggedAt: selectedDate === today ? Date.now() : undefined,
             },
           ],
         };
@@ -1143,6 +1148,9 @@ const MacroCalculator = () => {
         fatPer100g: food.fat,
         caloriesPer100g: food.calories,
       },
+      // Real eating event (search / quick-add / photo·voice·barcode all
+      // funnel here) → stamp the time when logging to today.
+      loggedAt: selectedDate === today ? Date.now() : undefined,
     };
     setMeals(
       meals.map((meal) =>
@@ -1173,6 +1181,9 @@ const MacroCalculator = () => {
         id: now + i,
         selectedMealId: targetMealId,
         pantrySource: drawDown ?? undefined,
+        // Copying a past meal into today is a real "I'm eating this" action
+        // → stamp now (overwriting the source's loggedAt). Gated to today.
+        loggedAt: selectedDate === today ? now : undefined,
       };
     });
     setMeals(
@@ -1902,6 +1913,7 @@ const MacroCalculator = () => {
           today={today}
           waterGoalMl={waterGoalMl(personalInfo)}
           units={personalInfo.units}
+          onSelectView={setView}
           onSelectDate={(d) => setExplicitDate(d === today ? null : d)}
           newFood={newFood}
           foodSearch={foodSearch}
@@ -2007,8 +2019,11 @@ const MacroCalculator = () => {
                 : "Water goal updated.",
             );
           }}
+          fasting={personalInfo.fasting}
         />
       )}
+
+      {view === "fasting" && <FastingView onSelectView={setView} />}
 
       {view === "foods" && (
         <MyFoodsView onChange={() => setCustomFoodsRev((r) => r + 1)} />

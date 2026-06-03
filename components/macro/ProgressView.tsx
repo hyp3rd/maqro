@@ -1,6 +1,7 @@
 "use client";
 
 import { MicronutrientsSection } from "@/components/macro/MicronutrientsSection";
+import type { PersonalInfo } from "@/components/macro/types";
 import { ChartZoomDialog } from "@/components/shell/ChartZoomDialog";
 import {
   MiniLineChart,
@@ -25,6 +26,14 @@ import {
   type WaterIntake,
   type WeightEntry,
 } from "@/lib/db";
+import {
+  eatingHours,
+  eatingWindowForDay,
+  fastingStreak,
+  formatDuration,
+  lateCaloriePct,
+  LATE_CUTOFF_HOUR,
+} from "@/lib/fasting";
 import { reportStorageError, reportStorageOk } from "@/lib/storage-status";
 import { computeStreak, type StreakState } from "@/lib/streaks";
 import { bumpPending } from "@/lib/sync-status";
@@ -57,6 +66,7 @@ import {
   Droplets,
   FileDown,
   Flame,
+  Hourglass,
   LineChart,
   TrendingDown,
   TrendingUp,
@@ -109,6 +119,10 @@ type Props = {
   /** Persist a manual water-goal override (ml), or `null` to revert to the
    *  weight-based default. */
   onSetWaterGoal: (ml: number | null) => void;
+  /** Intermittent-fasting config (for the eating-window target line +
+   *  streak). `undefined`/disabled still renders the window analytics, just
+   *  without an on-protocol streak. */
+  fasting: PersonalInfo["fasting"];
 };
 
 function parseLocalDate(d: string): Date {
@@ -139,6 +153,7 @@ export function ProgressView({
   waterGoalMl,
   waterGoalOverride,
   onSetWaterGoal,
+  fasting,
 }: Props) {
   const [weights, setWeights] = useState<WeightEntry[] | null>(null);
   const [logs, setLogs] = useState<DailyLog[] | null>(null);
@@ -283,6 +298,11 @@ export function ProgressView({
         units={units}
         targetWindow={WINDOW_DAYS}
         onSetGoal={onSetWaterGoal}
+      />
+      <EatingWindowSection
+        logs={logs}
+        fasting={fasting}
+        targetWindow={WINDOW_DAYS}
       />
       <MicronutrientsSection
         logs={logs}
@@ -829,6 +849,123 @@ function CalorieSection({
           />
         )}
       </div>
+    </section>
+  );
+}
+
+function EatingWindowSection({
+  logs,
+  fasting,
+  targetWindow,
+}: {
+  logs: DailyLog[] | null;
+  fasting: PersonalInfo["fasting"];
+  targetWindow: number;
+}) {
+  const loading = logs === null;
+  const today = todayKey();
+  const eatHrs = eatingHours(fasting); // defaults to 8 (16:8) when disabled
+
+  // Per-day eating-window length (hours), oldest first, today-bounded — only
+  // days with timed (`loggedAt`) foods contribute.
+  const series = (logs ?? [])
+    .filter((l) => l.date <= today)
+    .map((l) => {
+      const w = eatingWindowForDay(l.meals);
+      return w ? { date: l.date, lengthMin: w.lengthMin } : null;
+    })
+    .filter((p): p is { date: string; lengthMin: number } => p !== null)
+    .sort((a, b) => (a.date < b.date ? -1 : 1))
+    .slice(-targetWindow);
+  const hasData = series.length > 0;
+
+  const points: LinePoint[] = series.map((p) => ({
+    x: dayIndex(p.date),
+    y: Number((p.lengthMin / 60).toFixed(2)),
+    label: shortLabel(p.date),
+  }));
+
+  const todayMin = series.find((p) => p.date === today)?.lengthMin ?? null;
+  const last7 = series.slice(-7);
+  const avg7Min =
+    last7.length > 0
+      ? last7.reduce((s, p) => s + p.lengthMin, 0) / last7.length
+      : 0;
+  const streak = fastingStreak(logs ?? [], today, eatHrs);
+  const recentMeals = last7.flatMap(
+    (p) => (logs ?? []).find((l) => l.date === p.date)?.meals ?? [],
+  );
+  const latePct = lateCaloriePct(recentMeals, LATE_CUTOFF_HOUR);
+  const lateLabel = `${LATE_CUTOFF_HOUR % 12 || 12}${LATE_CUTOFF_HOUR >= 12 ? "pm" : "am"}`;
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
+      <header className="border-b border-border/60 px-5 py-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
+          <div className="min-w-0">
+            <h3 className="flex items-center gap-1.5 text-sm font-semibold tracking-tight">
+              <Hourglass className="h-4 w-4 text-indigo-500" />
+              Eating window
+            </h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              First to last logged meal each day
+              {fasting?.enabled
+                ? `, vs your ${eatHrs}h (${fasting.protocol}) target`
+                : ""}
+              .
+            </p>
+          </div>
+          {hasData && (
+            <div className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-0.5 sm:flex-nowrap sm:justify-end">
+              <p className="font-mono text-2xl font-semibold tabular-nums leading-none text-foreground">
+                {formatDuration(todayMin ?? Math.round(avg7Min))}
+                <span className="ml-1 text-sm text-muted-foreground">
+                  {todayMin !== null ? "today" : "7d avg"}
+                </span>
+              </p>
+              {streak.current > 0 && (
+                <p className="font-mono text-xs tabular-nums text-indigo-600 dark:text-indigo-400">
+                  {streak.current}d on protocol
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      </header>
+
+      <div className="px-5 py-6">
+        {loading ? (
+          <Skeleton />
+        ) : hasData ? (
+          <ChartZoomDialog
+            title="Eating window"
+            description="Tap any point in the expanded view to see the exact value."
+          >
+            <MiniLineChart
+              data={points}
+              height={240}
+              targetY={eatHrs}
+              targetLabel={`${eatHrs}h target`}
+            />
+          </ChartZoomDialog>
+        ) : (
+          <EmptyState
+            title="No meal times yet"
+            body="Log foods on the Meal Plan tab as you eat them — your eating window and fasting streak chart here."
+          />
+        )}
+      </div>
+
+      {hasData && (
+        <div className="border-t border-border/60 px-5 py-3">
+          <p className="text-xs text-muted-foreground">
+            {latePct}% of recent calories logged after {lateLabel}
+            {streak.longest > 0 && (
+              <> · best on-protocol streak {streak.longest}d</>
+            )}
+          </p>
+        </div>
+      )}
     </section>
   );
 }
