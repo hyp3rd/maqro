@@ -42,6 +42,7 @@ import {
   hasDismissedPreDiabeticDisclaimer,
 } from "./PreDiabeticDisclaimerDialog";
 import { QuickAddFab } from "./QuickAddFab";
+import { WaterCounter } from "./WaterCounter";
 
 interface MealPlannerProps {
   calculatedValues: CalculatedValues;
@@ -58,6 +59,10 @@ interface MealPlannerProps {
   meals: Meal[];
   selectedDate: string;
   today: string;
+  /** Effective daily water goal (ml) for the water counter. */
+  waterGoalMl: number;
+  /** Display units for the water counter (ml ↔ fl oz). */
+  units: "metric" | "imperial";
   onSelectDate: (date: string) => void;
   newFood: FoodItem;
   foodSearch: string;
@@ -158,6 +163,8 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
   meals,
   selectedDate,
   today,
+  waterGoalMl,
+  units,
   onSelectDate,
   newFood,
   foodSearch,
@@ -304,6 +311,16 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
             calculatedValues={calculatedValues}
             totalMacros={totalMacros}
             breakdown={macroBreakdown}
+          />
+        </div>
+      </section>
+
+      <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
+        <div className="px-3 py-3 sm:px-5 sm:py-4">
+          <WaterCounter
+            date={selectedDate}
+            goalMl={waterGoalMl}
+            units={units}
           />
         </div>
       </section>

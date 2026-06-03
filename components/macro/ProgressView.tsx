@@ -15,12 +15,14 @@ import { bodyFatCategory, estimateBodyFat } from "@/lib/body-fat";
 import {
   listBodyMeasurements,
   listDailyLogs,
+  listWaterIntake,
   listWeightEntries,
   saveBodyMeasurement,
   saveWeightEntry,
   todayKey,
   type BodyMeasurement,
   type DailyLog,
+  type WaterIntake,
   type WeightEntry,
 } from "@/lib/db";
 import { reportStorageError, reportStorageOk } from "@/lib/storage-status";
@@ -37,12 +39,22 @@ import {
   type PlateauState,
   type TdeeRecalibration,
 } from "@/lib/trends";
-import { cmToInches, displayToKg, inchesToCm, kgToDisplay } from "@/lib/units";
+import {
+  cmToInches,
+  displayToKg,
+  displayToMl,
+  formatVolume,
+  inchesToCm,
+  kgToDisplay,
+  mlToDisplay,
+  volumeUnitSuffix,
+} from "@/lib/units";
 import { cn } from "@/lib/utils";
 import { computeWeeklyRecap, type WeeklyRecap } from "@/lib/weekly-recap";
 import { useEffect, useMemo, useState } from "react";
 import {
   Check,
+  Droplets,
   FileDown,
   Flame,
   LineChart,
@@ -86,6 +98,17 @@ type Props = {
    *  — closes the adaptive-TDEE loop in one tap (writes `manualTdee` on
    *  the profile, which re-derives every target). */
   onApplyTdee: (tdee: number) => void;
+  /** Effective daily water goal (ml) — already resolved from the override
+   *  or the weight-based default by the caller. Drawn as the reference line
+   *  on the hydration chart. */
+  waterGoalMl: number;
+  /** The raw manual override (ml) if the user set one, else null/undefined
+   *  ("auto"). Distinguishes "auto-derived" from an explicit target in the
+   *  goal editor. */
+  waterGoalOverride: number | null | undefined;
+  /** Persist a manual water-goal override (ml), or `null` to revert to the
+   *  weight-based default. */
+  onSetWaterGoal: (ml: number | null) => void;
 };
 
 function parseLocalDate(d: string): Date {
@@ -113,12 +136,16 @@ export function ProgressView({
   heightCm,
   units,
   onApplyTdee,
+  waterGoalMl,
+  waterGoalOverride,
+  onSetWaterGoal,
 }: Props) {
   const [weights, setWeights] = useState<WeightEntry[] | null>(null);
   const [logs, setLogs] = useState<DailyLog[] | null>(null);
   const [measurements, setMeasurements] = useState<BodyMeasurement[] | null>(
     null,
   );
+  const [water, setWater] = useState<WaterIntake[] | null>(null);
   const [rev, setRev] = useState(0);
   // Refresh when a peer device writes a weight entry or a daily log
   // (both of which feed the charts here). Each bus has its own rev
@@ -126,15 +153,22 @@ export function ProgressView({
   const weightRev = useDataRev("weightHistory");
   const dailyLogsRev = useDataRev("dailyLogs");
   const bodyMeasurementsRev = useDataRev("bodyMeasurements");
+  const waterRev = useDataRev("waterIntake");
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([listWeightEntries(), listDailyLogs(), listBodyMeasurements()])
-      .then(([w, l, m]) => {
+    Promise.all([
+      listWeightEntries(),
+      listDailyLogs(),
+      listBodyMeasurements(),
+      listWaterIntake(),
+    ])
+      .then(([w, l, m, water]) => {
         if (cancelled) return;
         setMeasurements(m);
         setWeights(w);
         setLogs(l);
+        setWater(water);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -142,11 +176,12 @@ export function ProgressView({
         setWeights([]);
         setLogs([]);
         setMeasurements([]);
+        setWater([]);
       });
     return () => {
       cancelled = true;
     };
-  }, [rev, weightRev, dailyLogsRev, bodyMeasurementsRev]);
+  }, [rev, weightRev, dailyLogsRev, bodyMeasurementsRev, waterRev]);
 
   const refresh = () => setRev((r) => r + 1);
 
@@ -240,6 +275,14 @@ export function ProgressView({
         logs={logs}
         targetCalories={targetCalories}
         targetWindow={WINDOW_DAYS}
+      />
+      <HydrationSection
+        entries={water}
+        goalMl={waterGoalMl}
+        override={waterGoalOverride}
+        units={units}
+        targetWindow={WINDOW_DAYS}
+        onSetGoal={onSetWaterGoal}
       />
       <MicronutrientsSection
         logs={logs}
@@ -784,6 +827,190 @@ function CalorieSection({
             title="No logs yet"
             body="Add foods on the Meal Plan tab - once you've logged a day or two, your adherence will show up here."
           />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function HydrationSection({
+  entries,
+  goalMl,
+  override,
+  units,
+  targetWindow,
+  onSetGoal,
+}: {
+  entries: WaterIntake[] | null;
+  goalMl: number;
+  override: number | null | undefined;
+  units: "metric" | "imperial";
+  targetWindow: number;
+  onSetGoal: (ml: number | null) => void;
+}) {
+  const loading = entries === null;
+  const today = todayKey();
+
+  // Per-day series, oldest first, today as the upper bound (future-dated
+  // rows can't exist for water, but stay symmetric with CalorieSection).
+  const series = (entries ?? [])
+    .filter((e) => e.date <= today && e.ml > 0)
+    .sort((a, b) => (a.date < b.date ? -1 : 1))
+    .slice(-targetWindow);
+  const hasData = series.length > 0;
+
+  const points: LinePoint[] = series.map((e) => ({
+    x: dayIndex(e.date),
+    y: e.ml,
+    label: shortLabel(e.date),
+  }));
+
+  const todayMl = series.find((e) => e.date === today)?.ml ?? 0;
+  const goalPct = goalMl > 0 ? Math.round((todayMl / goalMl) * 100) : 0;
+
+  // Inline goal editor — seeded from the current goal each time it opens.
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  function startEdit() {
+    setDraft(String(mlToDisplay(goalMl, units)));
+    setEditing(true);
+  }
+  function save() {
+    const n = Number.parseFloat(draft);
+    if (Number.isFinite(n) && n > 0) onSetGoal(displayToMl(n, units));
+    setEditing(false);
+  }
+  function reset() {
+    onSetGoal(null);
+    setEditing(false);
+  }
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
+      <header className="border-b border-border/60 px-5 py-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
+          <div className="min-w-0">
+            <h3 className="flex items-center gap-1.5 text-sm font-semibold tracking-tight">
+              <Droplets className="h-4 w-4 text-sky-500" />
+              Hydration
+            </h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Water logged per day vs your goal of {formatVolume(goalMl, units)}
+              .
+            </p>
+          </div>
+          {hasData && (
+            <div className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-0.5 sm:flex-nowrap sm:justify-end">
+              <p className="font-mono text-2xl font-semibold tabular-nums leading-none text-foreground">
+                <NumberTicker value={mlToDisplay(todayMl, units)} />
+                <span className="ml-1 text-sm text-muted-foreground">
+                  {volumeUnitSuffix(units)} today
+                </span>
+              </p>
+              <p
+                className={cn(
+                  "font-mono text-xs tabular-nums",
+                  goalPct >= 100
+                    ? "text-sky-600 dark:text-sky-400"
+                    : "text-muted-foreground",
+                )}
+              >
+                {goalPct}% of goal
+              </p>
+            </div>
+          )}
+        </div>
+      </header>
+
+      <div className="px-5 py-6">
+        {loading ? (
+          <Skeleton />
+        ) : hasData ? (
+          <ChartZoomDialog
+            title="Hydration"
+            description="Tap any point in the expanded view to see the exact value."
+          >
+            <MiniLineChart
+              data={points}
+              height={240}
+              targetY={goalMl}
+              targetLabel={`${formatVolume(goalMl, units)} goal`}
+            />
+          </ChartZoomDialog>
+        ) : (
+          <EmptyState
+            title="No water logged yet"
+            body="Tap the water counter on the Meal Plan tab to log a glass — your daily totals will chart here."
+          />
+        )}
+      </div>
+
+      <div className="border-t border-border/60 px-5 py-4">
+        {editing ? (
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="min-w-[8rem] flex-1">
+              <Label
+                htmlFor="water-goal-input"
+                className="text-xs text-muted-foreground"
+              >
+                Daily goal ({volumeUnitSuffix(units)})
+              </Label>
+              <Input
+                id="water-goal-input"
+                type="number"
+                inputMode="numeric"
+                min="1"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                className="mt-1 h-9 font-mono tabular-nums"
+              />
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              className="h-9"
+              onClick={save}
+            >
+              Save
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-9"
+              onClick={reset}
+            >
+              Auto
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-9"
+              onClick={() => setEditing(false)}
+            >
+              Cancel
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground">
+              Daily goal: {formatVolume(goalMl, units)}
+              {override == null || override <= 0
+                ? " — auto, from your bodyweight"
+                : " — manual"}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 shrink-0"
+              onClick={startEdit}
+            >
+              Edit goal
+            </Button>
+          </div>
         )}
       </div>
     </section>

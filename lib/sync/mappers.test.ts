@@ -8,6 +8,7 @@ import type {
   MealTemplate,
   PantryItem,
   PantryNotification,
+  WaterIntake,
   WeightEntry,
 } from "@/lib/db";
 import { describe, expect, it } from "vitest";
@@ -32,6 +33,8 @@ import {
   profileToRow,
   recipeFromRow,
   recipeToRow,
+  waterFromRow,
+  waterToRow,
   weightFromRow,
   weightToRow,
 } from "./mappers";
@@ -142,6 +145,26 @@ describe("weight mappers", () => {
     expect(row.kg).toBe(70.5);
     expect(row.recorded_at).toBe("2026-05-13T08:30:00.000Z");
     const back = weightFromRow({
+      ...row,
+      user_id: USER,
+      updated_at: "2026-05-13T08:30:00.000Z",
+    });
+    expect(back).toEqual(ENTRY);
+  });
+});
+
+describe("water intake mappers", () => {
+  const ENTRY: WaterIntake = {
+    date: "2026-05-13",
+    ml: 2350,
+    recordedAt: Date.parse("2026-05-13T08:30:00Z"),
+  };
+
+  it("round-trips water intake", () => {
+    const row = waterToRow(USER, ENTRY);
+    expect(row.ml).toBe(2350);
+    expect(row.recorded_at).toBe("2026-05-13T08:30:00.000Z");
+    const back = waterFromRow({
       ...row,
       user_id: USER,
       updated_at: "2026-05-13T08:30:00.000Z",

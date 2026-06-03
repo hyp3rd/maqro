@@ -3,6 +3,7 @@ import {
   clearDemoSeededStores,
   isProfileMarkedAsDemo,
   type DailyLog,
+  type WaterIntake,
   type WeightEntry,
 } from "./db";
 import { notifyProfileChanged } from "./profile-bus";
@@ -392,6 +393,36 @@ export function getDemoWeightHistory(
   return entries;
 }
 
+/** Produce 14 days of daily water totals trending around the demo
+ *  profile's goal (68 kg → ~2.4 L), so the Hydration card lands
+ *  populated. Deterministic noise (a different seed than the weight
+ *  series) keeps the totals believable, ~1.8–2.4 L/day. */
+export function getDemoWaterLogs(
+  today: string,
+  now: number = Date.now(),
+): WaterIntake[] {
+  const entries: WaterIntake[] = [];
+  const days = 14;
+  const noise = (i: number): number =>
+    (Math.sin(i * 78.233) * 43758.5453) % 1 || 0;
+
+  for (let offset = days - 1; offset >= 0; offset--) {
+    const date = subtractDays(today, offset);
+    // Centre ~2.1 L with ±0.3 L noise, rounded to a tidy 10 ml.
+    const ml = Math.round((2100 + noise(offset) * 300) / 10) * 10;
+    const recordedAt = now - offset * 24 * 3600_000;
+    const iso = new Date(recordedAt).toISOString();
+    entries.push({
+      date,
+      ml,
+      recordedAt,
+      localUpdatedAt: iso,
+      serverUpdatedAt: iso,
+    });
+  }
+  return entries;
+}
+
 /** localStorage flag set by the seed routine. Kept alongside the
  *  durable IDB marker on the profile row so synchronous callers (the
  *  Settings page, a "this is sample data" banner) can check demo mode
@@ -451,5 +482,6 @@ export async function clearDemoModeData(): Promise<void> {
   notifyProfileChanged();
   notifyDataChanged("dailyLogs");
   notifyDataChanged("weightHistory");
+  notifyDataChanged("waterIntake");
   notifyDataChanged("shoppingListMeta");
 }

@@ -34,6 +34,10 @@ vi.mock("@/lib/db", () => ({
   listFavoriteFoods: vi.fn().mockResolvedValue([]),
   listMicronutrientProfiles: vi.fn().mockResolvedValue([]),
   listWeightEntries: vi.fn(),
+  // Default-empty like the other list helpers: most tests don't
+  // exercise water sync, so the engine's `await listWaterIntake()`
+  // + `.map` gets a real array.
+  listWaterIntake: vi.fn().mockResolvedValue([]),
   getProfileRecord: vi.fn(),
   applyServerBodyMeasurement: vi.fn(),
   applyServerCustomFood: vi.fn(),
@@ -47,6 +51,7 @@ vi.mock("@/lib/db", () => ({
   applyServerProfile: vi.fn(),
   applyServerRecipe: vi.fn(),
   applyServerWeightEntry: vi.fn(),
+  applyServerWaterIntake: vi.fn(),
   markBodyMeasurementSynced: vi.fn(),
   markCustomFoodSynced: vi.fn(),
   markDailyLogSynced: vi.fn(),
@@ -58,6 +63,7 @@ vi.mock("@/lib/db", () => ({
   markProfileSynced: vi.fn(),
   markRecipeSynced: vi.fn(),
   markWeightEntrySynced: vi.fn(),
+  markWaterIntakeSynced: vi.fn(),
   upsertCustomFood: vi.fn(),
   upsertMealTemplate: vi.fn(),
   upsertPantryItem: vi.fn(),
@@ -85,6 +91,7 @@ function newResult(): SyncResult {
       profile: 0,
       dailyLogs: 0,
       weightEntries: 0,
+      waterIntake: 0,
       bodyMeasurements: 0,
       customFoods: 0,
       mealTemplates: 0,
@@ -99,6 +106,7 @@ function newResult(): SyncResult {
       profile: 0,
       dailyLogs: 0,
       weightEntries: 0,
+      waterIntake: 0,
       bodyMeasurements: 0,
       customFoods: 0,
       mealTemplates: 0,
