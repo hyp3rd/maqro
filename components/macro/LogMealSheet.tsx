@@ -60,7 +60,7 @@ type MethodTile = {
 };
 
 const METHODS: MethodTile[] = [
-  { key: "search", icon: Search, label: "Search", hint: "Food database" },
+  { key: "search", icon: Search, label: "Search", hint: "Recent + database" },
   { key: "recipe", icon: Soup, label: "Recipe", hint: "A saved recipe" },
   {
     key: "template",
