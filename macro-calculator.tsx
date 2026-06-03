@@ -61,6 +61,7 @@ import {
   type MealTemplate,
   type PantryItem,
 } from "./lib/db";
+import { waterGoalMl } from "./lib/hydration";
 import { aggregateMacroBreakdown, computeMacros } from "./lib/macros";
 import { planDay, summarisePlan } from "./lib/meal-planner";
 import { appendRecipeToNamedSlot } from "./lib/meal-prep-batch";
@@ -1899,6 +1900,8 @@ const MacroCalculator = () => {
           meals={meals}
           selectedDate={selectedDate}
           today={today}
+          waterGoalMl={waterGoalMl(personalInfo)}
+          units={personalInfo.units}
           onSelectDate={(d) => setExplicitDate(d === today ? null : d)}
           newFood={newFood}
           foodSearch={foodSearch}
@@ -1992,6 +1995,16 @@ const MacroCalculator = () => {
             patchProfile("manualTdee", tdee);
             toast.success(
               `Maintenance set to ${tdee.toLocaleString()} kcal — targets recalculated.`,
+            );
+          }}
+          waterGoalMl={waterGoalMl(personalInfo)}
+          waterGoalOverride={personalInfo.waterGoalMl}
+          onSetWaterGoal={(ml) => {
+            patchProfile("waterGoalMl", ml);
+            toast.success(
+              ml == null
+                ? "Water goal set to auto (from your weight)."
+                : "Water goal updated.",
             );
           }}
         />

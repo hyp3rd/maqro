@@ -11,13 +11,14 @@ import { notifyDataChanged } from "@/lib/sync/data-bus";
 import { type DBSchema, type IDBPDatabase, openDB } from "idb";
 
 const DB_NAME = "maqro";
-const DB_VERSION = 15;
+const DB_VERSION = 16;
 
 const STORE_CUSTOM_FOODS = "customFoods";
 const STORE_PROFILE = "profile";
 const STORE_DAILY_LOGS = "dailyLogs";
 const STORE_MEAL_TEMPLATES = "mealTemplates";
 const STORE_WEIGHT_HISTORY = "weightHistory";
+const STORE_WATER_INTAKE = "waterIntake";
 const STORE_BODY_MEASUREMENTS = "bodyMeasurements";
 const STORE_RECIPES = "recipes";
 const STORE_PANTRY_ITEMS = "pantryItems";
@@ -153,6 +154,16 @@ export type MealTemplate = {
 export type WeightEntry = {
   date: string;
   kg: number;
+  recordedAt: number;
+} & Versioned;
+
+/** A day's cumulative water intake in millilitres. Keyed by `YYYY-MM-DD`
+ *  local date — one row per day, accumulated as the user logs (each tap
+ *  adds to `ml`). Mirrors `WeightEntry`'s date-keyed, last-write-wins shape;
+ *  the saver differs in that it reads-then-adds rather than overwriting. */
+export type WaterIntake = {
+  date: string;
+  ml: number;
   recordedAt: number;
 } & Versioned;
 
@@ -342,6 +353,7 @@ interface MacroDB extends DBSchema {
   [STORE_DAILY_LOGS]: { key: string; value: DailyLog };
   [STORE_MEAL_TEMPLATES]: { key: string; value: MealTemplate };
   [STORE_WEIGHT_HISTORY]: { key: string; value: WeightEntry };
+  [STORE_WATER_INTAKE]: { key: string; value: WaterIntake };
   [STORE_BODY_MEASUREMENTS]: { key: string; value: BodyMeasurement };
   [STORE_RECIPES]: {
     key: string;
@@ -550,6 +562,11 @@ function getDB(): Promise<IDBPDatabase<MacroDB>> {
         store.createIndex("byNameKey", "nameKey", { unique: false });
         store.createIndex("byCreatedAt", "createdAt", { unique: false });
       }
+      // v15 → v16: waterIntake store. Additive — keyed on the `YYYY-MM-DD`
+      // date like weightHistory (one cumulative row per day).
+      if (oldVersion < 16) {
+        db.createObjectStore(STORE_WATER_INTAKE, { keyPath: "date" });
+      }
     },
   });
   return dbPromise;
@@ -757,6 +774,7 @@ export async function clearDemoSeededStores(): Promise<void> {
       STORE_PROFILE,
       STORE_DAILY_LOGS,
       STORE_WEIGHT_HISTORY,
+      STORE_WATER_INTAKE,
       // shoppingListMeta is local-only-for-v1 but a guest user can
       // populate it during demo exploration (drag-to-reorder aisles,
       // notes, manual restocks). Without this clear it would survive
@@ -770,6 +788,7 @@ export async function clearDemoSeededStores(): Promise<void> {
     tx.objectStore(STORE_PROFILE).clear(),
     tx.objectStore(STORE_DAILY_LOGS).clear(),
     tx.objectStore(STORE_WEIGHT_HISTORY).clear(),
+    tx.objectStore(STORE_WATER_INTAKE).clear(),
     tx.objectStore(STORE_SHOPPING_LIST_META).clear(),
     tx.done,
   ]);
@@ -1036,6 +1055,95 @@ export async function deleteWeightEntry(date: string): Promise<void> {
   const db = await getDB();
   await db.delete(STORE_WEIGHT_HISTORY, date);
   await recordDeletion("weightHistory", date);
+}
+
+// ─── Water intake ──────────────────────────────────────────────────────────
+
+/** Sane upper bound on a single day's logged water (20 L) so a fat-finger
+ *  can't store an absurd total. */
+const MAX_WATER_ML = 20000;
+
+/** Add (or subtract, with a negative delta) water to a day's running total.
+ *  Reads-then-adds — the one behavioural departure from `saveWeightEntry`'s
+ *  overwrite — so every tap accumulates into the same date row. Clamps to
+ *  [0, MAX_WATER_ML] and preserves the row's `serverUpdatedAt` so the push
+ *  knows the right base version. */
+export async function addWater(date: string, deltaMl: number): Promise<void> {
+  const db = await getDB();
+  const existing = await db.get(STORE_WATER_INTAKE, date);
+  const ml = Math.max(
+    0,
+    Math.min(MAX_WATER_ML, Math.round((existing?.ml ?? 0) + deltaMl)),
+  );
+  await db.put(STORE_WATER_INTAKE, {
+    date,
+    ml,
+    recordedAt: Date.now(),
+    localUpdatedAt: nowIso(),
+    serverUpdatedAt: existing?.serverUpdatedAt ?? null,
+  });
+  notifyDataChanged("waterIntake");
+}
+
+/** Set a day's water total to an absolute value (the inline "edit total"
+ *  affordance), as opposed to `addWater`'s relative delta. */
+export async function setWaterTotal(date: string, ml: number): Promise<void> {
+  const db = await getDB();
+  const existing = await db.get(STORE_WATER_INTAKE, date);
+  await db.put(STORE_WATER_INTAKE, {
+    date,
+    ml: Math.max(0, Math.min(MAX_WATER_ML, Math.round(ml))),
+    recordedAt: Date.now(),
+    localUpdatedAt: nowIso(),
+    serverUpdatedAt: existing?.serverUpdatedAt ?? null,
+  });
+  notifyDataChanged("waterIntake");
+}
+
+/** Sync-layer hook: write a server-pulled water row. */
+export async function applyServerWaterIntake(
+  date: string,
+  ml: number,
+  serverUpdatedAt: string,
+): Promise<void> {
+  const db = await getDB();
+  await db.put(STORE_WATER_INTAKE, {
+    date,
+    ml,
+    recordedAt: Date.parse(serverUpdatedAt) || Date.now(),
+    localUpdatedAt: serverUpdatedAt,
+    serverUpdatedAt,
+  });
+}
+
+/** Sync-layer hook: refresh the version token after a successful push. */
+export async function markWaterIntakeSynced(
+  date: string,
+  serverUpdatedAt: string,
+): Promise<void> {
+  const db = await getDB();
+  const row = await db.get(STORE_WATER_INTAKE, date);
+  if (!row) return;
+  await db.put(STORE_WATER_INTAKE, {
+    ...row,
+    localUpdatedAt: serverUpdatedAt,
+    serverUpdatedAt,
+  });
+}
+
+export async function getWaterIntake(
+  date: string,
+): Promise<WaterIntake | null> {
+  const db = await getDB();
+  const row = await db.get(STORE_WATER_INTAKE, date);
+  return row ?? null;
+}
+
+/** All water rows, oldest first — the natural order for charts. */
+export async function listWaterIntake(): Promise<WaterIntake[]> {
+  const db = await getDB();
+  const rows = await db.getAll(STORE_WATER_INTAKE);
+  return rows.sort((a, b) => (a.date < b.date ? -1 : 1));
 }
 
 // ─── Body measurements ─────────────────────────────────────────────────────
@@ -1821,6 +1929,7 @@ export async function clearAllStores(): Promise<void> {
       STORE_DAILY_LOGS,
       STORE_MEAL_TEMPLATES,
       STORE_WEIGHT_HISTORY,
+      STORE_WATER_INTAKE,
       STORE_BODY_MEASUREMENTS,
       STORE_RECIPES,
       STORE_PANTRY_ITEMS,
@@ -1839,6 +1948,7 @@ export async function clearAllStores(): Promise<void> {
     tx.objectStore(STORE_DAILY_LOGS).clear(),
     tx.objectStore(STORE_MEAL_TEMPLATES).clear(),
     tx.objectStore(STORE_WEIGHT_HISTORY).clear(),
+    tx.objectStore(STORE_WATER_INTAKE).clear(),
     tx.objectStore(STORE_BODY_MEASUREMENTS).clear(),
     tx.objectStore(STORE_RECIPES).clear(),
     tx.objectStore(STORE_PANTRY_ITEMS).clear(),

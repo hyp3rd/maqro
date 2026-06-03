@@ -18,6 +18,7 @@ import type {
   MealTemplate,
   PantryItem,
   PantryNotification,
+  WaterIntake,
   WeightEntry,
 } from "@/lib/db";
 import type {
@@ -94,6 +95,36 @@ export function weightFromRow(row: WeightRow): WeightEntry {
   return {
     date: row.date,
     kg: row.kg,
+    recordedAt: Date.parse(row.recorded_at),
+  };
+}
+
+// ─── Water intake ──────────────────────────────────────────────────────────
+
+export type WaterRow = {
+  user_id: string;
+  date: string;
+  ml: number;
+  recorded_at: string;
+  updated_at: string;
+};
+
+export function waterToRow(
+  userId: string,
+  entry: WaterIntake,
+): Pick<WaterRow, "user_id" | "date" | "ml" | "recorded_at"> {
+  return {
+    user_id: userId,
+    date: entry.date,
+    ml: entry.ml,
+    recorded_at: new Date(entry.recordedAt).toISOString(),
+  };
+}
+
+export function waterFromRow(row: WaterRow): WaterIntake {
+  return {
+    date: row.date,
+    ml: row.ml,
     recordedAt: Date.parse(row.recorded_at),
   };
 }

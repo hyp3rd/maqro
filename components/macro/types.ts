@@ -272,6 +272,11 @@ export type PersonalInfo = {
   /** Optional manual macro split (percentages). When set + valid, overrides
    * the default goal+dietType-derived ratios in `computeMacros`. */
   macroSplit?: MacroSplit | null;
+  /** Optional manual daily water-intake goal in millilitres. When unset
+   * (null/undefined), the goal is derived from bodyweight (≈35 ml/kg,
+   * clamped) — see [lib/hydration.ts](../../lib/hydration.ts). Stored in ml
+   * regardless of the `units` display preference, like every other metric. */
+  waterGoalMl?: number | null;
   /** Display preference for weight + height: metric (kg / cm) or
    *  imperial (lb / ft+in). Storage stays in kg / cm regardless;
    *  this only governs how values are presented and entered. See

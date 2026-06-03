@@ -15,6 +15,7 @@ import {
   applyServerMicronutrientProfile,
   applyServerProfile,
   applyServerRecipe,
+  applyServerWaterIntake,
   applyServerWeightEntry,
   clearAllStores,
   clearDeletion,
@@ -30,6 +31,7 @@ import {
   listPantryItems,
   listPantryNotifications,
   listRecipes,
+  listWaterIntake,
   listWeightEntries,
   markBodyMeasurementSynced,
   markCustomFoodSynced,
@@ -41,6 +43,7 @@ import {
   markPantryNotificationSynced,
   markProfileSynced,
   markRecipeSynced,
+  markWaterIntakeSynced,
   markWeightEntrySynced,
   upsertCustomFood,
   upsertMealTemplate,
@@ -54,6 +57,7 @@ import {
   type MealTemplate,
   type PantryItem,
   type PantryNotification,
+  type WaterIntake,
   type WeightEntry,
 } from "@/lib/db";
 import {
@@ -86,6 +90,8 @@ import {
   profileToRow,
   recipeFromRow,
   recipeToRow,
+  waterFromRow,
+  waterToRow,
   weightFromRow,
   weightToRow,
   bodyMeasurementFromRow,
@@ -101,6 +107,7 @@ import {
   type PantryNotificationRow,
   type ProfileRow,
   type RecipeRow,
+  type WaterRow,
   type WeightRow,
 } from "./mappers";
 
@@ -109,6 +116,7 @@ export type SyncResult = {
     profile: number;
     dailyLogs: number;
     weightEntries: number;
+    waterIntake: number;
     bodyMeasurements: number;
     customFoods: number;
     mealTemplates: number;
@@ -123,6 +131,7 @@ export type SyncResult = {
     profile: number;
     dailyLogs: number;
     weightEntries: number;
+    waterIntake: number;
     bodyMeasurements: number;
     customFoods: number;
     mealTemplates: number;
@@ -149,6 +158,7 @@ const ZERO_COUNTS = {
   profile: 0,
   dailyLogs: 0,
   weightEntries: 0,
+  waterIntake: 0,
   bodyMeasurements: 0,
   customFoods: 0,
   mealTemplates: 0,
@@ -201,6 +211,7 @@ export async function runInitialSync(
   await pullProfile(supabase, userId, result);
   await pullDailyLogs(supabase, userId, result);
   await pullWeightEntries(supabase, userId, result);
+  await pullWaterIntake(supabase, userId, result);
   await pullBodyMeasurements(supabase, userId, result);
   await pullCustomFoods(supabase, userId, result);
   await pullMealTemplates(supabase, userId, result);
@@ -217,6 +228,7 @@ export async function runInitialSync(
   await pushProfile(supabase, userId, result);
   await pushDailyLogs(supabase, userId, result);
   await pushWeightEntries(supabase, userId, result);
+  await pushWaterIntake(supabase, userId, result);
   await pushBodyMeasurements(supabase, userId, result);
   await pushCustomFoods(supabase, userId, result);
   await pushMealTemplates(supabase, userId, result);
@@ -562,6 +574,34 @@ async function pushWeightEntries(
     if (outcome.status === "inserted" || outcome.status === "updated") {
       await markWeightEntrySynced(entry.date, outcome.serverUpdatedAt);
       result.pushed.weightEntries++;
+    }
+  }
+}
+
+async function pushWaterIntake(
+  supabase: SupabaseClient,
+  userId: string,
+  result: SyncResult,
+) {
+  const entries = await listWaterIntake();
+  for (const entry of entries) {
+    if (!isDirty(entry)) continue;
+    const row = waterToRow(userId, entry);
+    const outcome = await pushRow(
+      supabase,
+      "water_intake",
+      row,
+      { user_id: userId, date: entry.date },
+      entry.serverUpdatedAt,
+      "push water intake",
+    );
+    if (outcome.status === "conflict") {
+      result.conflicts++;
+      continue;
+    }
+    if (outcome.status === "inserted" || outcome.status === "updated") {
+      await markWaterIntakeSynced(entry.date, outcome.serverUpdatedAt);
+      result.pushed.waterIntake++;
     }
   }
 }
@@ -1025,6 +1065,34 @@ async function pullWeightEntries(
     result.pulled.weightEntries++;
   }
   if (result.pulled.weightEntries > before) notifyDataChanged("weightHistory");
+}
+
+async function pullWaterIntake(
+  supabase: SupabaseClient,
+  userId: string,
+  result: SyncResult,
+) {
+  const { data, error } = await withTimeout("pull water intake", (signal) =>
+    supabase
+      .from("water_intake")
+      .select("user_id, date, ml, recorded_at, updated_at")
+      .eq("user_id", userId)
+      .abortSignal(signal),
+  );
+  if (error) throw asError(error, "pull water intake");
+  if (!data) return;
+  const locals = new Map(
+    (await listWaterIntake()).map((e: WaterIntake) => [e.date, e]),
+  );
+  const before = result.pulled.waterIntake;
+  for (const row of data as WaterRow[]) {
+    const localRow = locals.get(row.date);
+    if (!shouldApplyServer(localRow?.serverUpdatedAt, row.updated_at)) continue;
+    const entry = waterFromRow(row);
+    await applyServerWaterIntake(entry.date, entry.ml, row.updated_at);
+    result.pulled.waterIntake++;
+  }
+  if (result.pulled.waterIntake > before) notifyDataChanged("waterIntake");
 }
 
 async function pullBodyMeasurements(

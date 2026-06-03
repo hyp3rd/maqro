@@ -5,12 +5,14 @@ import {
   saveDailyLog,
   saveDemoProfile,
   saveWeightEntry,
+  setWaterTotal,
   todayKey,
 } from "@/lib/db";
 import {
   DEMO_FLAG_KEY,
   getDemoMealLogs,
   getDemoProfile,
+  getDemoWaterLogs,
   getDemoWeightHistory,
 } from "@/lib/demo-data";
 import { notifyProfileChanged } from "@/lib/profile-bus";
@@ -82,6 +84,9 @@ export function DemoSeed() {
         }
         for (const w of getDemoWeightHistory(today)) {
           await saveWeightEntry(w.date, w.kg);
+        }
+        for (const wi of getDemoWaterLogs(today)) {
+          await setWaterTotal(wi.date, wi.ml);
         }
 
         if (cancelled) return;

@@ -26,6 +26,7 @@ export type UnitSystem = "metric" | "imperial";
 const KG_PER_LB = 0.45359237; // International avoirdupois pound.
 const CM_PER_INCH = 2.54;
 const INCHES_PER_FOOT = 12;
+const ML_PER_FL_OZ = 29.5735; // US fluid ounce.
 
 // ── Weight ────────────────────────────────────────────────────────
 
@@ -140,6 +141,53 @@ export function cmToDisplay(cm: number, system: UnitSystem): number {
 export function displayToCm(value: number, system: UnitSystem): number {
   if (system === "imperial") return inchesToCm(value);
   return value;
+}
+
+// ── Water / volume ────────────────────────────────────────────────
+//
+// Storage is always millilitres (same "storage is metric" rule as
+// weight). Imperial users see US fluid ounces; the conversion lives
+// only at the display / input boundary.
+
+export function mlToFlOz(ml: number): number {
+  return ml / ML_PER_FL_OZ;
+}
+
+export function flOzToMl(flOz: number): number {
+  return flOz * ML_PER_FL_OZ;
+}
+
+/** Convert ml → whole-number display value (`ml` rounded, or `fl oz`
+ *  rounded). Use this when seeding a volume `<input>` from stored ml. */
+export function mlToDisplay(ml: number, system: UnitSystem): number {
+  if (system === "imperial") return Math.round(mlToFlOz(ml));
+  return Math.round(ml);
+}
+
+/** Inverse of `mlToDisplay`: take the user's typed value + the active
+ *  system, return ml for storage. */
+export function displayToMl(value: number, system: UnitSystem): number {
+  if (system === "imperial") return Math.round(flOzToMl(value));
+  return Math.round(value);
+}
+
+/** Format a volume (stored in ml) for the chosen system. Metric shows
+ *  litres once it crosses 1 L (`"1.5 L"`) and millilitres below that
+ *  (`"750 ml"`); imperial shows whole fluid ounces (`"59 fl oz"`).
+ *  Volumes never need sub-unit precision the way weight does. */
+export function formatVolume(ml: number, system: UnitSystem): string {
+  if (system === "imperial") {
+    return `${Math.round(mlToFlOz(ml))} fl oz`;
+  }
+  if (ml >= 1000) {
+    return `${(ml / 1000).toFixed(ml % 1000 === 0 ? 0 : 1)} L`;
+  }
+  return `${Math.round(ml)} ml`;
+}
+
+/** Suffix shown next to a water input field. */
+export function volumeUnitSuffix(system: UnitSystem): string {
+  return system === "imperial" ? "fl oz" : "ml";
 }
 
 // ── Locale auto-detection ─────────────────────────────────────────

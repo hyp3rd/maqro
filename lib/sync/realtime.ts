@@ -11,6 +11,7 @@ import {
   applyServerPantryNotification,
   applyServerProfile,
   applyServerRecipe,
+  applyServerWaterIntake,
   applyServerWeightEntry,
   applyServerDeletion,
   getProfileRecord,
@@ -32,6 +33,7 @@ import {
   pantryNotificationFromRow,
   profileFromRow,
   recipeFromRow,
+  waterFromRow,
   weightFromRow,
   type CustomFoodRow,
   type DailyLogRow,
@@ -43,6 +45,7 @@ import {
   type PantryNotificationRow,
   type ProfileRow,
   type RecipeRow,
+  type WaterRow,
   type WeightRow,
 } from "./mappers";
 
@@ -126,6 +129,19 @@ export function startRealtimeSubscription(
         { event: "*", schema: "public", table: "weight_history", filter },
         (payload) => {
           void handleWeight(payload);
+        },
+      )
+      .subscribe(buildSubscribeHandler()),
+  );
+
+  channels.push(
+    supabase
+      .channel("sync-water-intake")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "water_intake", filter },
+        (payload) => {
+          void handleWater(payload);
         },
       )
       .subscribe(buildSubscribeHandler()),
@@ -311,6 +327,20 @@ async function handleWeight(payload: LoosePayload) {
   const entry = weightFromRow(row);
   await applyServerWeightEntry(entry.date, entry.kg, row.updated_at);
   notifyDataChanged("weightHistory");
+}
+
+async function handleWater(payload: LoosePayload) {
+  // No DELETE path: water is add/adjust-only, never user-deleted. A
+  // server-side DELETE (account cascade) is harmless — the row gets
+  // wiped on sign-out's clearAllStores — so we ignore DELETE and only
+  // apply upserts (mirroring handleMicronutrientProfile).
+  if (payload.eventType === "DELETE") return;
+  const row = newRow<WaterRow>(payload);
+  if (!row) return;
+  if (await isOwnEcho("waterIntake", row.updated_at)) return;
+  const entry = waterFromRow(row);
+  await applyServerWaterIntake(entry.date, entry.ml, row.updated_at);
+  notifyDataChanged("waterIntake");
 }
 
 async function handleCustomFood(payload: LoosePayload) {

@@ -13,6 +13,7 @@ vi.mock("@/lib/db", () => ({
   applyServerProfile: vi.fn(),
   applyServerDailyLog: vi.fn(),
   applyServerWeightEntry: vi.fn(),
+  applyServerWaterIntake: vi.fn(),
   applyServerCustomFood: vi.fn(),
   applyServerMealTemplate: vi.fn(),
   applyServerRecipe: vi.fn(),
@@ -103,6 +104,7 @@ describe("startRealtimeSubscription — channel wiring", () => {
       "pantry_notifications",
       "profiles",
       "recipes",
+      "water_intake",
       "weight_history",
     ]);
 
@@ -115,10 +117,10 @@ describe("startRealtimeSubscription — channel wiring", () => {
   it("unsubscribe removes every channel", () => {
     const { sb, channels, getRemoveCalls } = makeFakeSupabase();
     const handle = startRealtimeSubscription(sb, USER_ID);
-    expect(channels).toHaveLength(11);
+    expect(channels).toHaveLength(12);
 
     handle.unsubscribe();
-    expect(getRemoveCalls()).toBe(11);
+    expect(getRemoveCalls()).toBe(12);
   });
 });
 

@@ -6,14 +6,20 @@ import {
   detectDefaultUnitSystem,
   displayToCm,
   displayToKg,
+  displayToMl,
   feetInchesToCm,
+  flOzToMl,
   formatHeight,
+  formatVolume,
   formatWeight,
   formatWeightRate,
   inchesToCm,
   kgToDisplay,
   kgToLb,
   lbToKg,
+  mlToDisplay,
+  mlToFlOz,
+  volumeUnitSuffix,
 } from "./units";
 
 /** The conversion factors are the spec — every other helper rests
@@ -133,6 +139,50 @@ describe("cmToDisplay / displayToCm", () => {
     expect(cmToDisplay(180, "imperial")).toBe(71);
     // 71 in = 180.34 cm.
     expect(displayToCm(71, "imperial")).toBeCloseTo(180.34, 2);
+  });
+});
+
+describe("ml ↔ fl oz", () => {
+  it("converts at the US fluid-ounce factor (29.5735 ml)", () => {
+    // 1 fl oz = 29.5735 ml.
+    expect(flOzToMl(1)).toBeCloseTo(29.5735, 4);
+    expect(mlToFlOz(29.5735)).toBeCloseTo(1, 6);
+    // A 500 ml bottle ≈ 16.9 fl oz.
+    expect(mlToFlOz(500)).toBeCloseTo(16.907, 2);
+  });
+});
+
+describe("mlToDisplay / displayToMl", () => {
+  it("metric returns whole ml and round-trips", () => {
+    expect(mlToDisplay(2350, "metric")).toBe(2350);
+    expect(displayToMl(2350, "metric")).toBe(2350);
+  });
+
+  it("imperial converts to whole fl oz and back", () => {
+    // 2400 ml ≈ 81.15 fl oz → rounds to 81.
+    expect(mlToDisplay(2400, "imperial")).toBe(81);
+    // 81 fl oz ≈ 2395 ml.
+    expect(displayToMl(81, "imperial")).toBe(2395);
+  });
+});
+
+describe("formatVolume", () => {
+  it("metric shows ml below a litre and L at/above", () => {
+    expect(formatVolume(750, "metric")).toBe("750 ml");
+    expect(formatVolume(2000, "metric")).toBe("2 L");
+    expect(formatVolume(2400, "metric")).toBe("2.4 L");
+  });
+
+  it("imperial shows whole fluid ounces", () => {
+    expect(formatVolume(2400, "imperial")).toBe("81 fl oz");
+    expect(formatVolume(250, "imperial")).toBe("8 fl oz");
+  });
+});
+
+describe("volumeUnitSuffix", () => {
+  it("maps to the unit label", () => {
+    expect(volumeUnitSuffix("metric")).toBe("ml");
+    expect(volumeUnitSuffix("imperial")).toBe("fl oz");
   });
 });
 
