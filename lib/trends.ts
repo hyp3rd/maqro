@@ -271,6 +271,21 @@ export type AdaptiveTdee = {
   advisory: string | null;
 };
 
+/** Human-readable confidence label, shared across surfaces. Empty string
+ *  for "none" so callers can `&&` it away. */
+export function confidenceLabel(c: AdaptiveTdeeConfidence): string {
+  switch (c) {
+    case "high":
+      return "high confidence";
+    case "medium":
+      return "medium confidence";
+    case "low":
+      return "low confidence";
+    default:
+      return "";
+  }
+}
+
 /** Look-back window and the minimum data needed before we'll commit to
  *  an estimate. 28 days balances responsiveness against weight noise;
  *  the floors keep us quiet until the signal is real. */
@@ -279,6 +294,13 @@ const ADAPTIVE_MIN_WINDOW_DAYS = 14;
 const ADAPTIVE_MIN_LOGGED_DAYS = 10;
 /** Clamp to the same range the manual-TDEE input accepts (PersonalInfoForm). */
 const ADAPTIVE_TDEE_BOUNDS: readonly [number, number] = [800, 6000];
+
+/** Only surface the adaptive-TDEE suggestion when it differs from the
+ *  current target basis by at least this much — below it the user is
+ *  already calibrated and a card would just be noise. Shared by every
+ *  surface (Progress view + print report) so they agree on when to show
+ *  it. Mirrors the ±50 kcal noise floor `recalibrateTdee` uses. */
+export const ADAPTIVE_DELTA_THRESHOLD = 50;
 
 /** Least-squares slope (Δy per unit x) of paired points. Returns 0 when
  *  x has no spread — callers here always pass ≥ 2 points across ≥ 14 days,

@@ -9,7 +9,7 @@
 
 Sequenced by leverage:
 
-1. **Adaptive TDEE loop** ← in progress
+1. **Adaptive TDEE loop** ✓ shipped
 1. **Logging quick‑add** (recent / favorites / copy‑a‑meal)
 1. **Breadth** — water/hydration + meal timestamps → eating windows / fasting
 1. **Goal phases** (cut → diet break → maintenance → lean bulk)
@@ -18,7 +18,7 @@ A deliberate non‑goal list lives at the bottom.
 
 ---
 
-## 1. Adaptive TDEE loop — _in progress_
+## 1. Adaptive TDEE loop — _shipped_
 
 **Problem.** TDEE is currently `BMR × activityMultiplier`, where the multiplier
 comes from a static dropdown ([components/macro/types.ts](../components/macro/types.ts)).
@@ -67,20 +67,24 @@ power a "TDEE over time" chart and an auto‑adapt audit trail.)
 - **Calculator → manual‑TDEE field** ([PersonalInfoForm.tsx](../components/macro/PersonalInfoForm.tsx)):
   a "Suggested from your trend: X" badge + Apply.
 
-**Pro‑gating (proposed, needs sign‑off).** Keep the _estimate + one‑click apply_
-**free** — gating accuracy/honesty feels wrong and it's the core trust story.
-Gate **auto‑adapt** (hands‑off weekly re‑estimation that nudges the target) and a
-**TDEE‑over‑time history chart** as **Pro** — that gives Pro genuine intelligence
-beyond "sync + micronutrients."
+**Pro‑gating (decided).** The estimate + one‑click apply ship **free** — it's the
+core accuracy/trust story. Deferred to a **Pro phase 2**: **auto‑adapt** (hands‑off
+weekly re‑estimation that nudges the target) and a **TDEE‑over‑time history chart**
+— giving Pro genuine intelligence beyond "sync + micronutrients."
 
-**Open decisions (for sign‑off before UI wiring).**
+**Status — shipped.**
 
-1. Free vs. Pro split (above).
-1. Suggest‑with‑one‑click‑apply (MVP) vs. opt‑in auto‑apply (Pro, phase 2).
-1. Surface: Trends card only, or also the Calculator badge.
+- `inferAdaptiveTdee()` + 8 unit tests in `lib/trends.ts` / `lib/trends.test.ts`;
+  shared `ADAPTIVE_DELTA_THRESHOLD` + `confidenceLabel()` so every surface agrees.
+- Live **Progress → Trends** card with one‑tap "Use N kcal as my TDEE"
+  (`patchProfile("manualTdee", …)` → targets recompute + toast). `recalibrateTdee`
+  retained as the weights‑only fallback.
+- Mirrored (read‑only) into the **print report** (`app/report/page.tsx`) so the PDF
+  shows the same maintenance number as the app.
+- Verified live end‑to‑end (estimate, apply→toast, card clears after apply).
 
-**Status.** Estimator + unit tests landed in `lib/trends.ts` / `lib/trends.test.ts`.
-UI wiring pending the decisions above.
+**Not done (Pro phase 2):** auto‑adapt, TDEE‑over‑time chart, and the optional
+Calculator manual‑TDEE "suggested from your trend" badge.
 
 ---
 
