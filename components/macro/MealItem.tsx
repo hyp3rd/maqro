@@ -269,6 +269,16 @@ const MealItem: React.FC<MealItemProps> = ({
               the same vocabulary by seeing it twice. */}
           {!isOver && (
             <div className="mt-3 flex flex-wrap items-center justify-center gap-1.5">
+              {/* Quick add steps into the per-meal hub (recents + search +
+                  insights/advice) — same surface the Insights badge opens. */}
+              <button
+                type="button"
+                onClick={() => onOpenDetail(meal.id)}
+                className="inline-flex h-7 items-center gap-1 rounded-full border border-foreground/30 bg-background px-2.5 text-[11px] font-medium text-foreground transition-colors hover:bg-accent/40"
+              >
+                <Plus className="h-3 w-3" />
+                Quick add
+              </button>
               <button
                 type="button"
                 onClick={() => onAddFromTemplate(meal.id)}

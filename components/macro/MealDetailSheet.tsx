@@ -37,15 +37,8 @@ import {
 } from "../ui/alert-dialog";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "../ui/dialog";
 
-type DailyGoal = {
+export type DailyGoal = {
   calories: number;
   protein: number;
   carbs: number;
@@ -53,38 +46,6 @@ type DailyGoal = {
 };
 
 const ADVICE_CONSENT_KEY = "maqro:meal-advice-consent";
-
-type Props = {
-  /** The meal whose detail sheet is open. `null` = closed. */
-  meal: Meal | null;
-  /** The user's daily macro goal — drives the "toward your day" stats
-   *  and goal-fit insights. */
-  goal?: DailyGoal;
-  onOpenChange: (open: boolean) => void;
-};
-
-/** Meal-detail bottom-sheet: dive into one meal for a macro breakdown,
- *  a micronutrient read (Pro), deterministic balance flags, and an
- *  optional AI "next time" suggestion. The body lives in `MealDetail`,
- *  keyed by meal id so it remounts (fresh data load) per open. */
-export function MealDetailSheet({ meal, goal, onOpenChange }: Props) {
-  return (
-    <Dialog
-      open={meal !== null}
-      onOpenChange={onOpenChange}
-    >
-      <DialogContent className="max-h-[88vh] gap-3 overflow-y-auto">
-        {meal && (
-          <MealDetail
-            key={meal.id}
-            meal={meal}
-            goal={goal}
-          />
-        )}
-      </DialogContent>
-    </Dialog>
-  );
-}
 
 function sexFromGender(g: PersonalInfo["gender"] | undefined): BiologicalSex {
   return g === "male" || g === "female" ? g : "unspecified";
@@ -107,7 +68,11 @@ function sumSub(meal: Meal, key: SubMacroKey): number | undefined {
   return any ? Math.round(sum * 10) / 10 : undefined;
 }
 
-function MealDetail({ meal, goal }: { meal: Meal; goal?: DailyGoal }) {
+/** The body of the per-meal view: macro breakdown, deterministic
+ *  insights, micronutrients (Pro), and the AI "next time" advice (Pro).
+ *  Header-less — the host (MealHubSheet) renders the meal title — and
+ *  keyed by meal id at the call site so it remounts (fresh data) per open. */
+export function MealDetail({ meal, goal }: { meal: Meal; goal?: DailyGoal }) {
   const { state } = useAiUsage();
   const isPro =
     state.status === "ok" && FEATURES.canTrackMicronutrients(state.data.tier);
@@ -201,14 +166,6 @@ function MealDetail({ meal, goal }: { meal: Meal; goal?: DailyGoal }) {
 
   return (
     <>
-      <DialogHeader>
-        <DialogTitle className="text-left">{meal.name}</DialogTitle>
-        <DialogDescription className="text-left font-mono text-xs tabular-nums">
-          {Math.round(totals.calories)} kcal · {meal.foods.length} food
-          {meal.foods.length === 1 ? "" : "s"}
-        </DialogDescription>
-      </DialogHeader>
-
       {/* --- Macro breakdown (free) --- */}
       <section className="space-y-2 pt-1">
         <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-muted">
