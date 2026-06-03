@@ -11,7 +11,7 @@ import { notifyDataChanged } from "@/lib/sync/data-bus";
 import { type DBSchema, type IDBPDatabase, openDB } from "idb";
 
 const DB_NAME = "maqro";
-const DB_VERSION = 14;
+const DB_VERSION = 15;
 
 const STORE_CUSTOM_FOODS = "customFoods";
 const STORE_PROFILE = "profile";
@@ -23,6 +23,7 @@ const STORE_RECIPES = "recipes";
 const STORE_PANTRY_ITEMS = "pantryItems";
 const STORE_PANTRY_NOTIFICATIONS = "pantryNotifications";
 const STORE_FAVORITE_STORES = "favoriteStores";
+const STORE_FAVORITE_FOODS = "favoriteFoods";
 /** Per-shopping-list-item user overrides: a chosen aisle (from the
  *  drag-and-drop in ShoppingListView) and a free-text note. Local-
  *  only for v1 — no sync mapper yet — so the meta lives on the
@@ -90,7 +91,8 @@ export type DeletableStore =
   | "bodyMeasurements"
   | "pantryItems"
   | "pantryNotifications"
-  | "favoriteStores";
+  | "favoriteStores"
+  | "favoriteFoods";
 
 /** A tombstone - "delete this row on the server next sync." Composite
  *  key `<store>:<rowKey>` so the same row id across different stores
@@ -295,6 +297,20 @@ export type FavoriteStore = {
   updatedAt: number;
 } & Versioned;
 
+/** A food the user pinned as a favourite, so it sits at the top of the
+ *  quick-add lists. The addable per-100g `food` + default `portion` are
+ *  stored inline (the food JSONB column in Supabase) so re-adding needs
+ *  no resolution. `id` is a client-minted UUID shared with Supabase;
+ *  `nameKey` (lowercased name) is the dedupe key — one favourite per
+ *  food — with a byNameKey index for "is this favourited?" lookups. */
+export type FavoriteFood = {
+  id: string;
+  nameKey: string;
+  food: Food;
+  portion: number;
+  createdAt: number;
+} & Versioned;
+
 /** Tiny helper that mints the wall-clock timestamp every saver uses.
  *  Centralized so tests can hijack it via vi.useFakeTimers() and the
  *  string format stays consistent. */
@@ -346,6 +362,11 @@ interface MacroDB extends DBSchema {
     key: string;
     value: FavoriteStore;
     indexes: { byCreatedAt: number };
+  };
+  [STORE_FAVORITE_FOODS]: {
+    key: string;
+    value: FavoriteFood;
+    indexes: { byNameKey: string; byCreatedAt: number };
   };
   [STORE_SHOPPING_LIST_META]: { key: string; value: ShoppingListMeta };
   [STORE_MICRONUTRIENT_PROFILES]: { key: string; value: MicronutrientProfile };
@@ -518,6 +539,16 @@ function getDB(): Promise<IDBPDatabase<MacroDB>> {
         db.createObjectStore(STORE_MICRONUTRIENT_PROFILES, {
           keyPath: "nameKey",
         });
+      }
+      // v14 → v15: favoriteFoods store. Additive — UUID keyPath (shared
+      // with Supabase) with a byNameKey index for "is this favourited?"
+      // lookups and a byCreatedAt index for newest-first listing.
+      if (oldVersion < 15) {
+        const store = db.createObjectStore(STORE_FAVORITE_FOODS, {
+          keyPath: "id",
+        });
+        store.createIndex("byNameKey", "nameKey", { unique: false });
+        store.createIndex("byCreatedAt", "createdAt", { unique: false });
       }
     },
   });
@@ -1412,6 +1443,107 @@ export async function deleteFavoriteStore(id: string): Promise<void> {
   notifyDataChanged("favoriteStores");
 }
 
+// ─── Favourite foods ─────────────────────────────────────────────────────────
+
+function favoriteKey(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+/** Pin a food as a favourite. Mints a UUID shared with Supabase; stores
+ *  the addable per-100g `food` + default `portion` inline. No-op (returns
+ *  the existing id) if the food is already favourited, so the star toggle
+ *  can't create duplicates. */
+export async function addFavoriteFood(
+  food: Food,
+  portion: number,
+): Promise<string> {
+  const db = await getDB();
+  const nameKey = favoriteKey(food.name);
+  const existing = await db.getFromIndex(
+    STORE_FAVORITE_FOODS,
+    "byNameKey",
+    nameKey,
+  );
+  if (existing) return existing.id;
+  const id = mintId();
+  await db.put(STORE_FAVORITE_FOODS, {
+    id,
+    nameKey,
+    food,
+    portion: Math.max(1, Math.round(portion)),
+    createdAt: Date.now(),
+    localUpdatedAt: nowIso(),
+    serverUpdatedAt: null,
+  });
+  notifyDataChanged("favoriteFoods");
+  return id;
+}
+
+/** Upsert a favourite at a specific id (sync edit flow). */
+export async function upsertFavoriteFood(
+  fav: Omit<FavoriteFood, keyof Versioned> & Partial<Versioned>,
+): Promise<void> {
+  const db = await getDB();
+  const existing = await db.get(STORE_FAVORITE_FOODS, fav.id);
+  await db.put(STORE_FAVORITE_FOODS, {
+    ...fav,
+    localUpdatedAt: nowIso(),
+    serverUpdatedAt: fav.serverUpdatedAt ?? existing?.serverUpdatedAt ?? null,
+  });
+  notifyDataChanged("favoriteFoods");
+}
+
+/** Sync-layer hook: write a server-pulled favourite food. */
+export async function applyServerFavoriteFood(
+  fav: Omit<FavoriteFood, keyof Versioned>,
+  serverUpdatedAt: string,
+): Promise<void> {
+  const db = await getDB();
+  await db.put(STORE_FAVORITE_FOODS, {
+    ...fav,
+    localUpdatedAt: serverUpdatedAt,
+    serverUpdatedAt,
+  });
+}
+
+/** Sync-layer hook: refresh the version token after a successful push. */
+export async function markFavoriteFoodSynced(
+  id: string,
+  serverUpdatedAt: string,
+): Promise<void> {
+  const db = await getDB();
+  const row = await db.get(STORE_FAVORITE_FOODS, id);
+  if (!row) return;
+  await db.put(STORE_FAVORITE_FOODS, {
+    ...row,
+    localUpdatedAt: serverUpdatedAt,
+    serverUpdatedAt,
+  });
+}
+
+export async function listFavoriteFoods(): Promise<FavoriteFood[]> {
+  const db = await getDB();
+  const rows = await db.getAll(STORE_FAVORITE_FOODS);
+  // Newest-favourited first.
+  return rows.sort((a, b) => b.createdAt - a.createdAt);
+}
+
+/** Un-favourite a food by name (the star toggle's off path). Records a
+ *  tombstone per removed row so the deletion syncs. */
+export async function deleteFavoriteFoodByName(name: string): Promise<void> {
+  const db = await getDB();
+  const matches = await db.getAllFromIndex(
+    STORE_FAVORITE_FOODS,
+    "byNameKey",
+    favoriteKey(name),
+  );
+  if (matches.length === 0) return;
+  const tx = db.transaction(STORE_FAVORITE_FOODS, "readwrite");
+  await Promise.all([...matches.map((m) => tx.store.delete(m.id)), tx.done]);
+  for (const m of matches) await recordDeletion("favoriteFoods", m.id);
+  notifyDataChanged("favoriteFoods");
+}
+
 // ─── Micronutrient profiles (derived enrichment cache) ───────────────────
 
 /** Upsert a micronutrient profile at its `nameKey`. Written by the
@@ -1655,6 +1787,7 @@ export async function applyServerDeletion(
     pantryItems: STORE_PANTRY_ITEMS,
     pantryNotifications: STORE_PANTRY_NOTIFICATIONS,
     favoriteStores: STORE_FAVORITE_STORES,
+    favoriteFoods: STORE_FAVORITE_FOODS,
   };
   await db.delete(
     storeMap[storeName] as
@@ -1665,7 +1798,8 @@ export async function applyServerDeletion(
       | typeof STORE_WEIGHT_HISTORY
       | typeof STORE_PANTRY_ITEMS
       | typeof STORE_PANTRY_NOTIFICATIONS
-      | typeof STORE_FAVORITE_STORES,
+      | typeof STORE_FAVORITE_STORES
+      | typeof STORE_FAVORITE_FOODS,
     rowKey,
   );
   await clearTombstoneIfPresent(storeName, rowKey);
@@ -1692,6 +1826,7 @@ export async function clearAllStores(): Promise<void> {
       STORE_PANTRY_ITEMS,
       STORE_PANTRY_NOTIFICATIONS,
       STORE_FAVORITE_STORES,
+      STORE_FAVORITE_FOODS,
       STORE_SHOPPING_LIST_META,
       STORE_MICRONUTRIENT_PROFILES,
       STORE_DELETIONS,
@@ -1709,6 +1844,7 @@ export async function clearAllStores(): Promise<void> {
     tx.objectStore(STORE_PANTRY_ITEMS).clear(),
     tx.objectStore(STORE_PANTRY_NOTIFICATIONS).clear(),
     tx.objectStore(STORE_FAVORITE_STORES).clear(),
+    tx.objectStore(STORE_FAVORITE_FOODS).clear(),
     tx.objectStore(STORE_SHOPPING_LIST_META).clear(),
     tx.objectStore(STORE_MICRONUTRIENT_PROFILES).clear(),
     tx.objectStore(STORE_DELETIONS).clear(),

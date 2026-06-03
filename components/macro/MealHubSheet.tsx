@@ -1,8 +1,8 @@
 "use client";
 
-import { useRecentFoods } from "@/hooks/use-recent-foods";
+import { usePastMealsForSlot } from "@/hooks/use-past-meals";
 import { useState } from "react";
-import { LayoutGrid, Plus, Search, Soup, Sparkles, Trash2 } from "lucide-react";
+import { LayoutGrid, Search, Soup, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../ui/button";
 import {
@@ -14,7 +14,18 @@ import {
 } from "../ui/dialog";
 import { FoodSearchSheet } from "./FoodSearchSheet";
 import { MealDetail, type DailyGoal } from "./MealDetailSheet";
-import type { Food, Meal } from "./types";
+import { QuickAddFoods } from "./QuickAddFoods";
+import type { Food, FoodItem, Meal } from "./types";
+
+/** "Mon, Jun 1" from a YYYY-MM-DD key (parsed as a local calendar date). */
+function dayLabel(date: string): string {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
 
 type Props = {
   /** The meal the hub is open for. `null` = closed. */
@@ -26,6 +37,8 @@ type Props = {
    *  toasts. */
   onLogFood: (food: Food, mealId: number, grams: number) => void;
   onRemoveFood: (mealId: number, foodId: number) => void;
+  /** Append a previous day's meal-slot foods into this meal. */
+  onCopyMeal: (mealId: number, items: FoodItem[]) => void;
   onAddFromTemplate: (mealId: number) => void;
   onApplyRecipe: (mealId: number) => void;
   onRegenerate: (mealId: number) => void;
@@ -45,6 +58,7 @@ export function MealHubSheet({
   customFoodsRev,
   onLogFood,
   onRemoveFood,
+  onCopyMeal,
   onAddFromTemplate,
   onApplyRecipe,
   onRegenerate,
@@ -72,6 +86,7 @@ export function MealHubSheet({
               goal={goal}
               onLogFood={onLogFood}
               onRemoveFood={onRemoveFood}
+              onCopyMeal={onCopyMeal}
               onAddFromTemplate={onAddFromTemplate}
               onApplyRecipe={onApplyRecipe}
               onRegenerate={onRegenerate}
@@ -104,6 +119,7 @@ function MealHubBody({
   goal,
   onLogFood,
   onRemoveFood,
+  onCopyMeal,
   onAddFromTemplate,
   onApplyRecipe,
   onRegenerate,
@@ -116,6 +132,7 @@ function MealHubBody({
   goal?: DailyGoal;
   onLogFood: (food: Food, mealId: number, grams: number) => void;
   onRemoveFood: (mealId: number, foodId: number) => void;
+  onCopyMeal: (mealId: number, items: FoodItem[]) => void;
   onAddFromTemplate: (mealId: number) => void;
   onApplyRecipe: (mealId: number) => void;
   onRegenerate: (mealId: number) => void;
@@ -124,7 +141,7 @@ function MealHubBody({
   onOpenSearch: () => void;
   onClose: () => void;
 }) {
-  const { recents } = useRecentFoods(8);
+  const pastMeals = usePastMealsForSlot(meal.name);
   const hasFoods = meal.foods.length > 0;
   const totalKcal = Math.round(meal.foods.reduce((s, f) => s + f.calories, 0));
 
@@ -147,36 +164,7 @@ function MealHubBody({
         </DialogDescription>
       </DialogHeader>
 
-      {recents.length > 0 && (
-        <section className="space-y-1.5">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Quick add
-          </h3>
-          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-            {recents.map((r) => {
-              const kcal = Math.round((r.food.calories * r.lastPortion) / 100);
-              return (
-                <button
-                  key={r.name}
-                  type="button"
-                  onClick={() => quickAdd(r.food, r.lastPortion)}
-                  className="flex items-center gap-2 rounded-lg border border-border/60 bg-card px-3 py-2 text-left transition-colors hover:bg-accent/40 active:bg-muted"
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-foreground">
-                      {r.name}
-                    </span>
-                    <span className="block font-mono text-[11px] tabular-nums text-muted-foreground">
-                      {kcal} kcal · {r.lastPortion} g
-                    </span>
-                  </span>
-                  <Plus className="h-4 w-4 shrink-0 text-muted-foreground/60" />
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      )}
+      <QuickAddFoods onAdd={quickAdd} />
 
       {/* Search + (empty meal) the same three actions as the card, so a user
           who lands here on an empty meal isn't dead-ended. AI generate runs
@@ -235,6 +223,42 @@ function MealHubBody({
           </>
         )}
       </section>
+
+      {pastMeals.length > 0 && (
+        <section className="space-y-1.5">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Copy a previous {meal.name}
+          </h3>
+          <ul className="space-y-1.5">
+            {pastMeals.slice(0, 5).map((pm) => (
+              <li
+                key={pm.date}
+                className="flex items-center gap-2 rounded-lg border border-border/60 bg-card px-3 py-2"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium text-foreground">
+                    {dayLabel(pm.date)}
+                  </span>
+                  <span className="block truncate font-mono text-[11px] tabular-nums text-muted-foreground">
+                    {pm.foods.length} food{pm.foods.length === 1 ? "" : "s"} ·{" "}
+                    {pm.totalKcal} kcal ·{" "}
+                    {pm.foods.map((f) => f.name).join(", ")}
+                  </span>
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 shrink-0"
+                  onClick={() => onCopyMeal(meal.id, pm.foods)}
+                >
+                  Copy
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {hasFoods && (
         <section className="space-y-1.5">

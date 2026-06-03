@@ -3,6 +3,7 @@
 import {
   applyServerCustomFood,
   applyServerDailyLog,
+  applyServerFavoriteFood,
   applyServerFavoriteStore,
   applyServerMealTemplate,
   applyServerMicronutrientProfile,
@@ -23,6 +24,7 @@ import { notifyDataChanged, type SyncedTable } from "./data-bus";
 import {
   customFoodFromRow,
   dailyLogFromRow,
+  favoriteFoodFromRow,
   favoriteStoreFromRow,
   mealTemplateFromRow,
   micronutrientProfileFromRow,
@@ -33,6 +35,7 @@ import {
   weightFromRow,
   type CustomFoodRow,
   type DailyLogRow,
+  type FavoriteFoodRow,
   type FavoriteStoreRow,
   type MealTemplateRow,
   type MicronutrientProfileRow,
@@ -201,6 +204,18 @@ export function startRealtimeSubscription(
         { event: "*", schema: "public", table: "favorite_stores", filter },
         (payload) => {
           void handleFavoriteStore(payload);
+        },
+      )
+      .subscribe(buildSubscribeHandler()),
+  );
+  channels.push(
+    supabase
+      .channel("sync-favorite-foods")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "favorite_foods", filter },
+        (payload) => {
+          void handleFavoriteFood(payload);
         },
       )
       .subscribe(buildSubscribeHandler()),
@@ -383,6 +398,20 @@ async function handleFavoriteStore(payload: LoosePayload) {
   if (await isOwnEcho("favoriteStores", row.updated_at)) return;
   await applyServerFavoriteStore(favoriteStoreFromRow(row), row.updated_at);
   notifyDataChanged("favoriteStores");
+}
+
+async function handleFavoriteFood(payload: LoosePayload) {
+  if (payload.eventType === "DELETE") {
+    const old = payload.old as Partial<FavoriteFoodRow> | undefined;
+    if (old?.id) await applyServerDeletion("favoriteFoods", old.id);
+    notifyDataChanged("favoriteFoods");
+    return;
+  }
+  const row = newRow<FavoriteFoodRow>(payload);
+  if (!row) return;
+  if (await isOwnEcho("favoriteFoods", row.updated_at)) return;
+  await applyServerFavoriteFood(favoriteFoodFromRow(row), row.updated_at);
+  notifyDataChanged("favoriteFoods");
 }
 
 async function handleMicronutrientProfile(payload: LoosePayload) {

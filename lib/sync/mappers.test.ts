@@ -3,6 +3,7 @@ import type {
   BodyMeasurement,
   CustomFood,
   DailyLog,
+  FavoriteFood,
   FavoriteStore,
   MealTemplate,
   PantryItem,
@@ -17,6 +18,8 @@ import {
   customFoodToRow,
   dailyLogFromRow,
   dailyLogToRow,
+  favoriteFoodFromRow,
+  favoriteFoodToRow,
   favoriteStoreFromRow,
   favoriteStoreToRow,
   mealTemplateFromRow,
@@ -537,5 +540,37 @@ describe("favourite store mappers", () => {
       updated_at: "2026-01-01T00:00:00.000Z",
     });
     expect(back.address).toBeUndefined();
+  });
+});
+
+describe("favourite food mappers", () => {
+  const FAV: FavoriteFood = {
+    id: "ffff1111-1111-4111-8111-111111111111",
+    nameKey: "chicken breast",
+    food: {
+      name: "Chicken Breast",
+      protein: 31,
+      carbs: 0,
+      fat: 3.6,
+      calories: 165,
+      micronutrients: { sodium: 74 },
+    },
+    portion: 150,
+    createdAt: Date.parse("2026-05-20T08:00:00Z"),
+  };
+
+  it("round-trips a favourite food (food in a JSONB column)", () => {
+    const row = favoriteFoodToRow(USER, FAV);
+    expect(row.id).toBe(FAV.id);
+    expect(row.user_id).toBe(USER);
+    expect(row.name_key).toBe("chicken breast");
+    expect(row.food).toEqual(FAV.food);
+    expect(row.portion).toBe(150);
+    const back = favoriteFoodFromRow({
+      ...row,
+      user_id: USER,
+      updated_at: "2026-05-20T09:00:00.000Z",
+    });
+    expect(back).toEqual(FAV);
   });
 });

@@ -7,6 +7,7 @@ import {
   applyServerCustomFood,
   applyServerDailyLog,
   applyServerDeletion,
+  applyServerFavoriteFood,
   applyServerFavoriteStore,
   applyServerMealTemplate,
   applyServerPantryItem,
@@ -22,6 +23,7 @@ import {
   listCustomFoods,
   listDailyLogs,
   listDeletions,
+  listFavoriteFoods,
   listFavoriteStores,
   listMealTemplates,
   listMicronutrientProfiles,
@@ -31,6 +33,7 @@ import {
   listWeightEntries,
   markBodyMeasurementSynced,
   markCustomFoodSynced,
+  markFavoriteFoodSynced,
   markFavoriteStoreSynced,
   markDailyLogSynced,
   markMealTemplateSynced,
@@ -68,6 +71,8 @@ import {
   customFoodToRow,
   dailyLogFromRow,
   dailyLogToRow,
+  favoriteFoodFromRow,
+  favoriteFoodToRow,
   favoriteStoreFromRow,
   favoriteStoreToRow,
   mealTemplateFromRow,
@@ -88,6 +93,7 @@ import {
   type BodyMeasurementRow,
   type CustomFoodRow,
   type DailyLogRow,
+  type FavoriteFoodRow,
   type FavoriteStoreRow,
   type MealTemplateRow,
   type MicronutrientProfileRow,
@@ -110,6 +116,7 @@ export type SyncResult = {
     pantryItems: number;
     pantryNotifications: number;
     favoriteStores: number;
+    favoriteFoods: number;
     micronutrientProfiles: number;
   };
   pulled: {
@@ -123,6 +130,7 @@ export type SyncResult = {
     pantryItems: number;
     pantryNotifications: number;
     favoriteStores: number;
+    favoriteFoods: number;
     micronutrientProfiles: number;
   };
   /** Rows whose push was rejected because another device had already
@@ -148,6 +156,7 @@ const ZERO_COUNTS = {
   pantryItems: 0,
   pantryNotifications: 0,
   favoriteStores: 0,
+  favoriteFoods: 0,
   micronutrientProfiles: 0,
 };
 
@@ -199,6 +208,7 @@ export async function runInitialSync(
   await pullPantryItems(supabase, userId, result);
   await pullPantryNotifications(supabase, userId, result);
   await pullFavoriteStores(supabase, userId, result);
+  await pullFavoriteFoods(supabase, userId, result);
   // Pull-only: micronutrient profiles are written server-side by the
   // enrichment cron. The client never authors them locally in v1, so
   // there's no push counterpart — nothing is ever dirty here.
@@ -214,6 +224,7 @@ export async function runInitialSync(
   await pushPantryItems(supabase, userId, result);
   await pushPantryNotifications(supabase, userId, result);
   await pushFavoriteStores(supabase, userId, result);
+  await pushFavoriteFoods(supabase, userId, result);
 
   return result;
 }
@@ -427,6 +438,7 @@ const DELETE_TARGET: Record<
   pantryItems: { table: "pantry_items", pk: "id" },
   pantryNotifications: { table: "pantry_notifications", pk: "id" },
   favoriteStores: { table: "favorite_stores", pk: "id" },
+  favoriteFoods: { table: "favorite_foods", pk: "id" },
 };
 
 /** Drains the IDB deletion-tombstone store: for each tombstone, issues
@@ -894,6 +906,34 @@ export async function pushFavoriteStores(
   }
 }
 
+/** @internal Exported for unit tests. Not part of the stable sync API. */
+export async function pushFavoriteFoods(
+  supabase: SupabaseClient,
+  userId: string,
+  result: SyncResult,
+) {
+  const foods = await listFavoriteFoods();
+  for (const fav of foods) {
+    if (!isDirty(fav)) continue;
+    // UUID PKs (client-minted) — a collision is astronomically unlikely,
+    // so treat it as a conflict rather than carrying a re-mint path.
+    const outcome = await pushRow(
+      supabase,
+      "favorite_foods",
+      favoriteFoodToRow(userId, fav),
+      { id: fav.id },
+      fav.serverUpdatedAt,
+      "push favorite food",
+    );
+    if (outcome.status === "conflict" || outcome.status === "uuid-collision") {
+      result.conflicts++;
+      continue;
+    }
+    await markFavoriteFoodSynced(fav.id, outcome.serverUpdatedAt);
+    result.pushed.favoriteFoods++;
+  }
+}
+
 // ─── Pull ──────────────────────────────────────────────────────────────────
 // Every pull calls applyServerX so the local row reads as clean
 // (localUpdatedAt === serverUpdatedAt) — otherwise the very next sync
@@ -1203,6 +1243,33 @@ async function pullFavoriteStores(
   }
   if (result.pulled.favoriteStores > before) {
     notifyDataChanged("favoriteStores");
+  }
+}
+
+async function pullFavoriteFoods(
+  supabase: SupabaseClient,
+  userId: string,
+  result: SyncResult,
+) {
+  const { data, error } = await withTimeout("pull favorite foods", (signal) =>
+    supabase
+      .from("favorite_foods")
+      .select("id, user_id, name_key, food, portion, created_at, updated_at")
+      .eq("user_id", userId)
+      .abortSignal(signal),
+  );
+  if (error) throw asError(error, "pull favorite foods");
+  if (!data) return;
+  const locals = new Map((await listFavoriteFoods()).map((f) => [f.id, f]));
+  const before = result.pulled.favoriteFoods;
+  for (const row of data as FavoriteFoodRow[]) {
+    const localRow = locals.get(row.id);
+    if (!shouldApplyServer(localRow?.serverUpdatedAt, row.updated_at)) continue;
+    await applyServerFavoriteFood(favoriteFoodFromRow(row), row.updated_at);
+    result.pulled.favoriteFoods++;
+  }
+  if (result.pulled.favoriteFoods > before) {
+    notifyDataChanged("favoriteFoods");
   }
 }
 

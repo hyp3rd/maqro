@@ -1,7 +1,7 @@
 import type { FoodItem } from "@/components/macro/types";
 import type { DailyLog } from "@/lib/db";
 import { describe, expect, it } from "vitest";
-import { recentLoggedFoods } from "./recent-foods";
+import { pastMealsForSlot, recentLoggedFoods } from "./recent-foods";
 
 function fi(name: string, overrides: Partial<FoodItem> = {}): FoodItem {
   return {
@@ -140,6 +140,19 @@ describe("recentLoggedFoods", () => {
     expect(r).toHaveLength(5);
   });
 
+  it("ranks by frequency when sort is 'frequent'", () => {
+    const logs = [
+      log("2026-05-20", fi("Eggs"), fi("Eggs"), fi("Eggs")), // count 3, older
+      log("2026-06-01", fi("Toast")), // count 1, newer
+    ];
+    // Recent (default): newest first.
+    expect(recentLoggedFoods(logs, { todayKey: today })[0].name).toBe("Toast");
+    // Frequent: the staple leads despite being older.
+    const freq = recentLoggedFoods(logs, { todayKey: today, sort: "frequent" });
+    expect(freq[0].name).toBe("Eggs");
+    expect(freq[0].count).toBe(3);
+  });
+
   it("tolerates malformed rows without throwing", () => {
     const bad = [
       null,
@@ -150,5 +163,62 @@ describe("recentLoggedFoods", () => {
     ] as unknown as DailyLog[];
     const r = recentLoggedFoods(bad, { todayKey: today });
     expect(r.map((x) => x.name)).toEqual(["Banana"]);
+  });
+});
+
+function mealLog(
+  date: string,
+  meals: { name: string; foods: FoodItem[] }[],
+): DailyLog {
+  return {
+    date,
+    updatedAt: 0,
+    meals: meals.map((m, i) => ({ id: i + 1, name: m.name, foods: m.foods })),
+  };
+}
+
+describe("pastMealsForSlot", () => {
+  const today = "2026-06-02";
+
+  it("returns past instances of the slot, newest first, excluding today", () => {
+    const logs = [
+      mealLog("2026-06-02", [{ name: "Dinner", foods: [fi("Steak")] }]), // today
+      mealLog("2026-06-01", [
+        { name: "Dinner", foods: [fi("Pasta")] },
+        { name: "Lunch", foods: [fi("Salad")] },
+      ]),
+      mealLog("2026-05-30", [{ name: "Dinner", foods: [fi("Curry")] }]),
+    ];
+    const r = pastMealsForSlot(logs, "Dinner", { todayKey: today });
+    expect(r.map((p) => p.date)).toEqual(["2026-06-01", "2026-05-30"]);
+    expect(r[0].foods[0].name).toBe("Pasta");
+  });
+
+  it("matches the slot name case-insensitively and skips empty slots", () => {
+    const logs = [
+      mealLog("2026-06-01", [{ name: "dinner", foods: [fi("Pasta")] }]),
+      mealLog("2026-05-31", [{ name: "Dinner", foods: [] }]), // empty → skip
+    ];
+    const r = pastMealsForSlot(logs, "Dinner", { todayKey: today });
+    expect(r.map((p) => p.date)).toEqual(["2026-06-01"]);
+  });
+
+  it("excludes days outside the window and today/future", () => {
+    const logs = [
+      mealLog("2026-04-01", [{ name: "Dinner", foods: [fi("Old")] }]), // >30d
+      mealLog("2026-06-10", [{ name: "Dinner", foods: [fi("Future")] }]),
+      mealLog("2026-06-01", [{ name: "Dinner", foods: [fi("Good")] }]),
+    ];
+    const r = pastMealsForSlot(logs, "Dinner", { todayKey: today });
+    expect(r.map((p) => p.foods[0].name)).toEqual(["Good"]);
+  });
+
+  it("caps at the limit, newest first", () => {
+    const logs = Array.from({ length: 8 }, (_, i) =>
+      mealLog(`2026-05-2${i + 2}`, [{ name: "Dinner", foods: [fi(`D${i}`)] }]),
+    );
+    const r = pastMealsForSlot(logs, "Dinner", { todayKey: today, limit: 3 });
+    expect(r).toHaveLength(3);
+    expect(r[0].date).toBe("2026-05-29");
   });
 });

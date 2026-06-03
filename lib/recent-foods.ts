@@ -1,6 +1,10 @@
 import type { Food, FoodItem, MacroBreakdown } from "@/components/macro/types";
 import type { DailyLog } from "@/lib/db";
 
+/** Ranking for the quick-add list: most-recently-logged first, or
+ *  most-frequently-logged first (your staples). */
+export type RecentSort = "recent" | "frequent";
+
 /** A food the user has logged recently, reconstructed so it can be
  *  re-added in one tap at its last portion. */
 export type RecentFood = {
@@ -90,10 +94,16 @@ function foodFromLoggedItem(item: FoodItem): Food {
  *  recent anyway. */
 export function recentLoggedFoods(
   logs: DailyLog[],
-  opts: { todayKey: string; windowDays?: number; limit?: number },
+  opts: {
+    todayKey: string;
+    windowDays?: number;
+    limit?: number;
+    sort?: RecentSort;
+  },
 ): RecentFood[] {
   const windowDays = opts.windowDays ?? DEFAULT_WINDOW_DAYS;
   const limit = opts.limit ?? DEFAULT_LIMIT;
+  const sort = opts.sort ?? "recent";
   const cutoff = dateMinusDays(opts.todayKey, windowDays);
 
   type Acc = { name: string; item: FoodItem; lastDate: string; count: number };
@@ -130,8 +140,16 @@ export function recentLoggedFoods(
 
   return Array.from(byName.values())
     .sort((a, b) => {
-      if (a.lastDate !== b.lastDate) return a.lastDate < b.lastDate ? 1 : -1;
-      if (b.count !== a.count) return b.count - a.count;
+      // "frequent" leads with count (staples first); "recent" leads with
+      // recency. Both fall back to the other, then name, so the order is
+      // stable across reloads.
+      if (sort === "frequent") {
+        if (b.count !== a.count) return b.count - a.count;
+        if (a.lastDate !== b.lastDate) return a.lastDate < b.lastDate ? 1 : -1;
+      } else {
+        if (a.lastDate !== b.lastDate) return a.lastDate < b.lastDate ? 1 : -1;
+        if (b.count !== a.count) return b.count - a.count;
+      }
       return a.name.localeCompare(b.name);
     })
     .slice(0, limit)
@@ -143,6 +161,56 @@ export function recentLoggedFoods(
       lastDate: e.lastDate,
       count: e.count,
     }));
+}
+
+/** A previous day's instance of a meal slot — for "copy a previous Dinner". */
+export type PastMeal = {
+  /** YYYY-MM-DD it was logged. */
+  date: string;
+  /** Foods exactly as logged (with portions), so they re-add verbatim. */
+  foods: FoodItem[];
+  totalKcal: number;
+};
+
+const DEFAULT_PAST_MEAL_LIMIT = 7;
+
+/** Past instances of a meal SLOT (matched by name) that had foods — backing
+ *  the "copy a previous {slot}" action. Excludes today and future days,
+ *  newest first. Pure + defensive, like `recentLoggedFoods`. */
+export function pastMealsForSlot(
+  logs: DailyLog[],
+  slotName: string,
+  opts: { todayKey: string; windowDays?: number; limit?: number },
+): PastMeal[] {
+  const windowDays = opts.windowDays ?? DEFAULT_WINDOW_DAYS;
+  const limit = opts.limit ?? DEFAULT_PAST_MEAL_LIMIT;
+  const cutoff = dateMinusDays(opts.todayKey, windowDays);
+  const slot = slotName.trim().toLowerCase();
+  if (!slot) return [];
+
+  const out: PastMeal[] = [];
+  for (const log of logs) {
+    if (!log || typeof log.date !== "string") continue;
+    if (log.date >= opts.todayKey || log.date < cutoff) continue; // past only
+    if (!Array.isArray(log.meals)) continue;
+    const meal = log.meals.find(
+      (m) =>
+        m &&
+        typeof m.name === "string" &&
+        m.name.trim().toLowerCase() === slot &&
+        Array.isArray(m.foods),
+    );
+    if (!meal) continue;
+    const foods = meal.foods.filter((f) => f && f.calories > 0);
+    if (foods.length === 0) continue;
+    out.push({
+      date: log.date,
+      foods,
+      totalKcal: Math.round(foods.reduce((s, f) => s + f.calories, 0)),
+    });
+  }
+  out.sort((a, b) => (a.date < b.date ? 1 : -1));
+  return out.slice(0, limit);
 }
 
 /** YYYY-MM-DD calendar arithmetic — treat the key as a date marker, not a

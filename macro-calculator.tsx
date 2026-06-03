@@ -1151,6 +1151,45 @@ const MacroCalculator = () => {
     if (drawDown) applyPantryDelta(drawDown.itemId, drawDown.consumedQty);
   };
 
+  /** Copy a previous day's meal slot into `targetMealId` — append all its
+   *  foods (with fresh ids) in one write, drawing the pantry down per food.
+   *  A single batch `setMeals` (not a per-food loop) keeps it consistent with
+   *  the value-only `setMeals` setter. */
+  const copyMealItems = (targetMealId: number, items: FoodItem[]) => {
+    if (items.length === 0) return;
+    const now = Date.now();
+    const drawByItem = new Map<string, number>();
+    const cloned: FoodItem[] = items.map((it, i) => {
+      const drawDown = planFoodDrawDown(it.name, it.portionSize);
+      if (drawDown) {
+        drawByItem.set(
+          drawDown.itemId,
+          (drawByItem.get(drawDown.itemId) ?? 0) + drawDown.consumedQty,
+        );
+      }
+      return {
+        ...it,
+        id: now + i,
+        selectedMealId: targetMealId,
+        pantrySource: drawDown ?? undefined,
+      };
+    });
+    setMeals(
+      meals.map((meal) =>
+        meal.id === targetMealId
+          ? { ...meal, foods: [...meal.foods, ...cloned] }
+          : meal,
+      ),
+    );
+    for (const [itemId, qty] of drawByItem) applyPantryDelta(itemId, qty);
+    const dest = meals.find((m) => m.id === targetMealId);
+    toast.success(
+      `Copied ${cloned.length} food${cloned.length === 1 ? "" : "s"} to ${
+        dest?.name ?? "meal"
+      }`,
+    );
+  };
+
   // Expand a recipe into a single meal — the "Log meal" sheet's recipe
   // path. A focused, single-day version of handleApplyRecipe (no
   // meal-prep batch): clone each ingredient into a per-portion FoodItem,
@@ -2152,6 +2191,7 @@ const MacroCalculator = () => {
         customFoodsRev={customFoodsRev}
         onLogFood={logFoodToMeal}
         onRemoveFood={removeFood}
+        onCopyMeal={copyMealItems}
         onAddFromTemplate={(mealId) => {
           setLogFlowMealId(null);
           setTemplateDialog({ kind: "apply", mealId });

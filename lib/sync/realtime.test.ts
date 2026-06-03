@@ -95,6 +95,7 @@ describe("startRealtimeSubscription — channel wiring", () => {
     expect(tables).toEqual([
       "custom_foods",
       "daily_logs",
+      "favorite_foods",
       "favorite_stores",
       "meal_templates",
       "micronutrient_profiles",
@@ -114,10 +115,10 @@ describe("startRealtimeSubscription — channel wiring", () => {
   it("unsubscribe removes every channel", () => {
     const { sb, channels, getRemoveCalls } = makeFakeSupabase();
     const handle = startRealtimeSubscription(sb, USER_ID);
-    expect(channels).toHaveLength(10);
+    expect(channels).toHaveLength(11);
 
     handle.unsubscribe();
-    expect(getRemoveCalls()).toBe(10);
+    expect(getRemoveCalls()).toBe(11);
   });
 });
 
