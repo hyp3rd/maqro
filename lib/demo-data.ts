@@ -25,7 +25,7 @@ import { notifyDataChanged } from "./sync/data-bus";
  *  touch the database here so it stays trivially testable. */
 
 /** Anchored profile values for the sample dataset. */
-export function getDemoProfile(): PersonalInfo {
+export function getDemoProfile(now: number = Date.now()): PersonalInfo {
   return {
     displayName: "Sample",
     gender: "female",
@@ -43,8 +43,26 @@ export function getDemoProfile(): PersonalInfo {
     manualTdee: null,
     macroSplit: null,
     units: "metric",
+    // Sample user runs a 16:8 window with a fast already ~10h in, so the
+    // fasting card, Topbar chip, and live phase indicator all land populated
+    // (mid fat-burning, eating window a few hours out).
+    fasting: {
+      enabled: true,
+      protocol: "16:8",
+      fastStartedAt: now - 10 * 3600_000,
+    },
   };
 }
+
+/** Local hour-of-day each demo meal slot is "eaten" at, as a decimal
+ *  (12.25 = 12:15). A compressed midday→evening window (~7h) so the demo
+ *  reads as a real 16:8 day — first meal at noon, last well before 8pm. */
+const DEMO_MEAL_HOUR: Record<number, number> = {
+  1: 12.25, // "Breakfast" (first meal) 12:15
+  2: 14.5, // Lunch 14:30
+  4: 16.75, // Snacks 16:45
+  3: 19.5, // Dinner 19:30
+};
 
 /** Minimal per-100g shape we use to scale a food into a logged
  *  FoodItem at a chosen portion. Mirrors what `addFood` would
@@ -346,13 +364,31 @@ export function getDemoMealLogs(
     const date = subtractDays(today, offset);
     const template = DAY_TEMPLATES[offset % DAY_TEMPLATES.length];
     const meals = template(offset * 100);
+    // Stamp a believable per-food `loggedAt` so the IF features (eating
+    // window, fast timer, streak) populate. Each food's time = that day's
+    // local midnight + its slot's hour, foods within a slot a minute apart.
+    // For TODAY only stamp meals whose time has already passed, so the live
+    // fast timer reads coherently (last eaten = most recent past meal)
+    // instead of counting a not-yet-eaten dinner.
+    const [y, m, d] = date.split("-").map(Number);
+    const dayMidnight = new Date(y, m - 1, d).getTime();
+    const stampedMeals: Meal[] = meals.map((meal) => ({
+      ...meal,
+      foods: meal.foods.map((food, idx) => {
+        const at =
+          dayMidnight +
+          (DEMO_MEAL_HOUR[meal.id] ?? 12) * 3600_000 +
+          idx * 60_000;
+        return { ...food, loggedAt: at <= now ? at : undefined };
+      }),
+    }));
     // updatedAt fans out across the week so the sync engine has
     // believable per-day timestamps instead of all-the-same-ms.
     const updatedAt = now - offset * 24 * 3600_000;
     const iso = new Date(updatedAt).toISOString();
     logs.push({
       date,
-      meals,
+      meals: stampedMeals,
       updatedAt,
       localUpdatedAt: iso,
       serverUpdatedAt: iso,

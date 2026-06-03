@@ -33,9 +33,11 @@ import {
   Meal,
 } from "../../components/macro/types";
 import { DateNavigator } from "../shell/DateNavigator";
+import type { ViewKey } from "../shell/Sidebar";
 import { Button } from "../ui/button";
 import AddFoodForm from "./AddFoodForm";
 import DailyTotals from "./DailyTotals";
+import { FastingCard } from "./FastingCard";
 import MealItem from "./MealItem";
 import {
   PreDiabeticDisclaimerDialog,
@@ -63,6 +65,8 @@ interface MealPlannerProps {
   waterGoalMl: number;
   /** Display units for the water counter (ml ↔ fl oz). */
   units: "metric" | "imperial";
+  /** Switch the active app view — lets the fasting card link to the Fasting page. */
+  onSelectView?: (key: ViewKey) => void;
   onSelectDate: (date: string) => void;
   newFood: FoodItem;
   foodSearch: string;
@@ -165,6 +169,7 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
   today,
   waterGoalMl,
   units,
+  onSelectView,
   onSelectDate,
   newFood,
   foodSearch,
@@ -324,6 +329,16 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
           />
         </div>
       </section>
+
+      {/* The live fast timer is a "right now" surface — only meaningful on
+          today, never on a past/future planned day. */}
+      {selectedDate === today && (
+        <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
+          <div className="px-3 py-3 sm:px-5 sm:py-4">
+            <FastingCard onSelectView={onSelectView} />
+          </div>
+        </section>
+      )}
 
       {/* Mobile add-food entry point: one prominent button that opens
           the guided "Log meal" bottom-sheet. The dense inline form is

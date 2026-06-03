@@ -859,6 +859,11 @@ export async function saveDailyLog(date: string, meals: Meal[]): Promise<void> {
     localUpdatedAt: now,
     serverUpdatedAt: existing?.serverUpdatedAt ?? null,
   });
+  // Wake the data-bus so IDB-reading consumers (the fasting card + Topbar
+  // chip, the streak chip, the Progress charts) refresh on a local log —
+  // not only on a peer realtime arrival. `useDailyLog` reloads on this rev
+  // too, but guards its own echo with a content compare, so no write loop.
+  notifyDataChanged("dailyLogs");
 }
 
 /** All saved daily logs, newest first. Cheap because we only have one
