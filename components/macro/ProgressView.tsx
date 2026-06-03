@@ -29,7 +29,9 @@ import { bumpPending } from "@/lib/sync-status";
 import { useDataRev } from "@/lib/sync/data-bus";
 import {
   detectPlateau,
+  inferAdaptiveTdee,
   recalibrateTdee,
+  type AdaptiveTdee,
   type PlateauState,
   type TdeeRecalibration,
 } from "@/lib/trends";
@@ -48,6 +50,12 @@ import {
 import { ExportReportDialog } from "./ExportReportDialog";
 
 const WINDOW_DAYS = 60;
+
+/** Only surface the adaptive-TDEE suggestion when it differs from the
+ *  current target basis by at least this much — below it, the user is
+ *  already calibrated and a card would just be noise. Mirrors the
+ *  ±50 kcal noise floor `recalibrateTdee` uses. */
+const ADAPTIVE_DELTA_THRESHOLD = 50;
 
 type Props = {
   /** Today's calorie target - drawn as a reference line on the calorie
@@ -78,6 +86,10 @@ type Props = {
    *  measurement card + form (cm ↔ in). Storage stays metric
    *  everywhere; conversion happens at the UI boundary only. */
   units: "metric" | "imperial";
+  /** Apply an observed-maintenance estimate as the manual TDEE override
+   *  — closes the adaptive-TDEE loop in one tap (writes `manualTdee` on
+   *  the profile, which re-derives every target). */
+  onApplyTdee: (tdee: number) => void;
 };
 
 function parseLocalDate(d: string): Date {
@@ -104,6 +116,7 @@ export function ProgressView({
   gender,
   heightCm,
   units,
+  onApplyTdee,
 }: Props) {
   const [weights, setWeights] = useState<WeightEntry[] | null>(null);
   const [logs, setLogs] = useState<DailyLog[] | null>(null);
@@ -167,6 +180,21 @@ export function ProgressView({
     () => recalibrateTdee({ weights: weights ?? [], formulaTdee, dailyDelta }),
     [weights, formulaTdee, dailyDelta],
   );
+  // Adaptive (dynamic) TDEE — maintenance inferred from logged intake vs.
+  // the weight trend. Primary over `tdeeReco`; that one stays as the
+  // fallback for users who weigh in but don't log food (no intake series).
+  const adaptive = useMemo<AdaptiveTdee>(() => {
+    const intake = (logs ?? [])
+      .filter((l) => l.date <= today)
+      .map((l) => ({
+        date: l.date,
+        calories: l.meals.reduce(
+          (s, m) => s + m.foods.reduce((ms, f) => ms + f.calories, 0),
+          0,
+        ),
+      }));
+    return inferAdaptiveTdee({ weights: weights ?? [], intake });
+  }, [weights, logs, today]);
 
   return (
     <div className="space-y-6">
@@ -188,7 +216,10 @@ export function ProgressView({
       />
       <TrendsSection
         plateau={plateau}
+        adaptive={adaptive}
         tdeeReco={tdeeReco}
+        currentTdee={formulaTdee}
+        onApplyTdee={onApplyTdee}
         loading={weights === null}
         units={units}
       />
@@ -265,23 +296,49 @@ function ProgressExportButton() {
  *  signal - a card with "no advisory" or "not enough data" is
  *  noise. Whole section hides when there's nothing to say AND
  *  isn't loading (avoids the "empty section ghost" pattern). */
+const CONFIDENCE_LABEL: Record<AdaptiveTdee["confidence"], string> = {
+  none: "",
+  low: "low confidence",
+  medium: "medium confidence",
+  high: "high confidence",
+};
+
 function TrendsSection({
   plateau,
+  adaptive,
   tdeeReco,
+  currentTdee,
+  onApplyTdee,
   loading,
   units,
 }: {
   plateau: PlateauState;
+  adaptive: AdaptiveTdee;
   tdeeReco: TdeeRecalibration;
+  /** The TDEE the targets are currently derived from (manual override
+   *  if set, else the formula) — the baseline the adaptive estimate is
+   *  compared against. */
+  currentTdee: number;
+  onApplyTdee: (tdee: number) => void;
   loading: boolean;
   units: "metric" | "imperial";
 }) {
   if (loading) return null;
-  // Nothing actionable on either side → don't render. The
-  // EngagementSection above already shows the user "you logged
-  // X of 7" - adding an empty Trends card here would just be
-  // visual debt.
-  if (!plateau.advisory && !tdeeReco.advisory) return null;
+
+  const observed = adaptive.observedTdee;
+  // Adaptive is primary: show it once we have an estimate that's a
+  // meaningful distance from where the targets currently sit. Otherwise
+  // fall back to the weights-only recalibration advisory (covers users
+  // who weigh in but don't log their food).
+  const showAdaptive =
+    observed !== null &&
+    Math.abs(observed - currentTdee) >= ADAPTIVE_DELTA_THRESHOLD;
+  const showRecalibration = !showAdaptive && Boolean(tdeeReco.advisory);
+
+  // Nothing actionable anywhere → don't render. The EngagementSection
+  // above already shows "you logged X of 7"; an empty Trends card here
+  // would just be visual debt.
+  if (!plateau.advisory && !showAdaptive && !showRecalibration) return null;
 
   const unitLabel = units === "imperial" ? "lb" : "kg";
 
@@ -307,7 +364,58 @@ function TrendsSection({
           )}
         </div>
       )}
-      {tdeeReco.advisory && (
+
+      {showAdaptive && observed !== null && (
+        <div className="rounded-lg border border-border/60 bg-card px-5 py-4">
+          <header className="mb-1.5 flex items-center gap-2">
+            {observed > currentTdee ? (
+              <TrendingUp className="h-3.5 w-3.5 text-muted-foreground" />
+            ) : (
+              <TrendingDown className="h-3.5 w-3.5 text-muted-foreground" />
+            )}
+            <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Adaptive TDEE
+            </h3>
+          </header>
+          <p className="text-sm leading-relaxed text-foreground">
+            Your last {adaptive.windowDays} days of logging put your maintenance
+            near{" "}
+            <span className="font-semibold tabular-nums">{observed} kcal</span>
+            /day — about {Math.abs(observed - currentTdee)} kcal{" "}
+            {observed > currentTdee ? "higher" : "lower"} than the{" "}
+            {currentTdee.toLocaleString()} kcal your targets use now. This is
+            measured from what you actually logged, not the activity estimate.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => onApplyTdee(observed)}
+              className="h-8 gap-1.5"
+            >
+              <Check className="h-3.5 w-3.5" />
+              Use {observed} kcal as my TDEE
+            </Button>
+            <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+              {adaptive.loggedDays} logged days
+              {adaptive.weightSlopeKgPerWeek !== null && (
+                <>
+                  {" "}
+                  · trend {adaptive.weightSlopeKgPerWeek > 0 ? "+" : ""}
+                  {kgToDisplay(adaptive.weightSlopeKgPerWeek, units).toFixed(
+                    2,
+                  )}{" "}
+                  {unitLabel}/wk
+                </>
+              )}
+              {CONFIDENCE_LABEL[adaptive.confidence] &&
+                ` · ${CONFIDENCE_LABEL[adaptive.confidence]}`}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {showRecalibration && (
         <div className="rounded-lg border border-border/60 bg-card px-5 py-4">
           <header className="mb-1.5 flex items-center gap-2">
             {tdeeReco.deltaKcalPerDay > 0 ? (
@@ -326,8 +434,8 @@ function TrendsSection({
             Based on {tdeeReco.windowDays} days of weigh-ins · actual change{" "}
             {tdeeReco.weightChangeKg > 0 ? "+" : ""}
             {kgToDisplay(tdeeReco.weightChangeKg, units).toFixed(2)} {unitLabel}{" "}
-            · suggested manual TDEE {tdeeReco.suggestedTdee} kcal (set under
-            Calculator → Manual TDEE override).
+            · log your meals to get a measured estimate you can apply in one
+            tap.
           </p>
         </div>
       )}

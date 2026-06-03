@@ -248,3 +248,165 @@ export function recalibrateTdee(opts: {
     advisory,
   };
 }
+
+export type AdaptiveTdeeConfidence = "none" | "low" | "medium" | "high";
+
+export type AdaptiveTdee = {
+  /** Maintenance calories inferred from logged intake minus the energy
+   *  represented by the weight trend, over the window. NULL when there
+   *  isn't enough data to make an honest call. */
+  observedTdee: number | null;
+  /** Days actually spanned by the weigh-in window used (end − start). */
+  windowDays: number;
+  /** Logged-intake days that fell inside that window. */
+  loggedDays: number;
+  /** Mean logged intake (kcal/day) across the window, or null. */
+  meanIntake: number | null;
+  /** Smoothed weight-trend slope across the window, in kg/week
+   *  (positive = gaining), or null. */
+  weightSlopeKgPerWeek: number | null;
+  /** How much to trust `observedTdee`, from data density + span. */
+  confidence: AdaptiveTdeeConfidence;
+  /** One-line summary the UI can render as-is, or null. */
+  advisory: string | null;
+};
+
+/** Look-back window and the minimum data needed before we'll commit to
+ *  an estimate. 28 days balances responsiveness against weight noise;
+ *  the floors keep us quiet until the signal is real. */
+const ADAPTIVE_WINDOW_DAYS = 28;
+const ADAPTIVE_MIN_WINDOW_DAYS = 14;
+const ADAPTIVE_MIN_LOGGED_DAYS = 10;
+/** Clamp to the same range the manual-TDEE input accepts (PersonalInfoForm). */
+const ADAPTIVE_TDEE_BOUNDS: readonly [number, number] = [800, 6000];
+
+/** Least-squares slope (Δy per unit x) of paired points. Returns 0 when
+ *  x has no spread — callers here always pass ≥ 2 points across ≥ 14 days,
+ *  so the denominator is non-zero in practice. */
+function leastSquaresSlope(points: { x: number; y: number }[]): number {
+  const n = points.length;
+  if (n < 2) return 0;
+  let sx = 0;
+  let sy = 0;
+  for (const p of points) {
+    sx += p.x;
+    sy += p.y;
+  }
+  const mx = sx / n;
+  const my = sy / n;
+  let num = 0;
+  let den = 0;
+  for (const p of points) {
+    const dx = p.x - mx;
+    num += dx * (p.y - my);
+    den += dx * dx;
+  }
+  return den === 0 ? 0 : num / den;
+}
+
+/** Infer maintenance calories ("adaptive TDEE") from what the user
+ *  ACTUALLY logged against how their weight actually moved — the
+ *  energy-balance identity, not the formula's activity guess:
+ *
+ *    TDEE ≈ mean daily intake − (weight-trend slope × 7700 kcal/kg)
+ *
+ *  Why this beats `recalibrateTdee`: that one assumes the user ate
+ *  exactly to target and back-solves the formula error. This reads real
+ *  intake from the logs, so it doesn't care whether the user hit their
+ *  target — only that they logged. It's also robust to a CONSISTENT
+ *  logging bias: under-count by 10% every day and the inferred
+ *  maintenance is in your own logged units, so a target set from it
+ *  still produces the intended weight trend. (The failure mode is
+ *  INconsistent logging — hence the coverage gate.)
+ *
+ *  The weight slope is a least-squares fit over the smoothed series (the
+ *  same line the chart draws), which is steadier than an endpoint
+ *  difference on a noisy signal.
+ *
+ *  Returns `observedTdee: null` (confidence "none") until there are
+ *  enough weigh-ins spanning enough days AND enough logged days in the
+ *  window to be honest about it. */
+export function inferAdaptiveTdee(opts: {
+  weights: WeightEntry[];
+  /** Per-day logged intake — only days the user actually logged
+   *  (calories > 0). Date strings YYYY-MM-DD; order irrelevant. */
+  intake: { date: string; calories: number }[];
+  windowDays?: number;
+  minWindowDays?: number;
+  minLoggedDays?: number;
+}): AdaptiveTdee {
+  const windowDays = opts.windowDays ?? ADAPTIVE_WINDOW_DAYS;
+  const minWindowDays = opts.minWindowDays ?? ADAPTIVE_MIN_WINDOW_DAYS;
+  const minLoggedDays = opts.minLoggedDays ?? ADAPTIVE_MIN_LOGGED_DAYS;
+  const none: AdaptiveTdee = {
+    observedTdee: null,
+    windowDays: 0,
+    loggedDays: 0,
+    meanIntake: null,
+    weightSlopeKgPerWeek: null,
+    confidence: "none",
+    advisory: null,
+  };
+
+  const smoothed = smoothWeights(opts.weights).filter(
+    (p): p is SmoothedPoint & { smoothed: number } => p.smoothed !== null,
+  );
+  if (smoothed.length < 2) return none;
+
+  // Window = the smoothed points within `windowDays` of the latest one.
+  const lastDate = smoothed[smoothed.length - 1].date;
+  const inWindow = smoothed.filter(
+    (p) => dayDiff(p.date, lastDate) <= windowDays,
+  );
+  if (inWindow.length < 2) return none;
+  const start = inWindow[0];
+  const end = inWindow[inWindow.length - 1];
+  const days = dayDiff(start.date, end.date);
+  if (days < minWindowDays) return { ...none, windowDays: days };
+
+  // Weight trend (kg/day) over the smoothed window, then kg/week for UI.
+  const slopeKgPerDay = leastSquaresSlope(
+    inWindow.map((p) => ({ x: dayDiff(start.date, p.date), y: p.smoothed })),
+  );
+  const weightSlopeKgPerWeek = slopeKgPerDay * 7;
+
+  // Mean logged intake over the SAME interval — the energy-balance
+  // identity needs intake and weight change measured across one span.
+  const windowIntake = opts.intake.filter((d) => {
+    const off = dayDiff(start.date, d.date);
+    return off >= 0 && off <= days && d.calories > 0;
+  });
+  const loggedDays = windowIntake.length;
+  if (loggedDays < minLoggedDays) {
+    return { ...none, windowDays: days, loggedDays, weightSlopeKgPerWeek };
+  }
+  const meanIntake =
+    windowIntake.reduce((s, d) => s + d.calories, 0) / loggedDays;
+
+  const rawTdee = meanIntake - slopeKgPerDay * KCAL_PER_KG;
+  const [lo, hi] = ADAPTIVE_TDEE_BOUNDS;
+  const observedTdee = Math.min(
+    hi,
+    Math.max(lo, Math.round(rawTdee / 10) * 10),
+  );
+
+  // Confidence from how densely the window is actually covered by data.
+  const coverage = loggedDays / (days + 1);
+  const weighIns = inWindow.length;
+  let confidence: AdaptiveTdeeConfidence = "low";
+  if (days >= 21 && coverage >= 0.7 && weighIns >= 8) confidence = "high";
+  else if (days >= 14 && coverage >= 0.5 && weighIns >= 4)
+    confidence = "medium";
+
+  const advisory = `Over the last ${days} days (${loggedDays} logged), your intake and weight trend put maintenance near ${observedTdee} kcal/day.`;
+
+  return {
+    observedTdee,
+    windowDays: days,
+    loggedDays,
+    meanIntake: Math.round(meanIntake),
+    weightSlopeKgPerWeek,
+    confidence,
+    advisory,
+  };
+}

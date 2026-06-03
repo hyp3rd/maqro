@@ -1,6 +1,11 @@
 import type { WeightEntry } from "@/lib/db";
 import { describe, expect, it } from "vitest";
-import { detectPlateau, recalibrateTdee, smoothWeights } from "./trends";
+import {
+  detectPlateau,
+  inferAdaptiveTdee,
+  recalibrateTdee,
+  smoothWeights,
+} from "./trends";
 
 function weighIn(date: string, kg: number): WeightEntry {
   return {
@@ -183,5 +188,111 @@ describe("recalibrateTdee", () => {
     // `toBe(0)` (Object.is) treats as distinct from `0`.
     expect(Math.abs(r.suggestedTdee) % 10).toBe(0);
     expect(Math.abs(r.deltaKcalPerDay) % 10).toBe(0);
+  });
+});
+
+/** Build `n` consecutive daily weigh-ins from `startISO`, weight per day
+ *  given by `fn(i)`. Date arithmetic via the platform Date is fine in a
+ *  test (the helper just needs consecutive YYYY-MM-DD strings). */
+function dailyWeights(
+  startISO: string,
+  n: number,
+  fn: (i: number) => number,
+): WeightEntry[] {
+  const base = new Date(`${startISO}T00:00:00`);
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(base);
+    d.setDate(base.getDate() + i);
+    return weighIn(d.toISOString().slice(0, 10), fn(i));
+  });
+}
+
+function dailyIntake(
+  startISO: string,
+  n: number,
+  kcal: number | ((i: number) => number),
+): { date: string; calories: number }[] {
+  const base = new Date(`${startISO}T00:00:00`);
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(base);
+    d.setDate(base.getDate() + i);
+    return {
+      date: d.toISOString().slice(0, 10),
+      calories: typeof kcal === "function" ? kcal(i) : kcal,
+    };
+  });
+}
+
+describe("inferAdaptiveTdee", () => {
+  it("returns none (null) with no data", () => {
+    const r = inferAdaptiveTdee({ weights: [], intake: [] });
+    expect(r.observedTdee).toBeNull();
+    expect(r.confidence).toBe("none");
+  });
+
+  it("stays quiet until the weigh-in span is long enough", () => {
+    // 10 daily weigh-ins → 9-day span, below the 14-day floor.
+    const weights = dailyWeights("2026-04-01", 10, () => 80);
+    const intake = dailyIntake("2026-04-01", 10, 2500);
+    const r = inferAdaptiveTdee({ weights, intake });
+    expect(r.observedTdee).toBeNull();
+    expect(r.confidence).toBe("none");
+  });
+
+  it("stays quiet until enough days are actually logged", () => {
+    const weights = dailyWeights("2026-04-01", 30, () => 80);
+    // A handful of logged days, well under the 10-day floor.
+    const intake = dailyIntake("2026-04-20", 5, 2500);
+    const r = inferAdaptiveTdee({ weights, intake });
+    expect(r.observedTdee).toBeNull();
+    expect(r.loggedDays).toBeLessThan(10);
+  });
+
+  it("infers maintenance ≈ intake when weight is flat", () => {
+    const weights = dailyWeights("2026-04-01", 30, () => 80);
+    const intake = dailyIntake("2026-04-01", 30, 2500);
+    const r = inferAdaptiveTdee({ weights, intake });
+    expect(r.observedTdee).toBe(2500);
+    expect(r.weightSlopeKgPerWeek).toBeCloseTo(0, 5);
+    expect(r.confidence).toBe("high");
+  });
+
+  it("infers a HIGHER maintenance during a cut (losing weight)", () => {
+    // Losing ~2 kg over the window ⇒ ≈ −0.069 kg/day ⇒ ≈ −530 kcal/day of
+    // trend energy. Eating 2000 ⇒ maintenance ≈ 2530.
+    const weights = dailyWeights("2026-04-01", 30, (i) => 80 - (2 / 29) * i);
+    const intake = dailyIntake("2026-04-01", 30, 2000);
+    const r = inferAdaptiveTdee({ weights, intake });
+    expect(r.observedTdee).not.toBeNull();
+    expect(r.observedTdee!).toBeGreaterThan(2520);
+    expect(r.observedTdee!).toBeLessThan(2580);
+    expect(r.weightSlopeKgPerWeek!).toBeLessThan(0);
+  });
+
+  it("infers a LOWER maintenance during a surplus (gaining weight)", () => {
+    const weights = dailyWeights("2026-04-01", 30, (i) => 80 + (2 / 29) * i);
+    const intake = dailyIntake("2026-04-01", 30, 3000);
+    const r = inferAdaptiveTdee({ weights, intake });
+    expect(r.observedTdee!).toBeGreaterThan(2420);
+    expect(r.observedTdee!).toBeLessThan(2480);
+    expect(r.weightSlopeKgPerWeek!).toBeGreaterThan(0);
+  });
+
+  it("clamps absurd inputs to the manual-TDEE bounds", () => {
+    const weights = dailyWeights("2026-04-01", 30, () => 80);
+    const intake = dailyIntake("2026-04-01", 30, 10_000);
+    const r = inferAdaptiveTdee({ weights, intake });
+    expect(r.observedTdee).toBe(6000);
+  });
+
+  it("ignores days the user didn't log (calories 0)", () => {
+    const weights = dailyWeights("2026-04-01", 30, () => 80);
+    // Alternate 2400 / 0; only the 2400 days should count → mean 2400.
+    const intake = dailyIntake("2026-04-01", 30, (i) =>
+      i % 2 === 0 ? 2400 : 0,
+    );
+    const r = inferAdaptiveTdee({ weights, intake });
+    expect(r.meanIntake).toBe(2400);
+    expect(r.observedTdee).toBe(2400);
   });
 });
