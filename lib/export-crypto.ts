@@ -81,10 +81,11 @@ async function deriveKey(
   );
 }
 
-/** Encrypt `plaintext` under `passphrase`, returning the storable envelope.
- *  Throws if the passphrase is shorter than {@link MIN_PASSPHRASE_LENGTH}. */
-export async function encryptExport(
-  plaintext: string,
+/** Encrypt raw bytes under `passphrase` (the core used by both the string and
+ *  the binary — e.g. report PDF — paths). Throws if the passphrase is shorter
+ *  than {@link MIN_PASSPHRASE_LENGTH}. */
+export async function encryptBytes(
+  data: Uint8Array<ArrayBuffer>,
   passphrase: string,
 ): Promise<EncryptedEnvelope> {
   if (passphrase.length < MIN_PASSPHRASE_LENGTH) {
@@ -98,7 +99,7 @@ export async function encryptExport(
   const ciphertext = await crypto.subtle.encrypt(
     { name: "AES-GCM", iv },
     key,
-    new TextEncoder().encode(plaintext),
+    data,
   );
   return {
     format: ENCRYPTED_EXPORT_FORMAT,
@@ -111,27 +112,42 @@ export async function encryptExport(
   };
 }
 
-/** Decrypt an envelope back to the original plaintext. Throws a readable
- *  error on a wrong passphrase or a tampered/corrupt envelope (AES-GCM's auth
- *  tag fails closed — it never returns garbage plaintext). */
-export async function decryptExport(
+/** Encrypt a UTF-8 string under `passphrase`, returning the storable envelope. */
+export async function encryptExport(
+  plaintext: string,
+  passphrase: string,
+): Promise<EncryptedEnvelope> {
+  return encryptBytes(new TextEncoder().encode(plaintext), passphrase);
+}
+
+/** Decrypt an envelope back to raw bytes. Throws a readable error on a wrong
+ *  passphrase or a tampered/corrupt envelope (AES-GCM's auth tag fails closed —
+ *  it never returns garbage). */
+export async function decryptBytes(
   envelope: EncryptedEnvelope,
   passphrase: string,
-): Promise<string> {
+): Promise<Uint8Array<ArrayBuffer>> {
   const salt = fromBase64(envelope.salt);
   const iv = fromBase64(envelope.iv);
   const key = await deriveKey(passphrase, salt, envelope.iterations);
-  let plaintext: ArrayBuffer;
   try {
-    plaintext = await crypto.subtle.decrypt(
+    const plaintext = await crypto.subtle.decrypt(
       { name: "AES-GCM", iv },
       key,
       fromBase64(envelope.ciphertext),
     );
+    return new Uint8Array(plaintext);
   } catch {
     throw new Error("Wrong passphrase, or the backup is corrupted.");
   }
-  return new TextDecoder().decode(plaintext);
+}
+
+/** Decrypt an envelope back to the original UTF-8 string. */
+export async function decryptExport(
+  envelope: EncryptedEnvelope,
+  passphrase: string,
+): Promise<string> {
+  return new TextDecoder().decode(await decryptBytes(envelope, passphrase));
 }
 
 /** Structural check: is this parsed JSON an encrypted-export envelope? Used by

@@ -44,9 +44,13 @@ type RangeKey = keyof typeof RANGES;
 
 export const REPORT_SECTIONS = {
   summary: "Weekly summary (streak, adherence, averages)",
+  targets: "Targets & plan (BMR, TDEE/override, macro split)",
   trends: "Trends (plateau + TDEE calibration advisories)",
   weight: "Weight chart + delta",
   body: "Body measurements + body-fat estimate",
+  bloodPressure: "Blood pressure (readings + averages)",
+  water: "Hydration (daily water vs goal)",
+  fasting: "Intermittent fasting (protocol, streak, adherence)",
   calories: "Calorie adherence chart",
   micronutrients: "Micronutrients (vitamins, minerals, fiber vs DV)",
 } as const;
@@ -54,9 +58,13 @@ export type SectionKey = keyof typeof REPORT_SECTIONS;
 
 const DEFAULT_SECTIONS: SectionKey[] = [
   "summary",
+  "targets",
   "trends",
   "weight",
   "body",
+  "bloodPressure",
+  "water",
+  "fasting",
   "calories",
   "micronutrients",
 ];
