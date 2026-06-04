@@ -37,6 +37,14 @@ const withBundleAnalyzer = bundleAnalyzer({
  *      (loading a script from an attacker-controlled origin); the
  *      stricter nonce-based version is tracked as a follow-up.
  *
+ *    - `'wasm-unsafe-eval'` in `script-src` is required by the PDF
+ *      export: `@react-pdf/renderer`'s layout engine (yoga) ships as
+ *      WebAssembly, and the browser gates `WebAssembly.instantiate`
+ *      behind a CSP script source. This token permits WASM
+ *      compilation only — not JS `eval()` — so it is strictly narrower
+ *      than `'unsafe-eval'`. Reached in the browser only when the user
+ *      downloads or cloud-archives a report PDF.
+ *
  *    - Dev-only relaxations (see `IS_DEV` below): React 19 uses
  *      `eval()` in development to reconstruct cross-environment
  *      stack traces and Turbopack HMR sets up a WebSocket on the
@@ -71,10 +79,14 @@ const IS_DEV = process.env.NODE_ENV !== "production";
 
 const CSP_DIRECTIVES = [
   "default-src 'self'",
-  // `'unsafe-eval'` is only added in dev for React 19's
-  // stack-reconstruction path. Production builds keep the stricter
-  // policy that blocks `eval` outright.
-  `script-src 'self' 'unsafe-inline'${IS_DEV ? " 'unsafe-eval'" : ""}`,
+  // `'wasm-unsafe-eval'` lets the browser compile/instantiate
+  // WebAssembly — the `@react-pdf/renderer` layout engine (yoga) ships
+  // as WASM and is reached when the user downloads/archives a report
+  // PDF. It permits *only* WASM, not JS `eval()`, so it's strictly
+  // narrower than `'unsafe-eval'`. `'unsafe-eval'` is added on top in
+  // dev only, for React 19's stack-reconstruction path; production
+  // keeps `eval` itself blocked.
+  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${IS_DEV ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
   // `https://*.maqro.app` covers Maqro-owned subdomains (preview
   // deploys, staging, any future CDN host) so images served from

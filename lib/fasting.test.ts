@@ -2,6 +2,7 @@ import type { FoodItem, Meal } from "@/components/macro/types";
 import type { DailyLog } from "@/lib/db";
 import { describe, expect, it } from "vitest";
 import {
+  buildFastSessionInput,
   computeFastStatus,
   currentStreakDates,
   eatingHours,
@@ -9,6 +10,7 @@ import {
   fastingStreak,
   formatDuration,
   lateCaloriePct,
+  MIN_FAST_RECORD_MIN,
   protocolHours,
 } from "./fasting";
 
@@ -240,5 +242,69 @@ describe("currentStreakDates", () => {
   it("is empty when the streak is broken", () => {
     const logs = [dayLog("2026-05-30", 7 * 60)];
     expect(currentStreakDates(logs, "2026-06-03", 8, 30)).toEqual([]);
+  });
+});
+
+describe("buildFastSessionInput", () => {
+  const HOUR = 3_600_000;
+  const START = 1_700_000_000_000;
+
+  it("captures a running fast's span, protocol and target", () => {
+    const fasting = {
+      enabled: true,
+      protocol: "16:8" as const,
+      fastStartedAt: START,
+    };
+    expect(buildFastSessionInput(fasting, START + 16 * HOUR)).toEqual({
+      startedAt: START,
+      endedAt: START + 16 * HOUR,
+      protocol: "16:8",
+      targetHours: 16,
+    });
+  });
+
+  it("pins the custom target (clamped) for a custom protocol", () => {
+    const result = buildFastSessionInput(
+      {
+        enabled: true,
+        protocol: "custom",
+        customFastingHours: 18,
+        fastStartedAt: START,
+      },
+      START + 18 * HOUR,
+    );
+    expect(result?.protocol).toBe("custom");
+    expect(result?.targetHours).toBe(18);
+  });
+
+  it("returns null when no fast is running", () => {
+    expect(buildFastSessionInput(undefined, START + HOUR)).toBeNull();
+    expect(
+      buildFastSessionInput(
+        { enabled: true, protocol: "16:8", fastStartedAt: null },
+        START + HOUR,
+      ),
+    ).toBeNull();
+  });
+
+  it("skips a sub-threshold span (an accidental start→stop)", () => {
+    const fasting = {
+      enabled: true,
+      protocol: "16:8" as const,
+      fastStartedAt: START,
+    };
+    // 15s rounds to 0 min — below the 1-minute floor. (Keep the constant in
+    // the assertion's orbit so the test tracks the threshold's intent.)
+    expect(MIN_FAST_RECORD_MIN).toBeGreaterThanOrEqual(1);
+    expect(buildFastSessionInput(fasting, START + 15_000)).toBeNull();
+  });
+
+  it("skips a negative span (end before start)", () => {
+    const fasting = {
+      enabled: true,
+      protocol: "20:4" as const,
+      fastStartedAt: START,
+    };
+    expect(buildFastSessionInput(fasting, START - HOUR)).toBeNull();
   });
 });

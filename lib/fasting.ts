@@ -166,6 +166,44 @@ export function computeFastStatus(opts: {
   };
 }
 
+/** Minimum length (minutes) for a completed fast to be worth archiving to
+ *  history. Filters accidental Start→Stop double-taps; anything real (even a
+ *  short, broken fast) is kept, and the user can delete what they don't want. */
+export const MIN_FAST_RECORD_MIN = 1;
+
+/** The core facts of a completed fast — the raw inputs, before the store
+ *  mints an id + sync metadata. Phase breakdown is NOT stored; it's derived on
+ *  read via `phaseBreakdownMinutes(duration)`. */
+export type FastSessionInput = {
+  startedAt: number;
+  endedAt: number;
+  protocol: FastingProtocol;
+  /** The fast-hours target in effect when the fast ran — captured so history
+   *  stays accurate even if the user later switches protocol. */
+  targetHours: number;
+};
+
+/** Build the record for a running fast that is ending at `endedAt`, or `null`
+ *  when there's nothing to archive (no fast running, or a span below the
+ *  record threshold — e.g. an accidental start→stop). Pure: the caller
+ *  persists the result. Drives record-on-stop and the auto-finalize that fires
+ *  when a still-running fast is replaced or tracking is turned off. */
+export function buildFastSessionInput(
+  fasting: PersonalInfo["fasting"],
+  endedAt: number,
+): FastSessionInput | null {
+  if (!fasting || fasting.fastStartedAt == null) return null;
+  const startedAt = fasting.fastStartedAt;
+  const durationMin = Math.round((endedAt - startedAt) / MS_PER_MIN);
+  if (durationMin < MIN_FAST_RECORD_MIN) return null;
+  return {
+    startedAt,
+    endedAt,
+    protocol: fasting.protocol,
+    targetHours: protocolHours(fasting),
+  };
+}
+
 /** Percentage of a day's timed calories logged at/after `cutoffHour` (local).
  *  Only foods with `loggedAt` count toward the denominator; 0 when none. */
 export function lateCaloriePct(meals: Meal[], cutoffHour: number): number {

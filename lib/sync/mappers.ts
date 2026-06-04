@@ -14,6 +14,7 @@ import type {
   BodyMeasurement,
   CustomFood,
   DailyLog,
+  FastSession,
   FavoriteFood,
   FavoriteStore,
   MealTemplate,
@@ -22,6 +23,7 @@ import type {
   WaterIntake,
   WeightEntry,
 } from "@/lib/db";
+import type { FastingProtocol } from "@/lib/fasting";
 import type {
   MicronutrientProfile,
   MicronutrientValues,
@@ -234,6 +236,46 @@ export function bloodPressureFromRow(row: BloodPressureRow): BloodPressure {
     pulse: row.pulse ?? undefined,
     notes: row.notes ?? undefined,
     recordedAt: Date.parse(row.recorded_at),
+  };
+}
+
+// ─── Fast sessions ───────────────────────────────────────────────────────────
+
+export type FastSessionRow = {
+  user_id: string;
+  id: string;
+  /** Epoch-ms instants serialized as ISO on the wire (Postgres timestamptz). */
+  started_at: string;
+  ended_at: string;
+  protocol: FastingProtocol;
+  target_hours: number;
+  updated_at: string;
+};
+
+export function fastSessionToRow(
+  userId: string,
+  entry: FastSession,
+): Pick<
+  FastSessionRow,
+  "user_id" | "id" | "started_at" | "ended_at" | "protocol" | "target_hours"
+> {
+  return {
+    user_id: userId,
+    id: entry.id,
+    started_at: new Date(entry.startedAt).toISOString(),
+    ended_at: new Date(entry.endedAt).toISOString(),
+    protocol: entry.protocol,
+    target_hours: entry.targetHours,
+  };
+}
+
+export function fastSessionFromRow(row: FastSessionRow): FastSession {
+  return {
+    id: row.id,
+    startedAt: Date.parse(row.started_at),
+    endedAt: Date.parse(row.ended_at),
+    protocol: row.protocol,
+    targetHours: row.target_hours,
   };
 }
 

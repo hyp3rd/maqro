@@ -22,6 +22,9 @@ vi.mock("@/lib/db", () => ({
   // Default-empty like listBodyMeasurements so pullBloodPressure's
   // `await listBloodPressure()` + `.map` works without per-test priming.
   listBloodPressure: vi.fn().mockResolvedValue([]),
+  // Same default-empty rationale: pullFastSessions does
+  // `await listFastSessions()` + `.map`, and most tests don't prime it.
+  listFastSessions: vi.fn().mockResolvedValue([]),
   listCustomFoods: vi.fn(),
   listDailyLogs: vi.fn(),
   listMealTemplates: vi.fn(),
@@ -44,6 +47,7 @@ vi.mock("@/lib/db", () => ({
   getProfileRecord: vi.fn(),
   applyServerBodyMeasurement: vi.fn(),
   applyServerBloodPressure: vi.fn(),
+  applyServerFastSession: vi.fn(),
   applyServerCustomFood: vi.fn(),
   applyServerDailyLog: vi.fn(),
   applyServerMealTemplate: vi.fn(),
@@ -58,6 +62,7 @@ vi.mock("@/lib/db", () => ({
   applyServerWaterIntake: vi.fn(),
   markBodyMeasurementSynced: vi.fn(),
   markBloodPressureSynced: vi.fn(),
+  markFastSessionSynced: vi.fn(),
   markCustomFoodSynced: vi.fn(),
   markDailyLogSynced: vi.fn(),
   markMealTemplateSynced: vi.fn(),
@@ -99,6 +104,7 @@ function newResult(): SyncResult {
       waterIntake: 0,
       bodyMeasurements: 0,
       bloodPressure: 0,
+      fastSessions: 0,
       customFoods: 0,
       mealTemplates: 0,
       recipes: 0,
@@ -115,6 +121,7 @@ function newResult(): SyncResult {
       waterIntake: 0,
       bodyMeasurements: 0,
       bloodPressure: 0,
+      fastSessions: 0,
       customFoods: 0,
       mealTemplates: 0,
       recipes: 0,

@@ -78,6 +78,7 @@ export function FastingCard({
     isHydrated,
     startFast,
     stopFast,
+    disableFasting,
     setFastStart,
     updateFasting,
   } = useFastingStatus();
@@ -307,7 +308,7 @@ export function FastingCard({
         )}
         <button
           type="button"
-          onClick={() => void updateFasting({ enabled: false })}
+          onClick={() => void disableFasting()}
           className={cn(
             "text-[11px] text-muted-foreground transition-colors hover:text-foreground",
             !onSelectView && "ml-auto",
@@ -325,9 +326,9 @@ export function FastingCard({
           <AlertDialogHeader>
             <AlertDialogTitle>Stop your fast?</AlertDialogTitle>
             <AlertDialogDescription>
-              This ends the current fast at {formatDuration(status.elapsedMin)}.
-              You can start a new one anytime — your logged meals aren&apos;t
-              affected.
+              This ends the current fast at {formatDuration(status.elapsedMin)}{" "}
+              and saves it to your fasting history. You can start a new one
+              anytime — your logged meals aren&apos;t affected.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

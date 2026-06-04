@@ -5,10 +5,12 @@ import { useNow } from "@/hooks/use-now";
 import {
   getProfile,
   listDailyLogs,
+  saveFastSession,
   saveProfile,
   type DailyLog,
 } from "@/lib/db";
 import {
+  buildFastSessionInput,
   computeFastStatus,
   protocolHours,
   type FastingConfig,
@@ -39,10 +41,13 @@ export function useFastingStatus(): {
    *  breakdown without a second IDB read. */
   logs: DailyLog[];
   isHydrated: boolean;
-  /** Begin a fast now. */
+  /** Begin a fast now (archiving any fast left running, e.g. one replaced
+   *  without Stop during the open eating window). */
   startFast: () => Promise<void>;
-  /** End the current fast (back to not-fasting). */
+  /** End the current fast (back to not-fasting), archiving it to history. */
   stopFast: () => Promise<void>;
+  /** Turn fasting tracking off entirely — archives a running fast first. */
+  disableFasting: () => Promise<void>;
   /** Set the fast's start time to a specific instant (the edit affordance). */
   setFastStart: (ms: number) => Promise<void>;
   updateFasting: (patch: Partial<FastingConfig>) => Promise<void>;
@@ -100,14 +105,44 @@ export function useFastingStatus(): {
     }
   }, []);
 
-  const startFast = useCallback(
-    () => writeFasting({ enabled: true, fastStartedAt: Date.now() }),
-    [writeFasting],
-  );
-  const stopFast = useCallback(
-    () => writeFasting({ fastStartedAt: null }),
-    [writeFasting],
-  );
+  /** Archive the currently-running fast (if any) as a completed session,
+   *  ending at `endedAt`. No-op when no fast is running or the span is below
+   *  the record threshold. Notifies the `fastSessions` bus so history
+   *  re-loads. Reads the profile fresh so it always finalizes the fast that
+   *  is *actually* running, not a stale render snapshot. */
+  const recordFastEnd = useCallback(async (endedAt: number) => {
+    try {
+      const p = await getProfile();
+      const input = buildFastSessionInput(p?.fasting, endedAt);
+      if (!input) return;
+      await saveFastSession(input);
+      notifyDataChanged("fastSessions");
+      bumpPending();
+    } catch (err) {
+      reportStorageError(err);
+    }
+  }, []);
+
+  const startFast = useCallback(async () => {
+    // Archive a fast the user replaced without tapping Stop — e.g. tapping
+    // "Start fast now" again during the open eating window, which would
+    // otherwise overwrite (and lose) the fast that just completed.
+    const now = Date.now();
+    await recordFastEnd(now);
+    await writeFasting({ enabled: true, fastStartedAt: now });
+  }, [recordFastEnd, writeFasting]);
+  const stopFast = useCallback(async () => {
+    await recordFastEnd(Date.now());
+    await writeFasting({ fastStartedAt: null });
+  }, [recordFastEnd, writeFasting]);
+  const disableFasting = useCallback(async () => {
+    // Turning tracking off ends any running fast: archive it and clear the
+    // start so re-enabling later doesn't resurrect a stale, days-old fast.
+    await recordFastEnd(Date.now());
+    await writeFasting({ enabled: false, fastStartedAt: null });
+  }, [recordFastEnd, writeFasting]);
+  // Editing the start time adjusts the *same* ongoing fast — deliberately no
+  // record here (the fast hasn't ended).
   const setFastStart = useCallback(
     (ms: number) => writeFasting({ enabled: true, fastStartedAt: ms }),
     [writeFasting],
@@ -121,6 +156,7 @@ export function useFastingStatus(): {
     isHydrated: profile !== null,
     startFast,
     stopFast,
+    disableFasting,
     setFastStart,
     updateFasting: writeFasting,
   };
