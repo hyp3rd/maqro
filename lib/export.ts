@@ -3,14 +3,20 @@
 import type { PersonalInfo, Recipe } from "@/components/macro/types";
 import {
   getProfile,
+  listBloodPressure,
+  listBodyMeasurements,
   listCustomFoods,
   listDailyLogs,
   listMealTemplates,
   listRecipes,
+  listWaterIntake,
   listWeightEntries,
+  type BloodPressure,
+  type BodyMeasurement,
   type CustomFood,
   type DailyLog,
   type MealTemplate,
+  type WaterIntake,
   type WeightEntry,
 } from "@/lib/db";
 
@@ -20,8 +26,11 @@ import {
  *
  *  - v1: profile, dailyLogs, weightHistory, customFoods, mealTemplates.
  *  - v2: adds `recipes`. Old v1 bundles import fine (recipes treated as
- *        absent). */
-export const EXPORT_VERSION = 2;
+ *        absent).
+ *  - v3: adds `bodyMeasurements`, `waterIntake`, `bloodPressure` so a backup
+ *        is a complete copy of the user's health data. Older bundles import
+ *        fine (the new stores are treated as absent). */
+export const EXPORT_VERSION = 3;
 
 export type ExportBundle = {
   version: typeof EXPORT_VERSION;
@@ -31,6 +40,9 @@ export type ExportBundle = {
     profile: PersonalInfo | null;
     dailyLogs: DailyLog[];
     weightHistory: WeightEntry[];
+    bodyMeasurements: BodyMeasurement[];
+    waterIntake: WaterIntake[];
+    bloodPressure: BloodPressure[];
     customFoods: CustomFood[];
     mealTemplates: MealTemplate[];
     recipes: Recipe[];
@@ -44,6 +56,9 @@ export type ExportPhase =
   | "profile"
   | "dailyLogs"
   | "weightHistory"
+  | "bodyMeasurements"
+  | "waterIntake"
+  | "bloodPressure"
   | "customFoods"
   | "mealTemplates"
   | "recipes"
@@ -61,6 +76,9 @@ const EXPORT_PHASES: readonly Exclude<ExportPhase, "done">[] = [
   "profile",
   "dailyLogs",
   "weightHistory",
+  "bodyMeasurements",
+  "waterIntake",
+  "bloodPressure",
   "customFoods",
   "mealTemplates",
   "recipes",
@@ -120,6 +138,21 @@ export async function buildExport(
   emit("weightHistory", weightHistory.length, weightHistory.length);
   await yieldToEventLoop();
 
+  emit("bodyMeasurements", 0, 0);
+  const bodyMeasurements = await listBodyMeasurements();
+  emit("bodyMeasurements", bodyMeasurements.length, bodyMeasurements.length);
+  await yieldToEventLoop();
+
+  emit("waterIntake", 0, 0);
+  const waterIntake = await listWaterIntake();
+  emit("waterIntake", waterIntake.length, waterIntake.length);
+  await yieldToEventLoop();
+
+  emit("bloodPressure", 0, 0);
+  const bloodPressure = await listBloodPressure();
+  emit("bloodPressure", bloodPressure.length, bloodPressure.length);
+  await yieldToEventLoop();
+
   emit("customFoods", 0, 0);
   const customFoods = await listCustomFoods();
   emit("customFoods", customFoods.length, customFoods.length);
@@ -142,6 +175,9 @@ export async function buildExport(
       profile,
       dailyLogs,
       weightHistory,
+      bodyMeasurements,
+      waterIntake,
+      bloodPressure,
       customFoods,
       mealTemplates,
       recipes,

@@ -1,5 +1,6 @@
 import type { PersonalInfo, Recipe } from "@/components/macro/types";
 import type {
+  BloodPressure,
   BodyMeasurement,
   CustomFood,
   DailyLog,
@@ -13,6 +14,8 @@ import type {
 } from "@/lib/db";
 import { describe, expect, it } from "vitest";
 import {
+  bloodPressureFromRow,
+  bloodPressureToRow,
   bodyMeasurementFromRow,
   bodyMeasurementToRow,
   customFoodFromRow,
@@ -233,6 +236,63 @@ describe("body measurement mappers", () => {
     expect(back.waistCm).toBe(82);
     expect(back.neckCm).toBeUndefined();
     expect(back.hipsCm).toBeUndefined();
+    expect(back.notes).toBeUndefined();
+  });
+});
+
+describe("blood pressure mappers", () => {
+  const RECORDED_ISO = "2026-05-13T08:30:00.000Z";
+  const FULL: BloodPressure = {
+    date: "2026-05-13",
+    systolic: 122,
+    diastolic: 78,
+    pulse: 64,
+    notes: "resting, left arm",
+    recordedAt: Date.parse(RECORDED_ISO),
+  };
+
+  it("round-trips a fully-populated reading", () => {
+    const row = bloodPressureToRow(USER, FULL);
+    expect(row.systolic).toBe(122);
+    expect(row.diastolic).toBe(78);
+    expect(row.pulse).toBe(64);
+    expect(row.notes).toBe("resting, left arm");
+    expect(row.recorded_at).toBe(RECORDED_ISO);
+    const back = bloodPressureFromRow({
+      ...row,
+      user_id: USER,
+      updated_at: RECORDED_ISO,
+    });
+    expect(back).toEqual(FULL);
+  });
+
+  it("collapses missing optional fields to null on the wire", () => {
+    // Pulse + notes are optional; the required pressures always serialize.
+    const minimal: BloodPressure = {
+      date: "2026-05-14",
+      systolic: 118,
+      diastolic: 74,
+      recordedAt: Date.parse(RECORDED_ISO),
+    };
+    const row = bloodPressureToRow(USER, minimal);
+    expect(row.systolic).toBe(118);
+    expect(row.diastolic).toBe(74);
+    expect(row.pulse).toBeNull();
+    expect(row.notes).toBeNull();
+  });
+
+  it("reads server nulls back as undefined on the client", () => {
+    const back = bloodPressureFromRow({
+      user_id: USER,
+      date: "2026-05-14",
+      systolic: 118,
+      diastolic: 74,
+      pulse: null,
+      notes: null,
+      recorded_at: RECORDED_ISO,
+      updated_at: RECORDED_ISO,
+    });
+    expect(back.pulse).toBeUndefined();
     expect(back.notes).toBeUndefined();
   });
 });

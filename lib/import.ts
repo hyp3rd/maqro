@@ -7,31 +7,43 @@ import type {
   RecipeIngredient,
 } from "@/components/macro/types";
 import {
+  getBloodPressure,
+  getBodyMeasurement,
   getDailyLog,
   getProfile,
+  getWaterIntake,
   getWeightEntry,
   listCustomFoods,
   listMealTemplates,
   listRecipes,
+  saveBloodPressure,
+  saveBodyMeasurement,
   saveDailyLog,
   saveProfile,
   saveWeightEntry,
+  setWaterTotal,
   upsertCustomFood,
   upsertMealTemplate,
   upsertRecipe,
+  type BloodPressure,
+  type BodyMeasurement,
   type CustomFood,
   type DailyLog,
   type MealTemplate,
+  type WaterIntake,
   type WeightEntry,
 } from "@/lib/db";
 
-const SUPPORTED_VERSIONS = new Set([1, 2]);
+const SUPPORTED_VERSIONS = new Set([1, 2, 3]);
 
 export type ImportResult = {
   imported: {
     profile: 0 | 1;
     dailyLogs: number;
     weightEntries: number;
+    bodyMeasurements: number;
+    waterIntake: number;
+    bloodPressure: number;
     customFoods: number;
     mealTemplates: number;
     recipes: number;
@@ -46,6 +58,9 @@ const ZERO_IMPORTED = {
   profile: 0 as 0 | 1,
   dailyLogs: 0,
   weightEntries: 0,
+  bodyMeasurements: 0,
+  waterIntake: 0,
+  bloodPressure: 0,
   customFoods: 0,
   mealTemplates: 0,
   recipes: 0,
@@ -125,6 +140,42 @@ function isWeightEntry(x: unknown): x is WeightEntry {
   );
 }
 
+function isBodyMeasurement(x: unknown): x is BodyMeasurement {
+  // Date + recordedAt are required; the three circumferences and notes are
+  // optional, so they're type-checked only when present (matching the export
+  // shape where the user may log just one measurement).
+  if (!isObj(x)) return false;
+  if (!isStr(x.date) || !/^\d{4}-\d{2}-\d{2}$/.test(x.date)) return false;
+  if (!isNum(x.recordedAt)) return false;
+  for (const k of ["waistCm", "neckCm", "hipsCm"] as const) {
+    if (x[k] !== undefined && !isNum(x[k])) return false;
+  }
+  if (x.notes !== undefined && !isStr(x.notes)) return false;
+  return true;
+}
+
+function isWaterIntake(x: unknown): x is WaterIntake {
+  return (
+    isObj(x) &&
+    isStr(x.date) &&
+    /^\d{4}-\d{2}-\d{2}$/.test(x.date) &&
+    isNum(x.ml) &&
+    isNum(x.recordedAt)
+  );
+}
+
+function isBloodPressure(x: unknown): x is BloodPressure {
+  // Both pressures are required; pulse + notes optional.
+  if (!isObj(x)) return false;
+  if (!isStr(x.date) || !/^\d{4}-\d{2}-\d{2}$/.test(x.date)) return false;
+  if (!isNum(x.systolic) || !isNum(x.diastolic) || !isNum(x.recordedAt)) {
+    return false;
+  }
+  if (x.pulse !== undefined && !isNum(x.pulse)) return false;
+  if (x.notes !== undefined && !isStr(x.notes)) return false;
+  return true;
+}
+
 function isCustomFood(x: unknown): x is CustomFood {
   return (
     isObj(x) &&
@@ -184,6 +235,9 @@ type ParsedBundle = {
     profile?: unknown;
     dailyLogs?: unknown;
     weightHistory?: unknown;
+    bodyMeasurements?: unknown;
+    waterIntake?: unknown;
+    bloodPressure?: unknown;
     customFoods?: unknown;
     mealTemplates?: unknown;
     recipes?: unknown;
@@ -234,6 +288,9 @@ export type ImportPlan = {
     profile: ProfileDiff;
     dailyLogs: TableDiff;
     weightEntries: TableDiff;
+    bodyMeasurements: TableDiff;
+    waterIntake: TableDiff;
+    bloodPressure: TableDiff;
     customFoods: TableDiff;
     mealTemplates: TableDiff;
     recipes: TableDiff;
@@ -339,6 +396,46 @@ export async function planImport(raw: unknown): Promise<ImportPlan> {
       return !!local && local.kg === row.kg;
     },
   );
+  const bodyMeasurements = diffByKeyAsync(
+    bundle.data.bodyMeasurements,
+    isBodyMeasurement,
+    (row) => row.date,
+    async (row) => {
+      const local = await getBodyMeasurement(row.date);
+      if (!local) return null;
+      return (
+        local.waistCm === row.waistCm &&
+        local.neckCm === row.neckCm &&
+        local.hipsCm === row.hipsCm &&
+        local.notes === row.notes
+      );
+    },
+  );
+  const waterIntake = diffByKeyAsync(
+    bundle.data.waterIntake,
+    isWaterIntake,
+    (row) => row.date,
+    async (row) => {
+      const local = await getWaterIntake(row.date);
+      if (!local) return null;
+      return local.ml === row.ml;
+    },
+  );
+  const bloodPressure = diffByKeyAsync(
+    bundle.data.bloodPressure,
+    isBloodPressure,
+    (row) => row.date,
+    async (row) => {
+      const local = await getBloodPressure(row.date);
+      if (!local) return null;
+      return (
+        local.systolic === row.systolic &&
+        local.diastolic === row.diastolic &&
+        local.pulse === row.pulse &&
+        local.notes === row.notes
+      );
+    },
+  );
 
   const customFoods = diffRows<CustomFood, CustomFood>(
     bundle.data.customFoods,
@@ -396,6 +493,9 @@ export async function planImport(raw: unknown): Promise<ImportPlan> {
       profile: profileDiff,
       dailyLogs: await dailyLogs,
       weightEntries: await weightEntries,
+      bodyMeasurements: await bodyMeasurements,
+      waterIntake: await waterIntake,
+      bloodPressure: await bloodPressure,
       customFoods,
       mealTemplates,
       recipes,
@@ -440,6 +540,9 @@ export type ImportPhase =
   | "profile"
   | "dailyLogs"
   | "weightHistory"
+  | "bodyMeasurements"
+  | "waterIntake"
+  | "bloodPressure"
   | "customFoods"
   | "mealTemplates"
   | "recipes"
@@ -533,6 +636,81 @@ export async function importBundle(
     }
   }
   emit("weightHistory", weightHistory.length, weightHistory.length);
+  await yieldToEventLoop();
+
+  // Body measurements (v3+; date-keyed overwrite). Older bundles omit the
+  // field — the loop just runs zero times.
+  const bodyMeasurements = Array.isArray(bundle.data.bodyMeasurements)
+    ? bundle.data.bodyMeasurements
+    : [];
+  emit("bodyMeasurements", 0, bodyMeasurements.length);
+  for (let i = 0; i < bodyMeasurements.length; i++) {
+    const row = bodyMeasurements[i];
+    if (isBodyMeasurement(row)) {
+      await saveBodyMeasurement(row.date, {
+        waistCm: row.waistCm,
+        neckCm: row.neckCm,
+        hipsCm: row.hipsCm,
+        notes: row.notes,
+      });
+      result.imported.bodyMeasurements++;
+    } else {
+      result.skipped.push({ table: "bodyMeasurements", reason: "malformed" });
+    }
+    if (i % YIELD_EVERY === YIELD_EVERY - 1) {
+      emit("bodyMeasurements", i + 1, bodyMeasurements.length);
+      await yieldToEventLoop();
+    }
+  }
+  emit("bodyMeasurements", bodyMeasurements.length, bodyMeasurements.length);
+  await yieldToEventLoop();
+
+  // Water intake (v3+; date-keyed absolute set, not the cumulative add the
+  // counter uses — re-importing the same bundle must be idempotent).
+  const waterIntake = Array.isArray(bundle.data.waterIntake)
+    ? bundle.data.waterIntake
+    : [];
+  emit("waterIntake", 0, waterIntake.length);
+  for (let i = 0; i < waterIntake.length; i++) {
+    const row = waterIntake[i];
+    if (isWaterIntake(row)) {
+      await setWaterTotal(row.date, row.ml);
+      result.imported.waterIntake++;
+    } else {
+      result.skipped.push({ table: "waterIntake", reason: "malformed" });
+    }
+    if (i % YIELD_EVERY === YIELD_EVERY - 1) {
+      emit("waterIntake", i + 1, waterIntake.length);
+      await yieldToEventLoop();
+    }
+  }
+  emit("waterIntake", waterIntake.length, waterIntake.length);
+  await yieldToEventLoop();
+
+  // Blood pressure (v3+; date-keyed overwrite).
+  const bloodPressure = Array.isArray(bundle.data.bloodPressure)
+    ? bundle.data.bloodPressure
+    : [];
+  emit("bloodPressure", 0, bloodPressure.length);
+  for (let i = 0; i < bloodPressure.length; i++) {
+    const row = bloodPressure[i];
+    if (isBloodPressure(row)) {
+      await saveBloodPressure(row.date, {
+        systolic: row.systolic,
+        diastolic: row.diastolic,
+        pulse: row.pulse,
+        notes: row.notes,
+      });
+      result.imported.bloodPressure++;
+    } else {
+      result.skipped.push({ table: "bloodPressure", reason: "malformed" });
+    }
+    if (i % YIELD_EVERY === YIELD_EVERY - 1) {
+      emit("bloodPressure", i + 1, bloodPressure.length);
+      await yieldToEventLoop();
+    }
+  }
+  emit("bloodPressure", bloodPressure.length, bloodPressure.length);
   await yieldToEventLoop();
 
   // Custom foods (upsert by id).

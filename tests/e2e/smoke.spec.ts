@@ -52,6 +52,32 @@ test.describe("maqro happy path", () => {
     ).toContainText("90.0 kg");
   });
 
+  test("Profile: logging a blood-pressure reading shows it in history", async ({
+    page,
+  }) => {
+    await page.goto("/app");
+    await page.getByRole("button", { name: "Profile", exact: true }).click();
+
+    await expect(
+      page.getByRole("heading", { name: "Blood pressure" }),
+    ).toBeVisible();
+
+    // "Diastolic" contains the substring "systolic", so match labels exactly.
+    await page.getByLabel("Systolic", { exact: true }).fill("128");
+    await page.getByLabel("Diastolic", { exact: true }).fill("82");
+    await page.getByLabel("Pulse (bpm)").fill("66");
+    await page.getByRole("button", { name: "Log reading" }).click();
+
+    // The reading lands in the history list, classified (128/82 → Stage 1).
+    await expect(page.getByText("128/82")).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText("Stage 1")).toBeVisible();
+
+    // The Profile also carries the read-only body-measurement archive.
+    await expect(
+      page.getByRole("heading", { name: "Body measurements" }),
+    ).toBeVisible();
+  });
+
   test("food search shows the Built-in source badge", async ({ page }) => {
     await page.goto("/app");
     // Navigate via sidebar.
@@ -165,7 +191,7 @@ test.describe("maqro happy path", () => {
     // Wait for the 500ms debounce to flush profile + weightHistory.
     await page.waitForTimeout(900);
 
-    await page.getByRole("button", { name: "Progress" }).click();
+    await page.getByRole("button", { name: "Progress", exact: true }).click();
 
     // Heading visible + the weight value rendered in the headline ticker.
     await expect(page.getByRole("heading", { name: "Weight" })).toBeVisible();
@@ -174,7 +200,7 @@ test.describe("maqro happy path", () => {
 
   test("manual weigh-in form records a measurement", async ({ page }) => {
     await page.goto("/app");
-    await page.getByRole("button", { name: "Progress" }).click();
+    await page.getByRole("button", { name: "Progress", exact: true }).click();
 
     // Empty state → form visible.
     await expect(
@@ -236,5 +262,93 @@ test.describe("maqro happy path", () => {
         .filter({ hasText: /Chicken|Salmon|Oats|Rice|Eggs/ })
         .first(),
     ).toBeVisible({ timeout: 5_000 });
+  });
+
+  test("Settings: a v3 backup's new health tables show in the import preview", async ({
+    page,
+  }) => {
+    await page.goto("/app");
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+
+    const bundle = {
+      version: 3,
+      exportedAt: "2026-01-01T00:00:00.000Z",
+      user: null,
+      data: {
+        bodyMeasurements: [
+          {
+            date: "2026-05-15",
+            waistCm: 82,
+            neckCm: 38,
+            hipsCm: 95,
+            recordedAt: 1_700_000_000_000,
+          },
+        ],
+        waterIntake: [
+          { date: "2026-05-15", ml: 2300, recordedAt: 1_700_000_000_000 },
+        ],
+        bloodPressure: [
+          {
+            date: "2026-05-15",
+            systolic: 122,
+            diastolic: 78,
+            recordedAt: 1_700_000_000_000,
+          },
+        ],
+      },
+    };
+    await page
+      .locator('input[accept="application/json,.json"]')
+      .setInputFiles({
+        name: "backup.json",
+        mimeType: "application/json",
+        buffer: Buffer.from(JSON.stringify(bundle)),
+      });
+
+    // The preview lists the three new stores the completed bundle adds.
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByText("Body measurements")).toBeVisible();
+    await expect(dialog.getByText("Water intake")).toBeVisible();
+    await expect(dialog.getByText("Blood pressure")).toBeVisible();
+  });
+
+  test("Settings: importing an encrypted backup prompts for a passphrase", async ({
+    page,
+  }) => {
+    await page.goto("/app");
+    await page.getByRole("button", { name: "Settings", exact: true }).click();
+
+    // A well-formed encrypted envelope (valid base64 fields) with garbage
+    // ciphertext — enough to be detected as encrypted and to fail decryption.
+    const envelope = {
+      format: "maqro-encrypted-export",
+      v: 1,
+      kdf: "PBKDF2-SHA256",
+      iterations: 600_000,
+      salt: Buffer.from("0123456789abcdef").toString("base64"),
+      iv: Buffer.from("0123456789ab").toString("base64"),
+      ciphertext: Buffer.from("not a real ciphertext").toString("base64"),
+      exportedAt: "2026-01-01T00:00:00.000Z",
+    };
+    await page
+      .locator('input[accept="application/json,.json"]')
+      .setInputFiles({
+        name: "encrypted.json",
+        mimeType: "application/json",
+        buffer: Buffer.from(JSON.stringify(envelope)),
+      });
+
+    // The unlock dialog appears for the encrypted file.
+    await expect(
+      page.getByRole("heading", { name: "Unlock this backup" }),
+    ).toBeVisible();
+    await page
+      .getByLabel("Passphrase", { exact: true })
+      .fill("some-passphrase");
+    await page.getByRole("button", { name: "Unlock" }).click();
+    // Garbage ciphertext → AES-GCM fails closed, surfaced as a readable error.
+    await expect(page.getByText(/Wrong passphrase|corrupted/i)).toBeVisible({
+      timeout: 5_000,
+    });
   });
 });

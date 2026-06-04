@@ -10,6 +10,7 @@ import type {
   Recipe,
 } from "@/components/macro/types";
 import type {
+  BloodPressure,
   BodyMeasurement,
   CustomFood,
   DailyLog,
@@ -181,6 +182,56 @@ export function bodyMeasurementFromRow(
     waistCm: row.waist_cm ?? undefined,
     neckCm: row.neck_cm ?? undefined,
     hipsCm: row.hips_cm ?? undefined,
+    notes: row.notes ?? undefined,
+    recordedAt: Date.parse(row.recorded_at),
+  };
+}
+
+// ─── Blood pressure ────────────────────────────────────────────────────────
+
+export type BloodPressureRow = {
+  user_id: string;
+  date: string;
+  /** Both pressures are required (a reading needs the pair). */
+  systolic: number;
+  diastolic: number;
+  /** Pulse + notes are optional — nullable on the wire. */
+  pulse: number | null;
+  notes: string | null;
+  recorded_at: string;
+  updated_at: string;
+};
+
+export function bloodPressureToRow(
+  userId: string,
+  entry: BloodPressure,
+): Pick<
+  BloodPressureRow,
+  | "user_id"
+  | "date"
+  | "systolic"
+  | "diastolic"
+  | "pulse"
+  | "notes"
+  | "recorded_at"
+> {
+  return {
+    user_id: userId,
+    date: entry.date,
+    systolic: entry.systolic,
+    diastolic: entry.diastolic,
+    pulse: entry.pulse ?? null,
+    notes: entry.notes ?? null,
+    recorded_at: new Date(entry.recordedAt).toISOString(),
+  };
+}
+
+export function bloodPressureFromRow(row: BloodPressureRow): BloodPressure {
+  return {
+    date: row.date,
+    systolic: row.systolic,
+    diastolic: row.diastolic,
+    pulse: row.pulse ?? undefined,
     notes: row.notes ?? undefined,
     recordedAt: Date.parse(row.recorded_at),
   };

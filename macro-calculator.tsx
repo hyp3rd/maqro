@@ -1971,6 +1971,7 @@ const MacroCalculator = () => {
           personalInfo={personalInfo}
           onPersonalInfoChange={handlePersonalInfoChange}
           today={today}
+          onSelectView={setView}
         />
       )}
 
