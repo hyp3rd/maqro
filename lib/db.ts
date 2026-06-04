@@ -5,13 +5,14 @@ import type {
   PersonalInfo,
   Recipe,
 } from "@/components/macro/types";
+import type { FastSessionInput } from "@/lib/fasting";
 import type { MicronutrientProfile } from "@/lib/micronutrients/types";
 import type { ShoppingAisle } from "@/lib/shopping/categorize";
 import { notifyDataChanged } from "@/lib/sync/data-bus";
 import { type DBSchema, type IDBPDatabase, openDB } from "idb";
 
 const DB_NAME = "maqro";
-const DB_VERSION = 17;
+const DB_VERSION = 18;
 
 const STORE_CUSTOM_FOODS = "customFoods";
 const STORE_PROFILE = "profile";
@@ -21,6 +22,7 @@ const STORE_WEIGHT_HISTORY = "weightHistory";
 const STORE_WATER_INTAKE = "waterIntake";
 const STORE_BODY_MEASUREMENTS = "bodyMeasurements";
 const STORE_BLOOD_PRESSURE = "bloodPressure";
+const STORE_FAST_SESSIONS = "fastSessions";
 const STORE_RECIPES = "recipes";
 const STORE_PANTRY_ITEMS = "pantryItems";
 const STORE_PANTRY_NOTIFICATIONS = "pantryNotifications";
@@ -92,6 +94,7 @@ export type DeletableStore =
   | "weightHistory"
   | "bodyMeasurements"
   | "bloodPressure"
+  | "fastSessions"
   | "pantryItems"
   | "pantryNotifications"
   | "favoriteStores"
@@ -199,6 +202,14 @@ export type BloodPressure = {
   notes?: string;
   recordedAt: number;
 } & Versioned;
+
+/** One completed intermittent fast, archived on Stop / auto-finalize. Unlike
+ *  weigh-ins or BP this is **id-keyed**, not date-keyed: a fast can span
+ *  midnight and a user can run more than one in a day, so `(user, day)` is the
+ *  wrong grain. `startedAt` / `endedAt` are epoch-ms instants; `targetHours`
+ *  pins the protocol target that was in effect. The per-phase split is derived
+ *  on read (`phaseBreakdownMinutes`), never stored. */
+export type FastSession = FastSessionInput & { id: string } & Versioned;
 
 /** A pantry inventory item - something the user has on hand. Quantity
  *  + free-text unit (no unit-conversion engine: "4" / "eggs",
@@ -374,6 +385,7 @@ interface MacroDB extends DBSchema {
   [STORE_WATER_INTAKE]: { key: string; value: WaterIntake };
   [STORE_BODY_MEASUREMENTS]: { key: string; value: BodyMeasurement };
   [STORE_BLOOD_PRESSURE]: { key: string; value: BloodPressure };
+  [STORE_FAST_SESSIONS]: { key: string; value: FastSession };
   [STORE_RECIPES]: {
     key: string;
     value: Recipe & Versioned & Sortable;
@@ -590,6 +602,12 @@ function getDB(): Promise<IDBPDatabase<MacroDB>> {
       // bodyMeasurements, same `date` keyPath (one reading per day).
       if (oldVersion < 17) {
         db.createObjectStore(STORE_BLOOD_PRESSURE, { keyPath: "date" });
+      }
+      // v17 → v18: fastSessions store. Additive — completed-fast archive.
+      // `id`-keyed (not date): a fast can span midnight and there can be
+      // more than one per day, so a date key would collide.
+      if (oldVersion < 18) {
+        db.createObjectStore(STORE_FAST_SESSIONS, { keyPath: "id" });
       }
     },
   });
@@ -1335,6 +1353,75 @@ export async function markBloodPressureSynced(
   });
 }
 
+// ─── Fast sessions ───────────────────────────────────────────────────────────
+
+/** Archive a completed fast. Mints a client-side UUID (shared with Supabase,
+ *  like recipes / custom foods) and stamps the row dirty (`serverUpdatedAt:
+ *  null`) for the next push. Returns the new id. Only the raw span + protocol
+ *  target are stored; the phase split is derived on read. */
+export async function saveFastSession(
+  input: FastSessionInput,
+): Promise<string> {
+  const db = await getDB();
+  const id = mintId();
+  await db.put(STORE_FAST_SESSIONS, {
+    id,
+    startedAt: input.startedAt,
+    endedAt: input.endedAt,
+    protocol: input.protocol,
+    targetHours: input.targetHours,
+    localUpdatedAt: nowIso(),
+    serverUpdatedAt: null,
+  });
+  return id;
+}
+
+/** All archived fasts, most-recent first — newest-at-top history order. */
+export async function listFastSessions(): Promise<FastSession[]> {
+  const db = await getDB();
+  const rows = await db.getAll(STORE_FAST_SESSIONS);
+  return rows.sort((a, b) => b.startedAt - a.startedAt);
+}
+
+export async function deleteFastSession(id: string): Promise<void> {
+  const db = await getDB();
+  await db.delete(STORE_FAST_SESSIONS, id);
+  await recordDeletion("fastSessions", id);
+}
+
+/** Sync-layer hook: write a server-pulled fast session. Mirrors
+ *  `applyServerBloodPressure`. */
+export async function applyServerFastSession(
+  session: FastSession,
+  serverUpdatedAt: string,
+): Promise<void> {
+  const db = await getDB();
+  await db.put(STORE_FAST_SESSIONS, {
+    id: session.id,
+    startedAt: session.startedAt,
+    endedAt: session.endedAt,
+    protocol: session.protocol,
+    targetHours: session.targetHours,
+    localUpdatedAt: serverUpdatedAt,
+    serverUpdatedAt,
+  });
+}
+
+/** Sync-layer hook: refresh the version token after a successful push. */
+export async function markFastSessionSynced(
+  id: string,
+  serverUpdatedAt: string,
+): Promise<void> {
+  const db = await getDB();
+  const row = await db.get(STORE_FAST_SESSIONS, id);
+  if (!row) return;
+  await db.put(STORE_FAST_SESSIONS, {
+    ...row,
+    localUpdatedAt: serverUpdatedAt,
+    serverUpdatedAt,
+  });
+}
+
 // ─── Recipes ───────────────────────────────────────────────────────────────
 
 /** Save a new recipe. Mints a client-side UUID so the same id is shared
@@ -2000,6 +2087,7 @@ export async function applyServerDeletion(
     weightHistory: STORE_WEIGHT_HISTORY,
     bodyMeasurements: STORE_BODY_MEASUREMENTS,
     bloodPressure: STORE_BLOOD_PRESSURE,
+    fastSessions: STORE_FAST_SESSIONS,
     pantryItems: STORE_PANTRY_ITEMS,
     pantryNotifications: STORE_PANTRY_NOTIFICATIONS,
     favoriteStores: STORE_FAVORITE_STORES,
@@ -2040,6 +2128,7 @@ export async function clearAllStores(): Promise<void> {
       STORE_WATER_INTAKE,
       STORE_BODY_MEASUREMENTS,
       STORE_BLOOD_PRESSURE,
+      STORE_FAST_SESSIONS,
       STORE_RECIPES,
       STORE_PANTRY_ITEMS,
       STORE_PANTRY_NOTIFICATIONS,
@@ -2060,6 +2149,7 @@ export async function clearAllStores(): Promise<void> {
     tx.objectStore(STORE_WATER_INTAKE).clear(),
     tx.objectStore(STORE_BODY_MEASUREMENTS).clear(),
     tx.objectStore(STORE_BLOOD_PRESSURE).clear(),
+    tx.objectStore(STORE_FAST_SESSIONS).clear(),
     tx.objectStore(STORE_RECIPES).clear(),
     tx.objectStore(STORE_PANTRY_ITEMS).clear(),
     tx.objectStore(STORE_PANTRY_NOTIFICATIONS).clear(),

@@ -8,6 +8,7 @@ import {
   applyServerCustomFood,
   applyServerDailyLog,
   applyServerDeletion,
+  applyServerFastSession,
   applyServerFavoriteFood,
   applyServerFavoriteStore,
   applyServerMealTemplate,
@@ -26,6 +27,7 @@ import {
   listCustomFoods,
   listDailyLogs,
   listDeletions,
+  listFastSessions,
   listFavoriteFoods,
   listFavoriteStores,
   listMealTemplates,
@@ -38,6 +40,7 @@ import {
   markBloodPressureSynced,
   markBodyMeasurementSynced,
   markCustomFoodSynced,
+  markFastSessionSynced,
   markFavoriteFoodSynced,
   markFavoriteStoreSynced,
   markDailyLogSynced,
@@ -58,6 +61,7 @@ import {
   type CustomFood,
   type DailyLog,
   type DeletionRecord,
+  type FastSession,
   type MealTemplate,
   type PantryItem,
   type PantryNotification,
@@ -79,6 +83,8 @@ import {
   customFoodToRow,
   dailyLogFromRow,
   dailyLogToRow,
+  fastSessionFromRow,
+  fastSessionToRow,
   favoriteFoodFromRow,
   favoriteFoodToRow,
   favoriteStoreFromRow,
@@ -106,6 +112,7 @@ import {
   type BodyMeasurementRow,
   type CustomFoodRow,
   type DailyLogRow,
+  type FastSessionRow,
   type FavoriteFoodRow,
   type FavoriteStoreRow,
   type MealTemplateRow,
@@ -126,6 +133,7 @@ export type SyncResult = {
     waterIntake: number;
     bodyMeasurements: number;
     bloodPressure: number;
+    fastSessions: number;
     customFoods: number;
     mealTemplates: number;
     recipes: number;
@@ -142,6 +150,7 @@ export type SyncResult = {
     waterIntake: number;
     bodyMeasurements: number;
     bloodPressure: number;
+    fastSessions: number;
     customFoods: number;
     mealTemplates: number;
     recipes: number;
@@ -170,6 +179,7 @@ const ZERO_COUNTS = {
   waterIntake: 0,
   bodyMeasurements: 0,
   bloodPressure: 0,
+  fastSessions: 0,
   customFoods: 0,
   mealTemplates: 0,
   recipes: 0,
@@ -224,6 +234,7 @@ export async function runInitialSync(
   await pullWaterIntake(supabase, userId, result);
   await pullBodyMeasurements(supabase, userId, result);
   await pullBloodPressure(supabase, userId, result);
+  await pullFastSessions(supabase, userId, result);
   await pullCustomFoods(supabase, userId, result);
   await pullMealTemplates(supabase, userId, result);
   await pullRecipes(supabase, userId, result);
@@ -242,6 +253,7 @@ export async function runInitialSync(
   await pushWaterIntake(supabase, userId, result);
   await pushBodyMeasurements(supabase, userId, result);
   await pushBloodPressure(supabase, userId, result);
+  await pushFastSessions(supabase, userId, result);
   await pushCustomFoods(supabase, userId, result);
   await pushMealTemplates(supabase, userId, result);
   await pushRecipes(supabase, userId, result);
@@ -460,6 +472,7 @@ const DELETE_TARGET: Record<
   weightHistory: { table: "weight_history", pk: "date" },
   bodyMeasurements: { table: "body_measurements", pk: "date" },
   bloodPressure: { table: "blood_pressure", pk: "date" },
+  fastSessions: { table: "fast_sessions", pk: "id" },
   pantryItems: { table: "pantry_items", pk: "id" },
   pantryNotifications: { table: "pantry_notifications", pk: "id" },
   favoriteStores: { table: "favorite_stores", pk: "id" },
@@ -671,6 +684,34 @@ async function pushBloodPressure(
     if (outcome.status === "inserted" || outcome.status === "updated") {
       await markBloodPressureSynced(entry.date, outcome.serverUpdatedAt);
       result.pushed.bloodPressure++;
+    }
+  }
+}
+
+async function pushFastSessions(
+  supabase: SupabaseClient,
+  userId: string,
+  result: SyncResult,
+) {
+  const entries = await listFastSessions();
+  for (const entry of entries) {
+    if (!isDirty(entry)) continue;
+    const row = fastSessionToRow(userId, entry);
+    const outcome = await pushRow(
+      supabase,
+      "fast_sessions",
+      row,
+      { user_id: userId, id: entry.id },
+      entry.serverUpdatedAt,
+      "push fast session",
+    );
+    if (outcome.status === "conflict") {
+      result.conflicts++;
+      continue;
+    }
+    if (outcome.status === "inserted" || outcome.status === "updated") {
+      await markFastSessionSynced(entry.id, outcome.serverUpdatedAt);
+      result.pushed.fastSessions++;
     }
   }
 }
@@ -1215,6 +1256,35 @@ async function pullBloodPressure(
     result.pulled.bloodPressure++;
   }
   if (result.pulled.bloodPressure > before) notifyDataChanged("bloodPressure");
+}
+
+async function pullFastSessions(
+  supabase: SupabaseClient,
+  userId: string,
+  result: SyncResult,
+) {
+  const { data, error } = await withTimeout("pull fast sessions", (signal) =>
+    supabase
+      .from("fast_sessions")
+      .select(
+        "user_id, id, started_at, ended_at, protocol, target_hours, updated_at",
+      )
+      .eq("user_id", userId)
+      .abortSignal(signal),
+  );
+  if (error) throw asError(error, "pull fast sessions");
+  if (!data) return;
+  const locals = new Map(
+    (await listFastSessions()).map((e: FastSession) => [e.id, e]),
+  );
+  const before = result.pulled.fastSessions;
+  for (const row of data as FastSessionRow[]) {
+    const localRow = locals.get(row.id);
+    if (!shouldApplyServer(localRow?.serverUpdatedAt, row.updated_at)) continue;
+    await applyServerFastSession(fastSessionFromRow(row), row.updated_at);
+    result.pulled.fastSessions++;
+  }
+  if (result.pulled.fastSessions > before) notifyDataChanged("fastSessions");
 }
 
 async function pullCustomFoods(

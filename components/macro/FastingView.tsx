@@ -1,7 +1,8 @@
 "use client";
 
+import { useFastSessions } from "@/hooks/use-fast-sessions";
 import { useFastingStatus } from "@/hooks/use-fasting-status";
-import { todayKey } from "@/lib/db";
+import { todayKey, type FastSession } from "@/lib/db";
 import {
   eatingHours,
   fastingStreak,
@@ -12,11 +13,19 @@ import {
 import {
   FASTING_PHASES,
   phaseAtHours,
+  phaseBreakdownMinutes,
   streakPhaseMinutes,
   type PhaseAccent,
 } from "@/lib/fasting-phases";
 import { cn } from "@/lib/utils";
-import { ChevronRight, Hourglass, Info, Play, Utensils } from "lucide-react";
+import {
+  ChevronRight,
+  Hourglass,
+  Info,
+  Play,
+  Trash2,
+  Utensils,
+} from "lucide-react";
 import type { ViewKey } from "../shell/Sidebar";
 import { Button } from "../ui/button";
 
@@ -87,6 +96,14 @@ function clock(ms: number): string {
   return new Date(ms).toLocaleTimeString(undefined, {
     hour: "numeric",
     minute: "2-digit",
+  });
+}
+
+/** Local calendar-date label — "Jun 3". */
+function dayLabel(ms: number): string {
+  return new Date(ms).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
   });
 }
 
@@ -363,6 +380,9 @@ export function FastingView({
         streakDays={streak.current}
       />
 
+      {/* Completed-fast archive */}
+      <FastingHistory />
+
       {/* FAQ */}
       <section>
         <h2 className="font-display text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -579,6 +599,122 @@ function StreakPhases({
         </ul>
       </div>
     </section>
+  );
+}
+
+/** The completed-fast archive — every fast recorded on Stop / auto-finalize,
+ *  newest first, each with its duration, protocol target, the deepest phase it
+ *  reached, and a per-phase breakdown bar. Self-loads via `useFastSessions`;
+ *  hidden until there's at least one fast (the streak card above already
+ *  carries the empty state, so a second empty card would just be noise). */
+function FastingHistory() {
+  const { sessions, remove } = useFastSessions();
+
+  if (!sessions || sessions.length === 0) return null;
+
+  return (
+    <section className="overflow-hidden rounded-xl border border-border/60 bg-card">
+      <header className="flex flex-col gap-1 border-b border-border/60 px-5 py-3 sm:flex-row sm:items-baseline sm:justify-between">
+        <h2 className="text-sm font-semibold tracking-tight">
+          Fasting history
+        </h2>
+        <p className="text-xs text-muted-foreground">
+          {sessions.length} completed {sessions.length === 1 ? "fast" : "fasts"}
+        </p>
+      </header>
+      <ul className="divide-y divide-border/60">
+        {sessions.map((session) => (
+          <FastingHistoryRow
+            key={session.id}
+            session={session}
+            onDelete={() => void remove(session.id)}
+          />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** One archived fast: headline duration + deepest phase reached, a context
+ *  line (date · window · target), a delete control, and a per-phase bar that
+ *  reuses the live timeline's phase colors. */
+function FastingHistoryRow({
+  session,
+  onDelete,
+}: {
+  session: FastSession;
+  onDelete: () => void;
+}) {
+  const durationMin = Math.max(
+    0,
+    Math.round((session.endedAt - session.startedAt) / 60_000),
+  );
+  const breakdown = phaseBreakdownMinutes(durationMin);
+  // The deepest phase the fast actually spent time in — matches the bar's last
+  // segment. Not `phaseAtHours`, which would name a band the fast only just
+  // touched at its exact boundary (e.g. a clean 16h fast spends 0 min *in*
+  // ketosis, so "Reached Fat burning" is the honest headline).
+  const reached =
+    [...FASTING_PHASES].reverse().find((p) => breakdown[p.key] > 0) ??
+    FASTING_PHASES[0];
+  const targetLabel =
+    session.protocol === "custom"
+      ? `${session.targetHours}h`
+      : session.protocol;
+
+  return (
+    <li className="px-5 py-3.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="flex flex-wrap items-baseline gap-x-2 text-sm font-medium">
+            <span className="font-mono tabular-nums">
+              {formatDuration(durationMin)}
+            </span>
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 text-xs font-normal",
+                ACCENT[reached.accent].text,
+              )}
+            >
+              <span
+                className={cn(
+                  "h-1.5 w-1.5 rounded-full",
+                  ACCENT[reached.accent].dot,
+                )}
+              />
+              Reached {reached.name}
+            </span>
+          </p>
+          <p className="mt-0.5 font-mono text-[11px] tabular-nums text-muted-foreground">
+            {dayLabel(session.startedAt)} · {clock(session.startedAt)}–
+            {clock(session.endedAt)} · {targetLabel} target
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onDelete}
+          aria-label="Delete this fast"
+          className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <div className="mt-2 flex h-1.5 overflow-hidden rounded-full bg-muted">
+        {FASTING_PHASES.map((phase) => {
+          const w =
+            durationMin > 0 ? (breakdown[phase.key] / durationMin) * 100 : 0;
+          if (w <= 0) return null;
+          return (
+            <div
+              key={phase.key}
+              className={ACCENT[phase.accent].bar}
+              style={{ width: `${w}%` }}
+              title={`${phase.name}: ${formatDuration(breakdown[phase.key])}`}
+            />
+          );
+        })}
+      </div>
+    </li>
   );
 }
 

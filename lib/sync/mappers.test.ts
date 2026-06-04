@@ -4,6 +4,7 @@ import type {
   BodyMeasurement,
   CustomFood,
   DailyLog,
+  FastSession,
   FavoriteFood,
   FavoriteStore,
   MealTemplate,
@@ -22,6 +23,8 @@ import {
   customFoodToRow,
   dailyLogFromRow,
   dailyLogToRow,
+  fastSessionFromRow,
+  fastSessionToRow,
   favoriteFoodFromRow,
   favoriteFoodToRow,
   favoriteStoreFromRow,
@@ -294,6 +297,51 @@ describe("blood pressure mappers", () => {
     });
     expect(back.pulse).toBeUndefined();
     expect(back.notes).toBeUndefined();
+  });
+});
+
+describe("fast session mappers", () => {
+  const STARTED_ISO = "2026-05-13T20:00:00.000Z";
+  const ENDED_ISO = "2026-05-14T12:00:00.000Z"; // a clean 16h fast
+  const SESSION: FastSession = {
+    id: "fast-abc",
+    startedAt: Date.parse(STARTED_ISO),
+    endedAt: Date.parse(ENDED_ISO),
+    protocol: "16:8",
+    targetHours: 16,
+  };
+
+  it("round-trips a fast session, ms <-> ISO instants", () => {
+    const row = fastSessionToRow(USER, SESSION);
+    expect(row.id).toBe("fast-abc");
+    expect(row.started_at).toBe(STARTED_ISO);
+    expect(row.ended_at).toBe(ENDED_ISO);
+    expect(row.protocol).toBe("16:8");
+    expect(row.target_hours).toBe(16);
+    const back = fastSessionFromRow({
+      ...row,
+      user_id: USER,
+      updated_at: ENDED_ISO,
+    });
+    expect(back).toEqual(SESSION);
+  });
+
+  it("carries a custom protocol's target across the wire", () => {
+    const custom: FastSession = {
+      ...SESSION,
+      protocol: "custom",
+      targetHours: 20,
+    };
+    const row = fastSessionToRow(USER, custom);
+    expect(row.protocol).toBe("custom");
+    expect(row.target_hours).toBe(20);
+    const back = fastSessionFromRow({
+      ...row,
+      user_id: USER,
+      updated_at: ENDED_ISO,
+    });
+    expect(back.protocol).toBe("custom");
+    expect(back.targetHours).toBe(20);
   });
 });
 

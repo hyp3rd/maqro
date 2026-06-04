@@ -330,6 +330,7 @@ words:
   - textlocal
   - timebox
   - timeboxed
+  - timestamptz
   - tmpl
   - TOCTOU
   - toggleable
