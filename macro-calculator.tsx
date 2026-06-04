@@ -2083,6 +2083,7 @@ const MacroCalculator = () => {
               `Maintenance set to ${tdee.toLocaleString()} kcal — targets recalculated.`,
             );
           }}
+          onWeightLogged={(kg) => patchProfile("weight", kg)}
           waterGoalMl={waterGoalMl(personalInfo)}
           waterGoalOverride={personalInfo.waterGoalMl}
           onSetWaterGoal={(ml) => {

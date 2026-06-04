@@ -14,9 +14,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Skeleton, SkeletonSettingRows } from "@/components/ui/skeleton";
+import { SkeletonSettingRows } from "@/components/ui/skeleton";
 import { Slider } from "@/components/ui/slider";
-import { useAiUsage } from "@/hooks/use-ai-usage";
 import { useNotificationPrefs } from "@/hooks/use-notification-prefs";
 import { useUser } from "@/hooks/use-user";
 import { isLikelyEmail } from "@/lib/account/backup-email";
@@ -54,7 +53,7 @@ import {
 } from "@/lib/sync-mode";
 import type { UnitSystem } from "@/lib/units";
 import { APP_VERSION } from "@/lib/version";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Cloud,
   CloudUpload,
@@ -72,17 +71,14 @@ import {
 import Link from "next/link";
 import { toast } from "sonner";
 import { BackupEmailSection } from "./BackupEmailSection";
-import { BillingDetails } from "./BillingDetails";
 import { CloudExportsList } from "./CloudExportsList";
 import { ConnectedAccountsSection } from "./ConnectedAccountsSection";
 import { ImportPreviewDialog } from "./ImportPreviewDialog";
 import { MfaSection } from "./MfaSection";
 import { PasskeysSection } from "./PasskeysSection";
 import { PassphraseDialog } from "./PassphraseDialog";
-import { SavedReportsList } from "./SavedReportsList";
 import { SignedInDevicesSection } from "./SignedInDevicesSection";
 import { TrustedDevicesSection } from "./TrustedDevicesSection";
-import { UpgradeDialog } from "./UpgradeDialog";
 
 function formatDate(iso: string | undefined): string {
   if (!iso) return "-";
@@ -93,6 +89,19 @@ function formatDate(iso: string | undefined): string {
     month: "short",
     day: "numeric",
   });
+}
+
+/** A small uppercase divider that labels a run of related settings cards
+ *  (Security, App settings, Danger zone). Single-card groups (Account, Your
+ *  data, About) are self-named by the card's own header, so they get no
+ *  divider. The extra `pt-2` widens the gap *above* the label so each group
+ *  reads as separated from the one before it. */
+function GroupLabel({ children }: { children: ReactNode }) {
+  return (
+    <p className="px-1 pt-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+      {children}
+    </p>
+  );
 }
 
 /** Props injected by the parent (`macro-calculator.tsx`). Settings
@@ -442,24 +451,26 @@ export function SettingsView({
 
       {user && <BackupEmailSection signedIn={Boolean(user)} />}
 
-      {user && <MfaSection signedIn={Boolean(user)} />}
+      {/* Security — everything here needs an account, so the whole group
+          (label included) is gated; a guest never sees an empty heading. */}
+      {user && (
+        <>
+          <GroupLabel>Security</GroupLabel>
+          <MfaSection signedIn={Boolean(user)} />
+          <PasskeysSection signedIn={Boolean(user)} />
+          <TrustedDevicesSection signedIn={Boolean(user)} />
+          <ConnectedAccountsSection signedIn={Boolean(user)} />
+          <SignedInDevicesSection signedIn={Boolean(user)} />
+        </>
+      )}
 
-      {user && <PasskeysSection signedIn={Boolean(user)} />}
-
-      {user && <TrustedDevicesSection signedIn={Boolean(user)} />}
-
-      {user && <ConnectedAccountsSection signedIn={Boolean(user)} />}
-
-      {user && <SyncSection />}
-
-      {user && <AiUsageSection />}
-
-      {user && <NotificationsSection />}
-
+      <GroupLabel>App settings</GroupLabel>
       <UnitsSection
         units={units}
         onChange={onUnitsChange}
       />
+      {user && <NotificationsSection />}
+      {user && <SyncSection />}
 
       <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
         <header className="border-b border-border/60 px-5 py-3">
@@ -607,14 +618,9 @@ export function SettingsView({
         onCancel={cancelPassphrase}
       />
 
-      {user && <SavedReportsList />}
-
-      {user && <BillingSection />}
-
       <AboutSection />
 
-      <SignedInDevicesSection signedIn={user !== null} />
-
+      <GroupLabel>Danger zone</GroupLabel>
       <ResetDeviceSection signedIn={user !== null} />
 
       {user && (
@@ -745,147 +751,6 @@ function ResetDeviceSection({ signedIn }: { signedIn: boolean }) {
           </AlertDialogContent>
         </AlertDialog>
       </div>
-    </section>
-  );
-}
-
-/** Plan + renewal date + Upgrade / Manage CTAs. Reads the same
- *  `/api/billing/usage` payload the AI-usage indicator above
- *  uses (extended in migration 0016 to include subscription
- *  state), so there's no extra round-trip.
- *
- *  Visible only when signed in - anonymous users have no billing
- *  surface. Hidden entirely when Stripe isn't configured on the
- *  deployment (the checkout / portal routes 503 in that case;
- *  there's nothing to upgrade *into*). */
-function BillingSection() {
-  const { state, refresh } = useAiUsage();
-  const [upgradeOpen, setUpgradeOpen] = useState(false);
-  const [portalBusy, setPortalBusy] = useState(false);
-
-  // Don't render anything until we have data. Loading state for a
-  // tiny "Plan: …" line is more flicker than information.
-  if (state.status !== "ok") return null;
-  const { isPremium, subscriptionStatus, currentPeriodEnd } = state.data;
-
-  async function openPortal() {
-    setPortalBusy(true);
-    try {
-      const res = await clientFetch("/api/billing/portal", { method: "POST" });
-      const data = (await res.json()) as { url?: string; error?: string };
-      if (!res.ok || !data.url) {
-        // 503 = Stripe not configured. Other errors propagate
-        // to the user via alert; no toast available here without
-        // additional imports.
-        alert(data.error ?? "Couldn't open the billing portal.");
-        return;
-      }
-      window.location.assign(data.url);
-    } finally {
-      setPortalBusy(false);
-    }
-  }
-
-  const renewalLabel = (() => {
-    if (!currentPeriodEnd) return null;
-    const formatted = formatDate(currentPeriodEnd);
-    if (
-      subscriptionStatus === "canceled" ||
-      subscriptionStatus === "incomplete_expired"
-    ) {
-      return `Access ends ${formatted}`;
-    }
-    return `Renews ${formatted}`;
-  })();
-
-  const isPastDue = subscriptionStatus === "past_due";
-
-  return (
-    <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
-      <header className="border-b border-border/60 px-5 py-3">
-        <h3 className="text-sm font-semibold tracking-tight">Billing</h3>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          Your plan and subscription.
-        </p>
-      </header>
-      {/* Past-due alert is the authoritative, non-dismissible view
-       *  of the same signal that powers the AppShell banner. The
-       *  banner can be silenced for the session; this one can't -
-       *  if the user navigated here they're already engaging with
-       *  the issue. */}
-      {isPastDue && (
-        <div
-          role="alert"
-          className="border-b border-red-500/30 bg-red-500/10 px-5 py-3 text-xs text-red-900 dark:text-red-200"
-        >
-          <p className="font-medium">Payment failed on the last attempt.</p>
-          <p className="mt-1 leading-snug">
-            Stripe is retrying your card on its usual schedule. Update your
-            payment method below to avoid losing premium access if the retries
-            don&apos;t succeed.
-          </p>
-        </div>
-      )}
-      <div className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <p className="flex items-baseline gap-2 text-sm">
-            <span className="font-medium">
-              {isPremium ? "AI Plus" : "Free"}
-            </span>
-            {subscriptionStatus && subscriptionStatus !== "active" && (
-              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                {subscriptionStatus.replace(/_/g, " ")}
-              </span>
-            )}
-          </p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {isPremium
-              ? (renewalLabel ?? "Active subscription.")
-              : "Free tier - limited monthly AI generations."}
-          </p>
-        </div>
-        <div className="flex shrink-0 gap-2">
-          {isPremium ? (
-            <Button
-              type="button"
-              variant={isPastDue ? "default" : "outline"}
-              size="sm"
-              onClick={openPortal}
-              disabled={portalBusy}
-            >
-              {portalBusy
-                ? "Opening…"
-                : isPastDue
-                  ? "Update payment"
-                  : "Manage subscription"}
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => setUpgradeOpen(true)}
-            >
-              Upgrade
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* In-app billing surface - next charge, cancel/resume,
-       *  invoice history. Self-hides for users without a Stripe
-       *  customer (free-tier never-paid) so the section stays
-       *  clean for them. Plan switch + payment-method update
-       *  still go to the Stripe Portal via the button above. */}
-      {isPremium && <BillingDetails />}
-
-      <UpgradeDialog
-        open={upgradeOpen}
-        onOpenChange={(open) => {
-          setUpgradeOpen(open);
-          if (!open) refresh();
-        }}
-        reason="settings"
-      />
     </section>
   );
 }
@@ -1344,130 +1209,6 @@ function DeleteAccountSection({
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-      </div>
-    </section>
-  );
-}
-
-/** Surfaces the caller's monthly AI-call usage against the free-tier
- *  cap. Hidden for guests (no usage to show), collapsed to a one-line
- *  unmetered note for premium users, and rendered as a progress bar
- *  + counter for free users. A "near cap" warning fires at 80% used
- *  so the user has a chance to upgrade before they're locked out
- *  mid-task. The actual upgrade flow doesn't exist yet - when Stripe
- *  lands, the "Upgrade" button targets that route. */
-function AiUsageSection() {
-  const { state: usage, refresh } = useAiUsage();
-
-  if (usage.status === "anon" || usage.status === "error") return null;
-
-  const header = (
-    <header className="flex items-center justify-between gap-2 border-b border-border/60 px-5 py-3">
-      <div>
-        <h3 className="text-sm font-semibold tracking-tight">AI usage</h3>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          AI features (Auto-fill meal plans, Generate recipes, Identify meal
-          photos) share one monthly quota.
-        </p>
-      </div>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        onClick={refresh}
-        className="h-8 shrink-0 text-xs text-muted-foreground"
-        title="Re-fetch the current counter from the server"
-      >
-        Refresh
-      </Button>
-    </header>
-  );
-
-  // Reserve the meter's height while the counter loads, so the card holds
-  // its place instead of popping in from nothing when it resolves.
-  if (usage.status === "loading") {
-    return (
-      <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
-        {header}
-        <div className="space-y-3 px-5 py-4">
-          <div className="flex items-baseline justify-between gap-2">
-            <Skeleton className="h-4 w-40" />
-            <Skeleton className="h-3 w-10" />
-          </div>
-          <Skeleton className="h-1 w-full rounded-full" />
-          <div className="space-y-1.5">
-            <Skeleton className="h-2.5 w-full" />
-            <Skeleton className="h-2.5 w-11/12" />
-            <Skeleton className="h-2.5 w-2/3" />
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  const data = usage.data;
-  const cap = data.cap;
-  const pct = cap ? Math.min(100, Math.round((data.used / cap) * 100)) : 0;
-  const nearCap = cap !== null && data.used >= Math.floor(cap * 0.8);
-  const atCap = cap !== null && data.used >= cap;
-
-  return (
-    <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
-      {header}
-
-      <div className="px-5 py-4">
-        {data.isPremium || cap === null ? (
-          <p className="text-sm text-foreground">
-            <span className="font-medium">Premium</span> - AI features are
-            unmetered on your account.
-          </p>
-        ) : (
-          <div className="space-y-3">
-            <div className="flex items-baseline justify-between gap-2">
-              <p className="text-sm">
-                <span className="font-mono font-medium tabular-nums">
-                  {data.used} / {cap}
-                </span>{" "}
-                <span className="text-muted-foreground">
-                  AI calls this month
-                </span>
-              </p>
-              <p
-                className={`text-xs tabular-nums ${
-                  atCap
-                    ? "text-rose-600 dark:text-rose-400"
-                    : nearCap
-                      ? "text-amber-700 dark:text-amber-400"
-                      : "text-muted-foreground"
-                }`}
-              >
-                {atCap
-                  ? "Cap reached"
-                  : nearCap
-                    ? `${cap - data.used} left`
-                    : `${pct}%`}
-              </p>
-            </div>
-            <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
-              <div
-                className={`h-full rounded-full transition-[width] duration-500 ease-out ${
-                  atCap
-                    ? "bg-rose-500"
-                    : nearCap
-                      ? "bg-amber-500"
-                      : "bg-foreground"
-                }`}
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-            <p className="text-[11px] leading-relaxed text-muted-foreground">
-              Resets the 1st of each month. When you hit the cap, the app falls
-              back to the deterministic planner for meal generation and disables
-              AI photo identification + recipe generation until the next cycle.
-              Manual entry, barcode-scan, and OFF search keep working.
-            </p>
-          </div>
-        )}
       </div>
     </section>
   );
