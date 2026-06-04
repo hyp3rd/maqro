@@ -2,9 +2,15 @@
 
 import { APP_VERSION } from "@/lib/version";
 import {
+  Circle,
   Document,
+  Line,
   Page,
+  Path,
+  Polyline,
+  Rect,
   StyleSheet,
+  Svg,
   Text,
   View,
   pdf,
@@ -18,94 +24,140 @@ import {
  *  is that single entry point; it returns a Blob the caller can download or
  *  encrypt + upload.
  *
- *  The component is pure presentation: every number arrives pre-formatted as a
- *  string in {@link ReportPdfModel} (the caller owns units + derivations, which
- *  it shares with the on-screen report), so there's no computation here.
- *  Line charts are intentionally omitted in this version — the PDF carries the
- *  numbers + tables; the on-screen / print report keeps the charts. */
+ *  Pure presentation: every number arrives pre-formatted as a string in
+ *  {@link ReportPdfModel} (the caller owns units + derivations, which it shares
+ *  with the on-screen report), so the only computation here is chart geometry,
+ *  drawn with react-pdf's SVG primitives. */
 
 type Stat = { label: string; value: string; sub?: string };
+
+/** Pre-scaled chart series. `x` is a day index, `y` the value in display
+ *  units; `targetY` draws a dashed reference line. The component scales it. */
+export type ChartData = {
+  points: { x: number; y: number }[];
+  targetY?: number;
+};
 
 export type ReportPdfModel = {
   title: string;
   note: string;
   days: number;
   generatedOn: string;
-  /** Section keys to render, in `REPORT_SECTIONS` order. */
+  /** Compact "Female · 32y · 168 cm · Moderate · Lose" context, or null. */
+  profileLine: string | null;
+  /** Section keys to render. */
   sections: string[];
   summary: { stats: Stat[]; weightDelta: string | null } | null;
-  weight: Stat[] | null;
+  targets: { stats: Stat[] } | null;
+  trends: { title: string; body: string }[] | null;
+  weight: { stats: Stat[]; chart: ChartData | null } | null;
   body: { stats: Stat[]; notes: string | null } | null;
   bloodPressure: {
     stats: Stat[];
     rows: { date: string; reading: string; pulse: string; category: string }[];
   } | null;
-  hydration: Stat[] | null;
+  hydration: { stats: Stat[]; chart: ChartData | null } | null;
+  calories: { stats: Stat[]; chart: ChartData | null } | null;
   fasting: { enabled: boolean; stats: Stat[] } | null;
+  micronutrients: { caption: string; rows: MicroRow[] } | null;
+};
+
+type MicroRow = {
+  label: string;
+  value: string;
+  pct: number;
+  hasValue: boolean;
 };
 
 const C = {
-  ink: "#1a1a1a",
-  muted: "#71717a",
-  faint: "#a1a1aa",
-  line: "#e4e4e7",
+  ink: "#18181b",
+  muted: "#6b7280",
+  faint: "#9ca3af",
+  line: "#e5e7eb",
+  track: "#f1f1f4",
+  brand: "#7c3aed",
+  brandSoft: "#ede9fe",
 };
 
 const styles = StyleSheet.create({
+  // No page-level lineHeight: a global multiplier on the large title shifts its
+  // baseline and overlaps the line below it. lineHeight is set per text block.
   page: {
-    paddingVertical: 44,
-    paddingHorizontal: 52,
-    paddingBottom: 64,
+    paddingVertical: 40,
+    paddingHorizontal: 48,
+    paddingBottom: 56,
     fontSize: 10,
     color: C.ink,
-    lineHeight: 1.4,
   },
-  brand: {
-    fontSize: 8,
-    letterSpacing: 1,
-    textTransform: "uppercase",
-    color: C.muted,
-    marginBottom: 6,
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 14,
   },
-  title: { fontSize: 22, fontWeight: 700, marginBottom: 4 },
-  meta: { fontSize: 9, color: C.muted },
-  note: {
-    marginTop: 14,
-    padding: 11,
-    borderWidth: 1,
-    borderColor: C.line,
-    borderRadius: 4,
-    fontSize: 10,
-  },
-  rule: { borderBottomWidth: 1, borderBottomColor: C.line, marginVertical: 14 },
-  section: {
-    borderWidth: 1,
-    borderColor: "#d4d4d8",
-    borderRadius: 4,
-    padding: 12,
-    marginBottom: 12,
-  },
-  sectionTitle: {
-    fontSize: 9,
+  lockup: { flexDirection: "row", alignItems: "center" },
+  wordmark: {
+    marginLeft: 6,
+    fontSize: 15,
     fontWeight: 700,
     letterSpacing: 1,
-    textTransform: "uppercase",
-    color: C.muted,
-    marginBottom: 8,
+    color: C.ink,
   },
+  headerMeta: { fontSize: 8, color: C.faint, letterSpacing: 0.5 },
+  title: { fontSize: 23, lineHeight: 1.15, marginBottom: 5 },
+  meta: { fontSize: 9, color: C.muted },
+  profileLine: { fontSize: 9, color: C.muted, marginTop: 3 },
+  note: {
+    marginTop: 14,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderLeftWidth: 2,
+    borderLeftColor: C.brand,
+    backgroundColor: "#faf5ff",
+    fontSize: 10,
+    lineHeight: 1.45,
+  },
+  brandRule: {
+    height: 2,
+    backgroundColor: C.brand,
+    width: 40,
+    marginTop: 16,
+    marginBottom: 4,
+  },
+  section: {
+    borderWidth: 1,
+    borderColor: C.line,
+    borderRadius: 5,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 11,
+  },
+  sectionTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  sectionDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 1,
+    backgroundColor: C.brand,
+    marginRight: 6,
+  },
+  sectionTitle: { fontSize: 9, letterSpacing: 1, color: C.muted },
   statRow: { flexDirection: "row", flexWrap: "wrap" },
-  stat: { width: "33%", marginBottom: 6, paddingRight: 8 },
-  statLabel: {
-    fontSize: 7,
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-    color: C.muted,
-  },
-  statValue: { fontSize: 13, fontWeight: 700, marginTop: 1 },
-  statSub: { fontSize: 7, color: C.muted, marginTop: 1 },
+  stat: { width: "33%", marginBottom: 8, paddingRight: 10 },
+  statLabel: { fontSize: 7, letterSpacing: 0.5, color: C.faint },
+  statValue: { fontSize: 14, marginTop: 2 },
+  statSub: { fontSize: 7.5, color: C.muted, marginTop: 2 },
   empty: { fontSize: 10, color: C.muted },
-  para: { fontSize: 10, color: C.muted, marginTop: 4 },
-  // Table (blood pressure)
+  para: { fontSize: 9.5, color: C.muted, marginTop: 5, lineHeight: 1.45 },
+  chartWrap: { marginTop: 6 },
+  // Trends
+  trendItem: { marginBottom: 8 },
+  trendTitle: { fontSize: 9.5, fontWeight: 700, marginBottom: 1 },
+  trendBody: { fontSize: 9.5, color: C.muted, lineHeight: 1.45 },
+  // BP table
   th: {
     flexDirection: "row",
     borderBottomWidth: 1,
@@ -117,31 +169,195 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     borderBottomWidth: 0.5,
     borderBottomColor: C.line,
-    paddingVertical: 2.5,
+    paddingVertical: 3,
   },
-  thText: {
-    fontSize: 7,
-    letterSpacing: 0.5,
-    textTransform: "uppercase",
-    color: C.muted,
-  },
+  thText: { fontSize: 7, letterSpacing: 0.5, color: C.faint },
   tdText: { fontSize: 9 },
   colDate: { width: "26%" },
   colReading: { width: "26%" },
   colPulse: { width: "18%" },
   colCat: { width: "30%" },
+  // Micronutrients
+  microRow: { marginBottom: 7 },
+  microHead: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 2,
+  },
+  microLabel: { fontSize: 9 },
+  microValue: { fontSize: 8, color: C.muted },
+  microNoData: { fontSize: 8, color: C.faint },
+  microTrack: {
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: C.track,
+    overflow: "hidden",
+  },
+  microFill: { height: 4, borderRadius: 2, backgroundColor: C.brand },
+  caption: { fontSize: 8, color: C.muted, marginBottom: 8, lineHeight: 1.4 },
   footer: {
     position: "absolute",
-    bottom: 30,
-    left: 52,
-    right: 52,
+    bottom: 28,
+    left: 48,
+    right: 48,
     fontSize: 7.5,
     color: C.faint,
+    lineHeight: 1.4,
     borderTopWidth: 1,
     borderTopColor: C.line,
     paddingTop: 7,
   },
+  pageNum: {
+    position: "absolute",
+    bottom: 14,
+    right: 48,
+    fontSize: 7.5,
+    color: C.faint,
+  },
 });
+
+function LogoLockup() {
+  return (
+    <View style={styles.lockup}>
+      <Svg
+        viewBox="0 0 64 74"
+        width={14}
+        height={16}
+      >
+        <Rect
+          x={10}
+          y={14}
+          width={8}
+          height={56}
+          fill={C.brand}
+        />
+        <Rect
+          x={42}
+          y={14}
+          width={8}
+          height={42}
+          fill={C.brand}
+        />
+        <Rect
+          x={10}
+          y={48}
+          width={40}
+          height={8}
+          fill={C.brand}
+        />
+        <Circle
+          cx={58}
+          cy={10}
+          r={3}
+          fill={C.brand}
+        />
+      </Svg>
+      <Text style={styles.wordmark}>maqro</Text>
+    </View>
+  );
+}
+
+/** Single-series line chart with a soft area fill — mirrors the on-screen
+ *  `MiniLineChart` (+ optional dashed target line), drawn with react-pdf SVG. */
+function Chart({
+  data,
+  width = 474,
+  height = 116,
+}: {
+  data: ChartData;
+  width?: number;
+  height?: number;
+}) {
+  const { points, targetY } = data;
+  if (points.length === 0) return null;
+  const padX = 2;
+  const padT = 10;
+  const padB = 6;
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  const candidateYs = targetY !== undefined ? [...ys, targetY] : ys;
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  let minY = Math.min(...candidateYs);
+  let maxY = Math.max(...candidateYs);
+  const spanPad = (maxY - minY) * 0.12 || Math.max(1, Math.abs(maxY) * 0.05);
+  minY -= spanPad;
+  maxY += spanPad;
+  const baseY = height - padB;
+  const sx = (x: number) =>
+    padX + ((x - minX) / (maxX - minX || 1)) * (width - padX * 2);
+  const sy = (y: number) =>
+    padT + (1 - (y - minY) / (maxY - minY || 1)) * (height - padT - padB);
+  const polyline = points.map((p) => `${sx(p.x)},${sy(p.y)}`).join(" ");
+  const single = points.length === 1 ? points[0] : undefined;
+  const first = points[0];
+  const last = points[points.length - 1];
+  const area =
+    !single && first && last
+      ? `M ${sx(first.x)},${baseY} ` +
+        points.map((p) => `L ${sx(p.x)},${sy(p.y)}`).join(" ") +
+        ` L ${sx(last.x)},${baseY} Z`
+      : null;
+  return (
+    <Svg
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+    >
+      <Line
+        x1={padX}
+        y1={baseY}
+        x2={width - padX}
+        y2={baseY}
+        strokeWidth={0.5}
+        stroke={C.line}
+      />
+      {area && (
+        <Path
+          d={area}
+          fill={C.brand}
+          fillOpacity={0.08}
+        />
+      )}
+      {targetY !== undefined && (
+        <Line
+          x1={padX}
+          y1={sy(targetY)}
+          x2={width - padX}
+          y2={sy(targetY)}
+          strokeWidth={0.75}
+          stroke={C.faint}
+          strokeDasharray="3 2"
+        />
+      )}
+      {single ? (
+        <Line
+          x1={sx(single.x) - 6}
+          y1={sy(single.y)}
+          x2={sx(single.x) + 6}
+          y2={sy(single.y)}
+          strokeWidth={1.5}
+          stroke={C.brand}
+        />
+      ) : (
+        <Polyline
+          points={polyline}
+          fill="none"
+          stroke={C.brand}
+          strokeWidth={1.4}
+        />
+      )}
+      {last && !single && (
+        <Circle
+          cx={sx(last.x)}
+          cy={sy(last.y)}
+          r={2}
+          fill={C.brand}
+        />
+      )}
+    </Svg>
+  );
+}
 
 function StatGrid({ stats }: { stats: Stat[] }) {
   return (
@@ -151,7 +367,7 @@ function StatGrid({ stats }: { stats: Stat[] }) {
           key={`${s.label}-${i}`}
           style={styles.stat}
         >
-          <Text style={styles.statLabel}>{s.label}</Text>
+          <Text style={styles.statLabel}>{s.label.toUpperCase()}</Text>
           <Text style={styles.statValue}>{s.value}</Text>
           {s.sub ? <Text style={styles.statSub}>{s.sub}</Text> : null}
         </View>
@@ -162,17 +378,22 @@ function StatGrid({ stats }: { stats: Stat[] }) {
 
 function Section({
   title,
+  wrap = false,
   children,
 }: {
   title: string;
+  wrap?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <View
       style={styles.section}
-      wrap={false}
+      wrap={wrap}
     >
-      <Text style={styles.sectionTitle}>{title}</Text>
+      <View style={styles.sectionTitleRow}>
+        <View style={styles.sectionDot} />
+        <Text style={styles.sectionTitle}>{title.toUpperCase()}</Text>
+      </View>
       {children}
     </View>
   );
@@ -189,15 +410,19 @@ function ReportDocument({ model }: { model: ReportPdfModel }) {
         size="A4"
         style={styles.page}
       >
-        <View>
-          <Text style={styles.brand}>Maqro · maqro.app · v{APP_VERSION}</Text>
-          <Text style={styles.title}>{model.title}</Text>
-          <Text style={styles.meta}>
-            Generated {model.generatedOn} · {model.days} days of history
-          </Text>
-          {model.note ? <Text style={styles.note}>{model.note}</Text> : null}
+        <View style={styles.headerRow}>
+          <LogoLockup />
+          <Text style={styles.headerMeta}>maqro.app · v{APP_VERSION}</Text>
         </View>
-        <View style={styles.rule} />
+        <Text style={styles.title}>{model.title}</Text>
+        <Text style={styles.meta}>
+          Generated {model.generatedOn} · {model.days} days of history
+        </Text>
+        {model.profileLine ? (
+          <Text style={styles.profileLine}>{model.profileLine}</Text>
+        ) : null}
+        {model.note ? <Text style={styles.note}>{model.note}</Text> : null}
+        <View style={styles.brandRule} />
 
         {has("summary") && model.summary && (
           <Section title="Summary">
@@ -210,9 +435,34 @@ function ReportDocument({ model }: { model: ReportPdfModel }) {
           </Section>
         )}
 
+        {has("targets") && model.targets && (
+          <Section title="Targets & plan">
+            <StatGrid stats={model.targets.stats} />
+          </Section>
+        )}
+
+        {has("trends") && model.trends && model.trends.length > 0 && (
+          <Section title="Trends">
+            {model.trends.map((t, i) => (
+              <View
+                key={`${t.title}-${i}`}
+                style={styles.trendItem}
+              >
+                <Text style={styles.trendTitle}>{t.title}</Text>
+                <Text style={styles.trendBody}>{t.body}</Text>
+              </View>
+            ))}
+          </Section>
+        )}
+
         {has("weight") && model.weight && (
           <Section title="Weight">
-            <StatGrid stats={model.weight} />
+            <StatGrid stats={model.weight.stats} />
+            {model.weight.chart && (
+              <View style={styles.chartWrap}>
+                <Chart data={model.weight.chart} />
+              </View>
+            )}
           </Section>
         )}
 
@@ -231,10 +481,10 @@ function ReportDocument({ model }: { model: ReportPdfModel }) {
             {model.bloodPressure.rows.length > 0 && (
               <View style={{ marginTop: 6 }}>
                 <View style={styles.th}>
-                  <Text style={[styles.thText, styles.colDate]}>Date</Text>
+                  <Text style={[styles.thText, styles.colDate]}>DATE</Text>
                   <Text style={[styles.thText, styles.colReading]}>mmHg</Text>
-                  <Text style={[styles.thText, styles.colPulse]}>Pulse</Text>
-                  <Text style={[styles.thText, styles.colCat]}>Category</Text>
+                  <Text style={[styles.thText, styles.colPulse]}>PULSE</Text>
+                  <Text style={[styles.thText, styles.colCat]}>CATEGORY</Text>
                 </View>
                 {model.bloodPressure.rows.map((r, i) => (
                   <View
@@ -262,7 +512,23 @@ function ReportDocument({ model }: { model: ReportPdfModel }) {
 
         {has("water") && model.hydration && (
           <Section title="Hydration">
-            <StatGrid stats={model.hydration} />
+            <StatGrid stats={model.hydration.stats} />
+            {model.hydration.chart && (
+              <View style={styles.chartWrap}>
+                <Chart data={model.hydration.chart} />
+              </View>
+            )}
+          </Section>
+        )}
+
+        {has("calories") && model.calories && (
+          <Section title="Calorie adherence">
+            <StatGrid stats={model.calories.stats} />
+            {model.calories.chart && (
+              <View style={styles.chartWrap}>
+                <Chart data={model.calories.chart} />
+              </View>
+            )}
           </Section>
         )}
 
@@ -278,6 +544,40 @@ function ReportDocument({ model }: { model: ReportPdfModel }) {
           </Section>
         )}
 
+        {has("micronutrients") &&
+          model.micronutrients &&
+          model.micronutrients.rows.length > 0 && (
+            <Section
+              title="Micronutrients"
+              wrap
+            >
+              <Text style={styles.caption}>{model.micronutrients.caption}</Text>
+              {model.micronutrients.rows.map((m, i) => (
+                <View
+                  key={`${m.label}-${i}`}
+                  style={styles.microRow}
+                >
+                  <View style={styles.microHead}>
+                    <Text style={styles.microLabel}>{m.label}</Text>
+                    {m.hasValue ? (
+                      <Text style={styles.microValue}>{m.value}</Text>
+                    ) : (
+                      <Text style={styles.microNoData}>no data</Text>
+                    )}
+                  </View>
+                  <View style={styles.microTrack}>
+                    <View
+                      style={[
+                        styles.microFill,
+                        { width: `${Math.min(m.pct, 100)}%` },
+                      ]}
+                    />
+                  </View>
+                </View>
+              ))}
+            </Section>
+          )}
+
         <Text
           style={styles.footer}
           fixed
@@ -286,6 +586,13 @@ function ReportDocument({ model }: { model: ReportPdfModel }) {
           it. Macro / TDEE estimates are textbook approximations (Mifflin-St
           Jeor) that can diverge 10–20% per individual.
         </Text>
+        <Text
+          style={styles.pageNum}
+          fixed
+          render={({ pageNumber, totalPages }) =>
+            `${pageNumber} / ${totalPages}`
+          }
+        />
       </Page>
     </Document>
   );

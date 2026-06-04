@@ -379,4 +379,14 @@ test.describe("maqro happy path", () => {
     ]);
     expect(download.suggestedFilename()).toBe("maqro-report.pdf");
   });
+
+  test("Report: 'Archive to cloud' surfaces a status message when signed out", async ({
+    page,
+  }) => {
+    await page.goto("/report?days=60&sections=summary&title=Test%20report");
+    await page.getByRole("button", { name: /Archive to cloud/ }).click();
+    // Signed-out (or unconfigured) → a status message, not a crash. (The PDF
+    // build only runs once past the auth guard, so nothing heavy fires here.)
+    await expect(page.getByRole("status")).toBeVisible({ timeout: 5_000 });
+  });
 });

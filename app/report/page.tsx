@@ -1,7 +1,9 @@
 "use client";
 
-// Type-only import: erased at build time, so react-pdf (and its WASM) never
-// reach the SSR bundle — the implementation is loaded via dynamic import().
+import { PassphraseDialog } from "@/components/macro/PassphraseDialog";
+// `ReportPdfModel` is a type-only import — erased at build time, so react-pdf
+// (and its WASM engine) never reach the SSR bundle. The implementation is
+// loaded lazily via dynamic import() inside the archive/download handlers.
 import type { ReportPdfModel } from "@/components/macro/ReportPdfDocument";
 import type { PersonalInfo } from "@/components/macro/types";
 import { MiniLineChart } from "@/components/shell/MiniLineChart";
@@ -26,6 +28,7 @@ import {
   type WaterIntake,
   type WeightEntry,
 } from "@/lib/db";
+import { encryptBytes } from "@/lib/export-crypto";
 import {
   DEFAULT_GRACE_MIN,
   eatingHours,
@@ -46,7 +49,9 @@ import {
   MICRONUTRIENTS,
   type MicronutrientKey,
 } from "@/lib/rda";
+import { uploadReport } from "@/lib/storage/reports";
 import { computeStreak, type StreakState } from "@/lib/streaks";
+import { getSupabaseBrowser } from "@/lib/supabase/client";
 import {
   ADAPTIVE_DELTA_THRESHOLD,
   confidenceLabel,
@@ -55,13 +60,14 @@ import {
   recalibrateTdee,
   type AdaptiveTdee,
 } from "@/lib/trends";
-import { cmToInches, kgToDisplay, mlToFlOz } from "@/lib/units";
+import { cmToInches, formatHeight, kgToDisplay, mlToFlOz } from "@/lib/units";
 import { APP_VERSION } from "@/lib/version";
 import { computeWeeklyRecap, type WeeklyRecap } from "@/lib/weekly-recap";
-import { Suspense, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, FileDown, Loader2, Printer } from "lucide-react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, CloudUpload, FileDown, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 /** Dedicated print-optimised progress report.
  *
@@ -356,21 +362,38 @@ function ReportBody({
 
     const wFirst = weightsWindow[0];
     const wLast = weightsWindow[weightsWindow.length - 1];
-    const weight =
-      wFirst && wLast
-        ? [
-            {
-              label: "Latest",
-              value: `${kgToDisplay(wLast.kg, units).toFixed(1)} ${unitLabel}`,
-            },
-            {
-              label: "Change",
-              value: `${wLast.kg - wFirst.kg > 0 ? "+" : ""}${kgToDisplay(wLast.kg - wFirst.kg, units).toFixed(1)} ${unitLabel}`,
-              sub: `since ${shortDateLabel(wFirst.date)}`,
-            },
-            { label: "Weigh-ins", value: String(weightsWindow.length) },
-          ]
-        : [{ label: "Weight", value: "—", sub: "no weigh-ins in this window" }];
+    const weight = {
+      stats:
+        wFirst && wLast
+          ? [
+              {
+                label: "Latest",
+                value: `${kgToDisplay(wLast.kg, units).toFixed(1)} ${unitLabel}`,
+              },
+              {
+                label: "Change",
+                value: `${wLast.kg - wFirst.kg > 0 ? "+" : ""}${kgToDisplay(wLast.kg - wFirst.kg, units).toFixed(1)} ${unitLabel}`,
+                sub: `since ${shortDateLabel(wFirst.date)}`,
+              },
+              { label: "Weigh-ins", value: String(weightsWindow.length) },
+            ]
+          : [
+              {
+                label: "Weight",
+                value: "—",
+                sub: "no weigh-ins in this window",
+              },
+            ],
+      chart:
+        weightsWindow.length > 0
+          ? {
+              points: weightsWindow.map((e) => ({
+                x: Math.floor(new Date(e.date).getTime() / 86_400_000),
+                y: kgToDisplay(e.kg, units),
+              })),
+            }
+          : null,
+    };
 
     const mLast = measurementsWindow[measurementsWindow.length - 1];
     const bodyType: "male" | "female" | null =
@@ -456,25 +479,63 @@ function ReportBody({
             waterWindow.reduce((s, e) => s + e.ml, 0) / waterWindow.length,
           )
         : null;
-    const hydration =
-      avgMl !== null
-        ? [
-            {
-              label: "Avg per day",
-              value: `${wDisp(avgMl)} ${waterUnit}`,
-              sub: `${waterWindow.length} day${waterWindow.length === 1 ? "" : "s"} logged`,
-            },
-            ...(goalMl
-              ? [
-                  {
-                    label: "vs goal",
-                    value: `${Math.round((avgMl / goalMl) * 100)}%`,
-                    sub: `${wDisp(goalMl)} ${waterUnit} goal`,
-                  },
-                ]
-              : []),
-          ]
-        : [{ label: "Hydration", value: "—", sub: "no water logged" }];
+    const hydration = {
+      stats:
+        avgMl !== null
+          ? [
+              {
+                label: "Avg per day",
+                value: `${wDisp(avgMl)} ${waterUnit}`,
+                sub: `${waterWindow.length} day${waterWindow.length === 1 ? "" : "s"} logged`,
+              },
+              ...(goalMl
+                ? [
+                    {
+                      label: "vs goal",
+                      value: `${Math.round((avgMl / goalMl) * 100)}%`,
+                      sub: `${wDisp(goalMl)} ${waterUnit} goal`,
+                    },
+                  ]
+                : []),
+            ]
+          : [{ label: "Hydration", value: "—", sub: "no water logged" }],
+      chart:
+        waterWindow.length > 0
+          ? {
+              points: waterWindow.map((e) => ({
+                x: Math.floor(new Date(e.date).getTime() / 86_400_000),
+                y: wDisp(e.ml),
+              })),
+              ...(goalMl ? { targetY: wDisp(goalMl) } : {}),
+            }
+          : null,
+    };
+
+    const calories = {
+      stats:
+        logsWindow.length > 0
+          ? [
+              {
+                label: "Avg per day",
+                value: `${Math.round(logsWindow.reduce((s, l) => s + sumCalories(l), 0) / logsWindow.length)} kcal`,
+                sub: targetCalories
+                  ? `target ${targetCalories} kcal`
+                  : `${logsWindow.length} days`,
+              },
+              { label: "Days logged", value: String(logsWindow.length) },
+            ]
+          : [{ label: "Calories", value: "—", sub: "no daily logs" }],
+      chart:
+        logsWindow.length > 0
+          ? {
+              points: logsWindow.map((l) => ({
+                x: Math.floor(new Date(l.date).getTime() / 86_400_000),
+                y: sumCalories(l),
+              })),
+              ...(targetCalories ? { targetY: targetCalories } : {}),
+            }
+          : null,
+    };
 
     const fastingCfg = profile?.fasting;
     let fasting: ReportPdfModel["fasting"];
@@ -518,6 +579,100 @@ function ReportBody({
       };
     }
 
+    const profileLine = profile
+      ? [
+          GENDER_LABEL[profile.gender] ?? profile.gender,
+          `${effectiveAge(profile)}y`,
+          formatHeight(profile.height, units),
+          ACTIVITY_LABEL[profile.activityLevel] ?? profile.activityLevel,
+          GOAL_LABEL[profile.goal] ?? profile.goal,
+        ].join(" · ")
+      : null;
+
+    // Targets & plan — BMR, TDEE (+ manual override), target calories + daily
+    // delta, and the macro-gram targets.
+    const targets = calc
+      ? {
+          stats: [
+            { label: "BMR", value: `${calc.bmr} kcal` },
+            {
+              label: "TDEE",
+              value: `${calc.tdee} kcal`,
+              sub: profile?.manualTdee ? "manual override" : "BMR × activity",
+            },
+            {
+              label: "Target",
+              value: `${calc.targetCalories} kcal`,
+              sub: `${calc.dailyDelta > 0 ? "+" : ""}${calc.dailyDelta} kcal/day`,
+            },
+            {
+              label: "Macro target",
+              value: `P${calc.protein} · C${calc.carbs} · F${calc.fat} g`,
+              sub: profile?.macroSplit ? "custom split" : "goal-based",
+            },
+          ],
+        }
+      : null;
+
+    // Trends — same advisories (and gating) as the on-screen Trends section.
+    const trendItems: { title: string; body: string }[] = [];
+    if (plateau.advisory) {
+      const detail =
+        plateau.startKg !== null && plateau.endKg !== null
+          ? ` Smoothed weight ${kgToDisplay(plateau.startKg, units).toFixed(1)} → ${kgToDisplay(plateau.endKg, units).toFixed(1)} ${unitLabel} over ${plateau.daysFlat} days.`
+          : "";
+      trendItems.push({
+        title: "Plateau detected",
+        body: plateau.advisory + detail,
+      });
+    }
+    if (showAdaptive && adaptive.observedTdee !== null) {
+      const obs = adaptive.observedTdee;
+      trendItems.push({
+        title: "Adaptive TDEE",
+        body: `Your last ${adaptive.windowDays} days of logging put maintenance near ${obs} kcal/day — about ${Math.abs(obs - currentTdee)} kcal ${obs > currentTdee ? "higher" : "lower"} than the ${currentTdee.toLocaleString()} kcal your targets use now.`,
+      });
+    }
+    if (showRecalibration && tdeeReco.advisory) {
+      trendItems.push({
+        title: "TDEE recalibration",
+        body: `${tdeeReco.advisory} Suggested manual TDEE ${tdeeReco.suggestedTdee} kcal.`,
+      });
+    }
+    const trends = trendItems.length > 0 ? trendItems : null;
+
+    // Micronutrients vs recommended intake (only when there's enriched data).
+    const micronutrients =
+      Object.keys(micronutrientAverages).length > 0
+        ? {
+            caption:
+              "Average daily intake vs the recommended intake (NIH DRI / FDA DV), from foods enriched via Open Food Facts. Approximate — foods with no data are excluded.",
+            rows: MICRONUTRIENT_KEYS.map((key) => {
+              const meta = MICRONUTRIENTS[key];
+              const target = getMicronutrientTargets(
+                profile?.gender === "male" || profile?.gender === "female"
+                  ? profile.gender
+                  : "unspecified",
+                profile ? effectiveAge(profile) : 30,
+              )[key];
+              const value = micronutrientAverages[key];
+              const hasValue = typeof value === "number";
+              const pct = hasValue ? Math.round((value / target) * 100) : 0;
+              const display = hasValue
+                ? value >= 10
+                  ? Math.round(value)
+                  : Math.round(value * 10) / 10
+                : 0;
+              return {
+                label: meta.label,
+                value: hasValue ? `${display} ${meta.unit} · ${pct}%` : "",
+                pct,
+                hasValue,
+              };
+            }),
+          }
+        : null;
+
     return {
       title,
       note,
@@ -527,19 +682,24 @@ function ReportBody({
         month: "long",
         day: "numeric",
       }),
+      profileLine,
       sections: Array.from(enabled),
       summary,
+      targets,
+      trends,
       weight,
       body,
       bloodPressure,
       hydration,
+      calories,
       fasting,
+      micronutrients,
     };
   }
 
   const [pdfBusy, setPdfBusy] = useState(false);
-  // Generate a vector PDF via @react-pdf/renderer, loaded lazily (it pulls a
-  // WASM layout engine + browser APIs, so it must stay out of the SSR bundle).
+  // Download the vector PDF locally (the same artifact archived to cloud).
+  // react-pdf is loaded lazily so its WASM engine stays out of the SSR bundle.
   async function downloadVectorPdf() {
     setPdfBusy(true);
     try {
@@ -556,6 +716,89 @@ function ReportBody({
       setTimeout(() => URL.revokeObjectURL(url), 0);
     } finally {
       setPdfBusy(false);
+    }
+  }
+
+  const [archiveBusy, setArchiveBusy] = useState(false);
+  const [archiveMsg, setArchiveMsg] = useState<{
+    kind: "ok" | "error";
+    text: string;
+  } | null>(null);
+  const [passOpen, setPassOpen] = useState(false);
+  const [passBusy, setPassBusy] = useState(false);
+  const [passError, setPassError] = useState<string | null>(null);
+  const archiveCtx = useRef<{
+    supabase: SupabaseClient;
+    userId: string;
+    blob: Blob;
+  } | null>(null);
+
+  // Archive the report to encrypted cloud storage. Builds the vector PDF
+  // (@react-pdf/renderer, loaded lazily so its WASM engine stays out of the SSR
+  // bundle), then prompts for a passphrase and encrypts on this device before
+  // upload — the bucket only ever holds ciphertext.
+  async function archiveToCloud() {
+    setArchiveMsg(null);
+    setArchiveBusy(true);
+    try {
+      const supabase = getSupabaseBrowser();
+      if (!supabase) {
+        setArchiveMsg({
+          kind: "error",
+          text: "Cloud storage isn't configured.",
+        });
+        return;
+      }
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) {
+        setArchiveMsg({
+          kind: "error",
+          text: "Sign in to archive reports to your cloud storage.",
+        });
+        return;
+      }
+      const { renderReportPdf } =
+        await import("@/components/macro/ReportPdfDocument");
+      const blob = await renderReportPdf(buildPdfModel());
+      archiveCtx.current = { supabase, userId: data.user.id, blob };
+      setPassError(null);
+      setPassOpen(true);
+    } catch (e) {
+      setArchiveMsg({
+        kind: "error",
+        text: e instanceof Error ? e.message : "Couldn't prepare the report.",
+      });
+    } finally {
+      setArchiveBusy(false);
+    }
+  }
+
+  async function encryptAndUpload(passphrase: string) {
+    const ctx = archiveCtx.current;
+    if (!ctx) return;
+    setPassBusy(true);
+    setPassError(null);
+    try {
+      const bytes = new Uint8Array(await ctx.blob.arrayBuffer());
+      const envelope = await encryptBytes(bytes, passphrase);
+      await uploadReport(
+        ctx.supabase,
+        ctx.userId,
+        envelope,
+        new Date().toISOString(),
+      );
+      archiveCtx.current = null;
+      setPassOpen(false);
+      setArchiveMsg({
+        kind: "ok",
+        text: "Report archived to your encrypted cloud storage.",
+      });
+    } catch (e) {
+      setPassError(
+        e instanceof Error ? e.message : "Couldn't archive the report.",
+      );
+    } finally {
+      setPassBusy(false);
     }
   }
 
@@ -589,14 +832,43 @@ function ReportBody({
           <Button
             type="button"
             size="sm"
-            onClick={() => window.print()}
+            onClick={archiveToCloud}
+            disabled={archiveBusy}
             className="gap-1.5"
           >
-            <Printer className="h-3.5 w-3.5" />
-            Save as PDF
+            <CloudUpload className="h-3.5 w-3.5" />
+            {archiveBusy ? "Preparing…" : "Archive to cloud"}
           </Button>
         </div>
       </div>
+
+      {archiveMsg && (
+        <p
+          role="status"
+          className={`print-hide mb-4 rounded-md border px-3 py-2 text-xs ${
+            archiveMsg.kind === "ok"
+              ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400"
+              : "border-red-500/30 bg-red-500/5 text-red-700 dark:text-red-400"
+          }`}
+        >
+          {archiveMsg.text}
+        </p>
+      )}
+
+      {passOpen && (
+        <PassphraseDialog
+          open
+          mode="encrypt"
+          busy={passBusy}
+          error={passError}
+          onSubmit={encryptAndUpload}
+          onCancel={() => {
+            if (passBusy) return;
+            setPassOpen(false);
+            archiveCtx.current = null;
+          }}
+        />
+      )}
 
       {/* Cover header — always rendered. Title + generated-on +
        *  optional cover note. The cover note is the load-bearing
@@ -1355,6 +1627,25 @@ function Stat({
 }
 
 // ── Tiny utilities (inlined to keep the report self-contained) ───────
+
+const GENDER_LABEL: Record<string, string> = {
+  male: "Male",
+  female: "Female",
+  nonbinary: "Non-binary",
+  preferNotToSay: "Unspecified",
+};
+const ACTIVITY_LABEL: Record<string, string> = {
+  sedentary: "Sedentary",
+  light: "Light",
+  moderate: "Moderate",
+  active: "Active",
+  veryActive: "Very active",
+};
+const GOAL_LABEL: Record<string, string> = {
+  lose: "Lose",
+  maintain: "Maintain",
+  gain: "Gain",
+};
 
 function clampDays(n: number): number {
   if (!Number.isFinite(n) || n <= 0) return 60;

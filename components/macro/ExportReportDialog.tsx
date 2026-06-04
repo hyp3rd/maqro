@@ -44,6 +44,7 @@ type RangeKey = keyof typeof RANGES;
 
 export const REPORT_SECTIONS = {
   summary: "Weekly summary (streak, adherence, averages)",
+  targets: "Targets & plan (BMR, TDEE/override, macro split)",
   trends: "Trends (plateau + TDEE calibration advisories)",
   weight: "Weight chart + delta",
   body: "Body measurements + body-fat estimate",
@@ -57,6 +58,7 @@ export type SectionKey = keyof typeof REPORT_SECTIONS;
 
 const DEFAULT_SECTIONS: SectionKey[] = [
   "summary",
+  "targets",
   "trends",
   "weight",
   "body",
