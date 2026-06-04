@@ -14,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../ui/select";
+import { AiUsageSection } from "./AiUsageSection";
 import { BillingSection } from "./BillingSection";
 import { BloodPressureSection } from "./BloodPressureSection";
 import { BodyMeasurementHistory } from "./BodyMeasurementHistory";
@@ -45,8 +46,8 @@ type Sub = "home" | "measurements" | "docs" | "billing";
  *  age, weight, height, units, display name), plus three tiles that open
  *  sub-sections: **My measurements** (blood pressure + body-measurement
  *  history), **My docs** (report PDFs archived to encrypted cloud storage), and
- *  **Billing & subscription** (plan, renewal, the Stripe portal — moved here out
- *  of Settings).
+ *  **Billing & subscription** (plan, renewal, the Stripe portal, and the
+ *  monthly AI-usage meter — all moved here out of Settings).
  *
  *  Age is derived from `birthDate` so it stays current on its own and the
  *  calorie target shifts silently on a birthday — see [lib/age.ts](../../lib/age.ts). */
@@ -106,11 +107,14 @@ export function ProfileView({
           onBack={() => setSub("home")}
         />
         {user ? (
-          <BillingSection />
+          <>
+            <BillingSection />
+            <AiUsageSection />
+          </>
         ) : (
           <p className="rounded-lg border border-border/60 bg-card px-5 py-4 text-sm text-muted-foreground">
-            Sign in to view your plan, manage your subscription, and see your
-            billing history.
+            Sign in to view your plan and AI usage, manage your subscription,
+            and see your billing history.
           </p>
         )}
       </div>
@@ -280,7 +284,7 @@ function ProfileHome({
         <ProfileTile
           icon={CreditCard}
           title="Billing & subscription"
-          hint="Plan, renewal & payment"
+          hint="Plan, AI usage & payment"
           onClick={() => onOpen("billing")}
         />
       </div>
