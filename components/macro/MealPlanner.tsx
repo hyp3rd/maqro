@@ -29,12 +29,14 @@ import {
   CalculatedValues,
   Food,
   FoodItem,
+  type GoalPhase,
   MacroBreakdown,
   Meal,
 } from "../../components/macro/types";
 import { DateNavigator } from "../shell/DateNavigator";
 import type { ViewKey } from "../shell/Sidebar";
 import { Button } from "../ui/button";
+import { ActivePhaseBanner } from "./ActivePhaseBanner";
 import AddFoodForm from "./AddFoodForm";
 import DailyTotals from "./DailyTotals";
 import { FastingCard } from "./FastingCard";
@@ -65,6 +67,11 @@ interface MealPlannerProps {
   waterGoalMl: number;
   /** Display units for the water counter (ml ↔ fl oz). */
   units: "metric" | "imperial";
+  /** The goal phase driving today's target (Pro), or `null`. Shows the
+   *  active-phase banner above the daily totals. */
+  goalPhase: GoalPhase | null;
+  /** Diet-break suggestion text for the active phase, or `null`. */
+  goalPhaseNudge: string | null;
   /** Switch the active app view — lets the fasting card link to the Fasting page. */
   onSelectView?: (key: ViewKey) => void;
   onSelectDate: (date: string) => void;
@@ -169,6 +176,8 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
   today,
   waterGoalMl,
   units,
+  goalPhase,
+  goalPhaseNudge,
   onSelectView,
   onSelectDate,
   newFood,
@@ -310,6 +319,21 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
 
   return (
     <div className="space-y-4 sm:space-y-6">
+      {/* Active goal phase (Pro) driving today's target. "Now" surface — only
+          on today, like the fasting card. */}
+      {selectedDate === today && goalPhase && (
+        <section className="overflow-hidden rounded-lg border border-brand/30 bg-card">
+          <div className="px-3 py-3 sm:px-5 sm:py-4">
+            <ActivePhaseBanner
+              phase={goalPhase}
+              today={today}
+              units={units}
+              nudge={goalPhaseNudge}
+            />
+          </div>
+        </section>
+      )}
+
       <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
         <div className="px-3 py-3 sm:px-5 sm:py-4">
           <DailyTotals

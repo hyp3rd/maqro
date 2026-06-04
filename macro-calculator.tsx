@@ -4,12 +4,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import type { ResolvedMealPhoto } from "./app/api/identify-meal/route";
+import { AdvancedSettingsSection } from "./components/macro/AdvancedSettingsSection";
 import { ApplyRecipeDialog } from "./components/macro/ApplyRecipeDialog";
 import { ApplyTemplateDialog } from "./components/macro/ApplyTemplateDialog";
+import { BodySummaryStrip } from "./components/macro/BodySummaryStrip";
 import { CameraSheet } from "./components/macro/CameraSheet";
 import { CustomFoodForm } from "./components/macro/CustomFoodForm";
 import { FastingView } from "./components/macro/FastingView";
 import { FoodSearchSheet } from "./components/macro/FoodSearchSheet";
+import { GoalPhasesPlanner } from "./components/macro/GoalPhasesPlanner";
 import { LogMealSheet, type LogMethod } from "./components/macro/LogMealSheet";
 import MacroResults from "./components/macro/MacroResults";
 import { MealHubSheet } from "./components/macro/MealHubSheet";
@@ -19,6 +22,7 @@ import { MyFoodsView } from "./components/macro/MyFoodsView";
 import { PairPhoneDialog } from "./components/macro/PairPhoneDialog";
 import { PantryView } from "./components/macro/PantryView";
 import PersonalInfoForm from "./components/macro/PersonalInfoForm";
+import { ProfileView } from "./components/macro/ProfileView";
 import { ProgressView } from "./components/macro/ProgressView";
 import { RecipesView } from "./components/macro/RecipesView";
 import { SaveTemplateDialog } from "./components/macro/SaveTemplateDialog";
@@ -31,6 +35,7 @@ import {
   CalculatedValues,
   Food,
   FoodItem,
+  type GoalPhase,
   type MacroSplit,
   Meal,
   PersonalInfo,
@@ -41,6 +46,7 @@ import { OnboardingWizard } from "./components/onboarding/OnboardingWizard";
 import { AppShell } from "./components/shell/AppShell";
 import type { ViewKey } from "./components/shell/Sidebar";
 import { foodDatabase } from "./data/food-database";
+import { useAiUsage } from "./hooks/use-ai-usage";
 import { useDailyLog } from "./hooks/use-daily-log";
 import { useFoodSearch } from "./hooks/use-food-search";
 import { useIsMobile } from "./hooks/use-mobile";
@@ -50,6 +56,7 @@ import { useUser } from "./hooks/use-user";
 import { requestAiMealPlan } from "./lib/ai-plan";
 import type { CoherenceIssue } from "./lib/ai/plan-coherence";
 import { clientFetch } from "./lib/auth/client-fetch";
+import { FEATURES } from "./lib/billing/tiers";
 import {
   addCustomFood,
   customToFood,
@@ -62,6 +69,7 @@ import {
   type MealTemplate,
   type PantryItem,
 } from "./lib/db";
+import { dietBreakNudge, effectiveGoal } from "./lib/goal-phases";
 import { waterGoalMl } from "./lib/hydration";
 import { aggregateMacroBreakdown, computeMacros } from "./lib/macros";
 import { planDay, summarisePlan } from "./lib/meal-planner";
@@ -214,6 +222,7 @@ function markOnboardingDone(): void {
  *  TS catch drift via the exhaustive `satisfies` check below. */
 const VIEW_PARAM_VALUES = [
   "calculator",
+  "profile",
   "plan",
   "progress",
   "fasting",
@@ -541,9 +550,40 @@ const MacroCalculator = () => {
   const upgradeDialogOpen =
     urlPlan !== null && authLoaded && user !== null && !upgradeDialogDismissed;
 
+  // Goal phases (Pro): the phase active on today's date overrides the linear
+  // goal/rate fed into computeMacros, so the calorie/macro target shifts as
+  // phases transition. Gated on the live tier — while it loads (or for
+  // free/downgraded users) `phasesEnabled` is false and the linear goal
+  // drives the target, so the number is never wrong-by-default.
+  const { state: aiUsageState } = useAiUsage();
+  const goalPhasesEnabled =
+    aiUsageState.status === "ok" &&
+    FEATURES.canUseGoalPhases(aiUsageState.data.tier);
+  const effective = effectiveGoal(personalInfo, today, {
+    phasesEnabled: goalPhasesEnabled,
+  });
+  const activeGoalPhase = effective.phase;
+  const goalPhaseNudge = goalPhasesEnabled
+    ? dietBreakNudge(personalInfo.goalPhases, today)
+    : null;
+
+  // Pin the macro math to the local day so a birthdate-derived age rolls the
+  // target over at midnight. Empty `today` (SSR/first paint) leaves `now`
+  // undefined, letting computeMacros fall back to the present. Passing it
+  // explicitly (rather than relying on a hidden Date.now()) is also what keeps
+  // it an honest memo dependency.
+  const nowMs = today ? new Date(`${today}T00:00:00`).getTime() : undefined;
   const calculatedValues = useMemo<CalculatedValues>(
-    () => computeMacros(personalInfo),
-    [personalInfo],
+    () =>
+      computeMacros(
+        {
+          ...personalInfo,
+          goal: effective.goal,
+          weeklyRateKg: effective.weeklyRateKg,
+        },
+        nowMs,
+      ),
+    [personalInfo, effective.goal, effective.weeklyRateKg, nowMs],
   );
 
   // Derived: aggregate macros across all logged foods.
@@ -581,7 +621,7 @@ const MacroCalculator = () => {
   // (the optional macro override) can all ride through the same path.
   const handlePersonalInfoChange = (
     name: string,
-    value: string | number | null | string[] | MacroSplit,
+    value: string | number | null | string[] | MacroSplit | GoalPhase[],
   ) => {
     setPersonalInfo({ ...personalInfo, [name]: value });
   };
@@ -1886,21 +1926,52 @@ const MacroCalculator = () => {
       onSelect={setView}
     >
       {view === "calculator" && (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
-          <div className="lg:col-span-3">
-            <PersonalInfoForm
-              personalInfo={personalInfo}
-              onPersonalInfoChange={handlePersonalInfoChange}
-            />
-          </div>
-          <div className="lg:col-span-2">
-            <MacroResults
-              calculatedValues={calculatedValues}
-              totalMacros={totalMacros}
-              units={personalInfo.units}
-            />
+        <div className="space-y-6">
+          <BodySummaryStrip
+            personalInfo={personalInfo}
+            today={today}
+            onEdit={() => setView("profile")}
+          />
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+            {/* Left: the inputs you set, in goal order — diet/activity, then
+                the goal, then the goal-phase plan that continues it. */}
+            <div className="space-y-6 lg:col-span-3">
+              <PersonalInfoForm
+                personalInfo={personalInfo}
+                onPersonalInfoChange={handlePersonalInfoChange}
+              />
+              <GoalPhasesPlanner
+                phases={personalInfo.goalPhases}
+                onChange={(next) => patchProfile("goalPhases", next)}
+                weightKg={personalInfo.weight}
+                units={personalInfo.units}
+                today={today}
+                goal={personalInfo.goal}
+              />
+            </div>
+            {/* Right: the computed targets and the Advanced overrides that
+                feed straight into them. */}
+            <div className="space-y-6 lg:col-span-2">
+              <MacroResults
+                calculatedValues={calculatedValues}
+                totalMacros={totalMacros}
+                units={personalInfo.units}
+              />
+              <AdvancedSettingsSection
+                personalInfo={personalInfo}
+                onPersonalInfoChange={handlePersonalInfoChange}
+              />
+            </div>
           </div>
         </div>
+      )}
+
+      {view === "profile" && (
+        <ProfileView
+          personalInfo={personalInfo}
+          onPersonalInfoChange={handlePersonalInfoChange}
+          today={today}
+        />
       )}
 
       {view === "plan" && (
@@ -1913,6 +1984,8 @@ const MacroCalculator = () => {
           today={today}
           waterGoalMl={waterGoalMl(personalInfo)}
           units={personalInfo.units}
+          goalPhase={activeGoalPhase}
+          goalPhaseNudge={goalPhaseNudge}
           onSelectView={setView}
           onSelectDate={(d) => setExplicitDate(d === today ? null : d)}
           newFood={newFood}

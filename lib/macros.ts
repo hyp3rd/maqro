@@ -7,21 +7,27 @@ import {
   goalDirection,
 } from "@/components/macro/types";
 import type { MacroBreakdown, Meal } from "@/components/macro/types";
+import { effectiveAge } from "@/lib/age";
 
 /** Pure computation of BMR, TDEE, target calories, daily delta, and per-macro
  * gram targets from the user's profile. Uses Mifflin-St Jeor for BMR. The
  * daily delta is clamped so the target never drops below max(BMR, 1200) and
  * the rate is clamped to ≤1% of bodyweight/week (textbook upper bound). */
-export function computeMacros(p: PersonalInfo): CalculatedValues {
+export function computeMacros(p: PersonalInfo, now?: number): CalculatedValues {
   // Mifflin-St Jeor has two paths: +5 (assumed-male physiology) or -161
   // (assumed-female physiology). For non-binary / prefer-not-to-say we
   // pick the lower-calorie estimate (-161). It's the conservative choice:
   // under-estimating energy needs is safer than over-estimating, and the
   // manual TDEE override lets anyone calibrate against real-world results.
   const malePath = p.gender === "male";
+  // Age is birthDate-derived when the profile carries one (kept current
+  // automatically), else the stored `age` — see lib/age.ts. `now` lets the
+  // caller pin the clock (e.g. memoize on the local day) so a birthday rolls
+  // the target over without a hidden Date.now() read; defaults to the present.
+  const age = effectiveAge(p, now);
   const bmr = malePath
-    ? 10 * p.weight + 6.25 * p.height - 5 * p.age + 5
-    : 10 * p.weight + 6.25 * p.height - 5 * p.age - 161;
+    ? 10 * p.weight + 6.25 * p.height - 5 * age + 5
+    : 10 * p.weight + 6.25 * p.height - 5 * age - 161;
 
   // Manual TDEE overrides the formula-based estimate when provided. Without
   // it, we use BMR × activity multiplier, which is a textbook approximation

@@ -95,7 +95,7 @@ export function FastingCard({
     return (
       <div className="flex items-center justify-between gap-3">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold tracking-tight">
-          <Hourglass className="h-4 w-4 text-indigo-500" />
+          <Hourglass className="h-4 w-4 text-brand" />
           Fasting
         </h3>
         <Button
@@ -131,7 +131,7 @@ export function FastingCard({
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold tracking-tight">
-          <Hourglass className="h-4 w-4 text-indigo-500" />
+          <Hourglass className="h-4 w-4 text-brand" />
           Fasting
         </h3>
         <Select
@@ -213,7 +213,7 @@ export function FastingCard({
             <div
               className={cn(
                 "h-full rounded-full transition-[width] duration-500",
-                status.phase === "eating" ? "bg-emerald-500" : "bg-indigo-500",
+                status.phase === "eating" ? "bg-emerald-500" : "bg-brand",
               )}
               style={{ width: `${Math.round(status.progress * 100)}%` }}
             />
@@ -299,7 +299,7 @@ export function FastingCard({
           <button
             type="button"
             onClick={() => onSelectView("fasting")}
-            className="ml-auto inline-flex items-center gap-0.5 text-[11px] font-medium text-indigo-600 transition-colors hover:text-indigo-500 dark:text-indigo-400"
+            className="ml-auto inline-flex items-center gap-0.5 text-[11px] font-medium text-brand transition-colors hover:text-brand/80"
           >
             View phases &amp; details
             <ChevronRight className="h-3 w-3" />

@@ -478,7 +478,7 @@ function EstimatedBadge() {
   return (
     <Badge
       variant="secondary"
-      className="shrink-0 gap-1 bg-indigo-500/15 text-[10px] font-medium uppercase tracking-wide text-indigo-700 dark:text-indigo-300"
+      className="shrink-0 gap-1 bg-brand/15 text-[10px] font-medium uppercase tracking-wide text-brand"
       title="Macros estimated by AI - not in your catalog. Edit grams if needed."
     >
       <Sparkles className="h-2.5 w-2.5" />

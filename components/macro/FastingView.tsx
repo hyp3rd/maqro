@@ -119,7 +119,7 @@ export function FastingView({
       {/* Hero */}
       <header className="space-y-3">
         <h1 className="flex items-center gap-2 font-display text-2xl font-semibold tracking-tight sm:text-3xl">
-          <Hourglass className="h-6 w-6 text-indigo-500" />
+          <Hourglass className="h-6 w-6 text-brand" />
           Intermittent fasting
         </h1>
         <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
@@ -276,7 +276,7 @@ export function FastingView({
                 className={cn(
                   "flex h-full flex-col items-start gap-1.5 rounded-xl border bg-card px-4 py-3 text-left transition-colors",
                   active
-                    ? "border-indigo-500 ring-1 ring-indigo-500"
+                    ? "border-brand ring-1 ring-brand"
                     : "border-border/60 hover:bg-accent/40",
                 )}
               >

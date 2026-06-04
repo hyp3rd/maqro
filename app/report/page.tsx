@@ -3,6 +3,7 @@
 import type { PersonalInfo } from "@/components/macro/types";
 import { MiniLineChart } from "@/components/shell/MiniLineChart";
 import { Button } from "@/components/ui/button";
+import { effectiveAge } from "@/lib/age";
 import { bodyFatCategory, estimateBodyFat } from "@/lib/body-fat";
 import {
   getProfile,
@@ -388,7 +389,7 @@ function ReportBody({
                 profile?.gender === "male" || profile?.gender === "female"
                   ? profile.gender
                   : "unspecified",
-                profile?.age ?? 30,
+                profile ? effectiveAge(profile) : 30,
               )}
               personalized={
                 profile?.gender === "male" || profile?.gender === "female"

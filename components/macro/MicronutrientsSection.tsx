@@ -8,6 +8,7 @@ import {
   type LinePoint,
 } from "@/components/shell/MiniLineChart";
 import { useAiUsage } from "@/hooks/use-ai-usage";
+import { effectiveAge } from "@/lib/age";
 import { FEATURES } from "@/lib/billing/tiers";
 import type { DailyLog } from "@/lib/db";
 import { getProfile, listMicronutrientProfiles, todayKey } from "@/lib/db";
@@ -102,9 +103,9 @@ export function MicronutrientsSection({
     () =>
       getMicronutrientTargets(
         sexFromGender(userProfile?.gender),
-        userProfile?.age ?? 30,
+        userProfile ? effectiveAge(userProfile) : 30,
       ),
-    [userProfile?.gender, userProfile?.age],
+    [userProfile],
   );
   // Personalized when we actually have a sex-specific profile; drives
   // the header wording (DV vs your target).
@@ -355,7 +356,7 @@ function MicronutrientsUpgradeCard() {
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="inline-flex items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-xs font-medium text-brand-foreground transition-colors hover:bg-brand/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <Sparkles className="h-3.5 w-3.5" />
           Upgrade to Pro

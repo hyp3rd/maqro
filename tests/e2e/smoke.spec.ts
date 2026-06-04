@@ -22,6 +22,36 @@ test.describe("maqro happy path", () => {
     await expect(page.getByText("Target", { exact: true })).toBeVisible();
   });
 
+  test("Profile holds the body inputs; the Calculator shows a linking summary strip", async ({
+    page,
+  }) => {
+    await page.goto("/app");
+
+    // The Calculator shows a compact body-summary strip (gender · age ·
+    // weight · height) in place of the Body inputs, which moved to Profile.
+    const strip = page.getByRole("button", { name: /Edit on Profile/ });
+    await expect(strip).toBeVisible();
+    await expect(strip).toContainText("70.0 kg"); // default weight
+    // The Body inputs themselves are gone from the Calculator.
+    await expect(page.getByLabel("Weight (kg)")).toHaveCount(0);
+
+    // The strip jumps to Profile, which carries the Body card + birthdate.
+    await strip.click();
+    await expect(page.getByRole("heading", { name: "Profile" })).toBeVisible();
+    await expect(page.getByLabel("Birthdate")).toBeVisible();
+
+    // Editing weight on Profile flows back into the Calculator's targets.
+    const weightInput = page.getByLabel("Weight (kg)");
+    await weightInput.fill("");
+    await weightInput.fill("90");
+    await page.waitForTimeout(700);
+
+    await page.getByRole("button", { name: "Calculator", exact: true }).click();
+    await expect(
+      page.getByRole("button", { name: /Edit on Profile/ }),
+    ).toContainText("90.0 kg");
+  });
+
   test("food search shows the Built-in source badge", async ({ page }) => {
     await page.goto("/app");
     // Navigate via sidebar.
@@ -126,6 +156,8 @@ test.describe("maqro happy path", () => {
 
   test("changing weight auto-logs to Progress view", async ({ page }) => {
     await page.goto("/app");
+    // Body inputs (incl. weight) live on the Profile page now.
+    await page.getByRole("button", { name: "Profile", exact: true }).click();
     // Set weight to a distinct value the chart can show.
     const weightInput = page.getByLabel("Weight (kg)");
     await weightInput.fill("");
@@ -171,6 +203,8 @@ test.describe("maqro happy path", () => {
   test("profile + meal log persist across a reload", async ({ page }) => {
     // First visit: change weight to a distinctive value and Auto-fill meals.
     await page.goto("/app");
+    // Weight lives on the Profile page now.
+    await page.getByRole("button", { name: "Profile", exact: true }).click();
     const weightInput = page.getByLabel("Weight (kg)");
     await weightInput.fill("");
     await weightInput.fill("83");
@@ -192,6 +226,7 @@ test.describe("maqro happy path", () => {
 
     // Reload: the weight should still be 83 and meals should still be filled.
     await page.reload();
+    await page.getByRole("button", { name: "Profile", exact: true }).click();
     await expect(page.getByLabel("Weight (kg)")).toHaveValue("83");
 
     await page.getByRole("button", { name: "Meal Plan" }).click();

@@ -6,7 +6,15 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",
-  use: { baseURL: "http://localhost:3000", trace: "retain-on-failure" },
+  // `locale: en-GB` keeps the UI in English while pinning the first-run units
+  // default to metric (`detectDefaultUnitSystem` only treats en-US/LR/MM as
+  // imperial). Without it the suite's "Weight (kg)" labels are locale-dependent
+  // and break on a US runner.
+  use: {
+    baseURL: "http://localhost:3000",
+    locale: "en-GB",
+    trace: "retain-on-failure",
+  },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   // Boot the Next.js dev server before running tests, reuse if already up.
   webServer: {

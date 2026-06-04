@@ -37,12 +37,18 @@
     --accent: 240 5% 96%;
     --accent-foreground: 240 6% 10%;
 
+    /* Brand accent (violet). The one signature colour: active nav, focus
+       ring, feature icons (fasting / goal phases), and Pro CTAs. Buttons
+       stay neutral (`--primary`); water keeps its own blue. */
+    --brand: 262 83% 58%;
+    --brand-foreground: 0 0% 100%;
+
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 98%;
 
     --border: 240 6% 90%;
     --input: 240 6% 90%;
-    --ring: 240 5% 65%;
+    --ring: 262 83% 58%;
 
     /* Macro accents - desaturated, monochrome-friendly. */
     --macro-protein: 200 80% 45%;
@@ -89,12 +95,16 @@
     --accent: 240 4% 14%;
     --accent-foreground: 0 0% 98%;
 
+    /* Brand accent (violet) — lifted lightness for dark surfaces. */
+    --brand: 258 90% 66%;
+    --brand-foreground: 0 0% 100%;
+
     --destructive: 0 63% 50%;
     --destructive-foreground: 0 0% 98%;
 
     --border: 240 4% 14%;
     --input: 240 4% 14%;
-    --ring: 240 5% 65%;
+    --ring: 258 90% 66%;
 
     --macro-protein: 200 75% 60%;
     --macro-carbs: 35 90% 60%;

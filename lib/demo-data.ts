@@ -1,4 +1,9 @@
-import type { FoodItem, Meal, PersonalInfo } from "@/components/macro/types";
+import type {
+  FoodItem,
+  GoalPhase,
+  Meal,
+  PersonalInfo,
+} from "@/components/macro/types";
 import {
   clearDemoSeededStores,
   isProfileMarkedAsDemo,
@@ -26,10 +31,16 @@ import { notifyDataChanged } from "./sync/data-bus";
 
 /** Anchored profile values for the sample dataset. */
 export function getDemoProfile(now: number = Date.now()): PersonalInfo {
+  // Birthdate ~32 years back so the derived age matches the legacy `age: 32`
+  // fallback and showcases the self-updating age on the Profile page.
+  const dob = new Date(now);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const birthDate = `${dob.getFullYear() - 32}-${pad(dob.getMonth() + 1)}-${pad(dob.getDate())}`;
   return {
     displayName: "Sample",
     gender: "female",
     age: 32,
+    birthDate,
     weight: 68,
     height: 168,
     activityLevel: "moderate",
@@ -51,7 +62,45 @@ export function getDemoProfile(now: number = Date.now()): PersonalInfo {
       protocol: "16:8",
       fastStartedAt: now - 10 * 3600_000,
     },
+    // Sample goal-phase plan — a 12-week cut ~3 weeks in, then a 2-week diet
+    // break. Drives the calorie target + active-phase banner for the Pro
+    // (mocked) verification; free users see the planner's upgrade prompt.
+    goalPhases: demoGoalPhases(now),
   };
+}
+
+/** A cut → diet break → resumed cut, with the **diet break active now** — so
+ *  the demo's phase-driven target (maintenance) reads visibly higher than the
+ *  cutter's linear goal, showing phases at work. Deterministic ids so the demo
+ *  round-trips cleanly. */
+function demoGoalPhases(now: number): GoalPhase[] {
+  const d = new Date(now);
+  const p = (n: number) => String(n).padStart(2, "0");
+  const today = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  const rate = round1(68 * 0.0066);
+  return [
+    {
+      id: "demo-cut-1",
+      kind: "cut",
+      startDate: subtractDays(today, 70), // 10 wks ago; 9-wk cut → ends 1 wk ago
+      durationWeeks: 9,
+      weeklyRateKg: rate,
+    },
+    {
+      id: "demo-break",
+      kind: "dietBreak",
+      startDate: subtractDays(today, 7), // active now (2-wk break)
+      durationWeeks: 2,
+      weeklyRateKg: 0,
+    },
+    {
+      id: "demo-cut-2",
+      kind: "cut",
+      startDate: subtractDays(today, -7), // resumes in 1 wk
+      durationWeeks: 8,
+      weeklyRateKg: rate,
+    },
+  ];
 }
 
 /** Local hour-of-day each demo meal slot is "eaten" at, as a decimal

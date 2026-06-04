@@ -36,7 +36,7 @@ export function FastingChip({
       {fastingPhase ? (
         <>
           <Hourglass
-            className="h-3 w-3 text-indigo-500"
+            className="h-3 w-3 text-brand"
             aria-hidden
           />
           <span className="font-mono tabular-nums">

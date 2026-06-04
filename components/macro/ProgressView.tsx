@@ -904,7 +904,7 @@ function EatingWindowSection({
         <div className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between sm:gap-3">
           <div className="min-w-0">
             <h3 className="flex items-center gap-1.5 text-sm font-semibold tracking-tight">
-              <Hourglass className="h-4 w-4 text-indigo-500" />
+              <Hourglass className="h-4 w-4 text-brand" />
               Eating window
             </h3>
             <p className="mt-0.5 text-xs text-muted-foreground">
@@ -924,7 +924,7 @@ function EatingWindowSection({
                 </span>
               </p>
               {streak.current > 0 && (
-                <p className="font-mono text-xs tabular-nums text-indigo-600 dark:text-indigo-400">
+                <p className="font-mono text-xs tabular-nums text-brand">
                   {streak.current}d on protocol
                 </p>
               )}

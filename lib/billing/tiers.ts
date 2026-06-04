@@ -128,4 +128,10 @@ export const FEATURES = {
    *  card would be. The enqueue + cron routes re-check this
    *  server-side so a downgrade stops the enrichment. */
   canTrackMicronutrients: (tier: Tier) => tierAtLeast(tier, "pro"),
+  /** Goal-phase plans (cut → diet break → maintenance → lean bulk) that
+   *  drive the calorie/macro target by date. Pro only — depth for the
+   *  precise audience. Free/Plus users see an upgrade prompt where the
+   *  planner would be, and their target stays on the single linear goal
+   *  (the target injection re-checks the tier, so a downgrade reverts). */
+  canUseGoalPhases: (tier: Tier) => tierAtLeast(tier, "pro"),
 };

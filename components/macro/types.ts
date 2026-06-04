@@ -244,12 +244,40 @@ export const CUISINES: readonly Cuisine[] = [
  * goal-aware split. */
 export type MacroSplit = { protein: number; carbs: number; fat: number };
 
+/** The kind of a goal phase. Maps to a `goal` direction in `computeMacros`:
+ * `cut` → lose, `leanBulk` → gain, `maintenance`/`dietBreak` → maintain. The
+ * `dietBreak` is a planned spell at maintenance to relieve a long deficit. */
+export type GoalPhaseKind = "cut" | "dietBreak" | "maintenance" | "leanBulk";
+
+/** One phase in a goal-phase plan. Ordered by `startDate`; the phase whose
+ * `[startDate, startDate + durationWeeks*7)` window contains today drives the
+ * target. `weeklyRateKg` is sign-less (the kind sets the direction) and only
+ * meaningful for `cut`/`leanBulk`; it respects the same ≤1%-bodyweight cap as
+ * `PersonalInfo.weeklyRateKg`. */
+export type GoalPhase = {
+  /** Client-minted id (stable across edits + sync). */
+  id: string;
+  kind: GoalPhaseKind;
+  /** Local `YYYY-MM-DD` the phase starts. */
+  startDate: string;
+  durationWeeks: number;
+  weeklyRateKg: number;
+  /** Optional free-text label ("off-season", "holiday"). */
+  notes?: string;
+};
+
 export type PersonalInfo = {
   /** Optional display name shown in the sidebar instead of the email
    * prefix. Pure UX nicety - has no effect on calculations or AI. */
   displayName?: string | null;
   gender: Gender;
   age: number;
+  /** Optional birthdate (`YYYY-MM-DD`). When set, the user's age is derived
+   * from it and stays current automatically (so the calorie target shifts
+   * silently on a birthday) — see [lib/age.ts](../../lib/age.ts)
+   * `effectiveAge`. The `age` above remains the fallback for profiles from
+   * before this field existed. Rides the profile blob — no migration. */
+  birthDate?: string;
   weight: number;
   height: number;
   activityLevel: "sedentary" | "light" | "moderate" | "active" | "veryActive";
@@ -299,6 +327,13 @@ export type PersonalInfo = {
     customFastingHours?: number;
     fastStartedAt?: number | null;
   };
+  /** Ordered goal-phase plan (cut → diet break → maintenance → lean bulk).
+   * The phase active on today's date overrides `goal` + `weeklyRateKg` in
+   * `computeMacros`, so the calorie/macro target shifts as phases transition.
+   * A **Pro** feature — see [lib/goal-phases.ts](../../lib/goal-phases.ts);
+   * when absent / not Pro / no phase active, the linear `goal` above is the
+   * target. Rides the profile blob — no migration, like `fasting`. */
+  goalPhases?: GoalPhase[];
   /** Display preference for weight + height: metric (kg / cm) or
    *  imperial (lb / ft+in). Storage stays in kg / cm regardless;
    *  this only governs how values are presented and entered. See
