@@ -25,6 +25,16 @@ import {
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { Pencil, Plus, Sparkles, Target, Trash2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "../ui/alert-dialog";
 import { Button } from "../ui/button";
 import {
   Select,
@@ -72,6 +82,7 @@ export function GoalPhasesPlanner({
   units,
   today,
   goal,
+  targetForPhases,
 }: {
   phases: GoalPhase[] | undefined;
   onChange: (phases: GoalPhase[]) => void;
@@ -79,12 +90,22 @@ export function GoalPhasesPlanner({
   units: UnitSystem;
   today: string;
   goal: PersonalInfo["goal"];
+  /** Today's calorie target for a hypothetical phase list (the parent runs the
+   *  real effectiveGoal → computeMacros pipeline). Powers the rise warning. */
+  targetForPhases: (phases: GoalPhase[]) => number;
 }) {
   const { state } = useAiUsage();
   const isPro =
     state.status === "ok" && FEATURES.canUseGoalPhases(state.data.tier);
   const tierResolved = state.status === "ok" || state.status === "anon";
   const [editing, setEditing] = useState<GoalPhase | null>(null);
+  // A pending change held back for confirmation because it would raise today's
+  // target while a cut is active (see `applyMaybeWarn`). `null` = no warning.
+  const [pendingRaise, setPendingRaise] = useState<{
+    phases: GoalPhase[];
+    before: number;
+    after: number;
+  } | null>(null);
 
   if (!tierResolved) return null;
   if (!isPro) return <GoalPhasesUpgradeCard />;
@@ -92,12 +113,32 @@ export function GoalPhasesPlanner({
   const list = sortPhases(phases ?? []);
   const active = activePhase(list, today);
 
+  const normalizeAll = (next: GoalPhase[]) =>
+    sortPhases(next.map((p) => normalizePhase(p, weightKg)));
+
   function commit(next: GoalPhase[]) {
-    onChange(sortPhases(next.map((p) => normalizePhase(p, weightKg))));
+    onChange(normalizeAll(next));
   }
+
+  // Apply `next`, but first intercept the counterintuitive case: a change that
+  // RAISES today's calorie target while a *cut* is the phase active today (e.g.
+  // a gentler cut than your current deficit, so "starting a cut" reads as more
+  // calories). Confirm before committing. Everything else — an intentional lean
+  // bulk, a future phase, a delete — applies straight through.
+  function applyMaybeWarn(next: GoalPhase[]) {
+    const norm = normalizeAll(next);
+    const before = targetForPhases(list);
+    const after = targetForPhases(norm);
+    if (after > before && activePhase(norm, today)?.kind === "cut") {
+      setPendingRaise({ phases: norm, before, after });
+    } else {
+      onChange(norm);
+    }
+  }
+
   function upsert(phase: GoalPhase) {
     const norm = normalizePhase(phase, weightKg);
-    commit(
+    applyMaybeWarn(
       list.some((p) => p.id === norm.id)
         ? list.map((p) => (p.id === norm.id ? norm : p))
         : [...list, norm],
@@ -129,7 +170,7 @@ export function GoalPhasesPlanner({
                 variant="outline"
                 size="sm"
                 className="h-8"
-                onClick={() => commit(presetCut(today, weightKg))}
+                onClick={() => applyMaybeWarn(presetCut(today, weightKg))}
               >
                 Start a cut
               </Button>
@@ -138,7 +179,9 @@ export function GoalPhasesPlanner({
                 variant="outline"
                 size="sm"
                 className="h-8"
-                onClick={() => commit(presetCutThenBreak(today, weightKg))}
+                onClick={() =>
+                  applyMaybeWarn(presetCutThenBreak(today, weightKg))
+                }
               >
                 12-wk cut → 2-wk break
               </Button>
@@ -147,7 +190,7 @@ export function GoalPhasesPlanner({
                 variant="outline"
                 size="sm"
                 className="h-8"
-                onClick={() => commit(presetLeanBulk(today, weightKg))}
+                onClick={() => applyMaybeWarn(presetLeanBulk(today, weightKg))}
               >
                 Lean bulk
               </Button>
@@ -245,6 +288,46 @@ export function GoalPhasesPlanner({
           />
         )}
       </div>
+
+      <AlertDialog
+        open={pendingRaise !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingRaise(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>This raises today&apos;s target</AlertDialogTitle>
+            <AlertDialogDescription>
+              Applying this sets today&apos;s target to{" "}
+              <span className="font-medium text-foreground">
+                {pendingRaise?.after.toLocaleString()} kcal
+              </span>{" "}
+              — up{" "}
+              {pendingRaise
+                ? (pendingRaise.after - pendingRaise.before).toLocaleString()
+                : 0}{" "}
+              kcal from your current{" "}
+              <span className="font-medium text-foreground">
+                {pendingRaise?.before.toLocaleString()} kcal
+              </span>
+              . A cut usually lowers calories — it&apos;s higher here because
+              your current target already runs a steeper deficit.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep current</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingRaise) onChange(pendingRaise.phases);
+                setPendingRaise(null);
+              }}
+            >
+              Apply anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>
   );
 }
