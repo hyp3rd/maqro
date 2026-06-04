@@ -79,7 +79,6 @@ import { ImportPreviewDialog } from "./ImportPreviewDialog";
 import { MfaSection } from "./MfaSection";
 import { PasskeysSection } from "./PasskeysSection";
 import { PassphraseDialog } from "./PassphraseDialog";
-import { SavedReportsList } from "./SavedReportsList";
 import { SignedInDevicesSection } from "./SignedInDevicesSection";
 import { TrustedDevicesSection } from "./TrustedDevicesSection";
 import { UpgradeDialog } from "./UpgradeDialog";
@@ -606,8 +605,6 @@ export function SettingsView({
         onSubmit={submitPassphrase}
         onCancel={cancelPassphrase}
       />
-
-      {user && <SavedReportsList />}
 
       {user && <BillingSection />}
 

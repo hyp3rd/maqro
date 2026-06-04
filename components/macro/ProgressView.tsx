@@ -108,6 +108,10 @@ type Props = {
    *  — closes the adaptive-TDEE loop in one tap (writes `manualTdee` on
    *  the profile, which re-derives every target). */
   onApplyTdee: (tdee: number) => void;
+  /** Sync the profile's current weight to a just-logged weigh-in (today only),
+   *  so the Profile body card and every weight-based target track the latest
+   *  reading instead of the stale onboarding value. */
+  onWeightLogged?: (kg: number) => void;
   /** Effective daily water goal (ml) — already resolved from the override
    *  or the weight-based default by the caller. Drawn as the reference line
    *  on the hydration chart. */
@@ -150,6 +154,7 @@ export function ProgressView({
   heightCm,
   units,
   onApplyTdee,
+  onWeightLogged,
   waterGoalMl,
   waterGoalOverride,
   onSetWaterGoal,
@@ -276,6 +281,7 @@ export function ProgressView({
       />
       <WeighInForm
         onSaved={refresh}
+        onWeightLogged={onWeightLogged}
         units={units}
       />
       <BodyMeasurementsSection
@@ -1156,9 +1162,11 @@ function HydrationSection({
 
 function WeighInForm({
   onSaved,
+  onWeightLogged,
   units,
 }: {
   onSaved: () => void;
+  onWeightLogged?: (kg: number) => void;
   units: "metric" | "imperial";
 }) {
   // SSR-safe "today": `useToday()` yields "" on the server and during
@@ -1192,6 +1200,11 @@ function WeighInForm({
     setSaving(true);
     try {
       await saveWeightEntry(date, kg);
+      // A weigh-in for *today* is the user's current weight — push it onto the
+      // profile so the Body card + every weight-based target track it (the
+      // profile→weightHistory auto-capture handles the reverse direction). A
+      // back-dated entry is historical, so it must not move the current weight.
+      if (date === today) onWeightLogged?.(kg);
       reportStorageOk();
       bumpPending();
       setRaw("");

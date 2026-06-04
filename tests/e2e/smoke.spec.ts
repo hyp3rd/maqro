@@ -57,6 +57,8 @@ test.describe("maqro happy path", () => {
   }) => {
     await page.goto("/app");
     await page.getByRole("button", { name: "Profile", exact: true }).click();
+    // BP + body measurements live behind the "My measurements" tile now.
+    await page.getByRole("button", { name: /My measurements/ }).click();
 
     await expect(
       page.getByRole("heading", { name: "Blood pressure" }),
@@ -76,6 +78,19 @@ test.describe("maqro happy path", () => {
     await expect(
       page.getByRole("heading", { name: "Body measurements" }),
     ).toBeVisible();
+  });
+
+  test("logging a weigh-in updates the Profile weight", async ({ page }) => {
+    await page.goto("/app");
+    // Log a today weigh-in in Progress.
+    await page.getByRole("button", { name: "Progress", exact: true }).click();
+    await page.getByLabel("Weight (kg)", { exact: false }).fill("72.3");
+    await page.getByRole("button", { name: /^Save$/ }).click();
+    await page.waitForTimeout(900); // let the profile patch + debounce settle
+
+    // The Profile body card now reflects the logged weight (not the default).
+    await page.getByRole("button", { name: "Profile", exact: true }).click();
+    await expect(page.getByLabel("Weight (kg)")).toHaveValue("72.3");
   });
 
   test("food search shows the Built-in source badge", async ({ page }) => {
