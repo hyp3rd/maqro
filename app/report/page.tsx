@@ -1,20 +1,39 @@
 "use client";
 
+// Type-only import: erased at build time, so react-pdf (and its WASM) never
+// reach the SSR bundle — the implementation is loaded via dynamic import().
+import type { ReportPdfModel } from "@/components/macro/ReportPdfDocument";
 import type { PersonalInfo } from "@/components/macro/types";
 import { MiniLineChart } from "@/components/shell/MiniLineChart";
 import { Button } from "@/components/ui/button";
 import { effectiveAge } from "@/lib/age";
+import {
+  BLOOD_PRESSURE_LABELS,
+  bloodPressureCategory,
+} from "@/lib/blood-pressure";
 import { bodyFatCategory, estimateBodyFat } from "@/lib/body-fat";
 import {
   getProfile,
+  listBloodPressure,
   listBodyMeasurements,
   listDailyLogs,
   listMicronutrientProfiles,
+  listWaterIntake,
   listWeightEntries,
+  type BloodPressure,
   type BodyMeasurement,
   type DailyLog,
+  type WaterIntake,
   type WeightEntry,
 } from "@/lib/db";
+import {
+  DEFAULT_GRACE_MIN,
+  eatingHours,
+  eatingWindowForDay,
+  fastingStreak,
+  protocolHours,
+} from "@/lib/fasting";
+import { waterGoalMl } from "@/lib/hydration";
 import { computeMacros } from "@/lib/macros";
 import {
   averageMicronutrients,
@@ -36,11 +55,11 @@ import {
   recalibrateTdee,
   type AdaptiveTdee,
 } from "@/lib/trends";
-import { cmToInches, kgToDisplay } from "@/lib/units";
+import { cmToInches, kgToDisplay, mlToFlOz } from "@/lib/units";
 import { APP_VERSION } from "@/lib/version";
 import { computeWeeklyRecap, type WeeklyRecap } from "@/lib/weekly-recap";
 import { Suspense, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Loader2, Printer } from "lucide-react";
+import { ArrowLeft, FileDown, Loader2, Printer } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
@@ -93,6 +112,8 @@ function ReportClient() {
         weights: WeightEntry[];
         logs: DailyLog[];
         measurements: BodyMeasurement[];
+        bloodPressure: BloodPressure[];
+        water: WaterIntake[];
         micronutrientProfiles: MicronutrientProfile[];
       }
     | { kind: "error"; message: string }
@@ -106,18 +127,32 @@ function ReportClient() {
       listDailyLogs(),
       listBodyMeasurements(),
       listMicronutrientProfiles(),
+      listBloodPressure(),
+      listWaterIntake(),
     ])
-      .then(([profile, weights, logs, measurements, micronutrientProfiles]) => {
-        if (cancelled) return;
-        setState({
-          kind: "ok",
+      .then(
+        ([
           profile,
-          weights: weights ?? [],
-          logs: logs ?? [],
-          measurements: measurements ?? [],
-          micronutrientProfiles: micronutrientProfiles ?? [],
-        });
-      })
+          weights,
+          logs,
+          measurements,
+          micronutrientProfiles,
+          bloodPressure,
+          water,
+        ]) => {
+          if (cancelled) return;
+          setState({
+            kind: "ok",
+            profile,
+            weights: weights ?? [],
+            logs: logs ?? [],
+            measurements: measurements ?? [],
+            micronutrientProfiles: micronutrientProfiles ?? [],
+            bloodPressure: bloodPressure ?? [],
+            water: water ?? [],
+          });
+        },
+      )
       .catch((err) => {
         if (cancelled) return;
         setState({
@@ -151,6 +186,8 @@ function ReportClient() {
       weights={state.weights}
       logs={state.logs}
       measurements={state.measurements}
+      bloodPressure={state.bloodPressure}
+      water={state.water}
       micronutrientProfiles={state.micronutrientProfiles}
     />
   );
@@ -165,6 +202,8 @@ function ReportBody({
   weights,
   logs,
   measurements,
+  bloodPressure,
+  water,
   micronutrientProfiles,
 }: {
   title: string;
@@ -175,6 +214,8 @@ function ReportBody({
   weights: WeightEntry[];
   logs: DailyLog[];
   measurements: BodyMeasurement[];
+  bloodPressure: BloodPressure[];
+  water: WaterIntake[];
   micronutrientProfiles: MicronutrientProfile[];
 }) {
   const today = todayKey();
@@ -195,6 +236,14 @@ function ReportBody({
   const measurementsWindow = useMemo(
     () => measurements.filter((m) => m.date >= cutoffDate),
     [measurements, cutoffDate],
+  );
+  const bloodPressureWindow = useMemo(
+    () => bloodPressure.filter((b) => b.date >= cutoffDate),
+    [bloodPressure, cutoffDate],
+  );
+  const waterWindow = useMemo(
+    () => water.filter((w) => w.date >= cutoffDate),
+    [water, cutoffDate],
   );
 
   // Average micronutrient intake over the windowed logs, joined to the
@@ -261,6 +310,255 @@ function ReportBody({
   const unitLabel = units === "imperial" ? "lb" : "kg";
   const cmUnitLabel = units === "imperial" ? "in" : "cm";
 
+  // Assemble the PDF model from the same computed values the on-screen report
+  // renders — formatting to display strings here so the PDF component stays
+  // pure presentation. Built lazily inside the handler (uses `new Date`).
+  function buildPdfModel(): ReportPdfModel {
+    const adherencePct =
+      recap.daysLogged > 0
+        ? Math.round((recap.adherenceDays / recap.daysLogged) * 100)
+        : 0;
+    const summary = {
+      stats: [
+        {
+          label: "Current streak",
+          value: `${streak.current} day${streak.current === 1 ? "" : "s"}`,
+          sub:
+            streak.longest > streak.current
+              ? `Best: ${streak.longest}`
+              : "All-time best",
+        },
+        {
+          label: "Last 7 days",
+          value: `${recap.daysLogged} / 7`,
+          sub:
+            targetCalories > 0 && recap.daysLogged > 0
+              ? `${adherencePct}% within ±10%`
+              : "no target context",
+        },
+        {
+          label: "Avg per logged day",
+          value:
+            recap.daysLogged > 0
+              ? `${Math.round(recap.avg.calories)} kcal`
+              : "—",
+          sub:
+            recap.daysLogged > 0
+              ? `P${Math.round(recap.avg.protein)} · C${Math.round(recap.avg.carbs)} · F${Math.round(recap.avg.fat)}`
+              : undefined,
+        },
+      ],
+      weightDelta:
+        recap.weightDeltaKg !== null
+          ? `${recap.weightDeltaKg > 0 ? "+" : ""}${kgToDisplay(recap.weightDeltaKg, units).toFixed(1)} ${unitLabel}`
+          : null,
+    };
+
+    const wFirst = weightsWindow[0];
+    const wLast = weightsWindow[weightsWindow.length - 1];
+    const weight =
+      wFirst && wLast
+        ? [
+            {
+              label: "Latest",
+              value: `${kgToDisplay(wLast.kg, units).toFixed(1)} ${unitLabel}`,
+            },
+            {
+              label: "Change",
+              value: `${wLast.kg - wFirst.kg > 0 ? "+" : ""}${kgToDisplay(wLast.kg - wFirst.kg, units).toFixed(1)} ${unitLabel}`,
+              sub: `since ${shortDateLabel(wFirst.date)}`,
+            },
+            { label: "Weigh-ins", value: String(weightsWindow.length) },
+          ]
+        : [{ label: "Weight", value: "—", sub: "no weigh-ins in this window" }];
+
+    const mLast = measurementsWindow[measurementsWindow.length - 1];
+    const bodyType: "male" | "female" | null =
+      profile?.gender === "male" || profile?.gender === "female"
+        ? profile.gender
+        : null;
+    const lenDisplay = (cm: number | undefined) =>
+      cm === undefined
+        ? "—"
+        : `${(units === "imperial" ? cmToInches(cm) : cm).toFixed(1)} ${cmUnitLabel}`;
+    const bf =
+      mLast && bodyType && profile
+        ? estimateBodyFat({
+            bodyType,
+            heightCm: profile.height,
+            waistCm: mLast.waistCm ?? 0,
+            neckCm: mLast.neckCm ?? 0,
+            hipCm: mLast.hipsCm,
+          })
+        : null;
+    const body = mLast
+      ? {
+          stats: [
+            { label: "Waist", value: lenDisplay(mLast.waistCm) },
+            { label: "Neck", value: lenDisplay(mLast.neckCm) },
+            { label: "Hips", value: lenDisplay(mLast.hipsCm) },
+            {
+              label: "Body fat",
+              value: bf !== null ? `${bf.toFixed(1)}%` : "—",
+              sub:
+                bf !== null && bodyType
+                  ? bodyFatCategory(bf, bodyType)
+                  : undefined,
+            },
+          ],
+          notes: mLast.notes ?? null,
+        }
+      : {
+          stats: [{ label: "Body", value: "—", sub: "no measurements" }],
+          notes: null,
+        };
+
+    const bpLast = bloodPressureWindow[bloodPressureWindow.length - 1];
+    const bloodPressure = bpLast
+      ? {
+          stats: [
+            {
+              label: "Latest",
+              value: `${bpLast.systolic}/${bpLast.diastolic}`,
+              sub: `${BLOOD_PRESSURE_LABELS[bloodPressureCategory(bpLast.systolic, bpLast.diastolic)]} · ${shortDateLabel(bpLast.date)}`,
+            },
+            {
+              label: "Average",
+              value: `${Math.round(bloodPressureWindow.reduce((s, e) => s + e.systolic, 0) / bloodPressureWindow.length)}/${Math.round(bloodPressureWindow.reduce((s, e) => s + e.diastolic, 0) / bloodPressureWindow.length)}`,
+              sub: `${bloodPressureWindow.length} reading${bloodPressureWindow.length === 1 ? "" : "s"}`,
+            },
+          ],
+          rows: [...bloodPressureWindow]
+            .reverse()
+            .slice(0, 14)
+            .map((e) => ({
+              date: shortDateLabel(e.date),
+              reading: `${e.systolic}/${e.diastolic}`,
+              pulse: e.pulse != null ? String(e.pulse) : "—",
+              category:
+                BLOOD_PRESSURE_LABELS[
+                  bloodPressureCategory(e.systolic, e.diastolic)
+                ],
+            })),
+        }
+      : {
+          stats: [{ label: "Blood pressure", value: "—", sub: "no readings" }],
+          rows: [],
+        };
+
+    const imperial = units === "imperial";
+    const waterUnit = imperial ? "fl oz" : "ml";
+    const wDisp = (ml: number) => (imperial ? Math.round(mlToFlOz(ml)) : ml);
+    const goalMl = profile ? waterGoalMl(profile) : null;
+    const avgMl =
+      waterWindow.length > 0
+        ? Math.round(
+            waterWindow.reduce((s, e) => s + e.ml, 0) / waterWindow.length,
+          )
+        : null;
+    const hydration =
+      avgMl !== null
+        ? [
+            {
+              label: "Avg per day",
+              value: `${wDisp(avgMl)} ${waterUnit}`,
+              sub: `${waterWindow.length} day${waterWindow.length === 1 ? "" : "s"} logged`,
+            },
+            ...(goalMl
+              ? [
+                  {
+                    label: "vs goal",
+                    value: `${Math.round((avgMl / goalMl) * 100)}%`,
+                    sub: `${wDisp(goalMl)} ${waterUnit} goal`,
+                  },
+                ]
+              : []),
+          ]
+        : [{ label: "Hydration", value: "—", sub: "no water logged" }];
+
+    const fastingCfg = profile?.fasting;
+    let fasting: ReportPdfModel["fasting"];
+    if (!fastingCfg?.enabled) {
+      fasting = { enabled: false, stats: [] };
+    } else {
+      const fastH = protocolHours(fastingCfg);
+      const eatH = eatingHours(fastingCfg);
+      const fStreak = fastingStreak(logsWindow, today, eatH);
+      const targetMin = eatH * 60 + DEFAULT_GRACE_MIN;
+      let logged = 0;
+      let onProtocol = 0;
+      for (const log of logsWindow) {
+        const w = eatingWindowForDay(log.meals);
+        if (!w) continue;
+        logged++;
+        if (w.lengthMin <= targetMin) onProtocol++;
+      }
+      fasting = {
+        enabled: true,
+        stats: [
+          {
+            label: "Protocol",
+            value:
+              fastingCfg.protocol === "custom"
+                ? `${fastH}:${24 - fastH}`
+                : fastingCfg.protocol,
+            sub: `${fastH}h fast · ${eatH}h eat`,
+          },
+          {
+            label: "Current streak",
+            value: `${fStreak.current} day${fStreak.current === 1 ? "" : "s"}`,
+            sub: `Best: ${fStreak.longest}`,
+          },
+          {
+            label: "On-protocol days",
+            value: `${onProtocol} / ${logged}`,
+            sub: "timed days in window",
+          },
+        ],
+      };
+    }
+
+    return {
+      title,
+      note,
+      days,
+      generatedOn: new Date().toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      }),
+      sections: Array.from(enabled),
+      summary,
+      weight,
+      body,
+      bloodPressure,
+      hydration,
+      fasting,
+    };
+  }
+
+  const [pdfBusy, setPdfBusy] = useState(false);
+  // Generate a vector PDF via @react-pdf/renderer, loaded lazily (it pulls a
+  // WASM layout engine + browser APIs, so it must stay out of the SSR bundle).
+  async function downloadVectorPdf() {
+    setPdfBusy(true);
+    try {
+      const { renderReportPdf } =
+        await import("@/components/macro/ReportPdfDocument");
+      const blob = await renderReportPdf(buildPdfModel());
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "maqro-report.pdf";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    } finally {
+      setPdfBusy(false);
+    }
+  }
+
   return (
     <main className="mx-auto max-w-3xl px-safe-or-6 py-8 print:max-w-none print:px-0 print:py-0">
       {/* Toolbar. `print-hide` keeps it out of the PDF. The user
@@ -276,15 +574,28 @@ function ReportBody({
           <ArrowLeft className="h-3.5 w-3.5" />
           Back to app
         </Link>
-        <Button
-          type="button"
-          size="sm"
-          onClick={() => window.print()}
-          className="gap-1.5"
-        >
-          <Printer className="h-3.5 w-3.5" />
-          Save as PDF
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={downloadVectorPdf}
+            disabled={pdfBusy}
+            className="gap-1.5"
+          >
+            <FileDown className="h-3.5 w-3.5" />
+            {pdfBusy ? "Building…" : "Download PDF"}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => window.print()}
+            className="gap-1.5"
+          >
+            <Printer className="h-3.5 w-3.5" />
+            Save as PDF
+          </Button>
+        </div>
       </div>
 
       {/* Cover header — always rendered. Title + generated-on +
@@ -371,6 +682,26 @@ function ReportBody({
             profile={profile}
             cmUnitLabel={cmUnitLabel}
             units={units}
+          />
+        )}
+
+        {enabled.has("bloodPressure") && (
+          <BloodPressureReportSection entries={bloodPressureWindow} />
+        )}
+
+        {enabled.has("water") && (
+          <WaterReportSection
+            entries={waterWindow}
+            goalMl={profile ? waterGoalMl(profile) : null}
+            units={units}
+          />
+        )}
+
+        {enabled.has("fasting") && (
+          <FastingReportSection
+            logs={logsWindow}
+            profile={profile}
+            today={today}
           />
         )}
 
@@ -716,6 +1047,191 @@ function CalorieSection({
           targetCalories ? `${targetCalories} kcal target` : undefined
         }
       />
+    </ReportSection>
+  );
+}
+
+function BloodPressureReportSection({ entries }: { entries: BloodPressure[] }) {
+  if (entries.length === 0) {
+    return (
+      <ReportSection title="Blood pressure">
+        <p className="text-sm text-muted-foreground">
+          No readings in this window.
+        </p>
+      </ReportSection>
+    );
+  }
+  const latest = entries[entries.length - 1];
+  if (!latest) return null;
+  const avgSys = Math.round(
+    entries.reduce((s, e) => s + e.systolic, 0) / entries.length,
+  );
+  const avgDia = Math.round(
+    entries.reduce((s, e) => s + e.diastolic, 0) / entries.length,
+  );
+  const latestCat = bloodPressureCategory(latest.systolic, latest.diastolic);
+  // Most-recent first, capped so the table stays on a page.
+  const rows = [...entries].reverse().slice(0, 14);
+  return (
+    <ReportSection title="Blood pressure">
+      <dl className="mb-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+        <Stat
+          label="Latest"
+          value={`${latest.systolic}/${latest.diastolic}`}
+          sub={`${BLOOD_PRESSURE_LABELS[latestCat]} · ${shortDateLabel(latest.date)}`}
+        />
+        <Stat
+          label="Average"
+          value={`${avgSys}/${avgDia}`}
+          sub={`${entries.length} reading${entries.length === 1 ? "" : "s"}`}
+        />
+      </dl>
+      <table className="w-full text-left text-xs">
+        <thead>
+          <tr className="border-b border-border/60 text-[10px] uppercase tracking-wider text-muted-foreground print:text-black">
+            <th className="py-1 font-medium">Date</th>
+            <th className="py-1 font-medium">mmHg</th>
+            <th className="py-1 font-medium">Pulse</th>
+            <th className="py-1 font-medium">Category</th>
+          </tr>
+        </thead>
+        <tbody className="font-mono tabular-nums">
+          {rows.map((e) => (
+            <tr
+              key={e.date}
+              className="border-b border-border/30"
+            >
+              <td className="py-1">{shortDateLabel(e.date)}</td>
+              <td className="py-1">
+                {e.systolic}/{e.diastolic}
+              </td>
+              <td className="py-1">{e.pulse ?? "—"}</td>
+              <td className="py-1 font-sans">
+                {
+                  BLOOD_PRESSURE_LABELS[
+                    bloodPressureCategory(e.systolic, e.diastolic)
+                  ]
+                }
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </ReportSection>
+  );
+}
+
+function WaterReportSection({
+  entries,
+  goalMl,
+  units,
+}: {
+  entries: WaterIntake[];
+  goalMl: number | null;
+  units: "metric" | "imperial";
+}) {
+  if (entries.length === 0) {
+    return (
+      <ReportSection title="Hydration">
+        <p className="text-sm text-muted-foreground">
+          No water logged in this window.
+        </p>
+      </ReportSection>
+    );
+  }
+  const imperial = units === "imperial";
+  const unit = imperial ? "fl oz" : "ml";
+  const toDisplay = (ml: number) => (imperial ? Math.round(mlToFlOz(ml)) : ml);
+  const avgMl = Math.round(
+    entries.reduce((s, e) => s + e.ml, 0) / entries.length,
+  );
+  const goalPct =
+    goalMl && goalMl > 0 ? Math.round((avgMl / goalMl) * 100) : null;
+  const points = entries.map((e) => ({
+    x: Math.floor(new Date(e.date).getTime() / 86_400_000),
+    y: toDisplay(e.ml),
+    label: shortDateLabel(e.date),
+  }));
+  return (
+    <ReportSection title="Hydration">
+      <dl className="mb-2 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+        <Stat
+          label="Avg per day"
+          value={`${toDisplay(avgMl)} ${unit}`}
+          sub={`${entries.length} day${entries.length === 1 ? "" : "s"} logged`}
+        />
+        {goalMl && (
+          <Stat
+            label="vs goal"
+            value={goalPct !== null ? `${goalPct}%` : "—"}
+            sub={`${toDisplay(goalMl)} ${unit} goal`}
+          />
+        )}
+      </dl>
+      <MiniLineChart
+        data={points}
+        height={200}
+        targetY={goalMl ? toDisplay(goalMl) : undefined}
+        targetLabel={goalMl ? `${toDisplay(goalMl)} ${unit} goal` : undefined}
+        yUnit={` ${unit}`}
+      />
+    </ReportSection>
+  );
+}
+
+function FastingReportSection({
+  logs,
+  profile,
+  today,
+}: {
+  logs: DailyLog[];
+  profile: PersonalInfo | null;
+  today: string;
+}) {
+  const fasting = profile?.fasting;
+  if (!fasting?.enabled) {
+    return (
+      <ReportSection title="Intermittent fasting">
+        <p className="text-sm text-muted-foreground">
+          Intermittent fasting isn&apos;t enabled.
+        </p>
+      </ReportSection>
+    );
+  }
+  const fastH = protocolHours(fasting);
+  const eatH = eatingHours(fasting);
+  const streak = fastingStreak(logs, today, eatH);
+  // Window adherence: timed days whose eating window fits the protocol.
+  const targetMin = eatH * 60 + DEFAULT_GRACE_MIN;
+  let logged = 0;
+  let onProtocol = 0;
+  for (const log of logs) {
+    const w = eatingWindowForDay(log.meals);
+    if (!w) continue;
+    logged++;
+    if (w.lengthMin <= targetMin) onProtocol++;
+  }
+  const label =
+    fasting.protocol === "custom" ? `${fastH}:${24 - fastH}` : fasting.protocol;
+  return (
+    <ReportSection title="Intermittent fasting">
+      <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+        <Stat
+          label="Protocol"
+          value={label}
+          sub={`${fastH}h fast · ${eatH}h eat`}
+        />
+        <Stat
+          label="Current streak"
+          value={`${streak.current} day${streak.current === 1 ? "" : "s"}`}
+          sub={`Best: ${streak.longest}`}
+        />
+        <Stat
+          label="On-protocol days"
+          value={`${onProtocol} / ${logged}`}
+          sub="timed days in window"
+        />
+      </dl>
     </ReportSection>
   );
 }

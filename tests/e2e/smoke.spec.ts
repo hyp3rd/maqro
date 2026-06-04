@@ -351,4 +351,32 @@ test.describe("maqro happy path", () => {
       timeout: 5_000,
     });
   });
+
+  test("Report page renders the blood-pressure, hydration and fasting sections", async ({
+    page,
+  }) => {
+    await page.goto(
+      "/report?days=60&sections=bloodPressure,water,fasting&title=Test%20report",
+    );
+    await expect(
+      page.getByRole("heading", { name: "Blood pressure" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Hydration" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Intermittent fasting" }),
+    ).toBeVisible();
+  });
+
+  test("Report page generates a vector PDF download", async ({ page }) => {
+    await page.goto("/report?days=60&sections=summary&title=Test%20report");
+    // @react-pdf/renderer (WASM layout engine) renders the blob in-browser;
+    // a download firing proves it loaded + generated under Turbopack.
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      page.getByRole("button", { name: "Download PDF" }).click(),
+    ]);
+    expect(download.suggestedFilename()).toBe("maqro-report.pdf");
+  });
 });

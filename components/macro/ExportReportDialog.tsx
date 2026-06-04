@@ -47,6 +47,9 @@ export const REPORT_SECTIONS = {
   trends: "Trends (plateau + TDEE calibration advisories)",
   weight: "Weight chart + delta",
   body: "Body measurements + body-fat estimate",
+  bloodPressure: "Blood pressure (readings + averages)",
+  water: "Hydration (daily water vs goal)",
+  fasting: "Intermittent fasting (protocol, streak, adherence)",
   calories: "Calorie adherence chart",
   micronutrients: "Micronutrients (vitamins, minerals, fiber vs DV)",
 } as const;
@@ -57,6 +60,9 @@ const DEFAULT_SECTIONS: SectionKey[] = [
   "trends",
   "weight",
   "body",
+  "bloodPressure",
+  "water",
+  "fasting",
   "calories",
   "micronutrients",
 ];
