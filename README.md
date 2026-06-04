@@ -303,12 +303,14 @@ feature it backs - the app stays runnable on a bare-minimum config.
    SUPABASE_SECRET_KEY=sb_secret_…
    ```
 
-1. **Apply schema migrations** via the bundled Supabase CLI:
+1. **Apply schema migrations** with the
+   [Supabase CLI](https://supabase.com/docs/guides/cli) — install it separately
+   (e.g. `brew install supabase/tap/supabase`):
 
    ```bash
-   npx supabase login                          # browser OAuth, one-time
-   npx supabase link --project-ref <your-ref>  # find ref in dashboard URL
-   npm run db:push                             # alias for `supabase db push`
+   supabase login                          # browser OAuth, one-time
+   supabase link --project-ref <your-ref>  # find ref in dashboard URL
+   npm run db:push                         # alias for `supabase db push`
    ```
 
    Runs every file in [`supabase/migrations/`](supabase/migrations/)

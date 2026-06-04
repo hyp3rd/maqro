@@ -586,6 +586,21 @@ const MacroCalculator = () => {
     [personalInfo, effective.goal, effective.weeklyRateKg, nowMs],
   );
 
+  // Today's calorie target for a *hypothetical* goal-phase list, via the same
+  // effectiveGoal → computeMacros pipeline as `calculatedValues` above — so the
+  // planner's "this raises your target" guard can never diverge from the real
+  // number. A cheap pure read of the current profile + today.
+  const targetForPhases = (phasesList: GoalPhase[]): number => {
+    const hypo: PersonalInfo = { ...personalInfo, goalPhases: phasesList };
+    const eff = effectiveGoal(hypo, today, {
+      phasesEnabled: goalPhasesEnabled,
+    });
+    return computeMacros(
+      { ...hypo, goal: eff.goal, weeklyRateKg: eff.weeklyRateKg },
+      nowMs,
+    ).targetCalories;
+  };
+
   // Derived: aggregate macros across all logged foods.
   const totalMacros = useMemo<TotalMacros>(() => {
     let protein = 0;
@@ -1947,6 +1962,7 @@ const MacroCalculator = () => {
                 units={personalInfo.units}
                 today={today}
                 goal={personalInfo.goal}
+                targetForPhases={targetForPhases}
               />
             </div>
             {/* Right: the computed targets and the Advanced overrides that
