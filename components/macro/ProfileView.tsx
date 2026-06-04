@@ -2,7 +2,7 @@
 
 import { useUser } from "@/hooks/use-user";
 import React, { useState } from "react";
-import { ArrowLeft, FolderOpen, HeartPulse } from "lucide-react";
+import { ArrowLeft, CreditCard, FolderOpen, HeartPulse } from "lucide-react";
 import type { PersonalInfo } from "../../components/macro/types";
 import { ageFromBirthDate } from "../../lib/age";
 import type { ViewKey } from "../shell/Sidebar";
@@ -14,6 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../ui/select";
+import { BillingSection } from "./BillingSection";
 import { BloodPressureSection } from "./BloodPressureSection";
 import { BodyMeasurementHistory } from "./BodyMeasurementHistory";
 import {
@@ -38,12 +39,14 @@ interface ProfileViewProps {
   onSelectView?: (key: ViewKey) => void;
 }
 
-type Sub = "home" | "measurements" | "docs";
+type Sub = "home" | "measurements" | "docs" | "billing";
 
 /** Profile page — the home for the user's body data (gender, birthdate-derived
- *  age, weight, height, units, display name), plus two tiles that open
+ *  age, weight, height, units, display name), plus three tiles that open
  *  sub-sections: **My measurements** (blood pressure + body-measurement
- *  history) and **My docs** (report PDFs archived to encrypted cloud storage).
+ *  history), **My docs** (report PDFs archived to encrypted cloud storage), and
+ *  **Billing & subscription** (plan, renewal, the Stripe portal — moved here out
+ *  of Settings).
  *
  *  Age is derived from `birthDate` so it stays current on its own and the
  *  calorie target shifts silently on a birthday — see [lib/age.ts](../../lib/age.ts). */
@@ -89,6 +92,25 @@ export function ProfileView({
           <p className="rounded-lg border border-border/60 bg-card px-5 py-4 text-sm text-muted-foreground">
             Sign in to save and access your documents — encrypted report PDFs —
             in the cloud.
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  if (sub === "billing") {
+    return (
+      <div className="space-y-6">
+        <SubHeader
+          title="Billing & subscription"
+          onBack={() => setSub("home")}
+        />
+        {user ? (
+          <BillingSection />
+        ) : (
+          <p className="rounded-lg border border-border/60 bg-card px-5 py-4 text-sm text-muted-foreground">
+            Sign in to view your plan, manage your subscription, and see your
+            billing history.
           </p>
         )}
       </div>
@@ -242,7 +264,7 @@ function ProfileHome({
         </Row>
       </Section>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
         <ProfileTile
           icon={HeartPulse}
           title="My measurements"
@@ -254,6 +276,12 @@ function ProfileHome({
           title="My docs"
           hint="Reports saved to your cloud"
           onClick={() => onOpen("docs")}
+        />
+        <ProfileTile
+          icon={CreditCard}
+          title="Billing & subscription"
+          hint="Plan, renewal & payment"
+          onClick={() => onOpen("billing")}
         />
       </div>
     </div>
