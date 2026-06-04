@@ -11,7 +11,7 @@ import { notifyDataChanged } from "@/lib/sync/data-bus";
 import { type DBSchema, type IDBPDatabase, openDB } from "idb";
 
 const DB_NAME = "maqro";
-const DB_VERSION = 16;
+const DB_VERSION = 17;
 
 const STORE_CUSTOM_FOODS = "customFoods";
 const STORE_PROFILE = "profile";
@@ -20,6 +20,7 @@ const STORE_MEAL_TEMPLATES = "mealTemplates";
 const STORE_WEIGHT_HISTORY = "weightHistory";
 const STORE_WATER_INTAKE = "waterIntake";
 const STORE_BODY_MEASUREMENTS = "bodyMeasurements";
+const STORE_BLOOD_PRESSURE = "bloodPressure";
 const STORE_RECIPES = "recipes";
 const STORE_PANTRY_ITEMS = "pantryItems";
 const STORE_PANTRY_NOTIFICATIONS = "pantryNotifications";
@@ -90,6 +91,7 @@ export type DeletableStore =
   | "dailyLogs"
   | "weightHistory"
   | "bodyMeasurements"
+  | "bloodPressure"
   | "pantryItems"
   | "pantryNotifications"
   | "favoriteStores"
@@ -178,6 +180,22 @@ export type BodyMeasurement = {
   waistCm?: number;
   neckCm?: number;
   hipsCm?: number;
+  notes?: string;
+  recordedAt: number;
+} & Versioned;
+
+/** A single blood-pressure reading - systolic / diastolic in mmHg, with
+ *  an optional pulse (bpm) and free-form note. Both pressures are required
+ *  (a reading is meaningless without the pair); pulse + notes are optional.
+ *  Storage is always mmHg - there's no imperial variant for blood pressure,
+ *  so unlike weight there's no unit conversion at the boundary. Keyed by
+ *  `YYYY-MM-DD` like weigh-ins and body measurements - most-recent reading
+ *  on a given day wins (multiple readings per day is a future enhancement). */
+export type BloodPressure = {
+  date: string;
+  systolic: number;
+  diastolic: number;
+  pulse?: number;
   notes?: string;
   recordedAt: number;
 } & Versioned;
@@ -355,6 +373,7 @@ interface MacroDB extends DBSchema {
   [STORE_WEIGHT_HISTORY]: { key: string; value: WeightEntry };
   [STORE_WATER_INTAKE]: { key: string; value: WaterIntake };
   [STORE_BODY_MEASUREMENTS]: { key: string; value: BodyMeasurement };
+  [STORE_BLOOD_PRESSURE]: { key: string; value: BloodPressure };
   [STORE_RECIPES]: {
     key: string;
     value: Recipe & Versioned & Sortable;
@@ -566,6 +585,11 @@ function getDB(): Promise<IDBPDatabase<MacroDB>> {
       // date like weightHistory (one cumulative row per day).
       if (oldVersion < 16) {
         db.createObjectStore(STORE_WATER_INTAKE, { keyPath: "date" });
+      }
+      // v16 → v17: bloodPressure store. Additive — sister store to
+      // bodyMeasurements, same `date` keyPath (one reading per day).
+      if (oldVersion < 17) {
+        db.createObjectStore(STORE_BLOOD_PRESSURE, { keyPath: "date" });
       }
     },
   });
@@ -1227,6 +1251,84 @@ export async function markBodyMeasurementSynced(
   const row = await db.get(STORE_BODY_MEASUREMENTS, date);
   if (!row) return;
   await db.put(STORE_BODY_MEASUREMENTS, {
+    ...row,
+    localUpdatedAt: serverUpdatedAt,
+    serverUpdatedAt,
+  });
+}
+
+// ─── Blood pressure ──────────────────────────────────────────────────────────
+
+/** Save a blood-pressure reading for `date`, overwriting any existing entry
+ *  on that day (last-write-wins, like body measurements). Storage is mmHg. */
+export async function saveBloodPressure(
+  date: string,
+  values: Pick<BloodPressure, "systolic" | "diastolic" | "pulse" | "notes">,
+): Promise<void> {
+  const db = await getDB();
+  const existing = await db.get(STORE_BLOOD_PRESSURE, date);
+  await db.put(STORE_BLOOD_PRESSURE, {
+    date,
+    systolic: values.systolic,
+    diastolic: values.diastolic,
+    pulse: values.pulse,
+    notes: values.notes,
+    recordedAt: Date.now(),
+    localUpdatedAt: nowIso(),
+    serverUpdatedAt: existing?.serverUpdatedAt ?? null,
+  });
+}
+
+/** All blood-pressure readings, oldest first - chart-natural order. */
+export async function listBloodPressure(): Promise<BloodPressure[]> {
+  const db = await getDB();
+  const rows = await db.getAll(STORE_BLOOD_PRESSURE);
+  return rows.sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
+export async function getBloodPressure(
+  date: string,
+): Promise<BloodPressure | null> {
+  const db = await getDB();
+  const row = await db.get(STORE_BLOOD_PRESSURE, date);
+  return row ?? null;
+}
+
+export async function deleteBloodPressure(date: string): Promise<void> {
+  const db = await getDB();
+  await db.delete(STORE_BLOOD_PRESSURE, date);
+  await recordDeletion("bloodPressure", date);
+}
+
+/** Sync-layer hook: write a server-pulled reading. Mirrors
+ *  `applyServerBodyMeasurement`. */
+export async function applyServerBloodPressure(
+  date: string,
+  values: Pick<BloodPressure, "systolic" | "diastolic" | "pulse" | "notes">,
+  serverUpdatedAt: string,
+): Promise<void> {
+  const db = await getDB();
+  await db.put(STORE_BLOOD_PRESSURE, {
+    date,
+    systolic: values.systolic,
+    diastolic: values.diastolic,
+    pulse: values.pulse,
+    notes: values.notes,
+    recordedAt: Date.parse(serverUpdatedAt) || Date.now(),
+    localUpdatedAt: serverUpdatedAt,
+    serverUpdatedAt,
+  });
+}
+
+/** Sync-layer hook: refresh the version token after a successful push. */
+export async function markBloodPressureSynced(
+  date: string,
+  serverUpdatedAt: string,
+): Promise<void> {
+  const db = await getDB();
+  const row = await db.get(STORE_BLOOD_PRESSURE, date);
+  if (!row) return;
+  await db.put(STORE_BLOOD_PRESSURE, {
     ...row,
     localUpdatedAt: serverUpdatedAt,
     serverUpdatedAt,
@@ -1897,6 +1999,7 @@ export async function applyServerDeletion(
     dailyLogs: STORE_DAILY_LOGS,
     weightHistory: STORE_WEIGHT_HISTORY,
     bodyMeasurements: STORE_BODY_MEASUREMENTS,
+    bloodPressure: STORE_BLOOD_PRESSURE,
     pantryItems: STORE_PANTRY_ITEMS,
     pantryNotifications: STORE_PANTRY_NOTIFICATIONS,
     favoriteStores: STORE_FAVORITE_STORES,
@@ -1936,6 +2039,7 @@ export async function clearAllStores(): Promise<void> {
       STORE_WEIGHT_HISTORY,
       STORE_WATER_INTAKE,
       STORE_BODY_MEASUREMENTS,
+      STORE_BLOOD_PRESSURE,
       STORE_RECIPES,
       STORE_PANTRY_ITEMS,
       STORE_PANTRY_NOTIFICATIONS,
@@ -1955,6 +2059,7 @@ export async function clearAllStores(): Promise<void> {
     tx.objectStore(STORE_WEIGHT_HISTORY).clear(),
     tx.objectStore(STORE_WATER_INTAKE).clear(),
     tx.objectStore(STORE_BODY_MEASUREMENTS).clear(),
+    tx.objectStore(STORE_BLOOD_PRESSURE).clear(),
     tx.objectStore(STORE_RECIPES).clear(),
     tx.objectStore(STORE_PANTRY_ITEMS).clear(),
     tx.objectStore(STORE_PANTRY_NOTIFICATIONS).clear(),

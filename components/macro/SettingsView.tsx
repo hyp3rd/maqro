@@ -29,7 +29,13 @@ import {
   exportPhaseIndex,
   type ExportProgress,
 } from "@/lib/export";
-import { planFromFile, planImport, type ImportPlan } from "@/lib/import";
+import {
+  decryptExport,
+  encryptExport,
+  isEncryptedEnvelope,
+  type EncryptedEnvelope,
+} from "@/lib/export-crypto";
+import { planImport, type ImportPlan } from "@/lib/import";
 import { GITHUB_REPO_URL } from "@/lib/links";
 import { scrollIntoViewUntilStable } from "@/lib/scroll-into-view";
 import { consumeSettingsScroll } from "@/lib/settings-anchor";
@@ -72,6 +78,7 @@ import { ConnectedAccountsSection } from "./ConnectedAccountsSection";
 import { ImportPreviewDialog } from "./ImportPreviewDialog";
 import { MfaSection } from "./MfaSection";
 import { PasskeysSection } from "./PasskeysSection";
+import { PassphraseDialog } from "./PassphraseDialog";
 import { SignedInDevicesSection } from "./SignedInDevicesSection";
 import { TrustedDevicesSection } from "./TrustedDevicesSection";
 import { UpgradeDialog } from "./UpgradeDialog";
@@ -117,6 +124,93 @@ export function SettingsView({
   const [importRaw, setImportRaw] = useState<unknown>(null);
   const [importSource, setImportSource] = useState("");
   const importInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Passphrase prompt for zero-knowledge export encryption. The resolver ref
+  // hands the entered passphrase back to the awaiting upload/restore handler;
+  // it's never stored, only passed straight to the in-memory crypto call.
+  const [passphrasePrompt, setPassphrasePrompt] = useState<{
+    mode: "encrypt" | "decrypt";
+    error: string | null;
+    busy: boolean;
+  } | null>(null);
+  // Bumped on every prompt so the dialog remounts with fresh (empty) fields —
+  // see PassphraseDialog's reset-via-key note.
+  const [passphrasePromptId, setPassphrasePromptId] = useState(0);
+  const passphraseResolver = useRef<((value: string | null) => void) | null>(
+    null,
+  );
+
+  /** Open the passphrase dialog; resolves with the submitted passphrase, or
+   *  null if the user cancels. Submitting marks the dialog busy so the
+   *  caller's crypto runs with the controls disabled. */
+  function askPassphrase(
+    mode: "encrypt" | "decrypt",
+    error: string | null = null,
+  ): Promise<string | null> {
+    return new Promise((resolve) => {
+      passphraseResolver.current = resolve;
+      setPassphrasePromptId((n) => n + 1);
+      setPassphrasePrompt({ mode, error, busy: false });
+    });
+  }
+  function submitPassphrase(value: string) {
+    setPassphrasePrompt((p) => (p ? { ...p, busy: true, error: null } : p));
+    const resolve = passphraseResolver.current;
+    passphraseResolver.current = null;
+    resolve?.(value);
+  }
+  function cancelPassphrase() {
+    setPassphrasePrompt(null);
+    const resolve = passphraseResolver.current;
+    passphraseResolver.current = null;
+    resolve?.(null);
+  }
+
+  /** Decrypt an envelope, re-prompting on a wrong passphrase until it works or
+   *  the user cancels. Returns the plaintext, or null on cancel. */
+  async function decryptWithPrompt(
+    envelope: EncryptedEnvelope,
+  ): Promise<string | null> {
+    let pass = await askPassphrase("decrypt");
+    for (;;) {
+      if (pass === null) {
+        setPassphrasePrompt(null);
+        return null;
+      }
+      try {
+        const plaintext = await decryptExport(envelope, pass);
+        setPassphrasePrompt(null);
+        return plaintext;
+      } catch (e) {
+        pass = await askPassphrase(
+          "decrypt",
+          e instanceof Error ? e.message : "Wrong passphrase.",
+        );
+      }
+    }
+  }
+
+  /** Parse import text, transparently decrypting an encrypted envelope (with a
+   *  passphrase prompt). Returns the parsed bundle, or null if the user
+   *  cancelled the prompt. Throws on malformed JSON. */
+  async function decodeImportText(text: string): Promise<unknown | null> {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      throw new Error("Not valid JSON.");
+    }
+    if (isEncryptedEnvelope(parsed)) {
+      const plaintext = await decryptWithPrompt(parsed);
+      if (plaintext === null) return null;
+      try {
+        return JSON.parse(plaintext);
+      } catch {
+        throw new Error("Decrypted data isn't valid JSON.");
+      }
+    }
+    return parsed;
+  }
 
   async function signOut() {
     const supabase = getSupabaseBrowser();
@@ -175,12 +269,28 @@ export function SettingsView({
     }
     try {
       const bundle = await buildWithProgress();
-      await uploadExport(supabase, user.id, bundle);
+      // Zero-knowledge: encrypt the bundle on this device before upload so the
+      // bucket only ever holds ciphertext. Cancelling the passphrase prompt
+      // aborts the upload.
+      const passphrase = await askPassphrase("encrypt");
+      if (passphrase === null) {
+        setPassphrasePrompt(null);
+        return;
+      }
+      const envelope = await encryptExport(JSON.stringify(bundle), passphrase);
+      setPassphrasePrompt(null);
+      // `exportedAt` rides in the clear so the bucket listing + filename keep
+      // working; everything sensitive is inside `ciphertext`.
+      await uploadExport(supabase, user.id, {
+        ...envelope,
+        exportedAt: bundle.exportedAt,
+      });
       // Bumps the CloudExportsList refreshKey so it pulls the new entry.
       setCloudRefreshKey((k) => k + 1);
     } catch (e) {
-      // buildWithProgress sets exportError on its failures; the upload
-      // call can also fail with its own message.
+      // buildWithProgress sets exportError on its failures; the encrypt /
+      // upload calls can also fail with their own message.
+      setPassphrasePrompt(null);
       if (e instanceof Error) setExportError(e.message);
     } finally {
       setExportBusy(false);
@@ -198,7 +308,12 @@ export function SettingsView({
     setImportError(null);
     setImportBusy(true);
     try {
-      const { raw, plan } = await planFromFile(file);
+      const text = await file.text();
+      // Decrypts transparently (with a passphrase prompt) if the file is an
+      // encrypted backup; returns null if the user cancels the prompt.
+      const raw = await decodeImportText(text);
+      if (raw === null) return;
+      const plan = await planImport(raw);
       setImportRaw(raw);
       setImportPlan(plan);
       setImportSource(`file ${file.name}`);
@@ -221,7 +336,10 @@ export function SettingsView({
     try {
       const blob = await downloadCloudExport(supabase, entry.path);
       const text = await blob.text();
-      const raw: unknown = JSON.parse(text);
+      // Cloud backups are encrypted — decrypt transparently (passphrase
+      // prompt). null means the user cancelled the prompt.
+      const raw = await decodeImportText(text);
+      if (raw === null) return;
       const plan = await planImport(raw);
       setImportRaw(raw);
       setImportPlan(plan);
@@ -476,6 +594,16 @@ export function SettingsView({
           // Force a reload so every hook re-hydrates from IDB.
           window.setTimeout(() => window.location.reload(), 600);
         }}
+      />
+
+      <PassphraseDialog
+        key={passphrasePromptId}
+        open={passphrasePrompt !== null}
+        mode={passphrasePrompt?.mode ?? "decrypt"}
+        error={passphrasePrompt?.error}
+        busy={passphrasePrompt?.busy}
+        onSubmit={submitPassphrase}
+        onCancel={cancelPassphrase}
       />
 
       {user && <BillingSection />}

@@ -3,6 +3,7 @@
 import type { Recipe } from "@/components/macro/types";
 import { signOutAndClearLocal } from "@/lib/auth/sign-out";
 import {
+  applyServerBloodPressure,
   applyServerBodyMeasurement,
   applyServerCustomFood,
   applyServerDailyLog,
@@ -20,6 +21,7 @@ import {
   clearAllStores,
   clearDeletion,
   getProfileRecord,
+  listBloodPressure,
   listBodyMeasurements,
   listCustomFoods,
   listDailyLogs,
@@ -33,6 +35,7 @@ import {
   listRecipes,
   listWaterIntake,
   listWeightEntries,
+  markBloodPressureSynced,
   markBodyMeasurementSynced,
   markCustomFoodSynced,
   markFavoriteFoodSynced,
@@ -50,6 +53,7 @@ import {
   upsertPantryItem,
   upsertPantryNotification,
   upsertRecipe,
+  type BloodPressure,
   type BodyMeasurement,
   type CustomFood,
   type DailyLog,
@@ -94,8 +98,11 @@ import {
   waterToRow,
   weightFromRow,
   weightToRow,
+  bloodPressureFromRow,
+  bloodPressureToRow,
   bodyMeasurementFromRow,
   bodyMeasurementToRow,
+  type BloodPressureRow,
   type BodyMeasurementRow,
   type CustomFoodRow,
   type DailyLogRow,
@@ -118,6 +125,7 @@ export type SyncResult = {
     weightEntries: number;
     waterIntake: number;
     bodyMeasurements: number;
+    bloodPressure: number;
     customFoods: number;
     mealTemplates: number;
     recipes: number;
@@ -133,6 +141,7 @@ export type SyncResult = {
     weightEntries: number;
     waterIntake: number;
     bodyMeasurements: number;
+    bloodPressure: number;
     customFoods: number;
     mealTemplates: number;
     recipes: number;
@@ -160,6 +169,7 @@ const ZERO_COUNTS = {
   weightEntries: 0,
   waterIntake: 0,
   bodyMeasurements: 0,
+  bloodPressure: 0,
   customFoods: 0,
   mealTemplates: 0,
   recipes: 0,
@@ -213,6 +223,7 @@ export async function runInitialSync(
   await pullWeightEntries(supabase, userId, result);
   await pullWaterIntake(supabase, userId, result);
   await pullBodyMeasurements(supabase, userId, result);
+  await pullBloodPressure(supabase, userId, result);
   await pullCustomFoods(supabase, userId, result);
   await pullMealTemplates(supabase, userId, result);
   await pullRecipes(supabase, userId, result);
@@ -230,6 +241,7 @@ export async function runInitialSync(
   await pushWeightEntries(supabase, userId, result);
   await pushWaterIntake(supabase, userId, result);
   await pushBodyMeasurements(supabase, userId, result);
+  await pushBloodPressure(supabase, userId, result);
   await pushCustomFoods(supabase, userId, result);
   await pushMealTemplates(supabase, userId, result);
   await pushRecipes(supabase, userId, result);
@@ -447,6 +459,7 @@ const DELETE_TARGET: Record<
   dailyLogs: { table: "daily_logs", pk: "date" },
   weightHistory: { table: "weight_history", pk: "date" },
   bodyMeasurements: { table: "body_measurements", pk: "date" },
+  bloodPressure: { table: "blood_pressure", pk: "date" },
   pantryItems: { table: "pantry_items", pk: "id" },
   pantryNotifications: { table: "pantry_notifications", pk: "id" },
   favoriteStores: { table: "favorite_stores", pk: "id" },
@@ -630,6 +643,34 @@ async function pushBodyMeasurements(
     if (outcome.status === "inserted" || outcome.status === "updated") {
       await markBodyMeasurementSynced(entry.date, outcome.serverUpdatedAt);
       result.pushed.bodyMeasurements++;
+    }
+  }
+}
+
+async function pushBloodPressure(
+  supabase: SupabaseClient,
+  userId: string,
+  result: SyncResult,
+) {
+  const entries = await listBloodPressure();
+  for (const entry of entries) {
+    if (!isDirty(entry)) continue;
+    const row = bloodPressureToRow(userId, entry);
+    const outcome = await pushRow(
+      supabase,
+      "blood_pressure",
+      row,
+      { user_id: userId, date: entry.date },
+      entry.serverUpdatedAt,
+      "push blood pressure",
+    );
+    if (outcome.status === "conflict") {
+      result.conflicts++;
+      continue;
+    }
+    if (outcome.status === "inserted" || outcome.status === "updated") {
+      await markBloodPressureSynced(entry.date, outcome.serverUpdatedAt);
+      result.pushed.bloodPressure++;
     }
   }
 }
@@ -1135,6 +1176,45 @@ async function pullBodyMeasurements(
   }
   if (result.pulled.bodyMeasurements > before)
     notifyDataChanged("bodyMeasurements");
+}
+
+async function pullBloodPressure(
+  supabase: SupabaseClient,
+  userId: string,
+  result: SyncResult,
+) {
+  const { data, error } = await withTimeout("pull blood pressure", (signal) =>
+    supabase
+      .from("blood_pressure")
+      .select(
+        "user_id, date, systolic, diastolic, pulse, notes, recorded_at, updated_at",
+      )
+      .eq("user_id", userId)
+      .abortSignal(signal),
+  );
+  if (error) throw asError(error, "pull blood pressure");
+  if (!data) return;
+  const locals = new Map(
+    (await listBloodPressure()).map((e: BloodPressure) => [e.date, e]),
+  );
+  const before = result.pulled.bloodPressure;
+  for (const row of data as BloodPressureRow[]) {
+    const localRow = locals.get(row.date);
+    if (!shouldApplyServer(localRow?.serverUpdatedAt, row.updated_at)) continue;
+    const entry = bloodPressureFromRow(row);
+    await applyServerBloodPressure(
+      entry.date,
+      {
+        systolic: entry.systolic,
+        diastolic: entry.diastolic,
+        pulse: entry.pulse,
+        notes: entry.notes,
+      },
+      row.updated_at,
+    );
+    result.pulled.bloodPressure++;
+  }
+  if (result.pulled.bloodPressure > before) notifyDataChanged("bloodPressure");
 }
 
 async function pullCustomFoods(

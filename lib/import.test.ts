@@ -57,6 +57,12 @@ describe("parseBundle", () => {
     expect(parseBundle(bundle).version).toBe(2);
   });
 
+  it("accepts a well-formed v3 bundle", async () => {
+    const { parseBundle } = await import("./import");
+    const bundle = { version: 3, data: {} };
+    expect(parseBundle(bundle).version).toBe(3);
+  });
+
   it("rejects an object with no version", async () => {
     const { parseBundle } = await import("./import");
     expect(() => parseBundle({ data: {} })).toThrow(/version/);
@@ -169,6 +175,53 @@ describe("importBundle - happy path round-trips", () => {
     expect(await db.listCustomFoods()).toHaveLength(1);
     expect(await db.listMealTemplates()).toHaveLength(1);
     expect(await db.listRecipes()).toHaveLength(1);
+  });
+
+  it("imports a v3 bundle's body measurements, water, and blood pressure", async () => {
+    const db = await freshDb();
+    const { importBundle } = await import("./import");
+
+    const bundle = {
+      version: 3,
+      exportedAt: "2026-01-01T00:00:00.000Z",
+      user: null,
+      data: {
+        bodyMeasurements: [
+          {
+            date: "2026-05-15",
+            waistCm: 82,
+            neckCm: 38,
+            hipsCm: 95,
+            notes: "am",
+            recordedAt: 1_700_000_000_000,
+          },
+        ],
+        waterIntake: [
+          { date: "2026-05-15", ml: 2300, recordedAt: 1_700_000_000_000 },
+        ],
+        bloodPressure: [
+          {
+            date: "2026-05-15",
+            systolic: 122,
+            diastolic: 78,
+            pulse: 64,
+            recordedAt: 1_700_000_000_000,
+          },
+        ],
+      },
+    };
+
+    const result = await importBundle(bundle);
+    expect(result.imported.bodyMeasurements).toBe(1);
+    expect(result.imported.waterIntake).toBe(1);
+    expect(result.imported.bloodPressure).toBe(1);
+    expect(result.skipped).toHaveLength(0);
+
+    expect(await db.listBodyMeasurements()).toHaveLength(1);
+    expect((await db.getWaterIntake("2026-05-15"))?.ml).toBe(2300);
+    expect(await db.listBloodPressure()).toMatchObject([
+      { systolic: 122, diastolic: 78, pulse: 64 },
+    ]);
   });
 
   it("imports a v1 bundle (no recipes field) without error", async () => {

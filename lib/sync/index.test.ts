@@ -19,6 +19,9 @@ vi.mock("@/lib/db", () => ({
   // to prime this mock — the engine's `await listBodyMeasurements()`
   // gets a real array and the `.map` call after it works.
   listBodyMeasurements: vi.fn().mockResolvedValue([]),
+  // Default-empty like listBodyMeasurements so pullBloodPressure's
+  // `await listBloodPressure()` + `.map` works without per-test priming.
+  listBloodPressure: vi.fn().mockResolvedValue([]),
   listCustomFoods: vi.fn(),
   listDailyLogs: vi.fn(),
   listMealTemplates: vi.fn(),
@@ -40,6 +43,7 @@ vi.mock("@/lib/db", () => ({
   listWaterIntake: vi.fn().mockResolvedValue([]),
   getProfileRecord: vi.fn(),
   applyServerBodyMeasurement: vi.fn(),
+  applyServerBloodPressure: vi.fn(),
   applyServerCustomFood: vi.fn(),
   applyServerDailyLog: vi.fn(),
   applyServerMealTemplate: vi.fn(),
@@ -53,6 +57,7 @@ vi.mock("@/lib/db", () => ({
   applyServerWeightEntry: vi.fn(),
   applyServerWaterIntake: vi.fn(),
   markBodyMeasurementSynced: vi.fn(),
+  markBloodPressureSynced: vi.fn(),
   markCustomFoodSynced: vi.fn(),
   markDailyLogSynced: vi.fn(),
   markMealTemplateSynced: vi.fn(),
@@ -93,6 +98,7 @@ function newResult(): SyncResult {
       weightEntries: 0,
       waterIntake: 0,
       bodyMeasurements: 0,
+      bloodPressure: 0,
       customFoods: 0,
       mealTemplates: 0,
       recipes: 0,
@@ -108,6 +114,7 @@ function newResult(): SyncResult {
       weightEntries: 0,
       waterIntake: 0,
       bodyMeasurements: 0,
+      bloodPressure: 0,
       customFoods: 0,
       mealTemplates: 0,
       recipes: 0,

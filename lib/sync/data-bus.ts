@@ -25,6 +25,7 @@ export type SyncedTable =
   | "weightHistory"
   | "waterIntake"
   | "bodyMeasurements"
+  | "bloodPressure"
   | "customFoods"
   | "mealTemplates"
   | "recipes"
@@ -41,6 +42,7 @@ const subscribers: Record<SyncedTable, Set<() => void>> = {
   weightHistory: new Set(),
   waterIntake: new Set(),
   bodyMeasurements: new Set(),
+  bloodPressure: new Set(),
   customFoods: new Set(),
   mealTemplates: new Set(),
   recipes: new Set(),
@@ -61,6 +63,7 @@ const versions: Record<SyncedTable, number> = {
   weightHistory: 0,
   waterIntake: 0,
   bodyMeasurements: 0,
+  bloodPressure: 0,
   customFoods: 0,
   mealTemplates: 0,
   recipes: 0,

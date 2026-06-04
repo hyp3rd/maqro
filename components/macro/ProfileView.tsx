@@ -3,6 +3,7 @@
 import React from "react";
 import type { PersonalInfo } from "../../components/macro/types";
 import { ageFromBirthDate } from "../../lib/age";
+import type { ViewKey } from "../shell/Sidebar";
 import { Input } from "../ui/input";
 import {
   Select,
@@ -11,6 +12,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../ui/select";
+import { BloodPressureSection } from "./BloodPressureSection";
+import { BodyMeasurementHistory } from "./BodyMeasurementHistory";
 import {
   Field,
   HeightField,
@@ -27,6 +30,9 @@ interface ProfileViewProps {
    *  the birthdate and to cap the picker at today. Empty during SSR / first
    *  paint; the client fills it in immediately after hydrate. */
   today: string;
+  /** Switch the main app view — used by the measurement archive's shortcut to
+   *  the Progress view, where measurements are actually logged. */
+  onSelectView?: (key: ViewKey) => void;
 }
 
 /** Profile page — the home for the user's body data (gender, birthdate-derived
@@ -41,6 +47,7 @@ export function ProfileView({
   personalInfo,
   onPersonalInfoChange,
   today,
+  onSelectView,
 }: ProfileViewProps) {
   // Derive the displayed age from `birthDate` against *today* (passed in, so
   // the render stays pure — no clock read here). `today` is a local
@@ -168,17 +175,16 @@ export function ProfileView({
         </Row>
       </Section>
 
-      {/* Scaffold for the next iteration: blood-pressure logging + a dated
-          body-measurement history archive land in this section. */}
-      <Section
-        title="Health & measurements"
-        description="Blood pressure and a body-measurement history archive."
-      >
-        <p className="text-sm text-muted-foreground">
-          Coming soon — log blood-pressure readings and keep a dated history of
-          your weight and body measurements, all in one place.
-        </p>
-      </Section>
+      <BloodPressureSection />
+
+      <BodyMeasurementHistory
+        gender={personalInfo.gender}
+        heightCm={personalInfo.height}
+        units={personalInfo.units}
+        onGoToProgress={
+          onSelectView ? () => onSelectView("progress") : undefined
+        }
+      />
     </div>
   );
 }
