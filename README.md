@@ -19,6 +19,11 @@ ships with privacy-respecting operational logging.
   calories from a signed weekly weight-change rate (1 kg ≈ 7700 kcal,
   clamped at ±1%/week of bodyweight and floored at `max(BMR, 1200)`).
   Manual TDEE override for calibrating against real-world outcomes.
+- **Goal phases (Pro)** - sequence a cut → diet break → maintenance →
+  lean bulk and let your calorie + macro target follow whichever phase
+  is active today. Applying a phase that would _raise_ today's target
+  (e.g. a cut gentler than your current deficit) asks for a quick
+  confirm first, so the change is never a surprise.
 - **Meal Plan** - log foods against a per-profile set of meal slots
   (Breakfast / Lunch / Dinner / Snacks by default, fully editable in
   the Template editor). Auto-fill a day that hits your macro targets
@@ -81,6 +86,18 @@ ships with privacy-respecting operational logging.
   Catmull-Rom smoothed trend chart and a US Navy / Hodgdon–Beckett
   body-fat estimate (metric form). Stored locally and synced to
   Supabase like the rest of the journal data.
+- **Blood pressure** - log systolic / diastolic (plus optional pulse
+  and a note); each reading is classified by the ACC/AHA categories and
+  kept in a history on your Profile, synced like the rest of the journal.
+- **Hydration** - a tap-to-add daily water counter against a goal scaled
+  to your bodyweight (unit-aware — ml or fl oz), surfaced on the Progress
+  card and in your report.
+- **Intermittent fasting** - start a fast from the day view and track a
+  live countdown to your eating window on a protocol you pick (16:8 /
+  18:6 / 20:4 / custom). The Fasting page maps your current fast onto an
+  hour-by-hour phase timeline (fed → glycogen → fat-burning → ketosis →
+  autophagy, with a not-medical-advice note), and every completed fast
+  is saved to a synced history with its duration + phase breakdown.
 - **Micronutrients (Pro)** - 10 tracked vitamins / minerals / fiber
   charted against age- and sex-aware daily targets (NIH RDA, FDA Daily
   Value fallback). Values fill in from Open Food Facts as your foods
@@ -130,6 +147,13 @@ ships with privacy-respecting operational logging.
   URL that unfurls into the same card on Twitter / LinkedIn via OG
   meta. Optional HMAC signing (set `SHARE_BADGE_SECRET`) prevents
   hand-crafted URLs from stamping fake numbers under the brand.
+- **Reports & backups** - generate a polished report of your nutrition,
+  weight, body, blood-pressure, hydration, fasting, and micronutrient
+  data as a **vector PDF** you can download or **archive to your private
+  cloud storage**. Export a complete backup of everything — optionally
+  **end-to-end encrypted** with a passphrase only you hold (zero-
+  knowledge) — and restore it from disk or cloud with a
+  preview-before-apply diff.
 - **Account (optional)** - passwordless email OTP via Supabase.
   Profile, daily logs, weight history, body measurements, custom
   foods, meal templates, recipes, pantry, and shopping-list metadata
@@ -1029,6 +1053,36 @@ Done (in roughly chronological order):
   - **Sync modes** - a per-device choice of local-first (manual save +
     reminder) / auto-save (1–30 min interval) / always-sync, with a
     clearer "Save" affordance and a topbar mode indicator
+- **Phase 22 (Health depth + intermittent fasting)** -
+  - **Adaptive TDEE** - infer real maintenance from logged intake vs.
+    observed weight change, with a recalibration nudge on drift
+  - **Hydration** - daily water counter against a bodyweight-scaled,
+    unit-aware goal; on the Progress card and in the report
+  - **Blood pressure** - systolic / diastolic (+ pulse / note) with
+    ACC/AHA classification and a synced Profile history
+  - **Intermittent fasting** - a manual fast timer + protocols (16:8 /
+    18:6 / 20:4 / custom), an hour-by-hour phase timeline (fed →
+    glycogen → fat-burning → ketosis → autophagy), and a synced
+    **completed-fast history** with a per-phase breakdown
+  - **Quick-add** - a per-meal hub surfacing recent foods one tap away
+- **Phase 23 (Profile, reports + data portability)** -
+  - **Profile** - birthdate-derived age, a tile-based home (My
+    measurements / My docs / Billing & subscription), and a today
+    weigh-in that updates Profile weight automatically
+  - **Encrypted backups** - a complete bundle (every health table) with
+    optional zero-knowledge passphrase encryption and a
+    preview-before-apply restore from disk or cloud
+  - **Health report → vector PDF** - blood pressure, hydration, fasting,
+    calorie/TDEE settings, trends, and micronutrients in a polished PDF
+    you can download or archive to encrypted cloud storage
+  - **Settings reorg** - Billing & subscription moved to Profile;
+    Settings grouped (Account / Security / App settings / Danger zone);
+    a goal-phase **target-raise warning** before a cut that
+    paradoxically raises today's calories
+  - **Supply-chain + CSP** - removed the npm-flagged `supabase` CLI dep
+    and added a preinstall + CI denylist guard against unscoped
+    `supabase*` packages; a `wasm-unsafe-eval` CSP source so the
+    report's WebAssembly PDF engine runs in production
 
 Possibly next (not committed):
 

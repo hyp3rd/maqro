@@ -1,12 +1,13 @@
 {
   "name": "maqro",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "private": true,
   "description": "A personal nutrition app that respects your time and your data.",
   "engines": {
     "node": ">=24.0.0"
   },
   "scripts": {
+    "preinstall": "node scripts/check-banned-deps.mjs",
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
@@ -19,6 +20,7 @@
     "e2e": "playwright test",
     "analyze": "ANALYZE=true next build",
     "check:budget": "next build && node scripts/check-bundle-budget.mjs",
+    "check:deps": "node scripts/check-banned-deps.mjs",
     "db:link": "supabase link",
     "db:status": "supabase migration list",
     "db:push": "supabase db push",

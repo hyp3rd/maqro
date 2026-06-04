@@ -184,5 +184,13 @@ present, so you can focus on what's actually unique:
   exposed to any other client. Failed sends with a 404/410 from the
   push provider auto-prune the row so dead endpoints don't
   accumulate.
+- **Supply-chain dependency guard**. A zero-dependency `preinstall`
+  hook (`scripts/check-banned-deps.mjs`, also run by `make ci`) aborts
+  the install if any unscoped `supabase*` npm package appears in the
+  manifest or lockfile — the shape of the 2026 `supabase` /
+  `supabase-react` malware advisories (GHSA-x96m-c5fj-q75c,
+  GHSA-rhm3-8hhw-pp5w). The real Supabase libraries are scoped
+  (`@supabase/*`); the CLI is installed out-of-band (Homebrew). `npm
+audit` (via `make sec`) covers the rest of the advisory database.
 
 Thanks again for keeping Maqro safer.

@@ -52,7 +52,8 @@ e2e: ## Playwright end-to-end suite (auto-starts the dev server).
 # Two transitive moderate postcss vulns ship with Next 16; the
 # fix would downgrade Next to v9 (breaking). We accept moderate
 # findings until Vercel patches and gate CI on `high+` only.
-sec: ## npm audit for high+ severity findings.
+sec: ## Supply-chain: unscoped-supabase denylist + npm audit (high+).
+	node scripts/check-banned-deps.mjs
 	$(NPM) audit --audit-level=high
 
 # Subset of hooks from .pre-commit-config.yaml: the cheap, no-Docker

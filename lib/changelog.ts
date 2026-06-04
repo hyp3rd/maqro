@@ -39,6 +39,64 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    id: "2026-06-04-goal-phase-warning",
+    date: "2026-06-04",
+    version: "0.6.0",
+    title: "A heads-up before a goal phase raises your target",
+    body: `Goal phases (Pro) let you sequence a cut → diet break → maintenance → lean bulk, and your daily target follows whichever phase is active today.
+
+Now, if you apply a phase or preset whose cut would actually *raise* today's calorie target — which happens when your current setting already runs a steeper deficit — a quick confirmation shows the before → after calories and why, so "start a cut" can't quietly bump your calories up without you noticing. Every other change applies straight through.`,
+  },
+  {
+    id: "2026-06-04-intermittent-fasting",
+    date: "2026-06-04",
+    version: "0.5.1",
+    title: "Intermittent fasting — live timer, phases, and history",
+    body: `Track an eating window from start to finish.
+
+- Start a fast from the day view and watch a live timer count toward your eating window, on a protocol you choose (16:8, 18:6, 20:4, or custom).
+- The Fasting page shows where your current fast sits on an hour-by-hour phase timeline (fed → glycogen → fat-burning → ketosis → autophagy), with a plain not-medical-advice note — the timings are popular-protocol approximations, not clinical fact.
+- Every fast you finish is now saved to a history with its duration, the deepest phase it reached, and a per-phase breakdown — and it syncs across your devices like the rest of your data.`,
+  },
+  {
+    id: "2026-06-04-profile-reorg",
+    date: "2026-06-04",
+    version: "0.5.0",
+    title: "A tidier Profile — measurements, docs, and billing together",
+    body: `Your Profile is now the home for your body data and account bits.
+
+- Your age comes from a **birthdate** you set once, so it (and your targets) stay current on their own.
+- Two tiles open your health history — **My measurements** (blood pressure + body-measurement trends) and **My docs** (your saved report PDFs) — and a today weigh-in now updates your Profile weight automatically.
+- **Billing & subscription** moved out of Settings to its own Profile tile, alongside your monthly AI-usage meter. Settings is regrouped into clear sections (Account, Security, App settings, Danger zone).`,
+  },
+  {
+    id: "2026-06-04-reports-and-backups",
+    date: "2026-06-04",
+    version: "0.4.2",
+    title: "Health-rich reports and private, encrypted backups",
+    body: `Your data, in two new forms.
+
+- The **report** now folds in blood pressure, hydration, intermittent fasting, your calorie/TDEE settings, trends, and your micronutrient breakdown — and renders as a clean, polished **PDF** you can download or **archive to your private cloud storage**.
+- **Backups** are complete (every health table included) and can be **end-to-end encrypted** with a passphrase only you know — zero-knowledge, so lose the passphrase and even we can't read it. Restore from disk or cloud the same way.`,
+  },
+  {
+    id: "2026-06-03-hydration",
+    date: "2026-06-03",
+    version: "0.2.10",
+    title: "Track your water",
+    body: `Log your daily water with a quick tap-to-add counter, against a goal scaled to your bodyweight and shown in your units (ml or fl oz). It appears on your Progress card and in your report, and syncs across devices like everything else.`,
+  },
+  {
+    id: "2026-06-02-adaptive-tdee-quick-add",
+    date: "2026-06-02",
+    version: "0.2.6",
+    title: "A smarter maintenance estimate, and faster logging",
+    body: `Two quality-of-life wins.
+
+- **Adaptive TDEE** — Progress infers your real maintenance calories from what you've actually logged versus how your weight moved, and nudges you to recalibrate when the two drift apart.
+- **Quick-add** — a per-meal hub puts your recent foods one tap away, so logging the things you eat often no longer means searching every time.`,
+  },
+  {
     id: "2026-06-02-sync-modes",
     date: "2026-06-02",
     version: "0.2.1",
