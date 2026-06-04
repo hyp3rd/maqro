@@ -26,6 +26,7 @@ import {
   Package,
   Settings as SettingsIcon,
   ShieldCheck,
+  UserCircle,
 } from "lucide-react";
 import Link from "next/link";
 import { NotificationsSheet } from "./NotificationsSheet";
@@ -190,6 +191,13 @@ export function UserMenu({
             sidebar surfaces both views directly). */}
           {onSelectView && (
             <>
+              <DropdownMenuItem
+                onSelect={() => onSelectView("profile")}
+                className="gap-2"
+              >
+                <UserCircle className="h-3.5 w-3.5 text-muted-foreground" />
+                Profile
+              </DropdownMenuItem>
               <DropdownMenuItem
                 onSelect={() => onSelectView("settings")}
                 className="gap-2"

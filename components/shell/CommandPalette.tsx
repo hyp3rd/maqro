@@ -27,6 +27,7 @@ import {
   ShieldAlert,
   ShoppingCart,
   Sun,
+  UserCircle,
   Utensils,
 } from "lucide-react";
 import { useTheme } from "next-themes";
@@ -55,6 +56,12 @@ const NAV_COMMANDS: NavCommand[] = [
     label: "Calculator",
     icon: Calculator,
     keywords: ["macros", "tdee", "bmr", "target", "home"],
+  },
+  {
+    key: "profile",
+    label: "Profile",
+    icon: UserCircle,
+    keywords: ["body", "age", "birthdate", "weight", "height", "gender", "me"],
   },
   {
     key: "plan",

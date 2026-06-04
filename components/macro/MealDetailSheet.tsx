@@ -3,6 +3,7 @@
 import { UpgradeDialog } from "@/components/macro/UpgradeDialog";
 import type { Meal, PersonalInfo } from "@/components/macro/types";
 import { useAiUsage } from "@/hooks/use-ai-usage";
+import { effectiveAge } from "@/lib/age";
 import { clientFetch } from "@/lib/auth/client-fetch";
 import { FEATURES } from "@/lib/billing/tiers";
 import { getProfile, listMicronutrientProfiles } from "@/lib/db";
@@ -119,9 +120,9 @@ export function MealDetail({ meal, goal }: { meal: Meal; goal?: DailyGoal }) {
     () =>
       getMicronutrientTargets(
         sexFromGender(userProfile?.gender),
-        userProfile?.age ?? 30,
+        userProfile ? effectiveAge(userProfile) : 30,
       ),
-    [userProfile?.gender, userProfile?.age],
+    [userProfile],
   );
 
   // Per-meal micronutrient totals (Pro). Foods carry their own per-100g

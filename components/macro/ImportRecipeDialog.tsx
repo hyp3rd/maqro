@@ -246,7 +246,7 @@ function ImportRecipeBody({
             <Link2 className="h-4 w-4 text-muted-foreground" />
             Preview imported recipe
             {parsed.source === "ai" && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-violet-500/10 px-2 py-0.5 text-[10px] font-medium text-violet-700 ring-1 ring-inset ring-violet-500/20 dark:text-violet-300">
+              <span className="inline-flex items-center gap-1 rounded-full bg-brand/10 px-2 py-0.5 text-[10px] font-medium text-brand ring-1 ring-inset ring-brand/20">
                 <Sparkles className="h-3 w-3" />
                 AI
               </span>
@@ -406,7 +406,7 @@ function ImportRecipeBody({
             checked={parseWithAi}
             onChange={(e) => setParseWithAi(e.target.checked)}
             disabled={busy}
-            className="mt-0.5 h-3.5 w-3.5 cursor-pointer accent-violet-500"
+            className="mt-0.5 h-3.5 w-3.5 cursor-pointer accent-brand"
           />
           <span>
             <span className="font-medium">Parse with AI</span> - works on sites

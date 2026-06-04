@@ -13,6 +13,7 @@ import { UserMenu } from "./UserMenu";
 
 const LABELS: Record<ViewKey, string> = {
   calculator: "Calculator",
+  profile: "Profile",
   plan: "Meal Plan",
   progress: "Progress",
   fasting: "Fasting",

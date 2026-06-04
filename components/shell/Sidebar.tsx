@@ -16,6 +16,7 @@ import {
   Settings,
   Shield,
   ShoppingCart,
+  UserCircle,
   Utensils,
 } from "lucide-react";
 import { motion } from "motion/react";
@@ -26,6 +27,7 @@ import { UserMenu } from "./UserMenu";
 
 export type ViewKey =
   | "calculator"
+  | "profile"
   | "plan"
   | "progress"
   | "fasting"
@@ -45,6 +47,7 @@ type NavItem = {
 
 const NAV: NavItem[] = [
   { key: "calculator", label: "Calculator", icon: Calculator },
+  { key: "profile", label: "Profile", icon: UserCircle },
   { key: "plan", label: "Meal Plan", icon: Utensils },
   { key: "progress", label: "Progress", icon: LineChart },
   { key: "fasting", label: "Fasting", icon: Hourglass },
@@ -235,7 +238,7 @@ export function Sidebar({ current, onSelect }: Props) {
                 isDisabled
                   ? "cursor-not-allowed text-muted-foreground/60"
                   : isActive
-                    ? "text-foreground"
+                    ? "text-brand"
                     : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
               )}
               aria-current={isActive ? "page" : undefined}
@@ -243,7 +246,7 @@ export function Sidebar({ current, onSelect }: Props) {
               {isActive && !isDisabled && (
                 <motion.span
                   layoutId="sidebar-active"
-                  className="absolute inset-0 rounded-md bg-accent"
+                  className="absolute inset-0 rounded-md bg-brand/10"
                   transition={{ type: "spring", stiffness: 380, damping: 30 }}
                 />
               )}
