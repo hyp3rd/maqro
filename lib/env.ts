@@ -64,6 +64,10 @@ type Env = {
   VAPID_SUBJECT?: string;
   ERROR_LOG_DISABLED?: string;
   SHARE_BADGE_SECRET?: string;
+  // Optional shared cache for Open Food Facts lookups (Upstash Redis REST).
+  // Unset = lookups fall through to a direct fetch (fail-open).
+  UPSTASH_REDIS_REST_URL?: string;
+  UPSTASH_REDIS_REST_TOKEN?: string;
 
   // Vercel-injected (read-only, we don't set these).
   VERCEL_URL?: string;
@@ -111,6 +115,8 @@ function readEnv(source: NodeJS.ProcessEnv = process.env): Env {
     VAPID_SUBJECT: trimmed(source.VAPID_SUBJECT),
     ERROR_LOG_DISABLED: trimmed(source.ERROR_LOG_DISABLED),
     SHARE_BADGE_SECRET: trimmed(source.SHARE_BADGE_SECRET),
+    UPSTASH_REDIS_REST_URL: trimmed(source.UPSTASH_REDIS_REST_URL),
+    UPSTASH_REDIS_REST_TOKEN: trimmed(source.UPSTASH_REDIS_REST_TOKEN),
     VERCEL_URL: trimmed(source.VERCEL_URL),
     VERCEL_PROJECT_PRODUCTION_URL: trimmed(
       source.VERCEL_PROJECT_PRODUCTION_URL,
@@ -178,6 +184,14 @@ export function validateEnvFor(e: Env): EnvIssue[] {
       "SHARE_BADGE_SECRET must be at least 32 characters (HMAC-SHA256 needs real entropy).",
     );
   }
+  if (
+    e.UPSTASH_REDIS_REST_URL &&
+    !e.UPSTASH_REDIS_REST_URL.startsWith("https://")
+  ) {
+    warn(
+      "UPSTASH_REDIS_REST_URL should be the https:// REST endpoint (the Upstash REST API, not a redis:// connection string).",
+    );
+  }
 
   // --- Coherence: features that require multiple keys to work ---
 
@@ -207,6 +221,17 @@ export function validateEnvFor(e: Env): EnvIssue[] {
   if (e.RESEND_API_KEY && !e.EMAIL_FROM) {
     err(
       "RESEND_API_KEY is set but EMAIL_FROM is missing - every email send would 400 before leaving the server.",
+    );
+  }
+
+  if (e.UPSTASH_REDIS_REST_URL && !e.UPSTASH_REDIS_REST_TOKEN) {
+    err(
+      "UPSTASH_REDIS_REST_URL is set but UPSTASH_REDIS_REST_TOKEN is missing - the OFF cache can't authenticate, so every lookup would fall through to a direct fetch.",
+    );
+  }
+  if (e.UPSTASH_REDIS_REST_TOKEN && !e.UPSTASH_REDIS_REST_URL) {
+    err(
+      "UPSTASH_REDIS_REST_TOKEN is set but UPSTASH_REDIS_REST_URL is missing.",
     );
   }
 

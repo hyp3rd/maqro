@@ -1,5 +1,14 @@
+import { cacheGet, cacheSetFireAndForget } from "@/lib/cache/redis";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GET } from "./route";
+
+// The route now delegates the fetch + cache to `fetchOffProductResult`. Mock the
+// cache so these tests are deterministic regardless of the shell's Upstash env:
+// by default `cacheGet` returns undefined ⇒ a miss ⇒ the (mocked) fetch path.
+vi.mock("@/lib/cache/redis", () => ({
+  cacheGet: vi.fn(),
+  cacheSetFireAndForget: vi.fn(),
+}));
 
 const originalFetch = globalThis.fetch;
 
@@ -26,6 +35,8 @@ function makeCtx(code: string) {
 describe("GET /api/off-barcode/[code]", () => {
   beforeEach(() => {
     globalThis.fetch = vi.fn();
+    vi.mocked(cacheGet).mockReset();
+    vi.mocked(cacheSetFireAndForget).mockReset();
   });
   afterEach(() => {
     globalThis.fetch = originalFetch;
@@ -118,5 +129,35 @@ describe("GET /api/off-barcode/[code]", () => {
     ) as unknown as typeof fetch;
     const res = await GET(makeReq("5901234123457"), makeCtx("5901234123457"));
     expect(res.status).toBe(502);
+  });
+
+  it("returns 504 when the upstream lookup times out", async () => {
+    vi.useFakeTimers();
+    try {
+      globalThis.fetch = vi.fn(
+        (_url: string, init?: { signal?: AbortSignal }) =>
+          new Promise<Response>((_, reject) => {
+            init?.signal?.addEventListener("abort", () => {
+              const e = new Error("aborted");
+              e.name = "AbortError";
+              reject(e);
+            });
+          }),
+      ) as unknown as typeof fetch;
+      const pending = GET(makeReq("5901234123457"), makeCtx("5901234123457"));
+      pending.catch(() => {});
+      await vi.advanceTimersByTimeAsync(5_000);
+      const res = await pending;
+      expect(res.status).toBe(504);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("returns 404 from a negative-cached barcode without hitting upstream", async () => {
+    vi.mocked(cacheGet).mockResolvedValueOnce({ __miss: true });
+    const res = await GET(makeReq("0000000000000"), makeCtx("0000000000000"));
+    expect(res.status).toBe(404);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });

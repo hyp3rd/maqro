@@ -295,24 +295,31 @@ feature it backs - the app stays runnable on a bare-minimum config.
 
 ### Optional
 
-| Variable                           | Backs                                       | Default behavior when unset                           |
-| ---------------------------------- | ------------------------------------------- | ----------------------------------------------------- |
-| `NEXT_PUBLIC_APP_URL`              | Canonical deployment URL (emails, OG meta)  | Falls back to `VERCEL_URL` or `http://localhost:3000` |
-| `ANTHROPIC_API_KEY`                | AI meal-plan / recipe-gen / meal-identify   | AI buttons fall back / hide                           |
-| `STRIPE_SECRET_KEY`                | Server-side Stripe client                   | Checkout / portal / webhook 503                       |
-| `STRIPE_WEBHOOK_SECRET`            | Webhook signature verification              | Webhook 503                                           |
-| `STRIPE_PRICE_AI_PLUS_MONTHLY`     | Stripe Price ID for AI Plus monthly         | Plus monthly checkout 503                             |
-| `STRIPE_PRICE_AI_PLUS_YEARLY`      | Stripe Price ID for AI Plus yearly          | Plus yearly checkout 503                              |
-| `STRIPE_PRICE_PRO_MONTHLY`         | Stripe Price ID for Pro monthly             | Pro monthly checkout 503                              |
-| `STRIPE_PRICE_PRO_YEARLY`          | Stripe Price ID for Pro yearly              | Pro yearly checkout 503                               |
-| `RESEND_API_KEY`                   | Transactional email send                    | Welcome / reminder / recap / trial-ending skip        |
-| `EMAIL_FROM`                       | `From:` address for Resend                  | Same                                                  |
-| `NEXT_PUBLIC_VAPID_PUBLIC_KEY`     | Browser push subscription key               | Push toggle hidden in Settings                        |
-| `VAPID_PRIVATE_KEY`                | Server-side push send signing               | Push cron sends are no-ops                            |
-| `VAPID_SUBJECT`                    | `mailto:` / URL the push providers contact  | Push cron sends are no-ops                            |
-| `CRON_SECRET`                      | Auth for `/api/cron/*` (Vercel cron header) | Cron routes 503                                       |
-| `ERROR_LOG_DISABLED=1`             | Kill-switch for the server-side ingest      | Errors logged                                         |
-| `NEXT_PUBLIC_ERROR_LOG_DISABLED=1` | Kill-switch for the client reporter         | Errors reported                                       |
+| Variable                           | Backs                                             | Default behavior when unset                           |
+| ---------------------------------- | ------------------------------------------------- | ----------------------------------------------------- |
+| `NEXT_PUBLIC_APP_URL`              | Canonical deployment URL (emails, OG meta)        | Falls back to `VERCEL_URL` or `http://localhost:3000` |
+| `ANTHROPIC_API_KEY`                | AI meal-plan / recipe-gen / meal-identify         | AI buttons fall back / hide                           |
+| `STRIPE_SECRET_KEY`                | Server-side Stripe client                         | Checkout / portal / webhook 503                       |
+| `STRIPE_WEBHOOK_SECRET`            | Webhook signature verification                    | Webhook 503                                           |
+| `STRIPE_PRICE_AI_PLUS_MONTHLY`     | Stripe Price ID for AI Plus monthly               | Plus monthly checkout 503                             |
+| `STRIPE_PRICE_AI_PLUS_YEARLY`      | Stripe Price ID for AI Plus yearly                | Plus yearly checkout 503                              |
+| `STRIPE_PRICE_PRO_MONTHLY`         | Stripe Price ID for Pro monthly                   | Pro monthly checkout 503                              |
+| `STRIPE_PRICE_PRO_YEARLY`          | Stripe Price ID for Pro yearly                    | Pro yearly checkout 503                               |
+| `RESEND_API_KEY`                   | Transactional email send                          | Welcome / reminder / recap / trial-ending skip        |
+| `EMAIL_FROM`                       | `From:` address for Resend                        | Same                                                  |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY`     | Browser push subscription key                     | Push toggle hidden in Settings                        |
+| `VAPID_PRIVATE_KEY`                | Server-side push send signing                     | Push cron sends are no-ops                            |
+| `VAPID_SUBJECT`                    | `mailto:` / URL the push providers contact        | Push cron sends are no-ops                            |
+| `CRON_SECRET`                      | Auth for `/api/cron/*` (Vercel cron header)       | Cron routes 503                                       |
+| `ERROR_LOG_DISABLED=1`             | Kill-switch for the server-side ingest            | Errors logged                                         |
+| `NEXT_PUBLIC_ERROR_LOG_DISABLED=1` | Kill-switch for the client reporter               | Errors reported                                       |
+| `UPSTASH_REDIS_REST_URL`           | Cross-instance Open Food Facts cache (REST URL)   | OFF lookups fetch directly (no cross-instance cache)  |
+| `UPSTASH_REDIS_REST_TOKEN`         | Cross-instance Open Food Facts cache (REST token) | Same                                                  |
+
+> The OFF cache is optional and **fail-open** — set both `UPSTASH_REDIS_REST_*`
+> (Vercel Marketplace → Upstash Redis, same region as the deploy) to make a cold
+> serverless instance as fast as a warm one; unset, every barcode/search lookup
+> just falls back to a direct fetch.
 
 ### Supabase setup (auth + sync)
 
