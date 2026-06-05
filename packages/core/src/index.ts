@@ -3,10 +3,13 @@
  *  storage dependencies, so it runs identically under Next.js, Vitest, and
  *  React Native / Metro.
  *
- *  Increment 1 of the extraction is the macro engine and its domain model. The
- *  old `@/lib/...` and `@/components/macro/types` paths now re-export from here
+ *  The old `@/lib/...` and `@/components/macro/types` paths re-export from here
  *  (thin shims), so existing imports keep working unchanged. */
 export * from "./age";
+export * from "./goal-phases";
 export * from "./macros";
 export * from "./rda";
+export * from "./records";
+export * from "./trends";
 export * from "./types";
+export * from "./weekly-recap";

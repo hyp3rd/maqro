@@ -7,8 +7,12 @@
   "exports": {
     ".": "./src/index.ts",
     "./age": "./src/age.ts",
+    "./goal-phases": "./src/goal-phases.ts",
     "./macros": "./src/macros.ts",
     "./rda": "./src/rda.ts",
-    "./types": "./src/types.ts"
+    "./records": "./src/records.ts",
+    "./trends": "./src/trends.ts",
+    "./types": "./src/types.ts",
+    "./weekly-recap": "./src/weekly-recap.ts"
   }
 }
