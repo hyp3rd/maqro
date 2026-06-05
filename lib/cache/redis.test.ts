@@ -3,14 +3,16 @@ import {
   _resetRedisClientForTests,
   cacheGet,
   cacheSetFireAndForget,
+  pingCache,
 } from "./redis";
 
 // Mock the Upstash client as a real (constructable) class so no real connection
 // is attempted; `ctorSpy` records construction, `getMock`/`setMock` drive
 // behavior. `vi.hoisted` because the `vi.mock` factory runs before module init.
-const { getMock, setMock, ctorSpy, afterMock } = vi.hoisted(() => ({
+const { getMock, setMock, pingMock, ctorSpy, afterMock } = vi.hoisted(() => ({
   getMock: vi.fn(),
   setMock: vi.fn(),
+  pingMock: vi.fn(),
   ctorSpy: vi.fn(),
   // `after(cb)` runs the callback synchronously here; in a real request it runs
   // after the response is sent. Tests override per-case to simulate out-of-scope.
@@ -20,6 +22,7 @@ vi.mock("@upstash/redis", () => ({
   Redis: class {
     get = getMock;
     set = setMock;
+    ping = pingMock;
     constructor() {
       ctorSpy();
     }
@@ -33,6 +36,7 @@ describe("lib/cache/redis", () => {
     ctorSpy.mockClear();
     getMock.mockReset();
     setMock.mockReset();
+    pingMock.mockReset();
     afterMock.mockReset();
     afterMock.mockImplementation((cb: () => unknown) => cb());
   });
@@ -136,6 +140,32 @@ describe("lib/cache/redis", () => {
       await cacheGet("a");
       await cacheGet("b");
       expect(ctorSpy).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("pingCache (status probe)", () => {
+    it("returns skipped when the cache is unconfigured", async () => {
+      delete process.env.UPSTASH_REDIS_REST_URL;
+      delete process.env.UPSTASH_REDIS_REST_TOKEN;
+      _resetRedisClientForTests();
+      expect(await pingCache()).toBe("skipped");
+      expect(ctorSpy).not.toHaveBeenCalled();
+    });
+
+    it("returns ok when the ping round-trips", async () => {
+      process.env.UPSTASH_REDIS_REST_URL = "https://x.upstash.io";
+      process.env.UPSTASH_REDIS_REST_TOKEN = "tok";
+      _resetRedisClientForTests();
+      pingMock.mockResolvedValueOnce("PONG");
+      expect(await pingCache()).toBe("ok");
+    });
+
+    it("returns fail when the ping errors", async () => {
+      process.env.UPSTASH_REDIS_REST_URL = "https://x.upstash.io";
+      process.env.UPSTASH_REDIS_REST_TOKEN = "tok";
+      _resetRedisClientForTests();
+      pingMock.mockRejectedValueOnce(new Error("redis down"));
+      expect(await pingCache()).toBe("fail");
     });
   });
 });

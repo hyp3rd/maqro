@@ -65,7 +65,7 @@ beforeEach(() => {
     ok: true,
     version: "0.1.55",
     time: "2026-05-25T12:00:00Z",
-    checks: { supabase: "ok", stripe: "ok" },
+    checks: { supabase: "ok", stripe: "ok", upstash: "ok" },
   });
 });
 
@@ -111,6 +111,7 @@ describe("GET /api/cron/status-probe — probe + persist", () => {
         overall_ok: true,
         supabase_status: "ok",
         stripe_status: "ok",
+        upstash_status: "ok",
         http_status: 200,
         app_version: "0.1.55",
       }),
@@ -122,7 +123,7 @@ describe("GET /api/cron/status-probe — probe + persist", () => {
       ok: false,
       version: "0.1.55",
       time: "2026-05-25T12:00:00Z",
-      checks: { supabase: "fail", stripe: "ok" },
+      checks: { supabase: "fail", stripe: "ok", upstash: "ok" },
     });
     const { GET } = await loadRoute();
     const res = await GET(authedReq());
@@ -146,7 +147,7 @@ describe("GET /api/cron/status-probe — probe + persist", () => {
       ok: true,
       version: "0.1.55",
       time: "2026-05-25T12:00:00Z",
-      checks: { supabase: "ok", stripe: "skipped" },
+      checks: { supabase: "ok", stripe: "skipped", upstash: "skipped" },
     });
     const { GET } = await loadRoute();
     const res = await GET(authedReq());

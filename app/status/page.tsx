@@ -40,6 +40,12 @@ const COMPONENTS: Array<{ key: Component; label: string; detail: string }> = [
     detail:
       "Checkout, subscription management, and webhooks. App stays usable during a Stripe outage.",
   },
+  {
+    key: "upstash",
+    label: "Upstash (cache)",
+    detail:
+      "Open Food Facts lookup cache. App stays usable during an Upstash outage — lookups fall through to a direct fetch.",
+  },
 ];
 
 /** Public service-status page. Reads probe history from
@@ -152,7 +158,7 @@ async function loadProbes(): Promise<Probe[]> {
     const { data, error } = await client
       .from("status_probes")
       .select(
-        "probed_at, overall_ok, supabase_status, stripe_status, response_ms, http_status",
+        "probed_at, overall_ok, supabase_status, stripe_status, upstash_status, response_ms, http_status",
       )
       .gte("probed_at", cutoff)
       .order("probed_at", { ascending: false })

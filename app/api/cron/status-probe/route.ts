@@ -69,6 +69,7 @@ export async function GET(req: Request): Promise<NextResponse> {
       overall_ok: snapshot.ok,
       supabase_status: snapshot.checks.supabase,
       stripe_status: snapshot.checks.stripe,
+      upstash_status: snapshot.checks.upstash,
       response_ms: elapsed,
       http_status: snapshot.ok ? 200 : 503,
       app_version: snapshot.version,
