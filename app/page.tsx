@@ -10,14 +10,18 @@ import { getEffectiveUser } from "@/lib/auth/effective-user";
 import { GITHUB_REPO_URL } from "@/lib/links";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import {
-  Activity,
   ArrowRight,
   Camera,
   ChefHat,
   CloudOff,
+  HeartPulse,
   LineChart,
   Lock,
+  Milestone,
+  Pill,
+  ShieldCheck,
   Sparkles,
+  Timer,
   Utensils,
 } from "lucide-react";
 import type { Metadata } from "next";
@@ -390,11 +394,14 @@ async function Features() {
   // stay in code - they're not translatable content.
   const items = [
     { key: "mealPlanning", icon: Utensils },
-    { key: "photoId", icon: Camera },
+    { key: "logging", icon: Camera },
     { key: "recipes", icon: ChefHat },
+    { key: "fasting", icon: Timer },
+    { key: "goalPhases", icon: Milestone },
+    { key: "healthJournal", icon: HeartPulse },
+    { key: "micronutrients", icon: Pill },
     { key: "trends", icon: LineChart },
-    { key: "ownership", icon: Activity },
-    { key: "pwa", icon: Sparkles },
+    { key: "ownership", icon: ShieldCheck },
   ] as const;
   return (
     <RevealSection

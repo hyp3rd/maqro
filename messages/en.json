@@ -8,10 +8,10 @@
     "homeAria": "Maqro home"
   },
   "hero": {
-    "tag": "Now with AI meal planning + photo identification",
+    "tag": "Now with fasting, goal phases & micronutrient tracking",
     "headlineLine1": "Tune your macros.",
     "headlineLine2": "Plan your meals. See your progress.",
-    "subtitle": "A personal nutrition app that respects your time and your data. Set targets, log meals, and watch the numbers - without a single tracking pixel.",
+    "subtitle": "A personal nutrition app that respects your time and your data. Set targets, log meals, track fasting and your health — without a single tracking pixel.",
     "ctaPrimary": "Open the app",
     "ctaSecondary": "See features →",
     "ctaSample": "Or try with sample data →",
@@ -38,27 +38,39 @@
     "items": {
       "mealPlanning": {
         "title": "Smart meal planning",
-        "body": "Auto-fill a day to your macro targets with a deterministic solver - or let Claude Sonnet draft a coherent plan. Per-meal regenerate when one slot doesn't fit."
+        "body": "Auto-fill a day to your macro targets with a deterministic solver — or let Claude draft a coherent plan. Regenerate one slot when it doesn't fit."
       },
-      "photoId": {
-        "title": "Photo identification",
-        "body": "Point your camera at a label or meal. AI returns structured macros; one tap saves it to your foods."
+      "logging": {
+        "title": "Log by photo, barcode, or voice",
+        "body": "Point your camera at a label or meal, scan a barcode against Open Food Facts, or just say what you ate — each becomes structured macros in a tap."
       },
       "recipes": {
         "title": "Recipes that compute",
-        "body": "Build or generate recipes. Macros are computed deterministically from ingredients - the AI never invents nutrient values."
+        "body": "Build or generate recipes; the macros are summed from the ingredients, never guessed — so the numbers stay honest even when the AI drafts the recipe."
+      },
+      "fasting": {
+        "title": "Intermittent fasting",
+        "body": "Run a fast on the protocol you choose and watch a live timer cross the phases — fed, glycogen, fat-burning, ketosis, autophagy — with every finished fast saved to history."
+      },
+      "goalPhases": {
+        "title": "Goal phases",
+        "body": "Sequence a cut, diet break, maintenance, and lean bulk; your daily target follows whichever phase is active today, with a heads-up before one would raise your calories. (Pro)"
+      },
+      "healthJournal": {
+        "title": "A full health journal",
+        "body": "Not just macros: log weight, body measurements with a body-fat estimate, blood pressure, and hydration — each charted over time on one Progress page."
+      },
+      "micronutrients": {
+        "title": "Micronutrients, not just macros",
+        "body": "Track ten vitamins and minerals against age- and sex-aware RDA targets, enriched from Open Food Facts as you log. (Pro)"
       },
       "trends": {
-        "title": "Trends + plateau detection",
-        "body": "Moving-average weight, plateau detection, and TDEE recalibration when your observed change diverges from expected."
+        "title": "Trends + adaptive TDEE",
+        "body": "Moving-average weight with plateau detection, and a TDEE that recalibrates itself when your real-world change diverges from the formula."
       },
       "ownership": {
         "title": "Your data, your device",
-        "body": "IndexedDB by default. Optional Supabase sync across devices for Pro. JSON export anytime - no lock-in."
-      },
-      "pwa": {
-        "title": "Installable PWA",
-        "body": "Add to home screen on iOS or Android. Works offline once visited. No app store, no native shell."
+        "body": "Local-first by default, with one-tap JSON export and no lock-in or tracking pixel. Pro adds encrypted cross-device sync, cloud backups, and a vector-PDF health report."
       }
     }
   },
@@ -89,35 +101,36 @@
     "plans": {
       "free": {
         "name": "Free",
-        "tagline": "The full calculator + planner. Your data stays local.",
+        "tagline": "The full calculator, planner, and health journal. Your data stays local.",
         "features": [
-          "Macro calculator + meal planner",
-          "Daily / weight history",
-          "Recipe builder",
+          "Calculator, planner & recipes",
+          "Fasting, hydration & health journal",
+          "Barcode, photo & voice logging",
           "25 AI generations / month"
         ],
         "cta": "Open the app"
       },
       "plus": {
         "name": "AI Plus",
-        "tagline": "Lift the AI cap. Cancel any time.",
+        "tagline": "Lift the AI cap and unlock reminders. Cancel any time.",
         "features": [
           "Everything in Free",
           "500 AI generations / month",
-          "Priority API queue",
-          "7-day free trial"
+          "Import recipes from a URL",
+          "Daily reminders + weekly recap",
+          "Priority AI queue"
         ],
         "cta": "Start free trial"
       },
       "pro": {
         "name": "Pro",
-        "tagline": "Sync across devices. Cloud backups. Engagement email.",
+        "tagline": "Sync, micronutrients, goal phases, and encrypted backups.",
         "features": [
           "Everything in AI Plus",
           "Unlimited AI generations",
-          "Sync across all your devices",
-          "Cloud backups + JSON export",
-          "Daily reminders + weekly recap"
+          "Micronutrients + goal phases",
+          "Cross-device sync + encrypted backups",
+          "Vector-PDF health report"
         ],
         "cta": "Start free trial"
       }
@@ -284,7 +297,7 @@
     "header": {
       "eyebrow": "Pricing",
       "title": "Free forever. Pay if it earns it.",
-      "subtitle": "The core calculator + planner is free forever. Paid plans unlock higher AI limits, sync, and engagement email. All paid plans include a 7-day free trial — no card up front."
+      "subtitle": "The core calculator + planner is free forever. Paid plans unlock higher AI limits, sync, micronutrients, goal phases, and encrypted backups. All paid plans include a 7-day free trial — no card up front."
     },
     "cycle": {
       "ariaLabel": "Billing cycle",
@@ -332,6 +345,23 @@
           "label": "Photo meal identification",
           "detail": "Counts toward your monthly AI generations."
         },
+        "fasting": {
+          "label": "Intermittent fasting",
+          "detail": "Live timer through fed → glycogen → ketosis → autophagy, with completed-fast history."
+        },
+        "hydration": { "label": "Hydration tracking" },
+        "bodyVitals": {
+          "label": "Body measurements + blood pressure",
+          "detail": "Waist/neck/hip with a body-fat estimate; blood pressure with ACC/AHA classification."
+        },
+        "goalPhases": {
+          "label": "Goal phases",
+          "detail": "Sequence cut → diet break → maintenance → lean bulk; the daily target follows the active phase."
+        },
+        "micronutrients": {
+          "label": "Micronutrient tracking",
+          "detail": "Ten vitamins & minerals vs age/sex RDA, enriched from Open Food Facts."
+        },
         "aiGenerations": {
           "label": "AI generations per month",
           "detail": "Generated meal plans, recipes, and photo IDs combined."
@@ -344,6 +374,14 @@
         "localStorage": { "label": "Local-first storage (IndexedDB)" },
         "syncDevices": { "label": "Sync across devices (Supabase)" },
         "cloudBackup": { "label": "Cloud backups (JSON export)" },
+        "encryptedBackup": {
+          "label": "Encrypted cloud backups",
+          "detail": "Zero-knowledge, passphrase-locked — with a preview-before-apply restore."
+        },
+        "healthReportPdf": {
+          "label": "Health report PDF",
+          "detail": "Vector PDF: nutrition, weight, body, blood pressure, hydration, fasting, micronutrients."
+        },
         "manualJsonExport": {
           "label": "Manual JSON export + import",
           "detail": "Works without an account on every plan."
@@ -381,20 +419,21 @@
           "everythingInFree": "Everything in Free",
           "aiGenerations500": "500 AI generations per month",
           "importRecipesUrl": "Import recipes from URL",
+          "reminders": "Daily reminders + weekly recap",
           "priorityQueue": "Priority API queue"
         }
       },
       "pro": {
         "name": "Pro",
-        "tagline": "Sync across devices. Cloud backups. Engagement email.",
+        "tagline": "Sync, micronutrients, goal phases, and encrypted backups.",
         "cta": "Start 7-day trial",
         "features": {
           "everythingInPlus": "Everything in AI Plus",
           "aiGenerationsUnlimited": "Unlimited AI generations",
+          "micronutrientsGoalPhases": "Micronutrients + goal phases",
           "syncDevices": "Sync across all your devices",
-          "cloudBackup": "Cloud backups + JSON export",
-          "engagementEmail": "Daily reminders + weekly recap",
-          "customRecipeSlugs": "Custom recipe share slugs"
+          "encryptedBackup": "Encrypted cloud backups",
+          "healthReportPdf": "Vector-PDF health report"
         }
       }
     },
