@@ -1090,13 +1090,20 @@ Done (in roughly chronological order):
     and added a preinstall + CI denylist guard against unscoped
     `supabase*` packages; a `wasm-unsafe-eval` CSP source so the
     report's WebAssembly PDF engine runs in production
+  - **Cross-instance food-lookup cache** - an optional Upstash Redis
+    layer in front of Open Food Facts (barcode + search): a cold
+    serverless instance is as fast as a warm one, and the browser, AI
+    planner, and enrichment cron share one cached entry per query.
+    Fail-open — with no Upstash env every lookup falls back to a direct
+    fetch; write-through survives the response via `after()`
 
-Possibly next (not committed):
+Considered, deliberately not pursuing:
 
-- **Weekly target adherence** - UX shift from per-day to per-week
-  calorie targets for users on aggressive cuts.
-- **Cross-instance OFF cache** - Redis / Vercel KV layer so a
-  freshly-warmed instance is just as fast as a hot one.
+- **Weekly target adherence / calorie banking** - rebalancing a big day
+  across the rest of the week assumes over- and under-eating are
+  symmetric; they aren't (hormonal + fat-storage asymmetry), and "eat it
+  back later" normalizes binge-then-restrict cycles. Per-day targets stay
+  the model.
 
 ## Contributing
 
