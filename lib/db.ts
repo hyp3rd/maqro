@@ -10,6 +10,7 @@ import type { MicronutrientProfile } from "@/lib/micronutrients/types";
 import type { ShoppingAisle } from "@/lib/shopping/categorize";
 import { notifyDataChanged } from "@/lib/sync/data-bus";
 import { type DBSchema, type IDBPDatabase, openDB } from "idb";
+import type { DailyLog, Versioned, WeightEntry } from "@maqro/core/records";
 
 const DB_NAME = "maqro";
 const DB_VERSION = 18;
@@ -70,10 +71,10 @@ const PROFILE_KEY = "default";
  *  literals (forms, mappers, tests) don't have to know about sync
  *  internals; the saver functions in this file fill them in, and the
  *  sync engine treats missing/null as "never synced". */
-export type Versioned = {
-  localUpdatedAt?: string;
-  serverUpdatedAt?: string | null;
-};
+// `Versioned`, `DailyLog`, and `WeightEntry` now live in `@maqro/core/records`
+// (shared with the native app). Imported above for this file's record types +
+// the idb schema, and re-exported here so `@/lib/db` consumers are unchanged.
+export type { DailyLog, Versioned, WeightEntry };
 
 /** Optional per-row position used by the "custom" sort mode in the
  *  My Foods / Recipes / Templates views. A `double precision` (number)
@@ -122,21 +123,6 @@ export type CustomFood = Omit<Food, "id" | "source"> & {
 } & Versioned &
   Sortable;
 
-/** A single day's meal log. Keyed by `YYYY-MM-DD` in the user's local
- * timezone. The `meals` shape mirrors the in-memory `Meal[]` exactly.
- *
- *  NOTE: This shape will be retired in a follow-up pass once the new
- *  per-meal `meals` store is wired through the hooks. The store stays
- *  available here so existing reads keep working during the cutover. */
-export type DailyLog = {
-  date: string;
-  meals: Meal[];
-  /** Legacy ms-epoch timestamp from pre-v7 rows. Kept for backwards
-   *  compatibility while we migrate; new writes set
-   *  `localUpdatedAt`/`serverUpdatedAt` via the Versioned mixin. */
-  updatedAt: number;
-} & Versioned;
-
 /** A reusable meal template - the user named some set of foods (e.g.
  * "Greek yogurt bowl") and can apply it to any meal slot on any day. The
  * `foods` array is captured with portions as-saved. Id is a client-minted
@@ -153,14 +139,6 @@ export type MealTemplate = {
   updatedAt: number;
 } & Versioned &
   Sortable;
-
-/** A single weigh-in. Keyed by `YYYY-MM-DD` local date - same-day writes
- * overwrite, so the latest weigh-in for a day wins. */
-export type WeightEntry = {
-  date: string;
-  kg: number;
-  recordedAt: number;
-} & Versioned;
 
 /** A day's cumulative water intake in millilitres. Keyed by `YYYY-MM-DD`
  *  local date — one row per day, accumulated as the user logs (each tap

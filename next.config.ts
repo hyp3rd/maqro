@@ -221,6 +221,9 @@ const nextConfig: NextConfig = {
   // receives the real error details, so the admin Errors view becomes
   // actionable. Same-origin assets already send the headers this needs.
   crossOrigin: "anonymous",
+  // Transpile the in-repo workspace package — it ships TypeScript source with
+  // no build step, so Next compiles it alongside the app.
+  transpilePackages: ["@maqro/core"],
   async headers() {
     return [
       {
