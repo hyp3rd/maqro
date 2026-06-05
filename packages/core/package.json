@@ -1,0 +1,14 @@
+{
+  "name": "@maqro/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Platform-agnostic domain logic for maqro (web + native).",
+  "exports": {
+    ".": "./src/index.ts",
+    "./age": "./src/age.ts",
+    "./macros": "./src/macros.ts",
+    "./rda": "./src/rda.ts",
+    "./types": "./src/types.ts"
+  }
+}

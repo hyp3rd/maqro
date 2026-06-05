@@ -14,6 +14,7 @@ repos:
               cspell.json|
               package.json|
               package-lock.json|
+              packages/core/package.json|
               tsconfig.json|
               test-results/.last-run.json|
               vercel.json|
