@@ -20,7 +20,10 @@ export async function GET(request: Request) {
   const limit = Number.isFinite(requested) ? requested : 10;
 
   try {
-    const hits = await searchOffHitsServer(q, limit);
+    // Pass the request signal so a superseded typeahead query (the browser
+    // aborts stale requests) cancels the upstream OFF fetch instead of letting
+    // it run to the 5s timeout.
+    const hits = await searchOffHitsServer(q, limit, request.signal);
     return NextResponse.json(
       { hits },
       {

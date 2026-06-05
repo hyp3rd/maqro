@@ -154,8 +154,8 @@ describe("GET /api/off-barcode/[code]", () => {
     }
   });
 
-  it("returns 404 from a negative-cached barcode without hitting upstream", async () => {
-    vi.mocked(cacheGet).mockResolvedValueOnce({ __miss: true });
+  it("returns 404 from a negative-cached barcode (miss envelope) without hitting upstream", async () => {
+    vi.mocked(cacheGet).mockResolvedValueOnce({ miss: true });
     const res = await GET(makeReq("0000000000000"), makeCtx("0000000000000"));
     expect(res.status).toBe(404);
     expect(globalThis.fetch).not.toHaveBeenCalled();
