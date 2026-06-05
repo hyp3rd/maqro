@@ -404,4 +404,37 @@ test.describe("maqro happy path", () => {
     // build only runs once past the auth guard, so nothing heavy fires here.)
     await expect(page.getByRole("status")).toBeVisible({ timeout: 5_000 });
   });
+
+  test("fasting: stopping a running fast archives it to history", async ({
+    page,
+  }) => {
+    // `?demo=1` seeds a profile with a 16:8 fast already ~10h in. The profile
+    // matters twice over: the fasting card reads it straight from IDB and only
+    // renders once it's there (a fresh guest's default is never persisted), and
+    // the running fast gives us a Stop control to exercise record-on-stop.
+    await page.goto("/app?demo=1");
+    await page.getByRole("button", { name: "Meal Plan" }).click();
+
+    // Wait out the demo seed + IDB hydrate before the card's Stop appears.
+    const stop = page.getByRole("button", { name: "Stop fasting now" });
+    await expect(stop).toBeVisible({ timeout: 10_000 });
+    await stop.click();
+    // Confirm — the trigger read "Stop fasting now"; the dialog action is the
+    // exact "Stop fasting".
+    await page
+      .getByRole("button", { name: "Stop fasting", exact: true })
+      .click();
+
+    // The completed ~10h fast now shows in the archive on the Fasting page
+    // (record-on-stop → fastSessions store → useFastSessions → history card).
+    await page.getByRole("button", { name: "Fasting", exact: true }).click();
+    const history = page
+      .locator("section")
+      .filter({ has: page.getByRole("heading", { name: "Fasting history" }) });
+    await expect(
+      history.getByRole("heading", { name: "Fasting history" }),
+    ).toBeVisible();
+    await expect(history.getByText(/10h/)).toBeVisible();
+    await expect(history.getByText(/Reached/)).toBeVisible();
+  });
 });
