@@ -39,6 +39,13 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    id: "2026-06-05-faster-food-lookups",
+    date: "2026-06-05",
+    version: "0.6.6",
+    title: "Faster food search and barcode scans",
+    body: `Food lookups from Open Food Facts — searching for a food, and scanning a barcode — now come back faster, especially the first one after the app's been idle. It's automatic; nothing to set up.`,
+  },
+  {
     id: "2026-06-04-goal-phase-warning",
     date: "2026-06-04",
     version: "0.6.0",
