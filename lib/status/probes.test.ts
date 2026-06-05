@@ -16,6 +16,7 @@ function probe(
   iso: string,
   supabase: Probe["supabase_status"],
   stripe: Probe["stripe_status"] = "ok",
+  upstash: Probe["upstash_status"] = "ok",
 ): Probe {
   const allCriticalOk = supabase === "ok" || supabase === "skipped";
   return {
@@ -23,6 +24,7 @@ function probe(
     overall_ok: allCriticalOk,
     supabase_status: supabase,
     stripe_status: stripe,
+    upstash_status: upstash,
     response_ms: 50,
     http_status: allCriticalOk ? 200 : 503,
   };
@@ -30,9 +32,10 @@ function probe(
 
 describe("componentStatus", () => {
   it("reads per-component status straight from the row", () => {
-    const p = probe("2026-05-24T12:00:00Z", "fail", "ok");
+    const p = probe("2026-05-24T12:00:00Z", "fail", "ok", "skipped");
     expect(componentStatus(p, "supabase")).toBe("fail");
     expect(componentStatus(p, "stripe")).toBe("ok");
+    expect(componentStatus(p, "upstash")).toBe("skipped");
   });
 
   it("derives 'overall' from the persisted overall_ok flag", () => {

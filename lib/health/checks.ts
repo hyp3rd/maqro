@@ -1,4 +1,5 @@
 import { getStripe } from "@/lib/billing/stripe";
+import { pingCache } from "@/lib/cache/redis";
 import { SUPABASE_CONFIG } from "@/lib/supabase/env";
 import { APP_VERSION } from "@/lib/version";
 import { createClient } from "@supabase/supabase-js";
@@ -36,7 +37,7 @@ export type HealthSnapshot = {
   ok: boolean;
   version: string;
   time: string;
-  checks: { supabase: CheckStatus; stripe: CheckStatus };
+  checks: { supabase: CheckStatus; stripe: CheckStatus; upstash: CheckStatus };
 };
 
 /** Verify Supabase is reachable. Uses the publishable (anon) key
@@ -94,15 +95,25 @@ export async function checkStripe(): Promise<CheckStatus> {
  *  guest-mode shell as not-fully-up. Stripe is non-critical at
  *  this level — its status surfaces in the snapshot for finer-
  *  grained dashboards but doesn't influence `ok`. */
+/** Verify the optional Upstash cache (Open Food Facts lookups) is reachable —
+ *  a PING round-trip via the shared cache client. Like Stripe, an Upstash
+ *  outage is NON-critical: OFF lookups fall through to a direct fetch, so it
+ *  surfaces in the snapshot but never influences `ok`. Returns `skipped` when
+ *  Upstash isn't configured. */
+export async function checkUpstash(): Promise<CheckStatus> {
+  return pingCache();
+}
+
 export async function runAllChecks(): Promise<HealthSnapshot> {
-  const [supabase, stripe] = await Promise.all([
+  const [supabase, stripe, upstash] = await Promise.all([
     checkSupabase(),
     checkStripe(),
+    checkUpstash(),
   ]);
   return {
     ok: supabase === "ok",
     version: APP_VERSION,
     time: new Date().toISOString(),
-    checks: { supabase, stripe },
+    checks: { supabase, stripe, upstash },
   };
 }

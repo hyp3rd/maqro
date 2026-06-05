@@ -75,6 +75,20 @@ export function cacheSetFireAndForget(
   }
 }
 
+/** Health probe for the status page: `"skipped"` when the cache is unconfigured,
+ *  `"ok"` when a PING round-trips, `"fail"` on any error. Optional + fail-open,
+ *  so a failure here is surfaced on /status but never affects overall health. */
+export async function pingCache(): Promise<"ok" | "fail" | "skipped"> {
+  const redis = getRedis();
+  if (!redis) return "skipped";
+  try {
+    await redis.ping();
+    return "ok";
+  } catch {
+    return "fail";
+  }
+}
+
 /** Test-only: drop the memoized client so a test can toggle the env vars and
  *  re-resolve. Mirrors `_clearSettingsCacheForTests` in `lib/app-settings.ts`. */
 export function _resetRedisClientForTests(): void {

@@ -16,11 +16,12 @@ export type Probe = {
   overall_ok: boolean;
   supabase_status: CheckStatus;
   stripe_status: CheckStatus;
+  upstash_status: CheckStatus;
   response_ms: number;
   http_status: number;
 };
 
-export type Component = "overall" | "supabase" | "stripe";
+export type Component = "overall" | "supabase" | "stripe" | "upstash";
 
 /** Minimum probe count before the page is willing to claim a
  *  status ("operational" / "degraded"). 12 probes at the 5-min
@@ -58,6 +59,7 @@ const STATUS_PALETTE: Record<CheckStatus, string> = {
 export function componentStatus(p: Probe, c: Component): CheckStatus {
   if (c === "supabase") return p.supabase_status;
   if (c === "stripe") return p.stripe_status;
+  if (c === "upstash") return p.upstash_status;
   // overall: derived. `overall_ok` is the persisted answer; we re-
   // express it as 'ok' | 'fail' to match the component shape so the
   // UI can render it through the same palette.
