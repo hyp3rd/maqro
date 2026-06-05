@@ -179,27 +179,36 @@ describe("searchOpenFoodFactsServer", () => {
     );
   });
 
-  it("clamps limit below 1 to 1 in the upstream page_size param", async () => {
+  it("always requests the MAX_LIMIT superset and slices the result to the caller's limit", async () => {
+    const manyHits = Array.from({ length: 25 }, (_, i) => ({
+      code: String(i),
+      product_name: `P${i}`,
+      nutriments: { proteins_100g: 1 },
+    }));
     const fetchSpy = vi.fn(
       async () =>
-        new Response(JSON.stringify({ hits: [] }), {
+        new Response(JSON.stringify({ hits: manyHits }), {
           status: 200,
           headers: { "content-type": "application/json" },
         }),
     ) as unknown as typeof fetch;
     globalThis.fetch = fetchSpy;
 
-    await searchOpenFoodFactsServer("x", 0);
-    await searchOpenFoodFactsServer("x", -3);
-    await searchOpenFoodFactsServer("x", 99); // clamped down to MAX_LIMIT=25
+    const r0 = await searchOpenFoodFactsServer("x", 0); // clamped up to 1
+    const r5 = await searchOpenFoodFactsServer("x", 5);
+    const r99 = await searchOpenFoodFactsServer("x", 99); // clamped down to 25
 
-    const calls = (fetchSpy as unknown as { mock: { calls: unknown[][] } }).mock
-      .calls;
-    const pageSizes = calls.map((c) => {
-      const url = new URL(String(c[0]));
-      return url.searchParams.get("page_size");
-    });
-    expect(pageSizes).toEqual(["1", "1", "25"]);
+    expect(r0).toHaveLength(1);
+    expect(r5).toHaveLength(5);
+    expect(r99).toHaveLength(25);
+
+    // page_size is always the superset size; the limit only slices the result.
+    const pageSizes = (
+      fetchSpy as unknown as { mock: { calls: unknown[][] } }
+    ).mock.calls.map((c) =>
+      new URL(String(c[0])).searchParams.get("page_size"),
+    );
+    expect(pageSizes).toEqual(["25", "25", "25"]);
   });
 
   it("times out after 5s when upstream hangs", async () => {
@@ -241,17 +250,20 @@ describe("searchOffHitsServer — cross-instance cache", () => {
     globalThis.fetch = originalFetch;
   });
 
-  it("returns cached hits and skips the network on a hit", async () => {
-    const hits = [
-      { code: "1", product_name: "Cached", nutriments: { proteins_100g: 9 } },
-    ];
-    vi.mocked(cacheGet).mockResolvedValueOnce(hits);
-    const result = await searchOffHitsServer("yogurt", 5);
-    expect(result).toEqual(hits);
+  it("returns a sliced view of the cached superset and skips the network", async () => {
+    const superset = Array.from({ length: 10 }, (_, i) => ({
+      code: String(i),
+      product_name: `C${i}`,
+      nutriments: { proteins_100g: 9 },
+    }));
+    vi.mocked(cacheGet).mockResolvedValueOnce(superset);
+    const result = await searchOffHitsServer("yogurt", 3);
+    expect(result).toHaveLength(3); // sliced from the 10-element superset
+    expect(result[0].product_name).toBe("C0");
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it("writes through with the lowercased key + clamped limit + SEARCH_TTL on a miss", async () => {
+  it("writes through the superset under a lowercased, limit-INDEPENDENT key + SEARCH_TTL", async () => {
     vi.mocked(cacheGet).mockResolvedValueOnce(null);
     globalThis.fetch = vi.fn(
       async () =>
@@ -262,7 +274,7 @@ describe("searchOffHitsServer — cross-instance cache", () => {
     ) as unknown as typeof fetch;
     await searchOffHitsServer("Oats", 8);
     expect(cacheSetFireAndForget).toHaveBeenCalledWith(
-      "off:v1:search:8:oats",
+      "off:v2:search:oats", // no limit segment — shared across callers
       expect.any(Array),
       5 * 60,
     );
@@ -280,6 +292,27 @@ describe("searchOffHitsServer — cross-instance cache", () => {
     globalThis.fetch = fetchSpy;
     await searchOffHitsServer("x", 5);
     expect(fetchSpy).toHaveBeenCalled();
+  });
+
+  it("aborts the upstream fetch when the caller's signal is already aborted", async () => {
+    vi.mocked(cacheGet).mockResolvedValueOnce(null);
+    globalThis.fetch = vi.fn(
+      (_url: string, init?: { signal?: AbortSignal }) =>
+        new Promise<Response>((_, reject) => {
+          const fail = () => {
+            const e = new Error("aborted");
+            e.name = "AbortError";
+            reject(e);
+          };
+          if (init?.signal?.aborted) fail();
+          else init?.signal?.addEventListener("abort", fail);
+        }),
+    ) as unknown as typeof fetch;
+    const ctrl = new AbortController();
+    ctrl.abort();
+    await expect(searchOffHitsServer("x", 5, ctrl.signal)).rejects.toThrow(
+      /timed out after 5s/,
+    );
   });
 });
 
@@ -303,11 +336,13 @@ describe("fetchOffProductResult — cache + status mapping", () => {
     globalThis.fetch = originalFetch;
   });
 
-  it("returns a cached product without fetching", async () => {
+  it("returns a cached product (envelope) without fetching", async () => {
     vi.mocked(cacheGet).mockResolvedValueOnce({
-      code: CODE,
-      product_name: "Cached",
-      nutriments: { proteins_100g: 3 },
+      hit: {
+        code: CODE,
+        product_name: "Cached",
+        nutriments: { proteins_100g: 3 },
+      },
     });
     const r = await fetchOffProductResult(CODE);
     expect(r).toEqual({
@@ -317,42 +352,51 @@ describe("fetchOffProductResult — cache + status mapping", () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it("returns not_found from a cached miss sentinel without fetching", async () => {
-    vi.mocked(cacheGet).mockResolvedValueOnce({ __miss: true });
+  it("returns not_found from a cached miss envelope without fetching", async () => {
+    vi.mocked(cacheGet).mockResolvedValueOnce({ miss: true });
     const r = await fetchOffProductResult(CODE);
     expect(r.status).toBe("not_found");
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it("caches a hit (7d TTL) on a miss", async () => {
+  it("falls through to a fetch (not a 500) when a non-object value is cached", async () => {
+    // A corrupted / manually-set key must not throw `"miss" in <non-object>`.
+    vi.mocked(cacheGet).mockResolvedValueOnce("corrupt" as unknown as never);
+    mockProduct({ status: 1, product: { code: CODE, product_name: "P" } });
+    const r = await fetchOffProductResult(CODE);
+    expect(r.status).toBe("hit");
+    expect(globalThis.fetch).toHaveBeenCalled();
+  });
+
+  it("caches a hit envelope (7d TTL) on a miss", async () => {
     vi.mocked(cacheGet).mockResolvedValueOnce(null);
     mockProduct({ status: 1, product: { code: CODE, product_name: "P" } });
     const r = await fetchOffProductResult(CODE);
     expect(r.status).toBe("hit");
     expect(cacheSetFireAndForget).toHaveBeenCalledWith(
-      `off:v1:product:${CODE}`,
-      expect.objectContaining({ product_name: "P" }),
+      `off:v2:product:${CODE}`,
+      { hit: expect.objectContaining({ product_name: "P" }) },
       7 * 24 * 60 * 60,
     );
   });
 
-  it("negative-caches a definitive not-found (6h TTL)", async () => {
+  it("negative-caches a definitive not-found (1h TTL)", async () => {
     vi.mocked(cacheGet).mockResolvedValueOnce(null);
     mockProduct({ status: 0 });
     const r = await fetchOffProductResult(CODE);
     expect(r.status).toBe("not_found");
     expect(cacheSetFireAndForget).toHaveBeenCalledWith(
-      `off:v1:product:${CODE}`,
-      { __miss: true },
-      6 * 60 * 60,
+      `off:v2:product:${CODE}`,
+      { miss: true },
+      60 * 60,
     );
   });
 
-  it("maps an upstream non-2xx to error and does NOT cache it", async () => {
+  it("maps an upstream non-2xx to error with a detail and does NOT cache it", async () => {
     vi.mocked(cacheGet).mockResolvedValueOnce(null);
     mockProduct({ error: "boom" }, false);
     const r = await fetchOffProductResult(CODE);
-    expect(r.status).toBe("error");
+    expect(r).toMatchObject({ status: "error", detail: expect.any(String) });
     expect(cacheSetFireAndForget).not.toHaveBeenCalled();
   });
 

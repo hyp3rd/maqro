@@ -642,7 +642,8 @@ Plan the day. Use search_open_food_facts as needed, then call submit_meal_plan.`
         try {
           found = await searchOpenFoodFactsServer(
             input.query ?? "",
-            input.limit ?? 5,
+            // Enforce the advertised 1–5 cap regardless of what the model emits.
+            Math.min(input.limit ?? 5, 5),
           );
         } catch (err) {
           // OFF is best-effort: surface the failure to the model as an

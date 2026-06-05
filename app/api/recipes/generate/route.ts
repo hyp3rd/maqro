@@ -414,7 +414,8 @@ ${catalogLines}${recentEatenBlock}${pantryBlock}`;
         try {
           found = await searchOpenFoodFactsServer(
             input.query ?? "",
-            input.limit ?? 5,
+            // Enforce the advertised 1–5 cap regardless of what the model emits.
+            Math.min(input.limit ?? 5, 5),
           );
         } catch (err) {
           const reason = err instanceof Error ? err.message : "unknown error";

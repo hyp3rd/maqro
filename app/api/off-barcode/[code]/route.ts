@@ -10,7 +10,7 @@ import { NextResponse } from "next/server";
  *  `hitToFood` normalizer the AI search uses keeps a scanned product identical
  *  to a typed search result. */
 export async function GET(
-  _req: Request,
+  req: Request,
   ctx: { params: Promise<{ code: string }> },
 ): Promise<NextResponse> {
   const { code: raw } = await ctx.params;
@@ -24,7 +24,8 @@ export async function GET(
     );
   }
 
-  const result = await fetchOffProductResult(code);
+  // Pass the request signal so a cancelled lookup aborts the upstream fetch.
+  const result = await fetchOffProductResult(code, req.signal);
   if (result.status === "timeout") {
     return NextResponse.json(
       { error: "Open Food Facts lookup timed out after 5s" },
@@ -33,7 +34,11 @@ export async function GET(
   }
   if (result.status === "error") {
     return NextResponse.json(
-      { error: "Couldn't reach Open Food Facts." },
+      {
+        error: result.detail
+          ? `Open Food Facts lookup failed (${result.detail}).`
+          : "Couldn't reach Open Food Facts.",
+      },
       { status: 502 },
     );
   }

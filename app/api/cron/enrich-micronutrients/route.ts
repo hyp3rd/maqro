@@ -1,6 +1,6 @@
 import { getAnthropicConfig } from "@/lib/ai/env";
 import {
-  fetchOffProductServer,
+  fetchOffProductResult,
   medianMicronutrients,
   offHitToMicronutrients,
   searchOffHitsServer,
@@ -202,7 +202,8 @@ async function resolveMicronutrients(
   opts: { aiKey: string | null; aiConfigured: boolean },
 ): Promise<ResolveResult> {
   if (offCode) {
-    const product = await fetchOffProductServer(offCode);
+    const result = await fetchOffProductResult(offCode);
+    const product = result.status === "hit" ? result.product : null;
     if (product) {
       const values = offHitToMicronutrients(product);
       if (Object.keys(values).length > 0) {

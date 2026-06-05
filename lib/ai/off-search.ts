@@ -16,29 +16,30 @@ const OFF_PRODUCT_URL = "https://world.openfoodfacts.org/api/v0/product";
 // AND the micronutrient `_100g` fields the enrichment pipeline maps,
 // so no extra field needs listing here.
 const FIELDS = ["code", "product_name", "brands", "nutriments"].join(",");
-// Raised from 10 to 25 so the `/api/off-search` proxy (which clamps to 25) can
-// route through `searchOffHitsServer` without lowering its page size. The AI
-// callers pass <= 10, so they're unaffected.
+// The page size we request from upstream AND the hard ceiling on any caller's
+// limit. We always fetch this many and cache the superset, then slice to the
+// caller's limit — so the browser proxy (up to 25), the AI tools (<= 5), and the
+// cron (10) share ONE cached entry per query instead of fragmenting by page size.
 const MAX_LIMIT = 25;
 const USER_AGENT = "maqro/0.1 (https://github.com/hyp3rd/maqro)";
 const OFF_TIMEOUT_MS = 5_000;
 
 // ─── Cross-instance cache (optional Upstash Redis) ──────────────────────────
-// Bumping the version invalidates every cached entry at once after an `OFFHit`
-// or `FIELDS` shape change.
-const CACHE_VERSION = "v1";
+// Bumping the version invalidates every cached entry at once after an `OFFHit`,
+// `FIELDS`, or cache-value-shape change.
+const CACHE_VERSION = "v2";
 const PRODUCT_TTL = 7 * 24 * 60 * 60; // 7d — per-100g macros are ~immutable
-const PRODUCT_MISS_TTL = 6 * 60 * 60; // 6h — re-checks a missing barcode same-day
+const PRODUCT_MISS_TTL = 60 * 60; // 1h — bounds staleness if OFF transiently 404s
 const SEARCH_TTL = 5 * 60; // 5m — search rankings are volatile
 const MAX_CACHED_QUERY_LEN = 200; // don't store pathological keys
 const productKey = (code: string) => `off:${CACHE_VERSION}:product:${code}`;
-const searchKey = (q: string, limit: number) =>
-  `off:${CACHE_VERSION}:search:${limit}:${q}`;
+// Limit-independent: the cached value is the full superset, sliced per caller.
+const searchKey = (q: string) => `off:${CACHE_VERSION}:search:${q}`;
 
-/** Negative-cache sentinel for a definitive OFF "no product" (`status: 0`). A
- *  truthy object, so `cacheGet` distinguishes it from a cache miss (`null`). */
-type MissMarker = { __miss: true };
-const MISS: MissMarker = { __miss: true };
+/** Cross-instance cache entry for a barcode lookup. An explicit envelope so a
+ *  negative result (`miss`) is provably disjoint from a real OFF product —
+ *  which, as crowd-sourced JSON, could in principle carry any field name. */
+type ProductCacheEntry = { hit: OFFHit } | { miss: true };
 
 /** Shape we extract from an Open Food Facts product blob. Exported so
  *  callers outside the search-a-licious path (the barcode route, mainly)
@@ -209,133 +210,143 @@ export function offHitToMicronutrients(h: OFFHit): MicronutrientValues {
   return out;
 }
 
+/** Shared Open Food Facts transport: a `fetch` with the standard headers, a 5s
+ *  timeout, and optional propagation of a caller's `AbortSignal` (so a cancelled
+ *  browser request aborts the upstream call instead of running to the timeout).
+ *  On either a timeout or an external abort the underlying `fetch` rejects with
+ *  an `AbortError`, which callers map to their own timeout outcome. */
+async function offFetch(
+  url: string,
+  externalSignal?: AbortSignal,
+): Promise<Response> {
+  const controller = new AbortController();
+  if (externalSignal?.aborted) controller.abort();
+  const onExternalAbort = () => controller.abort();
+  externalSignal?.addEventListener("abort", onExternalAbort);
+  const timer = setTimeout(() => controller.abort(), OFF_TIMEOUT_MS);
+  try {
+    return await fetch(url, {
+      headers: { Accept: "application/json", "User-Agent": USER_AGENT },
+      signal: controller.signal,
+      // Per-instance backstop cache, independent of the cross-instance Redis layer.
+      next: { revalidate: 60 },
+    });
+  } finally {
+    clearTimeout(timer);
+    externalSignal?.removeEventListener("abort", onExternalAbort);
+  }
+}
+
 /** The outcome of a barcode lookup, as a discriminated union so HTTP callers
  *  (the `/api/off-barcode` route) can map each case to a precise status code —
  *  something the `OFFHit | null` shape can't express (it collapses timeout,
- *  not-found, and upstream error into a single `null`). */
+ *  not-found, and upstream error into a single `null`). `detail` carries an
+ *  upstream-failure hint for the 502 body (diagnostic, never shown to users). */
 export type OffProductResult =
   | { status: "hit"; product: OFFHit }
   | { status: "not_found" }
   | { status: "timeout" }
-  | { status: "error" };
+  | { status: "error"; detail?: string };
 
 /** Fetch a single Open Food Facts product by barcode, server-side. Reads the
  *  shared cross-instance cache first; on a miss, fetches upstream and writes
  *  through — a confirmed `hit` (long TTL) or a definitive not-found (short
  *  negative TTL, so repeat scans of an unknown barcode don't re-hit OFF every
  *  time). Timeouts and upstream errors are NEVER cached (they're transient).
+ *  Pass `signal` to have a cancelled caller abort the upstream fetch.
  *
- *  Mirrors the `/api/off-barcode` route's fetch but is callable from other
- *  server code (the enrichment cron) without an HTTP round-trip. Assumes a
- *  syntactically valid barcode; the route validates + 400s before calling. */
+ *  Callable from other server code (the enrichment cron) without an HTTP
+ *  round-trip. A syntactically invalid barcode is treated as `not_found`. */
 export async function fetchOffProductResult(
   code: string,
+  signal?: AbortSignal,
 ): Promise<OffProductResult> {
   const clean = code.replace(/\D/g, "");
-  if (clean.length < 8 || clean.length > 14) return { status: "error" };
+  if (clean.length < 8 || clean.length > 14) return { status: "not_found" };
   const key = productKey(clean);
 
-  const cached = await cacheGet<OFFHit | MissMarker>(key);
-  if (cached) {
-    return "__miss" in cached
+  const cached = await cacheGet<ProductCacheEntry>(key);
+  if (cached && typeof cached === "object") {
+    return "miss" in cached
       ? { status: "not_found" }
-      : { status: "hit", product: cached };
+      : { status: "hit", product: cached.hit };
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), OFF_TIMEOUT_MS);
   try {
-    const res = await fetch(`${OFF_PRODUCT_URL}/${clean}.json`, {
-      headers: { Accept: "application/json", "User-Agent": USER_AGENT },
-      signal: controller.signal,
-      next: { revalidate: 60 },
-    });
-    if (!res.ok) return { status: "error" };
-    const data = (await res.json()) as { status?: 0 | 1; product?: OFFHit };
+    const res = await offFetch(`${OFF_PRODUCT_URL}/${clean}.json`, signal);
+    if (!res.ok) {
+      return { status: "error", detail: `upstream HTTP ${res.status}` };
+    }
+    let data: { status?: 0 | 1; product?: OFFHit };
+    try {
+      data = (await res.json()) as { status?: 0 | 1; product?: OFFHit };
+    } catch {
+      return { status: "error", detail: "malformed upstream response" };
+    }
     if (data.status !== 1 || !data.product) {
-      cacheSetFireAndForget(key, MISS, PRODUCT_MISS_TTL);
+      cacheSetFireAndForget(key, { miss: true }, PRODUCT_MISS_TTL);
       return { status: "not_found" };
     }
-    cacheSetFireAndForget(key, data.product, PRODUCT_TTL);
+    cacheSetFireAndForget(key, { hit: data.product }, PRODUCT_TTL);
     return { status: "hit", product: data.product };
   } catch (err) {
-    if (
-      err instanceof Error &&
-      (err.name === "AbortError" || controller.signal.aborted)
-    ) {
+    if (err instanceof Error && err.name === "AbortError") {
       return { status: "timeout" };
     }
-    return { status: "error" };
-  } finally {
-    clearTimeout(timer);
+    return {
+      status: "error",
+      detail: err instanceof Error ? err.message : undefined,
+    };
   }
 }
 
-/** Barcode lookup as `OFFHit | null` — the shape the enrichment cron consumes
- *  (it treats not-found / timeout / error all as "no match" and moves on). Thin
- *  wrapper over {@link fetchOffProductResult} so the cron's call site is
- *  unchanged while the caching lives in one place. */
-export async function fetchOffProductServer(
-  code: string,
-): Promise<OFFHit | null> {
-  const result = await fetchOffProductResult(code);
-  return result.status === "hit" ? result.product : null;
-}
-
-/** Search OFF, returning the raw `OFFHit[]`. The shared transport for
- *  both the `Food`-shaped macro path and the micronutrient path — the
- *  latter needs the untouched `nutriments` object, which `hitToFood`
- *  discards. Errors throw with a message the AI loop can surface. */
+/** Search OFF, returning the raw `OFFHit[]`. The shared transport for both the
+ *  `Food`-shaped macro path and the micronutrient path — the latter needs the
+ *  untouched `nutriments` object, which `hitToFood` discards. Pass `signal` to
+ *  have a cancelled caller (e.g. a superseded typeahead request) abort the
+ *  upstream fetch. Errors throw with a message the AI loop can surface.
+ *
+ *  Caches the full `MAX_LIMIT`-sized superset under a limit-independent key and
+ *  returns the caller's `limit`-sized slice, so every caller (browser proxy, AI,
+ *  cron) shares one cached entry per query instead of fragmenting by page size. */
 export async function searchOffHitsServer(
   query: string,
   limit: number = 10,
+  signal?: AbortSignal,
 ): Promise<OFFHit[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
   const clampedLimit = Math.min(Math.max(1, limit), MAX_LIMIT);
-  const key = searchKey(trimmed.toLowerCase(), clampedLimit);
+  const key = searchKey(trimmed.toLowerCase());
 
   const cached = await cacheGet<OFFHit[]>(key);
-  if (cached) return cached;
+  if (cached) return cached.slice(0, clampedLimit);
 
   const upstream = new URL(OFF_SEARCH_URL);
   upstream.searchParams.set("q", trimmed);
-  upstream.searchParams.set("page_size", String(clampedLimit));
+  upstream.searchParams.set("page_size", String(MAX_LIMIT));
   upstream.searchParams.set("fields", FIELDS);
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), OFF_TIMEOUT_MS);
   let res: Response;
   try {
-    res = await fetch(upstream.toString(), {
-      headers: { Accept: "application/json", "User-Agent": USER_AGENT },
-      signal: controller.signal,
-      // Cache short-lived: subsequent identical AI tool calls within the
-      // same plan won't re-hit upstream.
-      next: { revalidate: 60 },
-    });
+    res = await offFetch(upstream.toString(), signal);
   } catch (err) {
-    if (
-      err instanceof Error &&
-      (err.name === "AbortError" || controller.signal.aborted)
-    ) {
+    if (err instanceof Error && err.name === "AbortError") {
       throw new Error("Open Food Facts search timed out after 5s");
     }
     throw err;
-  } finally {
-    clearTimeout(timer);
   }
   if (!res.ok) {
     throw new Error(`Open Food Facts search failed (HTTP ${res.status})`);
   }
   const data = (await res.json()) as { hits?: OFFHit[] };
   const hits = data.hits ?? [];
-  // Write-through, fire-and-forget. Skip pathologically long queries so a junk
-  // key can't bloat the cache (empty queries already returned above).
+  // Write-through the full superset (fire-and-forget). Skip pathologically long
+  // queries so a junk key can't bloat the cache (empty queries returned above).
   if (trimmed.length <= MAX_CACHED_QUERY_LEN) {
     cacheSetFireAndForget(key, hits, SEARCH_TTL);
   }
-  return hits;
+  return hits.slice(0, clampedLimit);
 }
 
 /** Search OFF, returning normalized `Food[]`. Caller controls `limit`

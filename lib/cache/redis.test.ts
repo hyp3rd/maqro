@@ -8,10 +8,13 @@ import {
 // Mock the Upstash client as a real (constructable) class so no real connection
 // is attempted; `ctorSpy` records construction, `getMock`/`setMock` drive
 // behavior. `vi.hoisted` because the `vi.mock` factory runs before module init.
-const { getMock, setMock, ctorSpy } = vi.hoisted(() => ({
+const { getMock, setMock, ctorSpy, afterMock } = vi.hoisted(() => ({
   getMock: vi.fn(),
   setMock: vi.fn(),
   ctorSpy: vi.fn(),
+  // `after(cb)` runs the callback synchronously here; in a real request it runs
+  // after the response is sent. Tests override per-case to simulate out-of-scope.
+  afterMock: vi.fn((cb: () => unknown) => cb()),
 }));
 vi.mock("@upstash/redis", () => ({
   Redis: class {
@@ -22,6 +25,7 @@ vi.mock("@upstash/redis", () => ({
     }
   },
 }));
+vi.mock("next/server", () => ({ after: afterMock }));
 
 describe("lib/cache/redis", () => {
   beforeEach(() => {
@@ -29,6 +33,8 @@ describe("lib/cache/redis", () => {
     ctorSpy.mockClear();
     getMock.mockReset();
     setMock.mockReset();
+    afterMock.mockReset();
+    afterMock.mockImplementation((cb: () => unknown) => cb());
   });
   afterEach(() => {
     delete process.env.UPSTASH_REDIS_REST_URL;
@@ -96,6 +102,22 @@ describe("lib/cache/redis", () => {
       const ret = cacheSetFireAndForget("k", { a: 1 }, 90);
       expect(ret).toBeUndefined();
       expect(setMock).toHaveBeenCalledWith("k", { a: 1 }, { ex: 90 });
+    });
+
+    it("hands the write to after() so it survives past the response", () => {
+      setMock.mockResolvedValueOnce("OK");
+      cacheSetFireAndForget("k", { a: 1 }, 30);
+      expect(afterMock).toHaveBeenCalledTimes(1);
+      expect(setMock).toHaveBeenCalledWith("k", { a: 1 }, { ex: 30 });
+    });
+
+    it("falls back to a detached write when after() throws (no request scope)", () => {
+      afterMock.mockImplementationOnce(() => {
+        throw new Error("after() was called outside a request scope");
+      });
+      setMock.mockResolvedValueOnce("OK");
+      expect(() => cacheSetFireAndForget("k", 2, 30)).not.toThrow();
+      expect(setMock).toHaveBeenCalledWith("k", 2, { ex: 30 });
     });
 
     it("cacheSetFireAndForget never rejects the caller even if the write fails", async () => {
