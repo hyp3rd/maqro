@@ -37,7 +37,7 @@ export async function cacheGet<T>(key: string): Promise<T | null> {
   } catch (err) {
     // A cache read failure is non-fatal; log the key (never the credentials)
     // and fall through to the origin.
-    console.warn(`[cache] get failed for ${key}:`, err);
+    console.warn("[cache] get failed for %s:", key, err);
     return null;
   }
 }
@@ -53,7 +53,7 @@ export function cacheSetFireAndForget(
   const redis = getRedis();
   if (!redis) return;
   void redis.set(key, value, { ex: ttlSeconds }).catch((err) => {
-    console.warn(`[cache] set failed for ${key}:`, err);
+    console.warn("[cache] set failed for %s:", key, err);
   });
 }
 
