@@ -35,7 +35,13 @@ const withBundleAnalyzer = bundleAnalyzer({
  *      CSP with middleware on every request — a separate, larger
  *      change. This baseline still blocks the most common XSS shape
  *      (loading a script from an attacker-controlled origin); the
- *      stricter nonce-based version is tracked as a follow-up.
+ *      stricter nonce-based version is a tracked follow-up — deferred
+ *      because the per-request nonce would have to thread through the
+ *      Supabase session-refresh middleware (`updateSession`), and a
+ *      regression in that cookie-forwarding path is hard to prove safe
+ *      via the guest-heavy test suite. Revisit with a dedicated
+ *      verification harness (assert the rendered `<script nonce>` and
+ *      that an authenticated session still refreshes).
  *
  *    - `'wasm-unsafe-eval'` in `script-src` is required by the PDF
  *      export: `@react-pdf/renderer`'s layout engine (yoga) ships as
@@ -111,7 +117,10 @@ const CSP_DIRECTIVES = [
   "frame-ancestors 'none'",
   "form-action 'self'",
   "object-src 'none'",
-  "base-uri 'self'",
+  // The app uses no `<base>` tag, so forbid it outright rather than
+  // allowing same-origin — a base-tag injection could otherwise rewrite
+  // every relative URL on the page.
+  "base-uri 'none'",
   "upgrade-insecure-requests",
 ].join("; ");
 
