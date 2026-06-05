@@ -8,10 +8,10 @@
     "homeAria": "Home di Maqro"
   },
   "hero": {
-    "tag": "Ora con pianificazione pasti AI + riconoscimento foto",
+    "tag": "Ora con digiuno, fasi dell'obiettivo e monitoraggio dei micronutrienti",
     "headlineLine1": "Calibra i tuoi macro.",
     "headlineLine2": "Pianifica i pasti. Misura i progressi.",
-    "subtitle": "Un'app nutrizionale personale che rispetta il tuo tempo e i tuoi dati. Imposta gli obiettivi, registra i pasti e segui i numeri - senza un solo pixel di tracciamento.",
+    "subtitle": "Un'app nutrizionale personale che rispetta il tuo tempo e i tuoi dati. Imposta gli obiettivi, registra i pasti, monitora il digiuno e la tua salute — senza un solo pixel di tracciamento.",
     "ctaPrimary": "Apri l'app",
     "ctaSecondary": "Scopri le funzionalità →",
     "ctaSample": "O prova con dati di esempio →",
@@ -38,27 +38,39 @@
     "items": {
       "mealPlanning": {
         "title": "Pianificazione pasti intelligente",
-        "body": "Completa la giornata sui tuoi target macro con un solver deterministico - oppure lascia che Claude Sonnet componga un piano coerente. Rigenerazione per singolo pasto quando una porzione non torna."
+        "body": "Completa la giornata sui tuoi target macro con un solver deterministico — oppure lascia che Claude componga un piano coerente. Rigenera una singola porzione quando non torna."
       },
-      "photoId": {
-        "title": "Riconoscimento da foto",
-        "body": "Inquadra un'etichetta o un piatto. L'AI restituisce macro strutturati; un tocco e li salvi tra i tuoi alimenti."
+      "logging": {
+        "title": "Registra con foto, barcode o voce",
+        "body": "Inquadra un'etichetta o un piatto, scansiona un codice a barre su Open Food Facts, oppure di' semplicemente cosa hai mangiato — ognuno diventa macro strutturati in un tocco."
       },
       "recipes": {
         "title": "Ricette che calcolano",
-        "body": "Crea o genera ricette. I macro vengono calcolati in modo deterministico dagli ingredienti - l'AI non inventa mai valori nutrizionali."
+        "body": "Crea o genera ricette; i macro sono sommati dagli ingredienti, mai inventati — così i numeri restano onesti anche quando è l'AI a comporre la ricetta."
+      },
+      "fasting": {
+        "title": "Digiuno intermittente",
+        "body": "Avvia un digiuno sul protocollo che scegli e segui un timer dal vivo attraverso le fasi — sazietà, glicogeno, lipolisi, chetosi, autofagia — con ogni digiuno concluso salvato nello storico."
+      },
+      "goalPhases": {
+        "title": "Fasi dell'obiettivo",
+        "body": "Sequenzia definizione, pausa dieta, mantenimento e massa pulita; il target giornaliero segue la fase attiva oggi, con un avviso prima che una fase alzi le calorie. (Pro)"
+      },
+      "healthJournal": {
+        "title": "Un diario della salute completo",
+        "body": "Non solo macro: registra peso, misure corporee con stima del grasso, pressione arteriosa e idratazione — ognuno tracciato nel tempo in un'unica pagina Progressi."
+      },
+      "micronutrients": {
+        "title": "Micronutrienti, non solo macro",
+        "body": "Monitora dieci vitamine e minerali rispetto ai valori RDA per età e sesso, arricchiti da Open Food Facts mentre registri. (Pro)"
       },
       "trends": {
-        "title": "Trend + rilevamento dei plateau",
-        "body": "Media mobile del peso, rilevamento dei plateau e ricalibrazione del TDEE quando il cambiamento osservato si scosta dal previsto."
+        "title": "Trend + TDEE adattivo",
+        "body": "Media mobile del peso con rilevamento dei plateau e un TDEE che si ricalibra quando il cambiamento reale diverge dalla formula."
       },
       "ownership": {
         "title": "I tuoi dati, sul tuo dispositivo",
-        "body": "IndexedDB di default. Sincronizzazione opzionale via Supabase tra dispositivi per il piano Pro. Export JSON in ogni momento - nessun lock-in."
-      },
-      "pwa": {
-        "title": "PWA installabile",
-        "body": "Aggiungila alla schermata home su iOS o Android. Funziona offline dopo la prima visita. Niente app store, niente shell nativa."
+        "body": "Local-first di default, con export JSON in un tocco e nessun lock-in né pixel di tracciamento. Pro aggiunge sincronizzazione cifrata tra dispositivi, backup cloud e un report salute in PDF vettoriale."
       }
     }
   },
@@ -89,35 +101,36 @@
     "plans": {
       "free": {
         "name": "Free",
-        "tagline": "Calcolatore + pianificatore completi. I tuoi dati restano locali.",
+        "tagline": "Calcolatore, pianificatore e diario della salute completi. I tuoi dati restano locali.",
         "features": [
-          "Calcolatore macro + pianificatore pasti",
-          "Storico giornaliero / peso",
-          "Editor ricette",
+          "Calcolatore, pianificatore e ricette",
+          "Digiuno, idratazione e diario salute",
+          "Registrazione con barcode, foto e voce",
           "25 generazioni AI / mese"
         ],
         "cta": "Apri l'app"
       },
       "plus": {
         "name": "AI Plus",
-        "tagline": "Alza il limite AI. Disdici quando vuoi.",
+        "tagline": "Alza il limite AI e sblocca i promemoria. Disdici quando vuoi.",
         "features": [
           "Tutto del piano Free",
           "500 generazioni AI / mese",
-          "Coda API prioritaria",
-          "7 giorni di prova gratuita"
+          "Importa ricette da un URL",
+          "Promemoria giornalieri + riepilogo settimanale",
+          "Coda AI prioritaria"
         ],
         "cta": "Inizia la prova gratuita"
       },
       "pro": {
         "name": "Pro",
-        "tagline": "Sincronizzazione tra dispositivi. Backup cloud. Email di engagement.",
+        "tagline": "Sincronizzazione, micronutrienti, fasi dell'obiettivo e backup cifrati.",
         "features": [
           "Tutto del piano AI Plus",
           "Generazioni AI illimitate",
-          "Sincronizzazione su tutti i tuoi dispositivi",
-          "Backup cloud + export JSON",
-          "Promemoria giornalieri + riepilogo settimanale"
+          "Micronutrienti + fasi dell'obiettivo",
+          "Sincronizzazione tra dispositivi + backup cifrati",
+          "Report salute in PDF vettoriale"
         ],
         "cta": "Inizia la prova gratuita"
       }
@@ -284,7 +297,7 @@
     "header": {
       "eyebrow": "Prezzi",
       "title": "Gratis per sempre. Paghi solo se se lo merita.",
-      "subtitle": "Il calcolatore + pianificatore di base è gratis per sempre. I piani a pagamento sbloccano limiti AI più alti, sincronizzazione ed email di engagement. Tutti i piani a pagamento includono 7 giorni di prova gratuita — nessuna carta richiesta in anticipo."
+      "subtitle": "Il calcolatore + pianificatore di base è gratis per sempre. I piani a pagamento sbloccano limiti AI più alti, sincronizzazione, micronutrienti, fasi dell'obiettivo e backup cifrati. Tutti i piani a pagamento includono 7 giorni di prova gratuita — nessuna carta richiesta in anticipo."
     },
     "cycle": {
       "ariaLabel": "Ciclo di fatturazione",
@@ -332,6 +345,23 @@
           "label": "Identificazione del pasto da foto",
           "detail": "Conta verso le tue generazioni AI mensili."
         },
+        "fasting": {
+          "label": "Digiuno intermittente",
+          "detail": "Timer dal vivo attraverso sazietà → glicogeno → chetosi → autofagia, con storico dei digiuni conclusi."
+        },
+        "hydration": { "label": "Monitoraggio dell'idratazione" },
+        "bodyVitals": {
+          "label": "Misure corporee + pressione arteriosa",
+          "detail": "Vita/collo/fianchi con stima del grasso; pressione arteriosa con classificazione ACC/AHA."
+        },
+        "goalPhases": {
+          "label": "Fasi dell'obiettivo",
+          "detail": "Sequenzia definizione → pausa dieta → mantenimento → massa pulita; il target giornaliero segue la fase attiva."
+        },
+        "micronutrients": {
+          "label": "Monitoraggio dei micronutrienti",
+          "detail": "Dieci vitamine e minerali rispetto agli RDA per età/sesso, arricchiti da Open Food Facts."
+        },
         "aiGenerations": {
           "label": "Generazioni AI al mese",
           "detail": "Piani pasto, ricette e identificazioni da foto generati, sommati."
@@ -346,6 +376,14 @@
           "label": "Sincronizzazione tra dispositivi (Supabase)"
         },
         "cloudBackup": { "label": "Backup cloud (export JSON)" },
+        "encryptedBackup": {
+          "label": "Backup cloud cifrati",
+          "detail": "Zero-knowledge, protetti da passphrase — con ripristino con anteprima prima dell'applicazione."
+        },
+        "healthReportPdf": {
+          "label": "Report salute in PDF",
+          "detail": "PDF vettoriale: nutrizione, peso, corpo, pressione arteriosa, idratazione, digiuno, micronutrienti."
+        },
         "manualJsonExport": {
           "label": "Export + import JSON manuali",
           "detail": "Funziona senza account su ogni piano."
@@ -383,20 +421,21 @@
           "everythingInFree": "Tutto del piano Free",
           "aiGenerations500": "500 generazioni AI al mese",
           "importRecipesUrl": "Importa ricette da URL",
+          "reminders": "Promemoria giornalieri + riepilogo settimanale",
           "priorityQueue": "Coda API prioritaria"
         }
       },
       "pro": {
         "name": "Pro",
-        "tagline": "Sincronizzazione tra dispositivi. Backup cloud. Email di engagement.",
+        "tagline": "Sincronizzazione, micronutrienti, fasi dell'obiettivo e backup cifrati.",
         "cta": "Inizia la prova di 7 giorni",
         "features": {
           "everythingInPlus": "Tutto del piano AI Plus",
           "aiGenerationsUnlimited": "Generazioni AI illimitate",
+          "micronutrientsGoalPhases": "Micronutrienti + fasi dell'obiettivo",
           "syncDevices": "Sincronizzazione su tutti i tuoi dispositivi",
-          "cloudBackup": "Backup cloud + export JSON",
-          "engagementEmail": "Promemoria giornalieri + riepilogo settimanale",
-          "customRecipeSlugs": "Slug personalizzati per le ricette condivise"
+          "encryptedBackup": "Backup cloud cifrati",
+          "healthReportPdf": "Report salute in PDF vettoriale"
         }
       }
     },

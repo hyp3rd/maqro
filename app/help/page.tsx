@@ -7,13 +7,17 @@ import {
   ChevronRight,
   Database,
   Download,
+  FileText,
   Fingerprint,
+  HeartPulse,
   LifeBuoy,
   LineChart,
   Mail,
+  Pill,
   ShieldCheck,
   Sparkles,
   Target,
+  Timer,
   Utensils,
 } from "lucide-react";
 import type { Metadata } from "next";
@@ -117,6 +121,18 @@ export default function HelpPage() {
             seeing a low number, your rate or your activity-multiplier choice is
             the lever — not the formula.
           </Topic>
+          <Topic
+            icon={Target}
+            title="Goal phases — sequencing a cut and a bulk (Pro)"
+          >
+            Instead of one static goal, Pro lets you lay out a sequence — a cut,
+            a diet break, maintenance, then a lean bulk — each with its own
+            dates and weekly rate. Your daily target follows whichever phase is
+            active today, and a heads-up warns you before a phase would raise
+            today&apos;s calories (which happens when your current setting
+            already runs a steeper deficit). Set it up in the Calculator under
+            Goal phases.
+          </Topic>
         </Section>
 
         <Section title="Meal planning & recipes">
@@ -151,6 +167,16 @@ export default function HelpPage() {
             numbers before saving the food — the AI estimates, it doesn&apos;t
             measure.
           </Topic>
+          <Topic
+            icon={Camera}
+            title="Logging by barcode or voice"
+          >
+            Two more ways to log beyond search and photo: scan a product barcode
+            and it&apos;s looked up on Open Food Facts (no AI usage), or dictate
+            a meal (&quot;200g chicken and a banana&quot;) and the parser turns
+            it into structured foods. Both drop straight into the meal slot you
+            pick.
+          </Topic>
         </Section>
 
         <Section title="Progress & trends">
@@ -175,6 +201,40 @@ export default function HelpPage() {
           </Topic>
         </Section>
 
+        <Section title="Health tracking">
+          <Topic
+            icon={Timer}
+            title="Intermittent fasting timer"
+          >
+            Start a fast from the day view and a live timer counts toward your
+            eating window on the protocol you pick (16:8, 18:6, 20:4, or
+            custom). The Fasting page maps where you are on an hour-by-hour
+            timeline — fed, glycogen, fat-burning, ketosis, autophagy — and
+            every fast you finish is saved to history with its duration and
+            deepest phase. The phase timings are popular-protocol
+            approximations, not medical advice.
+          </Topic>
+          <Topic
+            icon={HeartPulse}
+            title="Weight, body measurements, blood pressure, hydration"
+          >
+            Progress is a full health journal, not just macros. Log weigh-ins,
+            body measurements (waist/neck/hip, with a US-Navy body-fat
+            estimate), blood pressure (with ACC/AHA classification), and daily
+            hydration — each charted over time. All of it is free and stays on
+            your device by default.
+          </Topic>
+          <Topic
+            icon={Pill}
+            title="Micronutrients, not just macros (Pro)"
+          >
+            Pro adds a micronutrient view on Progress: ten vitamins and minerals
+            tracked against age- and sex-aware RDA targets. Values are enriched
+            from Open Food Facts as you log foods, so the chart shows where
+            you&apos;re consistently short.
+          </Topic>
+        </Section>
+
         <Section title="Your data">
           <Topic
             icon={Database}
@@ -194,6 +254,25 @@ export default function HelpPage() {
             JSON. "Save to cloud" (signed-in only) puts the same JSON in a
             private per-user Supabase Storage bucket. Imports go through a diff
             dialog — nothing is overwritten until you confirm.
+          </Topic>
+          <Topic
+            icon={ShieldCheck}
+            title="Encrypted cloud backups (Pro)"
+          >
+            Beyond the plain JSON backup, Pro can encrypt the whole bundle with
+            a passphrase only you know — zero-knowledge, so the server stores
+            ciphertext it can&apos;t read. Restoring asks for the passphrase and
+            shows the same preview-before-apply diff, so nothing is overwritten
+            blind.
+          </Topic>
+          <Topic
+            icon={FileText}
+            title="The health report PDF (Pro)"
+          >
+            Pro can render a polished vector PDF of your data — nutrition,
+            weight, body measurements, blood pressure, hydration, fasting, and
+            micronutrients — to download or archive to encrypted cloud storage.
+            It&apos;s a real PDF (vector text and charts), not a screenshot.
           </Topic>
           <Topic
             icon={Mail}
@@ -241,14 +320,16 @@ export default function HelpPage() {
         <Section title="Billing">
           <Topic
             icon={Sparkles}
-            title="The AI cap and what bumps it"
+            title="The AI cap and what each plan adds"
           >
             Free tier gets 25 AI generations per month (auto-fill, recipe
-            generate, camera identify combined). AI Plus (€5/mo) lifts it to
-            500. Pro (€12/mo) is unlimited and also unlocks cross-device sync,
-            cloud backups, and engagement email. Cancel from Settings → Billing
-            → the Stripe portal at any time; access stays until the end of the
-            paid period.
+            generate, camera identify, and voice logging combined). AI Plus
+            (€5/mo) lifts it to 500 and adds recipe import-from-URL plus the
+            daily reminder and weekly recap emails. Pro (€12/mo) is unlimited
+            and also unlocks cross-device sync, encrypted cloud backups,
+            micronutrient tracking, goal phases, and the health-report PDF.
+            Cancel from Settings → Billing → the Stripe portal at any time;
+            access stays until the end of the paid period.
           </Topic>
           <Topic
             icon={Sparkles}
