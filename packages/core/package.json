@@ -9,6 +9,7 @@
     "./age": "./src/age.ts",
     "./goal-phases": "./src/goal-phases.ts",
     "./macros": "./src/macros.ts",
+    "./off": "./src/off.ts",
     "./rda": "./src/rda.ts",
     "./records": "./src/records.ts",
     "./trends": "./src/trends.ts",
