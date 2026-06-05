@@ -62,6 +62,7 @@
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.107.0",
     "@types/web-push": "^3.6.4",
+    "@upstash/redis": "^1.38.0",
     "@zxing/browser": "^0.2.0",
     "@zxing/library": "^0.22.0",
     "botid": "^1.5.11",

@@ -1,5 +1,19 @@
+import { cacheGet, cacheSetFireAndForget } from "@/lib/cache/redis";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { searchOpenFoodFactsServer } from "./off-search";
+import {
+  fetchOffProductResult,
+  searchOffHitsServer,
+  searchOpenFoodFactsServer,
+} from "./off-search";
+
+// The cross-instance cache is optional; mock it so these specs stay offline.
+// With no `mockResolvedValue`, `cacheGet` returns undefined ⇒ a miss ⇒ the
+// fetch path — exactly the unconfigured-Upstash behavior. `cacheSetFireAndForget`
+// is a spy so write-through can be asserted.
+vi.mock("@/lib/cache/redis", () => ({
+  cacheGet: vi.fn(),
+  cacheSetFireAndForget: vi.fn(),
+}));
 
 // The helper hits upstream OFF directly via `fetch`. We mock global fetch
 // so these tests stay offline and deterministic.
@@ -22,6 +36,8 @@ describe("searchOpenFoodFactsServer", () => {
   beforeEach(() => {
     // Reset between specs so a leak from one doesn't poison the next.
     globalThis.fetch = vi.fn();
+    vi.mocked(cacheGet).mockReset();
+    vi.mocked(cacheSetFireAndForget).mockReset();
   });
   afterEach(() => {
     globalThis.fetch = originalFetch;
@@ -175,7 +191,7 @@ describe("searchOpenFoodFactsServer", () => {
 
     await searchOpenFoodFactsServer("x", 0);
     await searchOpenFoodFactsServer("x", -3);
-    await searchOpenFoodFactsServer("x", 99); // clamped down to MAX_LIMIT=10
+    await searchOpenFoodFactsServer("x", 99); // clamped down to MAX_LIMIT=25
 
     const calls = (fetchSpy as unknown as { mock: { calls: unknown[][] } }).mock
       .calls;
@@ -183,7 +199,7 @@ describe("searchOpenFoodFactsServer", () => {
       const url = new URL(String(c[0]));
       return url.searchParams.get("page_size");
     });
-    expect(pageSizes).toEqual(["1", "1", "10"]);
+    expect(pageSizes).toEqual(["1", "1", "25"]);
   });
 
   it("times out after 5s when upstream hangs", async () => {
@@ -209,6 +225,157 @@ describe("searchOpenFoodFactsServer", () => {
       await vi.advanceTimersByTimeAsync(5_000);
 
       await expect(pending).rejects.toThrow(/timed out after 5s/);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("searchOffHitsServer — cross-instance cache", () => {
+  beforeEach(() => {
+    globalThis.fetch = vi.fn();
+    vi.mocked(cacheGet).mockReset();
+    vi.mocked(cacheSetFireAndForget).mockReset();
+  });
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("returns cached hits and skips the network on a hit", async () => {
+    const hits = [
+      { code: "1", product_name: "Cached", nutriments: { proteins_100g: 9 } },
+    ];
+    vi.mocked(cacheGet).mockResolvedValueOnce(hits);
+    const result = await searchOffHitsServer("yogurt", 5);
+    expect(result).toEqual(hits);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("writes through with the lowercased key + clamped limit + SEARCH_TTL on a miss", async () => {
+    vi.mocked(cacheGet).mockResolvedValueOnce(null);
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ hits: [{ code: "2" }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    ) as unknown as typeof fetch;
+    await searchOffHitsServer("Oats", 8);
+    expect(cacheSetFireAndForget).toHaveBeenCalledWith(
+      "off:v1:search:8:oats",
+      expect.any(Array),
+      5 * 60,
+    );
+  });
+
+  it("falls through to a live fetch on a cache miss (unconfigured / Redis error → null)", async () => {
+    vi.mocked(cacheGet).mockResolvedValueOnce(null);
+    const fetchSpy = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ hits: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    ) as unknown as typeof fetch;
+    globalThis.fetch = fetchSpy;
+    await searchOffHitsServer("x", 5);
+    expect(fetchSpy).toHaveBeenCalled();
+  });
+});
+
+describe("fetchOffProductResult — cache + status mapping", () => {
+  const CODE = "0123456789012";
+  function mockProduct(body: unknown, ok = true) {
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify(body), {
+          status: ok ? 200 : 502,
+          headers: { "content-type": "application/json" },
+        }),
+    ) as unknown as typeof fetch;
+  }
+  beforeEach(() => {
+    globalThis.fetch = vi.fn();
+    vi.mocked(cacheGet).mockReset();
+    vi.mocked(cacheSetFireAndForget).mockReset();
+  });
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("returns a cached product without fetching", async () => {
+    vi.mocked(cacheGet).mockResolvedValueOnce({
+      code: CODE,
+      product_name: "Cached",
+      nutriments: { proteins_100g: 3 },
+    });
+    const r = await fetchOffProductResult(CODE);
+    expect(r).toEqual({
+      status: "hit",
+      product: expect.objectContaining({ product_name: "Cached" }),
+    });
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("returns not_found from a cached miss sentinel without fetching", async () => {
+    vi.mocked(cacheGet).mockResolvedValueOnce({ __miss: true });
+    const r = await fetchOffProductResult(CODE);
+    expect(r.status).toBe("not_found");
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("caches a hit (7d TTL) on a miss", async () => {
+    vi.mocked(cacheGet).mockResolvedValueOnce(null);
+    mockProduct({ status: 1, product: { code: CODE, product_name: "P" } });
+    const r = await fetchOffProductResult(CODE);
+    expect(r.status).toBe("hit");
+    expect(cacheSetFireAndForget).toHaveBeenCalledWith(
+      `off:v1:product:${CODE}`,
+      expect.objectContaining({ product_name: "P" }),
+      7 * 24 * 60 * 60,
+    );
+  });
+
+  it("negative-caches a definitive not-found (6h TTL)", async () => {
+    vi.mocked(cacheGet).mockResolvedValueOnce(null);
+    mockProduct({ status: 0 });
+    const r = await fetchOffProductResult(CODE);
+    expect(r.status).toBe("not_found");
+    expect(cacheSetFireAndForget).toHaveBeenCalledWith(
+      `off:v1:product:${CODE}`,
+      { __miss: true },
+      6 * 60 * 60,
+    );
+  });
+
+  it("maps an upstream non-2xx to error and does NOT cache it", async () => {
+    vi.mocked(cacheGet).mockResolvedValueOnce(null);
+    mockProduct({ error: "boom" }, false);
+    const r = await fetchOffProductResult(CODE);
+    expect(r.status).toBe("error");
+    expect(cacheSetFireAndForget).not.toHaveBeenCalled();
+  });
+
+  it("maps a timeout to timeout and does NOT cache it", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(cacheGet).mockResolvedValueOnce(null);
+      globalThis.fetch = vi.fn(
+        (_url: string, init?: { signal?: AbortSignal }) =>
+          new Promise<Response>((_, reject) => {
+            init?.signal?.addEventListener("abort", () => {
+              const e = new Error("aborted");
+              e.name = "AbortError";
+              reject(e);
+            });
+          }),
+      ) as unknown as typeof fetch;
+      const pending = fetchOffProductResult(CODE);
+      pending.catch(() => {});
+      await vi.advanceTimersByTimeAsync(5_000);
+      const r = await pending;
+      expect(r.status).toBe("timeout");
+      expect(cacheSetFireAndForget).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }

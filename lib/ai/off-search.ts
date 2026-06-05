@@ -1,4 +1,5 @@
 import type { Food } from "@/components/macro/types";
+import { cacheGet, cacheSetFireAndForget } from "@/lib/cache/redis";
 import type { MicronutrientValues } from "@/lib/micronutrients/types";
 import { MICRONUTRIENTS, type MicronutrientKey } from "@/lib/rda";
 
@@ -15,9 +16,29 @@ const OFF_PRODUCT_URL = "https://world.openfoodfacts.org/api/v0/product";
 // AND the micronutrient `_100g` fields the enrichment pipeline maps,
 // so no extra field needs listing here.
 const FIELDS = ["code", "product_name", "brands", "nutriments"].join(",");
-const MAX_LIMIT = 10;
+// Raised from 10 to 25 so the `/api/off-search` proxy (which clamps to 25) can
+// route through `searchOffHitsServer` without lowering its page size. The AI
+// callers pass <= 10, so they're unaffected.
+const MAX_LIMIT = 25;
 const USER_AGENT = "maqro/0.1 (https://github.com/hyp3rd/maqro)";
 const OFF_TIMEOUT_MS = 5_000;
+
+// ─── Cross-instance cache (optional Upstash Redis) ──────────────────────────
+// Bumping the version invalidates every cached entry at once after an `OFFHit`
+// or `FIELDS` shape change.
+const CACHE_VERSION = "v1";
+const PRODUCT_TTL = 7 * 24 * 60 * 60; // 7d — per-100g macros are ~immutable
+const PRODUCT_MISS_TTL = 6 * 60 * 60; // 6h — re-checks a missing barcode same-day
+const SEARCH_TTL = 5 * 60; // 5m — search rankings are volatile
+const MAX_CACHED_QUERY_LEN = 200; // don't store pathological keys
+const productKey = (code: string) => `off:${CACHE_VERSION}:product:${code}`;
+const searchKey = (q: string, limit: number) =>
+  `off:${CACHE_VERSION}:search:${limit}:${q}`;
+
+/** Negative-cache sentinel for a definitive OFF "no product" (`status: 0`). A
+ *  truthy object, so `cacheGet` distinguishes it from a cache miss (`null`). */
+type MissMarker = { __miss: true };
+const MISS: MissMarker = { __miss: true };
 
 /** Shape we extract from an Open Food Facts product blob. Exported so
  *  callers outside the search-a-licious path (the barcode route, mainly)
@@ -188,20 +209,39 @@ export function offHitToMicronutrients(h: OFFHit): MicronutrientValues {
   return out;
 }
 
-/** Fetch a single Open Food Facts product by barcode, server-side,
- *  returning the raw `OFFHit` (so callers can run either `hitToFood`
- *  or `offHitToMicronutrients` on it). Returns `null` when the barcode
- *  is unknown, the request times out, or upstream errors — the cron
- *  treats all of these as "no match" and moves on.
+/** The outcome of a barcode lookup, as a discriminated union so HTTP callers
+ *  (the `/api/off-barcode` route) can map each case to a precise status code —
+ *  something the `OFFHit | null` shape can't express (it collapses timeout,
+ *  not-found, and upstream error into a single `null`). */
+export type OffProductResult =
+  | { status: "hit"; product: OFFHit }
+  | { status: "not_found" }
+  | { status: "timeout" }
+  | { status: "error" };
+
+/** Fetch a single Open Food Facts product by barcode, server-side. Reads the
+ *  shared cross-instance cache first; on a miss, fetches upstream and writes
+ *  through — a confirmed `hit` (long TTL) or a definitive not-found (short
+ *  negative TTL, so repeat scans of an unknown barcode don't re-hit OFF every
+ *  time). Timeouts and upstream errors are NEVER cached (they're transient).
  *
- *  Mirrors the `/api/off-barcode` route's fetch but is callable from
- *  other server code (the enrichment cron) without an HTTP round-trip
- *  to our own route. */
-export async function fetchOffProductServer(
+ *  Mirrors the `/api/off-barcode` route's fetch but is callable from other
+ *  server code (the enrichment cron) without an HTTP round-trip. Assumes a
+ *  syntactically valid barcode; the route validates + 400s before calling. */
+export async function fetchOffProductResult(
   code: string,
-): Promise<OFFHit | null> {
+): Promise<OffProductResult> {
   const clean = code.replace(/\D/g, "");
-  if (clean.length < 8 || clean.length > 14) return null;
+  if (clean.length < 8 || clean.length > 14) return { status: "error" };
+  const key = productKey(clean);
+
+  const cached = await cacheGet<OFFHit | MissMarker>(key);
+  if (cached) {
+    return "__miss" in cached
+      ? { status: "not_found" }
+      : { status: "hit", product: cached };
+  }
+
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), OFF_TIMEOUT_MS);
   try {
@@ -210,17 +250,36 @@ export async function fetchOffProductServer(
       signal: controller.signal,
       next: { revalidate: 60 },
     });
-    if (!res.ok) return null;
+    if (!res.ok) return { status: "error" };
     const data = (await res.json()) as { status?: 0 | 1; product?: OFFHit };
-    if (data.status !== 1 || !data.product) return null;
-    return data.product;
-  } catch {
-    // Timeout / network — treat as no match (the cron will record a
-    // miss or retry depending on its policy).
-    return null;
+    if (data.status !== 1 || !data.product) {
+      cacheSetFireAndForget(key, MISS, PRODUCT_MISS_TTL);
+      return { status: "not_found" };
+    }
+    cacheSetFireAndForget(key, data.product, PRODUCT_TTL);
+    return { status: "hit", product: data.product };
+  } catch (err) {
+    if (
+      err instanceof Error &&
+      (err.name === "AbortError" || controller.signal.aborted)
+    ) {
+      return { status: "timeout" };
+    }
+    return { status: "error" };
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** Barcode lookup as `OFFHit | null` — the shape the enrichment cron consumes
+ *  (it treats not-found / timeout / error all as "no match" and moves on). Thin
+ *  wrapper over {@link fetchOffProductResult} so the cron's call site is
+ *  unchanged while the caching lives in one place. */
+export async function fetchOffProductServer(
+  code: string,
+): Promise<OFFHit | null> {
+  const result = await fetchOffProductResult(code);
+  return result.status === "hit" ? result.product : null;
 }
 
 /** Search OFF, returning the raw `OFFHit[]`. The shared transport for
@@ -233,13 +292,15 @@ export async function searchOffHitsServer(
 ): Promise<OFFHit[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
+  const clampedLimit = Math.min(Math.max(1, limit), MAX_LIMIT);
+  const key = searchKey(trimmed.toLowerCase(), clampedLimit);
+
+  const cached = await cacheGet<OFFHit[]>(key);
+  if (cached) return cached;
 
   const upstream = new URL(OFF_SEARCH_URL);
   upstream.searchParams.set("q", trimmed);
-  upstream.searchParams.set(
-    "page_size",
-    String(Math.min(Math.max(1, limit), MAX_LIMIT)),
-  );
+  upstream.searchParams.set("page_size", String(clampedLimit));
   upstream.searchParams.set("fields", FIELDS);
 
   const controller = new AbortController();
@@ -268,7 +329,13 @@ export async function searchOffHitsServer(
     throw new Error(`Open Food Facts search failed (HTTP ${res.status})`);
   }
   const data = (await res.json()) as { hits?: OFFHit[] };
-  return data.hits ?? [];
+  const hits = data.hits ?? [];
+  // Write-through, fire-and-forget. Skip pathologically long queries so a junk
+  // key can't bloat the cache (empty queries already returned above).
+  if (trimmed.length <= MAX_CACHED_QUERY_LEN) {
+    cacheSetFireAndForget(key, hits, SEARCH_TTL);
+  }
+  return hits;
 }
 
 /** Search OFF, returning normalized `Food[]`. Caller controls `limit`

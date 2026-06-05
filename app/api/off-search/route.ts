@@ -1,12 +1,12 @@
+import { searchOffHitsServer } from "@/lib/ai/off-search";
 import { NextResponse } from "next/server";
 
 /** Server-side proxy to Open Food Facts' Search-a-licious endpoint. Necessary
- * because the OFF endpoint does not send Access-Control-Allow-Origin, so
- * browsers can't fetch it cross-origin. Same-origin proxy + short edge cache
- * also reduces upstream load. */
-const OFF_SEARCH_URL = "https://search.openfoodfacts.org/search";
-const FIELDS = ["code", "product_name", "brands", "nutriments"].join(",");
-const MAX_PAGE_SIZE = 25;
+ * because OFF doesn't send Access-Control-Allow-Origin, so browsers can't fetch
+ * it cross-origin. The upstream fetch + the shared cross-instance cache live in
+ * `searchOffHitsServer` (shared with the AI planner + enrichment cron); the
+ * short edge cache header below still fronts repeat identical requests at the
+ * CDN, in front of the route. */
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -15,44 +15,22 @@ export async function GET(request: Request) {
     return NextResponse.json({ hits: [] });
   }
 
+  // `searchOffHitsServer` clamps to its own MAX_LIMIT (25); just parse here.
   const requested = Number.parseInt(url.searchParams.get("limit") ?? "10", 10);
-  const limit = Number.isFinite(requested)
-    ? Math.min(Math.max(1, requested), MAX_PAGE_SIZE)
-    : 10;
+  const limit = Number.isFinite(requested) ? requested : 10;
 
-  const upstream = new URL(OFF_SEARCH_URL);
-  upstream.searchParams.set("q", q);
-  upstream.searchParams.set("page_size", String(limit));
-  upstream.searchParams.set("fields", FIELDS);
-
-  let res: Response;
   try {
-    res = await fetch(upstream.toString(), {
-      headers: {
-        Accept: "application/json",
-        "User-Agent": "maqro/0.1 (https://github.com/hyp3rd/maqro)",
+    const hits = await searchOffHitsServer(q, limit);
+    return NextResponse.json(
+      { hits },
+      {
+        headers: {
+          "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
+        },
       },
-      signal: request.signal,
-    });
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : "fetch failed";
     return NextResponse.json({ error: message }, { status: 502 });
   }
-
-  if (!res.ok) {
-    return NextResponse.json(
-      { error: `Upstream ${res.status}` },
-      { status: 502 },
-    );
-  }
-
-  const data = (await res.json()) as { hits?: unknown };
-  return NextResponse.json(
-    { hits: data.hits ?? [] },
-    {
-      headers: {
-        "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
-      },
-    },
-  );
 }
