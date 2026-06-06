@@ -1,7 +1,8 @@
 {
   "name": "maqro",
-  "version": "0.6.15",
+  "version": "0.6.16",
   "private": true,
+  "license": "Attribution-NonCommercial-NoDerivatives 4.0 International",
   "workspaces": [
     "packages/*"
   ],

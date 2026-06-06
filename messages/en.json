@@ -169,7 +169,7 @@
       },
       "source": {
         "q": "Is the source code public?",
-        "a": "Yes - Apache 2.0 on GitHub. You can self-host or audit any line."
+        "a": "Yes - Attribution-NonCommercial-NoDerivatives 4.0 International on GitHub. You can self-host or audit any line."
       }
     }
   },
@@ -273,7 +273,7 @@
       },
       "github": {
         "label": "Source code on GitHub",
-        "detail": "Apache-2.0 licensed, audit-friendly"
+        "detail": "Attribution-NonCommercial-NoDerivatives 4.0 International licensed, audit-friendly"
       },
       "twitter": {
         "label": "Follow {handle} on X",
