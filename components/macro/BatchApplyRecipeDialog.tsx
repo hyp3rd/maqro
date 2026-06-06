@@ -15,6 +15,7 @@ import {
   addDays,
   enumerateDateRange,
   filterByDayOfWeek,
+  scaffoldBatchDay,
 } from "@/lib/batch-apply";
 import {
   getDailyLog,
@@ -475,12 +476,12 @@ async function batchApplyRecipe({
   let cells = 0;
   for (const date of dates) {
     const existing = await getDailyLog(date);
-    // Use the existing meals if the day already has a log; otherwise
-    // clone the fallback structure so new days inherit the user's
-    // current slot layout (named slots, sort order, etc.).
-    const base: Meal[] = existing
-      ? existing.meals
-      : fallbackMealStructure.map((m) => ({ ...m, foods: [...m.foods] }));
+    // Existing day → keep its meals; new day → the fallback slot layout with
+    // EMPTY foods (NOT a copy of today's foods — see `scaffoldBatchDay`).
+    const base = scaffoldBatchDay(
+      existing?.meals ?? null,
+      fallbackMealStructure,
+    );
 
     const updated = base.map((m) => {
       if (!targetMealNames.has(m.name.trim().toLowerCase())) return m;

@@ -1,10 +1,28 @@
+import type { FoodItem, Meal } from "@/components/macro/types";
 import { describe, expect, it } from "vitest";
 import {
   addDays,
   dayOfWeek,
   enumerateDateRange,
   filterByDayOfWeek,
+  scaffoldBatchDay,
 } from "./batch-apply";
+
+function food(id: number): FoodItem {
+  return {
+    id,
+    name: `Food ${id}`,
+    protein: 0,
+    carbs: 0,
+    fat: 0,
+    calories: 0,
+    portionSize: 100,
+  };
+}
+
+function meal(id: number, name: string, foods: FoodItem[]): Meal {
+  return { id, name, foods };
+}
 
 describe("enumerateDateRange", () => {
   it("returns inclusive list when start equals end", () => {
@@ -92,5 +110,31 @@ describe("dayOfWeek", () => {
     expect(dayOfWeek("2026-05-24")).toBe(0); // Sun
     expect(dayOfWeek("2026-05-18")).toBe(1); // Mon
     expect(dayOfWeek("2026-05-23")).toBe(6); // Sat
+  });
+});
+
+describe("scaffoldBatchDay", () => {
+  const fallback = [
+    meal(1, "Breakfast", [food(10)]),
+    meal(2, "Lunch", [food(11)]),
+    meal(3, "Dinner", [food(12)]),
+  ];
+
+  it("keeps an existing day's meals untouched", () => {
+    const existing = [meal(1, "Breakfast", [food(99)])];
+    expect(scaffoldBatchDay(existing, fallback)).toBe(existing);
+  });
+
+  it("scaffolds a new day with the fallback layout but EMPTY foods", () => {
+    // The bug: a new day used to inherit a COPY of today's foods, so a recipe
+    // batch-applied to one slot pasted the whole day onto every target and
+    // doubled the target slot. The scaffold must carry the layout only.
+    const result = scaffoldBatchDay(null, fallback);
+    expect(result.map((m) => [m.id, m.name])).toEqual([
+      [1, "Breakfast"],
+      [2, "Lunch"],
+      [3, "Dinner"],
+    ]);
+    expect(result.every((m) => m.foods.length === 0)).toBe(true);
   });
 });
