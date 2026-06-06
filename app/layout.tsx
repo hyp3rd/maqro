@@ -61,16 +61,21 @@ export const metadata: Metadata = {
     "Mifflin-St Jeor",
     "nutrition tracking",
   ],
-  // Tab-strip favicon points at the brand SVG — modern browsers
-  // rasterize SVG at exact pixel density for crisp small renders.
-  // The apple-touch-icon and the PWA install icon are PNGs generated
-  // by [app/icon.tsx](./icon.tsx) and [app/apple-icon.tsx](./apple-icon.tsx);
-  // Next's file convention auto-links them, so we deliberately omit
-  // an `apple:` entry here to keep the PNG single-sourced and avoid
-  // iOS picking up the SVG (which Add-to-Home-Screen refuses).
+  // Every icon is listed EXPLICITLY. Providing an `icons` object
+  // SUPPRESSES Next's file-convention auto-links (app/icon.tsx,
+  // app/apple-icon.tsx) — so anything omitted here is simply never
+  // emitted. That's what hid the iOS home-screen icon: with no `apple`
+  // entry, no `<link rel="apple-touch-icon">` was rendered at all, so
+  // iOS (which reads that tag, not the manifest) had nothing to install.
+  // Favicon = brand SVG (browsers rasterize it crisply) + the .ico
+  // fallback. apple-touch-icon = a static, opaque 180×180 PNG (iOS
+  // refuses SVG here). PWA install icons live in the manifest. All the
+  // PNGs are static files under public/ — regenerate from
+  // /public/logo-mark.svg if the brand mark ever changes.
   icons: {
     icon: [{ url: "/logo-mark.svg", type: "image/svg+xml" }],
     shortcut: "/logo-mark.svg",
+    apple: "/apple-touch-icon.png",
   },
   openGraph: {
     type: "website",
