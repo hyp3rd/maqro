@@ -10,7 +10,18 @@ import type { MicronutrientProfile } from "@/lib/micronutrients/types";
 import type { ShoppingAisle } from "@/lib/shopping/categorize";
 import { notifyDataChanged } from "@/lib/sync/data-bus";
 import { type DBSchema, type IDBPDatabase, openDB } from "idb";
-import type { DailyLog, Versioned, WeightEntry } from "@maqro/core/records";
+import type {
+  BloodPressure,
+  BodyMeasurement,
+  CustomFood,
+  DailyLog,
+  MealTemplate,
+  PantryNotification,
+  Sortable,
+  Versioned,
+  WaterIntake,
+  WeightEntry,
+} from "@maqro/core/records";
 
 const DB_NAME = "maqro";
 const DB_VERSION = 18;
@@ -71,18 +82,21 @@ const PROFILE_KEY = "default";
  *  literals (forms, mappers, tests) don't have to know about sync
  *  internals; the saver functions in this file fill them in, and the
  *  sync engine treats missing/null as "never synced". */
-// `Versioned`, `DailyLog`, and `WeightEntry` now live in `@maqro/core/records`
-// (shared with the native app). Imported above for this file's record types +
-// the idb schema, and re-exported here so `@/lib/db` consumers are unchanged.
-export type { DailyLog, Versioned, WeightEntry };
-
-/** Optional per-row position used by the "custom" sort mode in the
- *  My Foods / Recipes / Templates views. A `double precision` (number)
- *  rather than an integer so inserting between two rows is just the
- *  average of the neighbors' values - no renumber cascade. Nullable
- *  for rows the user hasn't manually positioned yet; those sort by
- *  `createdAt` as the fallback. */
-export type Sortable = { sortOrder?: number };
+// These persisted-record types now live in `@maqro/core/records` (shared with
+// the native app). Imported above for this file's schema + helpers, and
+// re-exported here so `@/lib/db` consumers are unchanged.
+export type {
+  BloodPressure,
+  BodyMeasurement,
+  CustomFood,
+  DailyLog,
+  MealTemplate,
+  PantryNotification,
+  Sortable,
+  Versioned,
+  WaterIntake,
+  WeightEntry,
+};
 
 /** Stores that the sync engine can push DELETEs to. Profile is
  *  excluded (single-row per user; the only deletion is "delete
@@ -112,74 +126,6 @@ export type DeletionRecord = {
   rowKey: string;
   deletedAt: number;
 };
-
-/** Stored custom food. Macros are per 100g; the id is a client-minted
- * UUID so the same record can exist in IndexedDB and Supabase under the
- * same key (no mapping needed for sync). createdAt drives most-recent
- * ordering. */
-export type CustomFood = Omit<Food, "id" | "source"> & {
-  id: string;
-  createdAt: number;
-} & Versioned &
-  Sortable;
-
-/** A reusable meal template - the user named some set of foods (e.g.
- * "Greek yogurt bowl") and can apply it to any meal slot on any day. The
- * `foods` array is captured with portions as-saved. Id is a client-minted
- * UUID shared with Supabase. */
-export type MealTemplate = {
-  id: string;
-  name: string;
-  foods: FoodItem[];
-  createdAt: number;
-  /** Legacy ms-epoch timestamp. Still bumped on local writes so the
-   *  existing list-sort ("most recently edited first") keeps working
-   *  without a refactor - `localUpdatedAt` is the authoritative one
-   *  for sync. */
-  updatedAt: number;
-} & Versioned &
-  Sortable;
-
-/** A day's cumulative water intake in millilitres. Keyed by `YYYY-MM-DD`
- *  local date — one row per day, accumulated as the user logs (each tap
- *  adds to `ml`). Mirrors `WeightEntry`'s date-keyed, last-write-wins shape;
- *  the saver differs in that it reads-then-adds rather than overwriting. */
-export type WaterIntake = {
-  date: string;
-  ml: number;
-  recordedAt: number;
-} & Versioned;
-
-/** A single body-measurement entry - waist / neck / hips in cm, plus
- *  an optional free-form note. All circumferences optional so the
- *  user can log just what they have today; the Progress view skips
- *  derived metrics (body-fat estimate) when required inputs are
- *  missing. Keyed by `YYYY-MM-DD` like weighIns - most-recent
- *  measurement on a given day wins. */
-export type BodyMeasurement = {
-  date: string;
-  waistCm?: number;
-  neckCm?: number;
-  hipsCm?: number;
-  notes?: string;
-  recordedAt: number;
-} & Versioned;
-
-/** A single blood-pressure reading - systolic / diastolic in mmHg, with
- *  an optional pulse (bpm) and free-form note. Both pressures are required
- *  (a reading is meaningless without the pair); pulse + notes are optional.
- *  Storage is always mmHg - there's no imperial variant for blood pressure,
- *  so unlike weight there's no unit conversion at the boundary. Keyed by
- *  `YYYY-MM-DD` like weigh-ins and body measurements - most-recent reading
- *  on a given day wins (multiple readings per day is a future enhancement). */
-export type BloodPressure = {
-  date: string;
-  systolic: number;
-  diastolic: number;
-  pulse?: number;
-  notes?: string;
-  recordedAt: number;
-} & Versioned;
 
 /** One completed intermittent fast, archived on Stop / auto-finalize. Unlike
  *  weigh-ins or BP this is **id-keyed**, not date-keyed: a fast can span
@@ -215,25 +161,6 @@ export type PantryItem = {
    *  "Low" badge. Unset → fall back to the global rule (count items: at
    *  or below `LOW_STOCK_THRESHOLD`; measured items: self-calibrating). */
   lowThreshold?: number;
-  createdAt: number;
-  updatedAt: number;
-} & Versioned;
-
-/** A pantry notification — currently only the "low-stock" kind, fired
- *  when consuming a recipe pushes an item's quantity to/below the
- *  low-stock threshold. Synced so the bell badge + history stay
- *  consistent across the user's devices. `itemId` links back to the
- *  pantry row (kept as a plain field, not an FK, since the item may be
- *  edited/deleted independently and the notification is still a valid
- *  historical event). `read` toggles when the user opens the drawer. */
-export type PantryNotification = {
-  id: string;
-  type: "low-stock";
-  itemId: string;
-  itemName: string;
-  quantity: number;
-  unit: string;
-  read: boolean;
   createdAt: number;
   updatedAt: number;
 } & Versioned;
