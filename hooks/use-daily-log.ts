@@ -1,6 +1,7 @@
 "use client";
 
 import type { Meal } from "@/components/macro/types";
+import { useUser } from "@/hooks/use-user";
 import { getDailyLog, saveDailyLog } from "@/lib/db";
 import { enqueueMicronutrientEnrichment } from "@/lib/micronutrients/enqueue";
 import { reportStorageError, reportStorageOk } from "@/lib/storage-status";
@@ -48,6 +49,9 @@ export function useDailyLog(date: string, defaultMeals: Meal[]): DailyLogState {
   // re-read for the current day returns the same data and React
   // diffs it as a no-op.
   const dailyLogsRev = useDataRev("dailyLogs");
+  // Signed-in gate for the background enrichment call in the save effect —
+  // the route is auth-only, so firing it as a guest just 401s.
+  const isSignedIn = !!useUser().user;
   // Gate the auto-save on a *real* user edit. Without it, a fresh
   // session (incognito window, freshly cleared IDB) would auto-save
   // the synthetic `defaultMeals` to IDB before the initial sync runs,
@@ -87,12 +91,12 @@ export function useDailyLog(date: string, defaultMeals: Meal[]): DailyLogState {
     const t = window.setTimeout(() => {
       saveDailyLog(date, meals).then(reportStorageOk).catch(reportStorageError);
       // Offer the day's foods for background micronutrient enrichment.
-      // Fire-and-forget + Pro-gated server-side; a no-op for guests /
-      // free users and for names already enriched.
-      enqueueMicronutrientEnrichment(meals);
+      // Fire-and-forget + Pro-gated server-side. Skip it entirely when
+      // signed out — the route is auth-only and would just 401.
+      if (isSignedIn) enqueueMicronutrientEnrichment(meals);
     }, WRITE_DEBOUNCE_MS);
     return () => window.clearTimeout(t);
-  }, [meals, date, isHydrated]);
+  }, [meals, date, isHydrated, isSignedIn]);
 
   // Public setter — bumps the sync-pending counter so the topbar pill
   // can signal "you have local changes." Also flips `hasRealLocalData`
