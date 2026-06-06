@@ -57,9 +57,9 @@ type SeedItem = {
 
 /** "Shop for me": seeds from the pantry's low/empty items, asks the AI
  *  (or a deterministic fallback) to turn them into a clean, aisle-grouped
- *  shopping list, then hands off to Instacart (real pre-filled cart) or a
- *  search on Uber Eats / DoorDash / Glovo. No checkout here — the user
- *  finishes on the provider. */
+ *  shopping list, then copies it or hands off to a per-item search on
+ *  Uber Eats / DoorDash / Glovo. No checkout here — the user finishes on
+ *  the provider. */
 export function ShopForMeDialog({
   open,
   onOpenChange,
@@ -70,9 +70,6 @@ export function ShopForMeDialog({
   const [adhoc, setAdhoc] = useState("");
   const [building, setBuilding] = useState(false);
   const [result, setResult] = useState<ShoppingSuggestion | null>(null);
-
-  const [instacartUnavailable, setInstacartUnavailable] = useState(false);
-  const [instacartLoading, setInstacartLoading] = useState(false);
 
   // Re-seed from the current pantry gaps each time the dialog opens.
   // Done as a during-render reset on the open↔closed transition (the
@@ -108,7 +105,6 @@ export function ShopForMeDialog({
       setSeeds(finalSeeds);
       setResult(null);
       setAdhoc("");
-      setInstacartUnavailable(false);
     }
   }
 
@@ -212,40 +208,6 @@ export function ShopForMeDialog({
     }
   }
 
-  async function openInstacart() {
-    if (!result || result.items.length === 0) return;
-    setInstacartLoading(true);
-    try {
-      const res = await clientFetch("/api/shopping/instacart-cart", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          title: "Maqro restock",
-          items: result.items.map((i) => ({
-            name: i.name,
-            quantity: i.quantity,
-            unit: i.unit,
-          })),
-        }),
-      });
-      if (res.status === 503) {
-        setInstacartUnavailable(true);
-        toast.error("Instacart isn't set up on this deployment.");
-        return;
-      }
-      if (!res.ok) {
-        toast.error("Couldn't build the Instacart cart. Try again.");
-        return;
-      }
-      const { url } = (await res.json()) as { url: string };
-      window.open(url, "_blank", "noopener,noreferrer");
-    } catch {
-      toast.error("Couldn't reach Instacart.");
-    } finally {
-      setInstacartLoading(false);
-    }
-  }
-
   return (
     <Dialog
       open={open}
@@ -259,7 +221,7 @@ export function ShopForMeDialog({
           </DialogTitle>
           <DialogDescription>
             {result
-              ? "Your restock list — order it or copy it."
+              ? "Your restock list — copy it or order each item."
               : "Pick what to restock; we'll build a clean shopping list."}
           </DialogDescription>
         </DialogHeader>
@@ -329,22 +291,6 @@ export function ShopForMeDialog({
                   <Copy className="h-3.5 w-3.5" />
                   Copy
                 </Button>
-                {!instacartUnavailable && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={openInstacart}
-                    disabled={instacartLoading || result.items.length === 0}
-                    className="gap-1.5"
-                  >
-                    {instacartLoading ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <ShoppingCart className="h-3.5 w-3.5" />
-                    )}
-                    Open in Instacart
-                  </Button>
-                )}
               </div>
             </div>
           )}

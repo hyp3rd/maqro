@@ -1,6 +1,5 @@
-"use client";
-
 import { APP_VERSION } from "@/lib/version";
+import "server-only";
 import {
   Circle,
   Document,
@@ -13,21 +12,21 @@ import {
   Svg,
   Text,
   View,
-  pdf,
+  renderToBuffer,
 } from "@react-pdf/renderer";
 
-/** Vector PDF rendering of the progress report.
+/** Vector PDF rendering of the progress report — server-only.
  *
- *  @react-pdf/renderer pulls a WASM layout engine and browser-only APIs, so
- *  this module must only ever be reached via a dynamic `import()` inside a
- *  browser event handler — never imported into the SSR tree. `renderReportPdf`
- *  is that single entry point; it returns a Blob the caller can download or
- *  encrypt + upload.
+ *  @react-pdf/renderer pulls a ~1.4 MB WASM layout engine (yoga), so it must
+ *  never reach the client bundle: `import "server-only"` enforces that, and the
+ *  sole entry point — `renderReportPdfBuffer` — is called from the
+ *  `/api/report/pdf` route. The browser POSTs a {@link ReportPdfModel} and gets
+ *  the rendered PDF back.
  *
- *  Pure presentation: every number arrives pre-formatted as a string in
- *  {@link ReportPdfModel} (the caller owns units + derivations, which it shares
- *  with the on-screen report), so the only computation here is chart geometry,
- *  drawn with react-pdf's SVG primitives. */
+ *  Pure presentation: every number arrives pre-formatted as a string in the
+ *  model (the caller owns units + derivations, which it shares with the
+ *  on-screen report), so the only computation here is chart geometry, drawn
+ *  with react-pdf's SVG primitives. */
 
 type Stat = { label: string; value: string; sub?: string };
 
@@ -379,16 +378,20 @@ function StatGrid({ stats }: { stats: Stat[] }) {
 function Section({
   title,
   wrap = false,
+  breakBefore = false,
   children,
 }: {
   title: string;
   wrap?: boolean;
+  /** Force a page break before this section (react-pdf `break`). */
+  breakBefore?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <View
       style={styles.section}
       wrap={wrap}
+      break={breakBefore}
     >
       <View style={styles.sectionTitleRow}>
         <View style={styles.sectionDot} />
@@ -549,7 +552,7 @@ function ReportDocument({ model }: { model: ReportPdfModel }) {
           model.micronutrients.rows.length > 0 && (
             <Section
               title="Micronutrients"
-              wrap
+              breakBefore
             >
               <Text style={styles.caption}>{model.micronutrients.caption}</Text>
               {model.micronutrients.rows.map((m, i) => (
@@ -598,9 +601,11 @@ function ReportDocument({ model }: { model: ReportPdfModel }) {
   );
 }
 
-/** Render the report to a PDF Blob. The single public entry point — call it
- *  from a browser event handler (it's dynamically imported to keep react-pdf
- *  out of the SSR bundle). */
-export async function renderReportPdf(model: ReportPdfModel): Promise<Blob> {
-  return pdf(<ReportDocument model={model} />).toBlob();
+/** Render the report to a PDF Buffer on the server. The single public entry
+ *  point — called by the `/api/report/pdf` route so @react-pdf (and its yoga
+ *  WASM) stays entirely out of the client bundle. */
+export async function renderReportPdfBuffer(
+  model: ReportPdfModel,
+): Promise<Buffer> {
+  return renderToBuffer(<ReportDocument model={model} />);
 }

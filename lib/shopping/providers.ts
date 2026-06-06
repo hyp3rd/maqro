@@ -1,8 +1,7 @@
 /** Delivery providers we hand a shopping item off to via a search
  *  deep-link. None of these expose a public consumer-cart API, so this
  *  is the only ToS-safe integration: open the provider pre-filled with a
- *  search for one item; the user adds it and checks out themselves.
- *  (Instacart is handled separately — it DOES have a cart API.) */
+ *  search for one item; the user adds it and checks out themselves. */
 export type ShoppingProvider = "ubereats" | "doordash" | "glovo";
 
 export type ProviderMeta = {

@@ -699,13 +699,12 @@ function ReportBody({
 
   const [pdfBusy, setPdfBusy] = useState(false);
   // Download the vector PDF locally (the same artifact archived to cloud).
-  // react-pdf is loaded lazily so its WASM engine stays out of the SSR bundle.
+  // Rendered server-side (POST /api/report/pdf) so @react-pdf's WASM engine
+  // never ships to the browser.
   async function downloadVectorPdf() {
     setPdfBusy(true);
     try {
-      const { renderReportPdf } =
-        await import("@/components/macro/ReportPdfDocument");
-      const blob = await renderReportPdf(buildPdfModel());
+      const blob = await fetchReportPdf(buildPdfModel());
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -733,10 +732,10 @@ function ReportBody({
     blob: Blob;
   } | null>(null);
 
-  // Archive the report to encrypted cloud storage. Builds the vector PDF
-  // (@react-pdf/renderer, loaded lazily so its WASM engine stays out of the SSR
-  // bundle), then prompts for a passphrase and encrypts on this device before
-  // upload — the bucket only ever holds ciphertext.
+  // Archive the report to encrypted cloud storage. Renders the vector PDF
+  // server-side (POST /api/report/pdf), then prompts for a passphrase and
+  // encrypts on this device before upload — the bucket only ever holds
+  // ciphertext.
   async function archiveToCloud() {
     setArchiveMsg(null);
     setArchiveBusy(true);
@@ -757,9 +756,7 @@ function ReportBody({
         });
         return;
       }
-      const { renderReportPdf } =
-        await import("@/components/macro/ReportPdfDocument");
-      const blob = await renderReportPdf(buildPdfModel());
+      const blob = await fetchReportPdf(buildPdfModel());
       archiveCtx.current = { supabase, userId: data.user.id, blob };
       setPassError(null);
       setPassOpen(true);
@@ -1678,4 +1675,16 @@ function sumCalories(log: DailyLog): number {
     }
   }
   return cal;
+}
+
+/** POST the report model to the server renderer and return the PDF blob.
+ *  Keeps @react-pdf/renderer (and its ~1.4 MB WASM engine) off the client. */
+async function fetchReportPdf(model: ReportPdfModel): Promise<Blob> {
+  const res = await fetch("/api/report/pdf", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(model),
+  });
+  if (!res.ok) throw new Error("Couldn't render the report PDF.");
+  return res.blob();
 }

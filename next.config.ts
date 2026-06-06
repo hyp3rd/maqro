@@ -224,6 +224,11 @@ const nextConfig: NextConfig = {
   // Transpile the in-repo workspace package — it ships TypeScript source with
   // no build step, so Next compiles it alongside the app.
   transpilePackages: ["@maqro/core"],
+  // @react-pdf/renderer (the server-only report PDF renderer) ships a yoga
+  // WASM layout engine + Node built-ins; let Next load it via Node `require`
+  // rather than bundling it, so server-side rendering works and it never lands
+  // in a client chunk. See app/api/report/pdf + components/macro/ReportPdfDocument.
+  serverExternalPackages: ["@react-pdf/renderer"],
   async headers() {
     return [
       {
