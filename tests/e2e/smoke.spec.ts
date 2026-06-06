@@ -5,6 +5,21 @@ import { expect, test } from "@playwright/test";
  * errors, missing client directives, broken sidebar nav, and the
  * Auto-fill (was: Generate Meal Plan) flow. */
 test.describe("maqro happy path", () => {
+  // Suppress the first-run onboarding wizard. It opens asynchronously (a 1.5s
+  // grace-gate), so on a slow run it can appear mid-test and steal the generic
+  // `getByRole("dialog")` from, e.g., the save-as-template dialog. Seeding the
+  // device "done" flag before the app boots mirrors a returning user and keeps
+  // every test deterministic regardless of machine speed.
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      try {
+        window.localStorage.setItem("maqro:onboarding-done", "1");
+      } catch {
+        /* storage disabled — ignore */
+      }
+    });
+  });
+
   test("renders the calculator with daily targets", async ({ page }) => {
     await page.goto("/app");
     // Sidebar shows the section names as buttons; topbar shows the title.

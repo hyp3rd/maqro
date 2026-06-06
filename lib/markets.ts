@@ -5,21 +5,11 @@
  *  `"world"` = no bias (today's global behaviour). Pure data — imported by both
  *  the client preference (`lib/market.ts`) and the server search
  *  (`lib/ai/off-search.ts`), so it carries no browser/React dependency. */
+import type { MarketCode } from "@maqro/core/types";
 
-export type MarketCode =
-  | "world"
-  | "FR"
-  | "DE"
-  | "IT"
-  | "ES"
-  | "GB"
-  | "NL"
-  | "BE"
-  | "PT"
-  | "IE"
-  | "AT"
-  | "CH"
-  | "US";
+// Re-exported so existing `@/lib/markets` importers are unchanged; the type
+// lives in core because the synced `PersonalInfo.market` field references it.
+export type { MarketCode };
 
 export type Market = {
   code: MarketCode;

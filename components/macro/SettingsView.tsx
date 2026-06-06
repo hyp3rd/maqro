@@ -36,6 +36,7 @@ import {
 } from "@/lib/export-crypto";
 import { planImport, type ImportPlan } from "@/lib/import";
 import { GITHUB_REPO_URL } from "@/lib/links";
+import { MARKETS, type MarketCode } from "@/lib/markets";
 import { scrollIntoViewUntilStable } from "@/lib/scroll-into-view";
 import { consumeSettingsScroll } from "@/lib/settings-anchor";
 import {
@@ -112,9 +113,13 @@ function GroupLabel({ children }: { children: ReactNode }) {
 export function SettingsView({
   units,
   onUnitsChange,
+  homeMarket,
+  onHomeMarketChange,
 }: {
   units: UnitSystem;
   onUnitsChange: (next: UnitSystem) => void;
+  homeMarket: MarketCode | undefined;
+  onHomeMarketChange: (next: MarketCode | undefined) => void;
 }) {
   const { user, isLoaded, isUnconfigured } = useUser();
 
@@ -468,6 +473,10 @@ export function SettingsView({
       <UnitsSection
         units={units}
         onChange={onUnitsChange}
+      />
+      <MarketSection
+        homeMarket={homeMarket}
+        onChange={onHomeMarketChange}
       />
       {user && <NotificationsSection />}
       {user && <SyncSection />}
@@ -1259,6 +1268,57 @@ function UnitsSection({
             sub="lb / ft·in"
           />
         </div>
+      </div>
+    </section>
+  );
+}
+
+/** Synced "home market" — the shopping country the food search biases Open
+ *  Food Facts toward, overriding the browser-region default. Persisted in the
+ *  profile (so it follows the user across devices); a per-device override from
+ *  the search-bar switcher still wins locally. */
+function MarketSection({
+  homeMarket,
+  onChange,
+}: {
+  homeMarket: MarketCode | undefined;
+  onChange: (next: MarketCode | undefined) => void;
+}) {
+  return (
+    <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
+      <header className="border-b border-border/60 px-5 py-3">
+        <h3 className="text-sm font-semibold tracking-tight">
+          Shopping market
+        </h3>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Which country&apos;s products the food search prefers, via Open Food
+          Facts. Syncs across your devices; you can still switch it on the go
+          from the search bar. Defaults to your browser region.
+        </p>
+      </header>
+      <div className="px-5 py-4">
+        <select
+          aria-label="Home shopping market"
+          value={homeMarket ?? ""}
+          onChange={(e) =>
+            onChange(
+              e.target.value === ""
+                ? undefined
+                : (e.target.value as MarketCode),
+            )
+          }
+          className="h-10 w-full max-w-xs rounded-md border border-border/60 bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <option value="">Automatic (browser region)</option>
+          {MARKETS.map((m) => (
+            <option
+              key={m.code}
+              value={m.code}
+            >
+              {m.name}
+            </option>
+          ))}
+        </select>
       </div>
     </section>
   );

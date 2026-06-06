@@ -4,19 +4,32 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { setMarket, useMarket } from "@/lib/market";
+import {
+  clearMarketOverride,
+  setMarket,
+  useDefaultMarket,
+  useMarket,
+  useMarketOverride,
+} from "@/lib/market";
 import { MARKETS } from "@/lib/markets";
 import { Check, ChevronDown } from "lucide-react";
 
 /** Shopping-market picker for the food-search header. Biases Open Food Facts
  *  results toward the chosen country (the bias lives server-side in
- *  `lib/ai/off-search.ts`); the preference is device-local and switchable on
- *  the go. Modelled on `components/shell/LocaleSwitcher`. */
+ *  `lib/ai/off-search.ts`).
+ *
+ *  Two tiers: "Automatic" defers to the synced home market (set in Settings) or
+ *  the browser region; picking a country sets a per-device override that wins
+ *  locally — switchable on the go. Modelled on `components/shell/LocaleSwitcher`. */
 export function MarketSwitcher() {
   const current = useMarket();
+  const override = useMarketOverride();
+  const fallback = useDefaultMarket();
   const active = MARKETS.find((m) => m.code === current) ?? MARKETS[0];
+  const fallbackInfo = MARKETS.find((m) => m.code === fallback) ?? MARKETS[0];
 
   return (
     <DropdownMenu>
@@ -40,10 +53,45 @@ export function MarketSwitcher() {
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
-        className="max-h-[60vh] min-w-[11rem] overflow-y-auto"
+        className="max-h-[60vh] min-w-[12rem] overflow-y-auto"
       >
+        {/* Tier 1 — defer to the synced home market / browser region. */}
+        <DropdownMenuItem
+          onSelect={(e) => {
+            e.preventDefault();
+            clearMarketOverride();
+          }}
+          className="flex items-center justify-between gap-3 px-2"
+        >
+          <span className="flex items-center gap-2">
+            <span
+              aria-hidden
+              className="text-base leading-none"
+            >
+              {fallbackInfo.flag}
+            </span>
+            <span className="flex flex-col">
+              <span className="text-sm font-medium leading-tight">
+                Automatic
+              </span>
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                {fallbackInfo.code === "world"
+                  ? "Worldwide"
+                  : `Home or region · ${fallbackInfo.name}`}
+              </span>
+            </span>
+          </span>
+          {override === null && (
+            <Check
+              className="h-3.5 w-3.5 text-foreground"
+              aria-hidden
+            />
+          )}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        {/* Tier 2 — a per-device override that wins locally. */}
         {MARKETS.map((m) => {
-          const isActive = m.code === current;
+          const isActive = override === m.code;
           return (
             <DropdownMenuItem
               key={m.code}
