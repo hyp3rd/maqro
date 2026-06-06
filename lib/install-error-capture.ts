@@ -139,7 +139,7 @@ export function installErrorCapture(): void {
       // React's (minified, uninformative) #418, using the ORIGINAL
       // console.error to avoid re-entering the interceptor.
       originalConsoleError(
-        "⚠️ [Maqro] hydration-mismatch diagnostic — copy this line:",
+        "⚠️ [Maqro] hydration-mismatch diagnostic:",
         JSON.stringify(context),
       );
       reportClientError(message, {

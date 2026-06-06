@@ -5,11 +5,11 @@ import type {
   PersonalInfo,
   Recipe,
 } from "@/components/macro/types";
-import type { FastSessionInput } from "@/lib/fasting";
 import type { MicronutrientProfile } from "@/lib/micronutrients/types";
 import type { ShoppingAisle } from "@/lib/shopping/categorize";
 import { notifyDataChanged } from "@/lib/sync/data-bus";
 import { type DBSchema, type IDBPDatabase, openDB } from "idb";
+import type { FastSession, FastSessionInput } from "@maqro/core/fasting";
 import type {
   BloodPressure,
   BodyMeasurement,
@@ -127,13 +127,10 @@ export type DeletionRecord = {
   deletedAt: number;
 };
 
-/** One completed intermittent fast, archived on Stop / auto-finalize. Unlike
- *  weigh-ins or BP this is **id-keyed**, not date-keyed: a fast can span
- *  midnight and a user can run more than one in a day, so `(user, day)` is the
- *  wrong grain. `startedAt` / `endedAt` are epoch-ms instants; `targetHours`
- *  pins the protocol target that was in effect. The per-phase split is derived
- *  on read (`phaseBreakdownMinutes`), never stored. */
-export type FastSession = FastSessionInput & { id: string } & Versioned;
+// `FastSession` (+ `FastSessionInput`) now live in `@maqro/core/fasting`
+// (imported above for this file's schema + CRUD); re-exported so `@/lib/db`
+// consumers are unchanged.
+export type { FastSession };
 
 /** A pantry inventory item - something the user has on hand. Quantity
  *  + free-text unit (no unit-conversion engine: "4" / "eggs",

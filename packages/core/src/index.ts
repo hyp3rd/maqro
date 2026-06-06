@@ -6,6 +6,7 @@
  *  The old `@/lib/...` and `@/components/macro/types` paths re-export from here
  *  (thin shims), so existing imports keep working unchanged. */
 export * from "./age";
+export * from "./fasting";
 export * from "./goal-phases";
 export * from "./macros";
 export * from "./off";
