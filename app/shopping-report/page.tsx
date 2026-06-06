@@ -1,5 +1,6 @@
 "use client";
 
+import { LogoWordmark } from "@/components/shell/LogoWordmark";
 import { Button } from "@/components/ui/button";
 import {
   listDailyLogs,
@@ -233,9 +234,17 @@ function ReportBody({
       </div>
 
       <header className="space-y-2">
-        <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-          Maqro · maqro.app · v{APP_VERSION}
-        </p>
+        {/* Branded header — the logo lockup left, build meta right, matching
+            the health report's PDF so a printed shopping list looks of-a-piece. */}
+        <div className="flex items-center justify-between gap-2">
+          <LogoWordmark
+            size={20}
+            className="text-primary"
+          />
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground print:text-black">
+            maqro.app · v{APP_VERSION}
+          </span>
+        </div>
         <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-3xl">
           Shopping list
         </h1>

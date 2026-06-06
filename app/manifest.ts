@@ -23,38 +23,39 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: "#0a0a0c",
     orientation: "portrait",
     icons: [
-      // PNG entries first — these are what every install path
-      // actually picks up. The SVG-only manifest worked for desktop
-      // Chrome / Edge but iOS Safari's Add-to-Home-Screen and older
-      // Android installers refused it silently and showed a generic
-      // globe glyph in the installed shortcut. The 512×512 PNG is
-      // generated on the Edge by [app/icon.tsx](./icon.tsx) — Next.js
-      // serves it at /icon and the same URL serves both `any` and
-      // `maskable` purposes because the glyph is inset to ~60% of
-      // the canvas, well inside the maskable safe zone.
-      { src: "/icon", sizes: "512x512", type: "image/png", purpose: "any" },
+      // Static PNGs in `public/` — the reliable install path. These were
+      // previously the dynamic `/icon` route (app/icon.tsx, an Edge
+      // ImageResponse). The `<head>` favicon uses the content-hashed
+      // `/icon?<hash>` (cached, fine), but installers fetch the manifest's
+      // *bare* `/icon`, which hits the Edge function uncached and 404'd on some
+      // installs — leaving a generic glyph. Static files rule that out;
+      // app/icon.tsx still backs the favicon. The 512 doubles as the maskable
+      // icon — the glyph is inset to ~60% of the canvas, inside the safe zone.
       {
-        src: "/icon",
+        src: "/icon-192.png",
+        sizes: "192x192",
+        type: "image/png",
+        purpose: "any",
+      },
+      {
+        src: "/icon-512.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "any",
+      },
+      {
+        src: "/icon-512.png",
         sizes: "512x512",
         type: "image/png",
         purpose: "maskable",
       },
-      // SVG fallbacks for installers that prefer vector. Chrome /
-      // Edge / Firefox / Samsung all accept `image/svg+xml` and
-      // rasterize on demand, so a single entry covers any size the
-      // OS asks for. Kept after the PNG so the PNG wins by default
-      // on platforms that accept both.
+      // SVG fallback for installers that prefer vector. Kept last so the PNGs
+      // win by default on platforms that accept both.
       {
         src: "/logo-mark.svg",
         sizes: "any",
         type: "image/svg+xml",
         purpose: "any",
-      },
-      {
-        src: "/logo-mark.svg",
-        sizes: "any",
-        type: "image/svg+xml",
-        purpose: "maskable",
       },
     ],
     categories: ["health", "fitness", "lifestyle"],
