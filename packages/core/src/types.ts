@@ -340,7 +340,31 @@ export type PersonalInfo = {
    *  [lib/units.ts](../../lib/units.ts) for the conversion rules
    *  and the "storage is always metric" rationale. */
   units: "metric" | "imperial";
+  /** Synced "home market" — the shopping country the food search biases Open
+   *  Food Facts toward, overriding the browser-region default. Settable in
+   *  Settings; a per-device on-the-go override can still win locally. See
+   *  [lib/market.ts](../../lib/market.ts). Rides the profile blob — no
+   *  migration, like `fasting`. Validated against the supported set on read. */
+  market?: MarketCode;
 };
+
+/** Supported "shopping market" country codes (ISO 3166-1 alpha-2) plus
+ *  `"world"` (no country bias). The display list + the Open Food Facts tag
+ *  mapping live in [lib/markets.ts](../../lib/markets.ts). */
+export type MarketCode =
+  | "world"
+  | "FR"
+  | "DE"
+  | "IT"
+  | "ES"
+  | "GB"
+  | "NL"
+  | "BE"
+  | "PT"
+  | "IE"
+  | "AT"
+  | "CH"
+  | "US";
 
 export type CalculatedValues = {
   bmr: number;

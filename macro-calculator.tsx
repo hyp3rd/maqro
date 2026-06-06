@@ -72,6 +72,7 @@ import {
 import { dietBreakNudge, effectiveGoal } from "./lib/goal-phases";
 import { waterGoalMl } from "./lib/hydration";
 import { aggregateMacroBreakdown, computeMacros } from "./lib/macros";
+import { setHomeMarket } from "./lib/market";
 import { planDay, summarisePlan } from "./lib/meal-planner";
 import { appendRecipeToNamedSlot } from "./lib/meal-prep-batch";
 import { applyPantryDelta } from "./lib/pantry/apply-delta";
@@ -86,7 +87,7 @@ import { replanPantryDeltas } from "./lib/pantry/replan";
 import { extractFoodPreferences } from "./lib/personalization/preferences";
 import { computeSlotBudget } from "./lib/recipe-ranking";
 import { reportStorageError } from "./lib/storage-status";
-import { bumpPending } from "./lib/sync-status";
+import { bumpPending, useSyncStatus } from "./lib/sync-status";
 import { useDataRev } from "./lib/sync/data-bus";
 
 const DEFAULT_PROFILE: PersonalInfo = {
@@ -276,18 +277,32 @@ const MacroCalculator = () => {
   // signed-in user on a wiped device, hard refresh) BEFORE the
   // initial sync pulls the real profile in. We open the gate when
   // EITHER: (a) sync has touched the profile store (profileRev > 0),
-  // OR (b) the 1.5s safety timeout fires for users with nothing on
-  // the server. The OR is derived directly from state - the timeout
-  // only updates `gateTimeoutFired` inside its callback, never
-  // synchronously in an effect body (would violate the
+  // OR (b) the 1.5s safety timeout fired AND no initial sync is still
+  // in flight. The sync guard is what actually closes the flash: a
+  // returning user on a fresh device whose pull runs longer than the
+  // timeout used to see the wizard for a frame before the synced
+  // (non-default) profile arrived and shut it. Gating (b) on
+  // `syncStatus` holds the gate closed until the pull settles, after
+  // which (a) or (b) opens it. The OR is derived directly from state -
+  // the timeout only updates `gateTimeoutFired` inside its callback,
+  // never synchronously in an effect body (would violate the
   // set-state-in-effect rule).
   const profileRev = useDataRev("profile");
+  const syncStatus = useSyncStatus();
   const [gateTimeoutFired, setGateTimeoutFired] = useState(false);
   useEffect(() => {
     const t = window.setTimeout(() => setGateTimeoutFired(true), 1500);
     return () => window.clearTimeout(t);
   }, []);
-  const onboardingGateOpen = profileRev > 0 || gateTimeoutFired;
+  const onboardingGateOpen =
+    profileRev > 0 || (gateTimeoutFired && syncStatus.state !== "syncing");
+
+  // Mirror the synced home market into the food-search market resolver, so the
+  // search defaults to the user's chosen market across devices (a per-device
+  // override still wins locally). See lib/market.ts.
+  useEffect(() => {
+    setHomeMarket(personalInfo.market);
+  }, [personalInfo.market]);
 
   // Currently displayed day. `null` means "follow today" - useful so the
   // log live-updates across midnight when the user isn't pinned to a
@@ -2141,6 +2156,8 @@ const MacroCalculator = () => {
         <SettingsView
           units={personalInfo.units}
           onUnitsChange={(next) => patchProfile("units", next)}
+          homeMarket={personalInfo.market}
+          onHomeMarketChange={(next) => patchProfile("market", next)}
         />
       )}
 
