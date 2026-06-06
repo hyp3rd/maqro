@@ -21,7 +21,7 @@ repos:
               examples/oidc/keycloak/realm.json|
               messages/en.json|
               messages/it.json|
-              public/ciqual-database.json|
+              public/ciqual-[a-z-]+\.json|
               eslint-rules/package.json
           )$
       - id: end-of-file-fixer

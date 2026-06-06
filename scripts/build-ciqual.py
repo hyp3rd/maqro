@@ -12,10 +12,14 @@ The XLS is NOT vendored (3.6 MB binary). Download it, then run this script:
     python3 -m venv /tmp/cqenv && /tmp/cqenv/bin/pip install xlrd
     /tmp/cqenv/bin/python scripts/build-ciqual.py /tmp/ciqual.xls
 
-Output is a flat array of `Food`-shaped objects (per-100g macros + the macro
-breakdown CIQUAL provides). It is fetched lazily at runtime by the food search
-(see lib/ciqual.ts), so it never enters the JS bundle. Micronutrients are a
-deliberate follow-up — kept out of v1 to bound the payload.
+Outputs two files:
+  - public/ciqual-database.json — `Food`-shaped objects (per-100g macros + the
+    macro breakdown). Fetched lazily by the food-search typeahead
+    (lib/ciqual.ts), so it never enters the JS bundle and stays lean (no micros
+    — the typeahead doesn't use them).
+  - public/ciqual-micronutrients.json — `{ name, micronutrients }` rows in each
+    nutrient's canonical unit (g/mg/µg per 100g, matching packages/core/src/rda),
+    read server-side by the enrich-micronutrients cron.
 """
 
 from __future__ import annotations
@@ -42,7 +46,24 @@ COLS = {
     "polyFat": 33,
 }
 BREAKDOWN = ("sugars", "fiber", "saturatedFat", "monoFat", "polyFat")
-OUT = Path(__file__).resolve().parent.parent / "public" / "ciqual-database.json"
+# Micronutrients → MicronutrientValues keys (packages/core/src/rda.ts). CIQUAL's
+# columns are already in each key's canonical unit (g/mg/µg per 100g), so values
+# map straight across — no scaling, unlike the OFF base-SI grams path.
+MICRO_COLS = {
+    "fiber": 26,
+    "sodium": 60,
+    "potassium": 58,
+    "calcium": 50,
+    "iron": 53,
+    "magnesium": 55,
+    "zinc": 61,
+    "vitaminC": 68,
+    "vitaminD": 64,
+    "vitaminB12": 75,
+}
+ROOT = Path(__file__).resolve().parent.parent
+OUT = ROOT / "public" / "ciqual-database.json"
+MICRO_OUT = ROOT / "public" / "ciqual-micronutrients.json"
 
 
 def parse(value: object) -> float | None:
@@ -69,6 +90,7 @@ def rnd(x: float | None) -> float | None:
 def main(xls_path: str) -> None:
     sheet = xlrd.open_workbook(xls_path).sheet_by_index(0)
     foods: list[dict[str, object]] = []
+    micros_out: list[dict[str, object]] = []
     dropped = 0
 
     for r in range(1, sheet.nrows):
@@ -100,12 +122,29 @@ def main(xls_path: str) -> None:
                 food[key] = val
         foods.append(food)
 
+        # Micronutrients go to a separate file — the food-search typeahead
+        # (which fetches ciqual-database.json) never reads them, so bundling them
+        # there would only bloat that fetch. The enrich cron reads this instead.
+        micros: dict[str, float] = {}
+        for key, col in MICRO_COLS.items():
+            val = rnd(parse(sheet.cell_value(r, col)))
+            if val is not None:
+                micros[key] = val
+        if micros:
+            micros_out.append({"name": food["name"], "micronutrients": micros})
+
     OUT.write_text(
-        json.dumps(foods, ensure_ascii=False, separators=(",", ":")),
+        json.dumps(foods, ensure_ascii=False, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    MICRO_OUT.write_text(
+        json.dumps(micros_out, ensure_ascii=False, separators=(",", ":")) + "\n",
         encoding="utf-8",
     )
     size_kb = round(OUT.stat().st_size / 1024)
+    micro_kb = round(MICRO_OUT.stat().st_size / 1024)
     print(f"wrote {len(foods)} foods ({dropped} dropped) -> {OUT} ({size_kb} KB)")
+    print(f"wrote {len(micros_out)} micro rows -> {MICRO_OUT} ({micro_kb} KB)")
 
 
 if __name__ == "__main__":
