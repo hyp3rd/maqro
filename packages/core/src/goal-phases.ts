@@ -187,7 +187,12 @@ export function normalizePhase(phase: GoalPhase, weightKg: number): GoalPhase {
 }
 
 function mkId(): string {
-  return crypto.randomUUID();
+  // Platform-agnostic — @maqro/core ships to React Native, which has no global
+  // `crypto.randomUUID` (and no Node crypto). A timestamp + random suffix is
+  // unique enough for these local goal-phase records: they're opaque keys, not
+  // security tokens, and phases persist inside the single PersonalInfo blob
+  // (synced as a whole), so cross-device id collisions aren't a concern.
+  return `ph_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
 // Default rates as a fraction of bodyweight/week — conservative, under the

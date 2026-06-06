@@ -36,8 +36,9 @@ lint-fix: ## ESLint with --fix, then re-format.
 	$(NPM) run lint:fix
 	$(NPM) run format
 
-typecheck: ## TypeScript type-check (no emit).
+typecheck: ## TypeScript type-check (web app + @maqro/core platform-agnostic pass).
 	$(NPX) tsc --noEmit
+	$(NPX) tsc -p packages/core/tsconfig.json
 
 check-budget:
 	$(NPM) run check:budget
