@@ -135,6 +135,31 @@ test.describe("maqro happy path", () => {
     ).toBeVisible({ timeout: 15_000 });
   });
 
+  test("meal hub: manual search stays open when tapped (regression)", async ({
+    page,
+  }) => {
+    await page.goto("/app");
+    await page.getByRole("button", { name: "Meal Plan" }).click();
+
+    // Step into a meal's hub, then into the full-screen manual search.
+    await page.getByRole("button", { name: "Quick add" }).first().click();
+    await page.getByRole("button", { name: "Search" }).click();
+
+    const searchSheet = page.getByRole("dialog", { name: /Add food to/ });
+    await expect(searchSheet).toBeVisible();
+
+    // Regression: the search sheet is a sibling portal stacked over the
+    // non-modal hub dialog, so a tap inside it used to count as an outside-
+    // interaction on the hub — closing the hub and unmounting the search with
+    // it. Tapping the search box must NOT close the sheet, and it must stay
+    // interactive (the user couldn't focus anything before the fix).
+    const input = searchSheet.getByPlaceholder(/Search for a food/i);
+    await input.click();
+    await expect(searchSheet).toBeVisible();
+    await input.fill("egg");
+    await expect(input).toHaveValue("egg");
+  });
+
   test("date navigator switches between today and yesterday", async ({
     page,
   }) => {
