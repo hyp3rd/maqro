@@ -15,6 +15,7 @@ repos:
               package.json|
               package-lock.json|
               packages/core/package.json|
+              packages/core/tsconfig.json|
               tsconfig.json|
               test-results/.last-run.json|
               vercel.json|
