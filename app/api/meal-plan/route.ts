@@ -117,6 +117,9 @@ const BodySchema = z.object({
       z.object({ name: z.string(), quantity: z.number(), unit: z.string() }),
     )
     .optional(),
+  /** ISO shopping-market code that biases the AI's Open Food Facts lookups
+   *  toward that country (matches the manual search). Absent → global. */
+  market: z.string().max(8).optional(),
 });
 
 /** Static type the route uses after parseBody returns. Same shape as
@@ -644,6 +647,7 @@ Plan the day. Use search_open_food_facts as needed, then call submit_meal_plan.`
             input.query ?? "",
             // Enforce the advertised 1–5 cap regardless of what the model emits.
             Math.min(input.limit ?? 5, 5),
+            body.market,
           );
         } catch (err) {
           // OFF is best-effort: surface the failure to the model as an

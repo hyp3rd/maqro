@@ -239,12 +239,14 @@ export async function searchOffHitsServer(
 }
 
 /** Search OFF, returning normalized `Food[]`. Caller controls `limit`
- * (clamped to MAX_LIMIT). Errors throw with a message the AI loop can
- * surface back to the model. */
+ * (clamped to MAX_LIMIT) and `market` (an ISO code that biases results toward
+ * that country — `"world"`/unset is the global search). Errors throw with a
+ * message the AI loop can surface back to the model. */
 export async function searchOpenFoodFactsServer(
   query: string,
   limit: number = 10,
+  market: string = "world",
 ): Promise<Food[]> {
-  const hits = await searchOffHitsServer(query, limit);
+  const hits = await searchOffHitsServer(query, limit, undefined, market);
   return hits.map(hitToFood).filter((f): f is Food => f !== null);
 }
