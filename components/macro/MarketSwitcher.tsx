@@ -53,7 +53,9 @@ export function MarketSwitcher() {
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
-        className="max-h-[60vh] min-w-[12rem] overflow-y-auto"
+        // Above the food-search sheet's opaque z-[60] overlay — otherwise the
+        // menu opens behind it and the trigger looks dead.
+        className="z-[70] max-h-[60vh] min-w-[12rem] overflow-y-auto"
       >
         {/* Tier 1 — defer to the synced home market / browser region. */}
         <DropdownMenuItem
