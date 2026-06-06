@@ -81,15 +81,22 @@ export function FoodSearchSheet({
       role="dialog"
       aria-modal="true"
       aria-label={`Add food to ${mealName}`}
-      className="fixed inset-0 z-[60] flex flex-col bg-background pt-safe"
+      // Full-screen on mobile (the guided flow this was built for). On desktop
+      // (sm+) a full-bleed layout is a small list floating in a black void, so
+      // it becomes a centered, bounded modal over a dimmed backdrop — matching
+      // the meal hub it's launched from. The inner panel sizes to its content
+      // (short for the portion step, up to 85vh + scroll for the results).
+      className="fixed inset-0 z-[60] flex flex-col bg-background pt-safe sm:items-center sm:justify-center sm:bg-black/70 sm:p-6"
     >
-      <FoodSearchBody
-        mealId={mealId}
-        mealName={mealName}
-        customFoodsRev={customFoodsRev}
-        onLogFood={onLogFood}
-        onBack={onBack}
-      />
+      <div className="flex min-h-0 flex-1 flex-col sm:max-h-[85vh] sm:w-full sm:max-w-2xl sm:flex-none sm:overflow-hidden sm:rounded-2xl sm:border sm:border-border/60 sm:bg-background sm:shadow-2xl">
+        <FoodSearchBody
+          mealId={mealId}
+          mealName={mealName}
+          customFoodsRev={customFoodsRev}
+          onLogFood={onLogFood}
+          onBack={onBack}
+        />
+      </div>
     </div>,
     document.body,
   );
@@ -168,7 +175,7 @@ function FoodSearchBody({
           </div>
         </header>
 
-        <div className="flex flex-1 flex-col gap-5 overflow-y-auto px-4 py-5">
+        <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 py-5">
           <p className="flex flex-wrap items-center gap-x-2 font-mono text-sm tabular-nums">
             <span className="text-foreground">{pickedKcal} kcal</span>
             <span className="text-muted-foreground/50">·</span>
@@ -280,7 +287,7 @@ function FoodSearchBody({
         </div>
       </div>
 
-      <div className="flex-1 space-y-1.5 overflow-y-auto px-3 py-3">
+      <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-3 py-3">
         {search.results.map((food) => (
           <button
             key={food.id ?? food.name}
