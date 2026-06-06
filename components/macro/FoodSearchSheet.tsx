@@ -14,6 +14,7 @@ import {
 import { toast } from "sonner";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { MarketSwitcher } from "./MarketSwitcher";
 import { QuickAddFoods } from "./QuickAddFoods";
 import type { Food } from "./types";
 
@@ -259,6 +260,7 @@ function FoodSearchBody({
             Your foods, the built-in database, and Open Food Facts.
           </p>
         </div>
+        <MarketSwitcher />
       </header>
 
       <div className="border-b border-border/60 px-3 py-3">
