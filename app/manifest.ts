@@ -18,19 +18,21 @@ export default function manifest(): MetadataRoute.Manifest {
     // at `/`. Installed users have already decided to use the
     // product; bouncing them through the landing would be silly.
     start_url: "/app",
+    // Stable identity so app updates aren't seen as a new install, and a
+    // root scope so in-app navigation stays in the standalone window
+    // (start_url /app sits inside it).
+    id: "/app",
+    scope: "/",
     display: "standalone",
     background_color: "#0a0a0c",
     theme_color: "#0a0a0c",
     orientation: "portrait",
     icons: [
-      // Static PNGs in `public/` — the reliable install path. These were
-      // previously the dynamic `/icon` route (app/icon.tsx, an Edge
-      // ImageResponse). The `<head>` favicon uses the content-hashed
-      // `/icon?<hash>` (cached, fine), but installers fetch the manifest's
-      // *bare* `/icon`, which hits the Edge function uncached and 404'd on some
-      // installs — leaving a generic glyph. Static files rule that out;
-      // app/icon.tsx still backs the favicon. The 512 doubles as the maskable
-      // icon — the glyph is inset to ~60% of the canvas, inside the safe zone.
+      // Static PNGs in `public/` — the reliable install path. These replace
+      // the old dynamic `/icon` route (app/icon.tsx, an Edge ImageResponse)
+      // that installers fetched directly and which 404'd on some installs,
+      // leaving a generic glyph. The 512 doubles as the maskable icon — the
+      // glyph is inset to ~60% of the canvas, inside the safe zone.
       {
         src: "/icon-192.png",
         sizes: "192x192",
