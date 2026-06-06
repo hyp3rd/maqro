@@ -11,6 +11,7 @@
     "node": ">=24.0.0"
   },
   "scripts": {
+    "update-all": "ncu --interactive",
     "preinstall": "node scripts/check-banned-deps.mjs",
     "dev": "next dev --turbopack",
     "build": "next build",
