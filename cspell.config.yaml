@@ -9,6 +9,9 @@ ignorePaths:
   - .prettierrc.json
   - .prettierignore
   - messages/it.json
+  # Generated ANSES-CIQUAL food data (3k+ names) + its one-off generator.
+  - public/ciqual-database.json
+  - scripts/build-ciqual.py
 dictionaryDefinitions: []
 dictionaries: []
 words:
@@ -20,6 +23,7 @@ words:
   - aelig
   - affordances
   - agrave
+  - ANSES
   - apikey
   - apos
   - Appétit
@@ -62,6 +66,7 @@ words:
   - chargebacks
   - checkmarks
   - ciphertext
+  - Ciqual
   - Clickjacking
   - cmdk
   - colour
@@ -105,6 +110,7 @@ words:
   - endonyms
   - errcheck
   - errcode
+  - Etalab
   - euml
   - exfiltrates
   - Fage
@@ -183,6 +189,7 @@ words:
   - laggy
   - laquo
   - lastpass
+  - Licence
   - licious
   - lifecycles
   - linkback

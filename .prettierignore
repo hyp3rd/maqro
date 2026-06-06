@@ -6,6 +6,8 @@ test-results/
 
 # Generated code (regenerate, never hand-format)
 src/lib/api/generated/
+# Generated ANSES-CIQUAL food data — see scripts/build-ciqual.py
+public/ciqual-database.json
 
 # Lockfiles + machine-managed
 package-lock.json

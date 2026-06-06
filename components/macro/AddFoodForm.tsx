@@ -51,12 +51,15 @@ const SOURCE_LABEL: Record<NonNullable<Food["source"]>, string> = {
   builtin: "Built-in",
   custom: "My food",
   off: "Open Food Facts",
+  ciqual: "CIQUAL",
 };
 
 const SOURCE_CLASS: Record<NonNullable<Food["source"]>, string> = {
   builtin: "bg-muted text-muted-foreground hover:bg-muted",
   custom: "bg-foreground/10 text-foreground hover:bg-foreground/10",
   off: "bg-amber-500/15 text-amber-700 hover:bg-amber-500/15 dark:text-amber-400",
+  ciqual:
+    "bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-400",
 };
 
 const AddFoodForm: React.FC<AddFoodFormProps> = ({
