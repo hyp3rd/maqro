@@ -87,7 +87,21 @@ export function MealHubSheet({
         modal={!searchOpen}
         onOpenChange={onOpenChange}
       >
-        <DialogContent className="max-h-[88vh] gap-3 overflow-y-auto">
+        <DialogContent
+          className="max-h-[88vh] gap-3 overflow-y-auto"
+          // The full-screen search sheet stacks on top as a sibling portal, not
+          // a Radix child — so taps inside it register as "outside" this dialog
+          // and (even non-modal) would dismiss it, unmounting the search along
+          // with it (the `meal && <FoodSearchSheet>` below). While search is
+          // open, hold the hub open; the search owns dismissal via its Back
+          // button + its own Escape handler.
+          onInteractOutside={(e) => {
+            if (searchOpen) e.preventDefault();
+          }}
+          onEscapeKeyDown={(e) => {
+            if (searchOpen) e.preventDefault();
+          }}
+        >
           {meal && (
             <MealHubBody
               key={meal.id}
