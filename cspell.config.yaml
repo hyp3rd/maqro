@@ -9,7 +9,7 @@ ignorePaths:
   - .prettierrc.json
   - .prettierignore
   - messages/it.json
-  - public/ciqual-database.json
+  - "public/ciqual-*.json"
   - scripts/build-ciqual.py
 dictionaryDefinitions: []
 dictionaries: []

@@ -8,6 +8,7 @@ import {
 import { assertCronSecret } from "@/lib/auth/cron-secret";
 import { FEATURES } from "@/lib/billing/tiers";
 import { loadUserTier } from "@/lib/billing/usage";
+import { ciqualMicronutrients } from "@/lib/ciqual-micros";
 import { estimateMicronutrientsAI } from "@/lib/micronutrients/ai-estimate";
 import type { MicronutrientValues } from "@/lib/micronutrients/types";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -183,7 +184,7 @@ type ResolveResult = {
   values: MicronutrientValues;
   /** `defer` = OFF missed and AI wasn't permitted this run; the caller
    *  leaves the queue row for next time rather than writing a miss. */
-  source: "barcode" | "search" | "ai" | "miss" | "defer";
+  source: "barcode" | "search" | "ciqual" | "ai" | "miss" | "defer";
   /** Whether an AI call was actually made (so the caller can decrement
    *  the per-run budget). */
   aiCalled: boolean;
@@ -212,6 +213,15 @@ async function resolveMicronutrients(
     }
     // Barcode lookup whiffed — fall through to a name search.
   }
+
+  // CIQUAL: curated lab micronutrients for the generic foods it covers — more
+  // reliable than OFF's crowd-sourced median or an AI estimate, so it's tried
+  // before the OFF name search. Misses (branded / uncovered names) fall through.
+  const ciqual = await ciqualMicronutrients(nameKey);
+  if (ciqual && Object.keys(ciqual).length > 0) {
+    return { values: ciqual, source: "ciqual", aiCalled: false };
+  }
+
   // Name search: median across the top hits rather than the first
   // usable one, so a single mislabelled product can't define a generic
   // name's nutrient profile.
