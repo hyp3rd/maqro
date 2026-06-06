@@ -1,5 +1,6 @@
 "use client";
 
+import { useUser } from "@/hooks/use-user";
 import { useEffect, useState } from "react";
 
 /** Thin sibling to `useAiUsage` that reads only the subscription
@@ -52,10 +53,14 @@ function toState(raw: string | null | undefined): SubscriptionStatus {
 }
 
 export function useSubscriptionStatus(): SubscriptionStatus {
+  const { user, isLoaded } = useUser();
   const [state, setState] = useState<SubscriptionStatus>({ kind: "loading" });
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
+    // Skip the auth-only endpoint when signed out — it just 401s. The
+    // "anon"/"loading" gate states are derived below.
+    if (!isLoaded || !user) return;
     let cancelled = false;
     fetch("/api/billing/usage")
       .then(async (res) => {
@@ -89,7 +94,7 @@ export function useSubscriptionStatus(): SubscriptionStatus {
     return () => {
       cancelled = true;
     };
-  }, [tick]);
+  }, [tick, user, isLoaded]);
 
   // Refresh on tab focus — common path: user clicks the banner CTA,
   // updates their card in Stripe portal (different tab), returns to
@@ -104,5 +109,7 @@ export function useSubscriptionStatus(): SubscriptionStatus {
     return () => document.removeEventListener("visibilitychange", handler);
   }, []);
 
-  return state;
+  // Derive the gate states rather than setting them in the effect (a sync
+  // setState there triggers cascading renders).
+  return !isLoaded ? { kind: "loading" } : !user ? { kind: "anon" } : state;
 }

@@ -214,13 +214,14 @@ function ReportBody({
 
   return (
     <main className="mx-auto max-w-3xl px-safe-or-6 py-8 print:max-w-none print:px-0 print:py-0">
-      <div className="print-hide sticky top-0 z-10 mb-6 flex items-center justify-between gap-2 border-b border-border/60 bg-background/85 px-1 py-2 backdrop-blur">
+      <div className="print-hide sticky top-0 z-10 mb-6 flex items-center justify-between gap-2 border-b border-border/60 bg-background/85 px-1 pb-2 pt-safe-plus-2 backdrop-blur">
         <Link
           href="/app"
-          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+          aria-label="Back to app"
+          className="inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          Back to app
+          <span className="hidden sm:inline">Back to app</span>
         </Link>
         <Button
           type="button"

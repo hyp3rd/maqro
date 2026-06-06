@@ -5,6 +5,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 import { useSubscriptionStatus } from "./use-subscription-status";
 
+// The hook now gates the fetch on an active session. Mock `useUser` —
+// signed-in by default so the fetch path runs; flip `current` to null
+// per-test to exercise the signed-out gate.
+const mockUser = vi.hoisted(() => ({
+  current: { id: "u1" } as { id: string } | null,
+}));
+vi.mock("@/hooks/use-user", () => ({
+  useUser: () => ({
+    user: mockUser.current,
+    isLoaded: true,
+    isUnconfigured: false,
+  }),
+}));
+
 /** Helpers — the hook's only external dep is `fetch('/api/billing/usage')`.
  *  Stub `global.fetch` with controllable responses. */
 function mockUsageResponse(body: unknown, options: { status?: number } = {}) {
@@ -22,6 +36,7 @@ function mockUsageResponse(body: unknown, options: { status?: number } = {}) {
 beforeEach(() => {
   // Ensure each test starts from a clean slate.
   vi.restoreAllMocks();
+  mockUser.current = { id: "u1" }; // signed in by default
 });
 
 afterEach(() => {
@@ -66,6 +81,15 @@ describe("useSubscriptionStatus", () => {
     mockUsageResponse({ error: "Not authenticated." }, { status: 401 });
     const { result } = renderHook(() => useSubscriptionStatus());
     await waitFor(() => expect(result.current.kind).toBe("anon"));
+  });
+
+  it("returns 'anon' without fetching when signed out", async () => {
+    // The gate: a guest shouldn't fire a guaranteed-401 at the auth-only route.
+    mockUser.current = null;
+    const fetchMock = mockUsageResponse({ subscriptionStatus: "active" });
+    const { result } = renderHook(() => useSubscriptionStatus());
+    await waitFor(() => expect(result.current.kind).toBe("anon"));
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("returns 'error' on other failure statuses", async () => {

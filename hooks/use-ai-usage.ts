@@ -1,5 +1,6 @@
 "use client";
 
+import { useUser } from "@/hooks/use-user";
 import type { Tier } from "@/lib/billing/tiers";
 import { useCallback, useEffect, useState } from "react";
 
@@ -48,6 +49,7 @@ export type UseAiUsageResult = {
  *      see the bumped counter.
  *    - `refresh()` returned for explicit triggers. */
 export function useAiUsage(): UseAiUsageResult {
+  const { user, isLoaded } = useUser();
   const [state, setState] = useState<AiUsageState>({ status: "loading" });
   // `tick` is the load trigger — bumping it re-runs the effect.
   // Both window-focus refresh and the imperative refresh() function
@@ -59,11 +61,16 @@ export function useAiUsage(): UseAiUsageResult {
   }, []);
 
   useEffect(() => {
+    // Signed-out users have no usage to fetch — skip the auth-only endpoint
+    // entirely rather than fire a guaranteed 401 at it. The "anon"/"loading"
+    // gate states are derived below, so there's nothing to set here.
+    if (!isLoaded || !user) return;
     let cancelled = false;
     fetch("/api/billing/usage")
       .then(async (res) => {
         if (cancelled) return;
         if (res.status === 401) {
+          // Session expired mid-flight — fall back to anon.
           setState({ status: "anon" });
           return;
         }
@@ -90,7 +97,7 @@ export function useAiUsage(): UseAiUsageResult {
     return () => {
       cancelled = true;
     };
-  }, [tick]);
+  }, [tick, user, isLoaded]);
 
   // Refresh whenever the tab regains visibility. The user might have
   // been on the meal planner making AI calls, switched away, and is
@@ -107,5 +114,14 @@ export function useAiUsage(): UseAiUsageResult {
     return () => document.removeEventListener("visibilitychange", handler);
   }, []);
 
-  return { state, refresh };
+  // Derive the gate states instead of setting them in the effect (a sync
+  // setState there triggers cascading renders): a guest is "anon", an
+  // unresolved session is "loading", otherwise the fetched state.
+  const exposedState: AiUsageState = !isLoaded
+    ? { status: "loading" }
+    : !user
+      ? { status: "anon" }
+      : state;
+
+  return { state: exposedState, refresh };
 }
