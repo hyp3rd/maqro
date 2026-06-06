@@ -72,7 +72,7 @@ import {
 import { dietBreakNudge, effectiveGoal } from "./lib/goal-phases";
 import { waterGoalMl } from "./lib/hydration";
 import { aggregateMacroBreakdown, computeMacros } from "./lib/macros";
-import { setHomeMarket } from "./lib/market";
+import { getMarket, setHomeMarket } from "./lib/market";
 import { planDay, summarisePlan } from "./lib/meal-planner";
 import { appendRecipeToNamedSlot } from "./lib/meal-prep-batch";
 import { applyPantryDelta } from "./lib/pantry/apply-delta";
@@ -1698,6 +1698,7 @@ const MacroCalculator = () => {
         dislikedFoods: personalInfo.dislikedFoods ?? [],
         recentlyEatenFoods,
         pantryItems: aiPantryBias,
+        market: getMarket(),
       });
 
       if (ai.kind === "ok") {
@@ -1799,6 +1800,7 @@ const MacroCalculator = () => {
         previousMeals: meals,
         recentlyEatenFoods,
         pantryItems: aiPantryBias,
+        market: getMarket(),
       });
       if (ai.kind === "ok") {
         const netByItem = replanPantryDeltas(meals, ai.meals, pantryItems);
@@ -1882,6 +1884,7 @@ const MacroCalculator = () => {
         targetMealName: target.name,
         recentlyEatenFoods,
         pantryItems: aiPantryBias,
+        market: getMarket(),
       });
       if (ai.kind === "ok") {
         // The AI was told to return exactly one meal. Match by name

@@ -3,6 +3,7 @@
 import type { DietPreference, Food, Meal } from "@/components/macro/types";
 import type { CoherenceIssue } from "@/lib/ai/plan-coherence";
 import { clientFetch } from "@/lib/auth/client-fetch";
+import type { MarketCode } from "@/lib/markets";
 
 export type AiPlanRequest = {
   targets: { protein: number; carbs: number; fat: number; calories: number };
@@ -39,6 +40,9 @@ export type AiPlanRequest = {
    *  already has. Compute via `listPantryItems()` in
    *  [lib/db.ts](./db.ts). */
   pantryItems?: { name: string; quantity: number; unit: string }[];
+  /** Optional: the active shopping market — biases the AI's Open Food Facts
+   *  lookups toward that country (matches the manual food search). */
+  market?: MarketCode;
 };
 
 /** Result of asking the AI for a meal plan. `kind: "ok"` always carries
