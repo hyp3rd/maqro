@@ -169,7 +169,7 @@
       },
       "source": {
         "q": "Il codice sorgente è pubblico?",
-        "a": "Sì - Apache 2.0 su GitHub. Puoi auto-ospitare o ispezionare ogni riga."
+        "a": "Sì - Attribution-NonCommercial-NoDerivatives 4.0 International su GitHub. Puoi auto-ospitare o ispezionare ogni riga."
       }
     }
   },
@@ -273,7 +273,7 @@
       },
       "github": {
         "label": "Codice sorgente su GitHub",
-        "detail": "Licenza Apache-2.0, ispezionabile"
+        "detail": "Licenza Attribution-NonCommercial-NoDerivatives 4.0 International, ispezionabile"
       },
       "twitter": {
         "label": "Segui {handle} su X",

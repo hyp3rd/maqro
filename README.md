@@ -1122,4 +1122,4 @@ for users who'd rather email than open an issue.
 
 ## License
 
-[Apache License 2.0](./LICENSE)
+[Attribution-NonCommercial-NoDerivatives 4.0 International](./LICENSE)

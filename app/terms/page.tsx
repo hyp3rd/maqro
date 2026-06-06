@@ -233,8 +233,8 @@ export default async function TermsPage() {
             9. Open source
           </h2>
           <p className="text-sm leading-relaxed text-muted-foreground">
-            Maqro is licensed under Apache License 2.0. The full source and
-            license terms are at{" "}
+            Maqro is licensed under Attribution-NonCommercial-NoDerivatives 4.0
+            International. The full source and license terms are at{" "}
             <a
               href={GITHUB_REPO_URL}
               target="_blank"

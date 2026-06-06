@@ -9,7 +9,6 @@ ignorePaths:
   - .prettierrc.json
   - .prettierignore
   - messages/it.json
-  # Generated ANSES-CIQUAL food data (3k+ names) + its one-off generator.
   - public/ciqual-database.json
   - scripts/build-ciqual.py
 dictionaryDefinitions: []
@@ -76,6 +75,7 @@ words:
   - Couldn
   - Cramer
   - Cramer's
+  - creativecommons
   - creds
   - Crème
   - CSPRNG
@@ -327,6 +327,7 @@ words:
   - stdlib
   - strawberr
   - stringly
+  - sublicensable
   - subtag
   - subtags
   - subtests
@@ -379,6 +380,7 @@ words:
   - vercel
   - viewports
   - vonage
+  - waivable
   - wakeup
   - Wallclock
   - webauthn

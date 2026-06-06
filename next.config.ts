@@ -43,14 +43,6 @@ const withBundleAnalyzer = bundleAnalyzer({
  *      verification harness (assert the rendered `<script nonce>` and
  *      that an authenticated session still refreshes).
  *
- *    - `'wasm-unsafe-eval'` in `script-src` is required by the PDF
- *      export: `@react-pdf/renderer`'s layout engine (yoga) ships as
- *      WebAssembly, and the browser gates `WebAssembly.instantiate`
- *      behind a CSP script source. This token permits WASM
- *      compilation only — not JS `eval()` — so it is strictly narrower
- *      than `'unsafe-eval'`. Reached in the browser only when the user
- *      downloads or cloud-archives a report PDF.
- *
  *    - Dev-only relaxations (see `IS_DEV` below): React 19 uses
  *      `eval()` in development to reconstruct cross-environment
  *      stack traces and Turbopack HMR sets up a WebSocket on the
@@ -85,14 +77,12 @@ const IS_DEV = process.env.NODE_ENV !== "production";
 
 const CSP_DIRECTIVES = [
   "default-src 'self'",
-  // `'wasm-unsafe-eval'` lets the browser compile/instantiate
-  // WebAssembly — the `@react-pdf/renderer` layout engine (yoga) ships
-  // as WASM and is reached when the user downloads/archives a report
-  // PDF. It permits *only* WASM, not JS `eval()`, so it's strictly
-  // narrower than `'unsafe-eval'`. `'unsafe-eval'` is added on top in
-  // dev only, for React 19's stack-reconstruction path; production
-  // keeps `eval` itself blocked.
-  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${IS_DEV ? " 'unsafe-eval'" : ""}`,
+  // No WASM/eval tokens in production: the report PDF now renders
+  // server-side (POST /api/report/pdf), so @react-pdf's yoga WASM no
+  // longer runs in the browser — and nothing else compiles WASM or
+  // calls `eval`. `'unsafe-eval'` is added in dev only (React 19's
+  // stack-reconstruction path + Turbopack HMR need it); prod blocks it.
+  `script-src 'self' 'unsafe-inline'${IS_DEV ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
   // `https://*.maqro.app` covers Maqro-owned subdomains (preview
   // deploys, staging, any future CDN host) so images served from
@@ -206,7 +196,7 @@ const nextConfig: NextConfig = {
   // stack (e.g. the recurring React #418 hydration mismatch, whose
   // frames are all mangled React internals) resolves to real source
   // locations in browser devtools and in our error_log. There's no
-  // exposure cost here: this app is open-source (Apache-2.0, public on
+  // exposure cost here: this app is open-source (Attribution-NonCommercial-NoDerivatives 4.0 International, public on
   // GitHub), so the `.map` files reveal nothing that isn't already
   // published. Keeping it on is fine; flip to `false` only if build
   // size or build time ever becomes a concern.
