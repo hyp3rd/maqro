@@ -3,6 +3,7 @@
 import type { Food } from "@/components/macro/types";
 import { foodDatabase } from "@/data/food-database";
 import { searchCustomFoods } from "@/lib/db";
+import { useMarket } from "@/lib/market";
 import { searchOpenFoodFacts } from "@/lib/openfoodfacts";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -41,6 +42,7 @@ const EMPTY_ASYNC: AsyncState = {
  * after saving a new custom food. */
 export function useFoodSearch(query: string, customRev = 0): FoodSearchState {
   const trimmed = query.trim();
+  const market = useMarket();
   const [asyncState, setAsyncState] = useState<AsyncState>(EMPTY_ASYNC);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -78,6 +80,7 @@ export function useFoodSearch(query: string, customRev = 0): FoodSearchState {
       searchOpenFoodFacts(trimmed, {
         signal: controller.signal,
         limit: OFF_LIMIT,
+        country: market,
       })
         .then((off) => {
           if (cancelled || controller.signal.aborted) return;
@@ -109,7 +112,7 @@ export function useFoodSearch(query: string, customRev = 0): FoodSearchState {
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [trimmed, customRev]);
+  }, [trimmed, customRev, market]);
 
   const builtin = useMemo(
     () => (trimmed ? searchBuiltin(trimmed, LOCAL_LIMIT) : []),

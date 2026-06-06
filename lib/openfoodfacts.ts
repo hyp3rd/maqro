@@ -40,7 +40,7 @@ type OFFSearchResponse = { hits?: OFFHit[]; count?: number };
  * are silently dropped — better than rendering NaNs. */
 export async function searchOpenFoodFacts(
   query: string,
-  options: { signal?: AbortSignal; limit?: number } = {},
+  options: { signal?: AbortSignal; limit?: number; country?: string } = {},
 ): Promise<Food[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
@@ -49,6 +49,11 @@ export async function searchOpenFoodFacts(
     q: trimmed,
     limit: String(options.limit ?? 10),
   });
+  // Bias toward the shopping market when one is set; omit for "world" so the
+  // request (and its cache entry) stays identical to the un-biased default.
+  if (options.country && options.country !== "world") {
+    params.set("country", options.country);
+  }
   const res = await fetch(`${OFF_PROXY_URL}?${params}`, {
     signal: options.signal,
     headers: { Accept: "application/json" },

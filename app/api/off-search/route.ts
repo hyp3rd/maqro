@@ -18,12 +18,15 @@ export async function GET(request: Request) {
   // `searchOffHitsServer` clamps to its own MAX_LIMIT (25); just parse here.
   const requested = Number.parseInt(url.searchParams.get("limit") ?? "10", 10);
   const limit = Number.isFinite(requested) ? requested : 10;
+  // Optional shopping market (ISO code, e.g. `DE`) — biases results toward that
+  // country. Unknown / absent values fall through to the global search.
+  const market = url.searchParams.get("country") ?? undefined;
 
   try {
     // Pass the request signal so a superseded typeahead query (the browser
     // aborts stale requests) cancels the upstream OFF fetch instead of letting
     // it run to the 5s timeout.
-    const hits = await searchOffHitsServer(q, limit, request.signal);
+    const hits = await searchOffHitsServer(q, limit, request.signal, market);
     return NextResponse.json(
       { hits },
       {

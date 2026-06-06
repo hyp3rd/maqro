@@ -316,6 +316,99 @@ describe("searchOffHitsServer — cross-instance cache", () => {
   });
 });
 
+describe("searchOffHitsServer — market bias", () => {
+  beforeEach(() => {
+    globalThis.fetch = vi.fn();
+    vi.mocked(cacheGet).mockReset();
+    vi.mocked(cacheSetFireAndForget).mockReset();
+  });
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  function jsonResponse(hits: unknown[]) {
+    return new Response(JSON.stringify({ hits }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }
+  function manyHits(n: number) {
+    return Array.from({ length: n }, (_, i) => ({
+      code: String(i),
+      product_name: `P${i}`,
+      nutriments: { proteins_100g: 1 },
+    }));
+  }
+  function fetchedQuery(spy: typeof fetch, i: number): string | null {
+    const calls = (spy as unknown as { mock: { calls: unknown[][] } }).mock
+      .calls;
+    return new URL(String(calls[i]?.[0])).searchParams.get("q");
+  }
+
+  it("appends the country filter to the query and uses a market-scoped key", async () => {
+    vi.mocked(cacheGet).mockResolvedValueOnce(null);
+    // 10 country hits (>= limit) → no backfill.
+    const fetchSpy = vi.fn(async () =>
+      jsonResponse(manyHits(10)),
+    ) as unknown as typeof fetch;
+    globalThis.fetch = fetchSpy;
+
+    await searchOffHitsServer("chocolate", 8, undefined, "DE");
+
+    expect(fetchedQuery(fetchSpy, 0)).toBe(
+      'chocolate countries_tags:"en:germany"',
+    );
+    expect(cacheSetFireAndForget).toHaveBeenCalledWith(
+      "off:v2:search:de:chocolate",
+      expect.any(Array),
+      5 * 60,
+    );
+  });
+
+  it("backfills with a global query when the market is thin, country-first + deduped", async () => {
+    vi.mocked(cacheGet).mockResolvedValueOnce(null);
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse([{ code: "de1", product_name: "DE only" }]),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse([
+          { code: "de1", product_name: "DE only" }, // duplicate — dropped
+          { code: "g1", product_name: "Global A" },
+          { code: "g2", product_name: "Global B" },
+        ]),
+      ) as unknown as typeof fetch;
+    globalThis.fetch = fetchSpy;
+
+    const result = await searchOffHitsServer("niche", 8, undefined, "FR");
+
+    const calls = (fetchSpy as unknown as { mock: { calls: unknown[][] } }).mock
+      .calls;
+    expect(calls).toHaveLength(2);
+    expect(fetchedQuery(fetchSpy, 0)).toContain('countries_tags:"en:france"');
+    expect(fetchedQuery(fetchSpy, 1)).toBe("niche"); // global backfill, unfiltered
+    expect(result.map((h) => h.code)).toEqual(["de1", "g1", "g2"]);
+  });
+
+  it("an unknown / world market is the unbiased global search (original key)", async () => {
+    vi.mocked(cacheGet).mockResolvedValueOnce(null);
+    const fetchSpy = vi.fn(async () =>
+      jsonResponse(manyHits(3)),
+    ) as unknown as typeof fetch;
+    globalThis.fetch = fetchSpy;
+
+    await searchOffHitsServer("oats", 8, undefined, "XX"); // unknown code → no bias
+
+    expect(fetchedQuery(fetchSpy, 0)).toBe("oats");
+    expect(cacheSetFireAndForget).toHaveBeenCalledWith(
+      "off:v2:search:oats",
+      expect.any(Array),
+      5 * 60,
+    );
+  });
+});
+
 describe("fetchOffProductResult — cache + status mapping", () => {
   const CODE = "0123456789012";
   function mockProduct(body: unknown, ok = true) {

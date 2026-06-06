@@ -1,5 +1,6 @@
 import type { Food } from "@/components/macro/types";
 import { cacheGet, cacheSetFireAndForget } from "@/lib/cache/redis";
+import { offCountryTag } from "@/lib/markets";
 import {
   hitToFood,
   medianMicronutrients,
@@ -43,7 +44,12 @@ const SEARCH_TTL = 5 * 60; // 5m — search rankings are volatile
 const MAX_CACHED_QUERY_LEN = 200; // don't store pathological keys
 const productKey = (code: string) => `off:${CACHE_VERSION}:product:${code}`;
 // Limit-independent: the cached value is the full superset, sliced per caller.
-const searchKey = (q: string) => `off:${CACHE_VERSION}:search:${q}`;
+// Market-scoped when biased; `"world"` keeps the original (market-less)
+// namespace so previously-cached global entries aren't orphaned.
+const searchKey = (q: string, market: string) =>
+  market && market !== "world"
+    ? `off:${CACHE_VERSION}:search:${market.toLowerCase()}:${q}`
+    : `off:${CACHE_VERSION}:search:${q}`;
 
 /** Cross-instance cache entry for a barcode lookup. An explicit envelope so a
  *  negative result (`miss`) is provably disjoint from a real OFF product —
@@ -140,30 +146,22 @@ export async function fetchOffProductResult(
   }
 }
 
-/** Search OFF, returning the raw `OFFHit[]`. The shared transport for both the
- *  `Food`-shaped macro path and the micronutrient path — the latter needs the
- *  untouched `nutriments` object, which `hitToFood` discards. Pass `signal` to
- *  have a cancelled caller (e.g. a superseded typeahead request) abort the
- *  upstream fetch. Errors throw with a message the AI loop can surface.
- *
- *  Caches the full `MAX_LIMIT`-sized superset under a limit-independent key and
- *  returns the caller's `limit`-sized slice, so every caller (browser proxy, AI,
- *  cron) shares one cached entry per query instead of fragmenting by page size. */
-export async function searchOffHitsServer(
+/** One OFF search-a-licious query (optionally country-biased), returning the raw
+ *  hits. `countryTag` appends a `countries_tags:"…"` filter to the query;
+ *  `null` is an unbiased global search. */
+async function fetchOffSearch(
   query: string,
-  limit: number = 10,
+  countryTag: string | null,
   signal?: AbortSignal,
 ): Promise<OFFHit[]> {
-  const trimmed = query.trim();
-  if (!trimmed) return [];
-  const clampedLimit = Math.min(Math.max(1, limit), MAX_LIMIT);
-  const key = searchKey(trimmed.toLowerCase());
-
-  const cached = await cacheGet<OFFHit[]>(key);
-  if (cached) return cached.slice(0, clampedLimit);
-
   const upstream = new URL(OFF_SEARCH_URL);
-  upstream.searchParams.set("q", trimmed);
+  // The tag value contains a colon (`en:germany`), so it must be quoted or the
+  // Lucene parser splits on it. Appended to `q` rather than a separate param —
+  // the search-a-licious `/search` endpoint filters through the query language.
+  upstream.searchParams.set(
+    "q",
+    countryTag ? `${query} countries_tags:"${countryTag}"` : query,
+  );
   upstream.searchParams.set("page_size", String(MAX_LIMIT));
   upstream.searchParams.set("fields", FIELDS);
 
@@ -180,7 +178,58 @@ export async function searchOffHitsServer(
     throw new Error(`Open Food Facts search failed (HTTP ${res.status})`);
   }
   const data = (await res.json()) as { hits?: OFFHit[] };
-  const hits = data.hits ?? [];
+  return data.hits ?? [];
+}
+
+/** Append `secondary` hits not already in `primary` (deduped by code), order
+ *  preserved — `primary` (the country-biased hits) stays first. */
+function mergeByCode(primary: OFFHit[], secondary: OFFHit[]): OFFHit[] {
+  const seen = new Set(primary.map((h) => h.code).filter(Boolean));
+  const out = [...primary];
+  for (const h of secondary) {
+    if (h.code && seen.has(h.code)) continue;
+    if (h.code) seen.add(h.code);
+    out.push(h);
+  }
+  return out;
+}
+
+/** Search OFF, returning the raw `OFFHit[]`. The shared transport for both the
+ *  `Food`-shaped macro path and the micronutrient path — the latter needs the
+ *  untouched `nutriments` object, which `hitToFood` discards. Pass `signal` to
+ *  have a cancelled caller (e.g. a superseded typeahead request) abort the
+ *  upstream fetch. Errors throw with a message the AI loop can surface.
+ *
+ *  `market` (an ISO market code, e.g. `DE`) biases results toward that country:
+ *  the country-tagged query runs first, and — because OFF's country tagging is
+ *  incomplete — a global query backfills (deduped) when the market is thinner
+ *  than asked, so a bias never *hides* a relevant product. `"world"`/unset is
+ *  today's global search, byte-for-byte.
+ *
+ *  Caches the full `MAX_LIMIT`-sized superset under a market-scoped, otherwise
+ *  limit-independent key and returns the caller's `limit`-sized slice. */
+export async function searchOffHitsServer(
+  query: string,
+  limit: number = 10,
+  signal?: AbortSignal,
+  market: string = "world",
+): Promise<OFFHit[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+  const clampedLimit = Math.min(Math.max(1, limit), MAX_LIMIT);
+  const countryTag = offCountryTag(market);
+  const key = searchKey(trimmed.toLowerCase(), countryTag ? market : "world");
+
+  const cached = await cacheGet<OFFHit[]>(key);
+  if (cached) return cached.slice(0, clampedLimit);
+
+  let hits = await fetchOffSearch(trimmed, countryTag, signal);
+  // Backfill from a global query when the country query is thinner than asked.
+  if (countryTag && hits.length < clampedLimit) {
+    const global = await fetchOffSearch(trimmed, null, signal);
+    hits = mergeByCode(hits, global).slice(0, MAX_LIMIT);
+  }
+
   // Write-through the full superset (fire-and-forget). Skip pathologically long
   // queries so a junk key can't bloat the cache (empty queries returned above).
   if (trimmed.length <= MAX_CACHED_QUERY_LEN) {
