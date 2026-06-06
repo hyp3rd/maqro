@@ -75,7 +75,9 @@ export const metadata: Metadata = {
   icons: {
     icon: [{ url: "/logo-mark.svg", type: "image/svg+xml" }],
     shortcut: "/logo-mark.svg",
-    apple: "/apple-touch-icon.png",
+    // Explicit size per Apple's spec — emits
+    // `<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">`.
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
   },
   openGraph: {
     type: "website",
