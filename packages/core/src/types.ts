@@ -1,6 +1,6 @@
 import type { MicronutrientValues } from "./rda";
 
-export type FoodSource = "builtin" | "custom" | "off";
+export type FoodSource = "builtin" | "custom" | "off" | "ciqual";
 
 /** Animal-vs-plant classification used by the diet filter. Built-in foods
  * derive this from `category`/`subCategory`; custom foods set it explicitly

@@ -39,6 +39,9 @@ lint-fix: ## ESLint with --fix, then re-format.
 typecheck: ## TypeScript type-check (no emit).
 	$(NPX) tsc --noEmit
 
+check-budget:
+	$(NPM) run check:budget
+
 test: ## Vitest unit + component tests.
 	$(NPX) vitest run
 
@@ -78,7 +81,7 @@ patch-version:
 # (fastest of the slow checks), build last (longest). Each
 # step fails fast on its own - no point running `build` if
 # typecheck already errored.
-ci: pre-commit fmt-check lint typecheck test sec build ## Run every quality gate.
+ci: pre-commit fmt-check lint typecheck test sec check-budget build ## Run every quality gate.
 
 .PHONY: build ci dev e2e fmt fmt-check help lint lint-fix \
 	pre-commit sec start test test-watch typecheck patch-version

@@ -36,6 +36,7 @@ const SOURCE_LABEL: Record<NonNullable<Food["source"]>, string> = {
   builtin: "Built-in",
   custom: "My food",
   off: "Open Food Facts",
+  ciqual: "CIQUAL",
 };
 
 /** Full-screen food search — the "Search foods" tool launched from the
@@ -257,7 +258,7 @@ function FoodSearchBody({
             Add to {mealName}
           </p>
           <p className="text-xs text-muted-foreground">
-            Your foods, the built-in database, and Open Food Facts.
+            Your foods, the built-in database, CIQUAL, and Open Food Facts.
           </p>
         </div>
         <MarketSwitcher />

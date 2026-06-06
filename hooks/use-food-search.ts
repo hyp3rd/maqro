@@ -2,6 +2,7 @@
 
 import type { Food } from "@/components/macro/types";
 import { foodDatabase } from "@/data/food-database";
+import { searchCiqual } from "@/lib/ciqual";
 import { searchCustomFoods } from "@/lib/db";
 import { useMarket } from "@/lib/market";
 import { searchOpenFoodFacts } from "@/lib/openfoodfacts";
@@ -9,6 +10,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 const DEBOUNCE_MS = 300;
 const LOCAL_LIMIT = 5;
+const CIQUAL_LIMIT = 6;
 const OFF_LIMIT = 8;
 
 export type FoodSearchState = {
@@ -23,6 +25,7 @@ export type FoodSearchState = {
 type AsyncState = {
   for: string;
   custom: Food[];
+  ciqual: Food[];
   off: Food[];
   remoteDone: boolean;
   remoteError: string | null;
@@ -31,15 +34,16 @@ type AsyncState = {
 const EMPTY_ASYNC: AsyncState = {
   for: "",
   custom: [],
+  ciqual: [],
   off: [],
   remoteDone: true,
   remoteError: null,
 };
 
-/** Search builtin + custom (IndexedDB) + Open Food Facts in parallel. The
- * builtin source resolves synchronously during render; custom + OFF arrive
- * asynchronously and merge in. `customRev` lets callers force a re-query
- * after saving a new custom food. */
+/** Search builtin + custom (IndexedDB) + CIQUAL generic foods + Open Food Facts
+ * in parallel. The builtin source resolves synchronously during render; the
+ * rest arrive asynchronously and merge in. `customRev` lets callers force a
+ * re-query after saving a new custom food. */
 export function useFoodSearch(query: string, customRev = 0): FoodSearchState {
   const trimmed = query.trim();
   const market = useMarket();
@@ -62,6 +66,7 @@ export function useFoodSearch(query: string, customRev = 0): FoodSearchState {
             : {
                 for: trimmed,
                 custom,
+                ciqual: [],
                 off: [],
                 remoteDone: false,
                 remoteError: null,
@@ -70,6 +75,26 @@ export function useFoodSearch(query: string, customRev = 0): FoodSearchState {
       })
       .catch(() => {
         // IndexedDB unavailable (e.g. private mode) — degrade silently.
+      });
+
+    searchCiqual(trimmed, CIQUAL_LIMIT)
+      .then((ciqual) => {
+        if (cancelled) return;
+        setAsyncState((prev) =>
+          prev.for === trimmed
+            ? { ...prev, ciqual }
+            : {
+                for: trimmed,
+                custom: [],
+                ciqual,
+                off: [],
+                remoteDone: false,
+                remoteError: null,
+              },
+        );
+      })
+      .catch(() => {
+        // CIQUAL asset unavailable — degrade silently to the other sources.
       });
 
     abortRef.current?.abort();
@@ -90,6 +115,7 @@ export function useFoodSearch(query: string, customRev = 0): FoodSearchState {
               : {
                   for: trimmed,
                   custom: [],
+                  ciqual: [],
                   off,
                   remoteDone: true,
                   remoteError: null,
@@ -123,8 +149,9 @@ export function useFoodSearch(query: string, customRev = 0): FoodSearchState {
     if (!trimmed) return [];
     const fresh = asyncState.for === trimmed;
     const custom = fresh ? asyncState.custom : [];
+    const ciqual = fresh ? asyncState.ciqual : [];
     const off = fresh ? asyncState.off : [];
-    return merge(custom, builtin, off);
+    return merge(custom, builtin, ciqual, off);
   }, [trimmed, builtin, asyncState]);
 
   if (!trimmed) {
@@ -156,12 +183,18 @@ function searchBuiltin(query: string, limit: number): Food[] {
     }));
 }
 
-/** Custom first (user knows them), then builtin, then OFF. Dedup by name
- * (case-insensitive) so a custom "Apple" hides the builtin one. */
-function merge(custom: Food[], builtin: Food[], off: Food[]): Food[] {
+/** Custom first (user knows them), then builtin, then CIQUAL generic foods,
+ * then OFF branded products. Dedup by name (case-insensitive) so a custom
+ * "Apple" hides the builtin one. */
+function merge(
+  custom: Food[],
+  builtin: Food[],
+  ciqual: Food[],
+  off: Food[],
+): Food[] {
   const seen = new Set<string>();
   const out: Food[] = [];
-  for (const list of [custom, builtin, off]) {
+  for (const list of [custom, builtin, ciqual, off]) {
     for (const food of list) {
       const key = food.name.toLowerCase();
       if (seen.has(key)) continue;

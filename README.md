@@ -116,11 +116,10 @@ ships with privacy-respecting operational logging.
   (Claude vision) that fills the pantry from a fridge/shelf snapshot.
   Logging a food that matches a pantry item draws it down automatically.
 - **Shop for me** - turn the pantry's low/empty items into a clean,
-  aisle-grouped restock list. Hand off to **Instacart** (a real
-  pre-filled cart) or search on Uber Eats / DoorDash / Glovo, find
-  **nearby stores** by location or postcode, and save **favourite
-  stores**. AI-assisted with a deterministic fallback so it always
-  works offline.
+  aisle-grouped restock list. Search per item on Uber Eats / DoorDash /
+  Glovo, find **nearby stores** by location or postcode, and save
+  **favourite stores**. AI-assisted with a deterministic fallback so it
+  always works offline.
 - **Food search** - three sources merged into one box:
   - **Built-in** curated catalog
   - **My foods** (IndexedDB, custom entries via manual form, OFF
@@ -683,7 +682,7 @@ app/
     identify-pantry/route.ts        # Vision: fridge/shelf photo → pantry items
     voice-log/route.ts              # Haiku 4.5: spoken meal → structured foods
     meal-insights/route.ts          # Haiku 4.5: per-meal "next time" suggestions (Pro)
-    shopping/{suggest,nearby,geocode,instacart-cart}/route.ts  # Restock list, store search, geocode, Instacart cart
+    shopping/{suggest,nearby,geocode}/route.ts  # Restock list, store search, geocode
     meal-plan/route.ts              # Sonnet 4.6 agent loop + coherence validator
     recipes/generate/route.ts       # Haiku 4.5 recipe generator
     recipes/[id]/share/route.ts     # Toggle visibility + mint slug
@@ -1045,8 +1044,8 @@ Done (in roughly chronological order):
     **photo-scan fill**, and automatic draw-down when a logged food
     matches an item on hand
   - **Shop for me** - pantry gaps → aisle-grouped restock list with
-    an **Instacart** pre-filled cart, Uber Eats / DoorDash / Glovo
-    search, **nearby stores** by location, and **favourite stores**
+    per-item Uber Eats / DoorDash / Glovo search, **nearby stores** by
+    location, and **favourite stores**
   - **Micronutrient tracking** (Pro) - 10 nutrients vs age/sex RDA
     targets, OFF-enriched in the background, charted on Progress and
     in the per-meal detail sheet

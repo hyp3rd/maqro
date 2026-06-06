@@ -79,10 +79,12 @@ export default function HelpPage() {
             icon={Utensils}
             title="Log meals against the targets"
           >
-            Meal Plan view. Search for a food (built-in catalog + your own
-            custom foods + live Open Food Facts), set a portion in grams, pick
-            the meal slot, hit Add. The day&apos;s totals update at the top and
-            the planner tracks how close you&apos;re hitting the targets.
+            Meal Plan view. Search for a food — your custom foods, the built-in
+            catalog, generic foods from the French ANSES-CIQUAL table (used
+            under the Etalab Open Licence), and live Open Food Facts — set a
+            portion in grams, pick the meal slot, hit Add. The day&apos;s totals
+            update at the top and the planner tracks how close you&apos;re
+            hitting the targets.
           </Topic>
           <Topic
             icon={Sparkles}
