@@ -61,13 +61,11 @@ import { FEATURES } from "./lib/billing/tiers";
 import {
   addCustomFood,
   customToFood,
-  getDailyLog,
   listCustomFoods,
   listDailyLogs,
   listMealSchedules,
   listPantryItems,
   listRecipes,
-  saveDailyLog,
   todayKey,
   type MealSchedule,
   type MealTemplate,
@@ -78,10 +76,7 @@ import { waterGoalMl } from "./lib/hydration";
 import { aggregateMacroBreakdown, computeMacros } from "./lib/macros";
 import { getMarket, setHomeMarket } from "./lib/market";
 import { planDay, summarisePlan } from "./lib/meal-planner";
-import {
-  appendRecipeToNamedSlot,
-  recipeIngredientToFood,
-} from "./lib/meal-prep-batch";
+import { recipeIngredientToFood } from "./lib/meal-prep-batch";
 import { applyPantryDelta } from "./lib/pantry/apply-delta";
 import {
   consumedUnitAmount,
@@ -94,7 +89,6 @@ import { replanPantryDeltas } from "./lib/pantry/replan";
 import { extractFoodPreferences } from "./lib/personalization/preferences";
 import { computeSlotBudget } from "./lib/recipe-ranking";
 import { scaleRecipeIngredients } from "./lib/scale-recipe";
-import { reportStorageError } from "./lib/storage-status";
 import { bumpPending, useSyncStatus } from "./lib/sync-status";
 import { useDataRev } from "./lib/sync/data-bus";
 
@@ -937,160 +931,56 @@ const MacroCalculator = () => {
     return { itemId: matched.id, consumedQty: actual };
   };
 
-  // Expand a recipe's ingredients into the target meal slot as individual
-  // FoodItems. Mirrors handleApplyTemplate but converts RecipeIngredient
-  // (per-100g snapshot + portionGrams) into the per-portion FoodItem shape
-  // the meal-planner expects. After apply, the user can adjust each
-  // ingredient's portion independently through the existing slot UI.
-  //
-  // `extraDates`: meal-prep batch — when present, the same cloned
-  // ingredients are also appended to the SAME-NAMED slot on each
-  // listed date via `saveDailyLog`. Days that have no existing log
-  // get one minted from today's meal layout (names + ids preserved
-  // but `foods` reset to []) so the slot exists to receive the
-  // recipe. Days whose log lacks a matching slot name are skipped
-  // silently — we don't invent slots for the user.
-  const handleApplyRecipe = (recipe: Recipe, extraDates?: string[]) => {
+  // Expand a recipe's ingredients into the target meal slot (today) as
+  // individual FoodItems, drawing the pantry down. Converts RecipeIngredient
+  // (per-100g snapshot + portionGrams) into the per-portion FoodItem shape;
+  // afterwards each portion can be adjusted in the slot UI. Multi-day "cook for
+  // the week" lives in the scheduler now (the Recipes Scheduled list), so this
+  // is today-only.
+  const handleApplyRecipe = (recipe: Recipe) => {
     if (applyRecipeMealId === null) return;
     const targetId = applyRecipeMealId;
     const targetSlot = meals.find((m) => m.id === targetId);
     if (!targetSlot) return;
-    const targetSlotName = targetSlot.name;
 
-    // Helper: produce a fresh FoodItem[] for THIS day's slot. Each
-    // call mints new ids so days don't collide on dnd-kit keys
-    // (which are `${mealId}:${food.id}` — distinct meal ids are
-    // enough, but distinct food ids are belt-and-braces).
     let nextId = Date.now();
-    const cloneIngredients = (): FoodItem[] =>
-      recipe.ingredients.map((ing) => recipeIngredientToFood(ing, nextId++));
+    const foods = recipe.ingredients.map((ing) =>
+      recipeIngredientToFood(ing, nextId++),
+    );
 
-    // Pre-clone today's foods + one set per batch day, so every food we
-    // add (today and on each extra day) carries its own `pantrySource`
-    // stamp and can be restored individually when removed/edited later.
-    const todayFoods = cloneIngredients();
-    const dayFoods = (extraDates ?? []).map(() => cloneIngredients());
-
-    // Single running pantry balance, threaded through today + every
-    // successful batch day. Days that turn out to be skipped (because
-    // their meal layout has no slot named `targetSlotName`) never get
-    // attributed against this balance, so the pantry isn't drawn for
-    // foods that were discarded — which was the batch-skip draw-down
-    // bug (a batch onto 7 days would draw 7 days' ingredients even if
-    // only 3 days actually received the recipe).
+    // Draw the recipe's ingredients down from the pantry, stamping each food's
+    // source so a later remove/edit can restore it.
     const balance = new Map(
       pantryItems.map((i) => [i.id, i.quantity] as const),
     );
-    const drawByItem = new Map<string, number>();
-    const accumulate = (d: { itemId: string; consumedQty: number }) => {
-      drawByItem.set(
-        d.itemId,
-        roundQuantity((drawByItem.get(d.itemId) ?? 0) + d.consumedQty),
-      );
-    };
-
-    // Today is always written (it lives in React state, not behind a
-    // skip-on-mismatch check) so its draws are always real.
-    const todayDraws = planPerFoodConsumptionAgainstBalance(
-      todayFoods.map((f) => ({ name: f.name, grams: f.portionSize })),
+    const draws = planPerFoodConsumptionAgainstBalance(
+      foods.map((f) => ({ name: f.name, grams: f.portionSize })),
       pantryItems,
       balance,
     );
-    todayFoods.forEach((f, i) => {
-      const d = todayDraws[i];
+    const drawByItem = new Map<string, number>();
+    foods.forEach((f, i) => {
+      const d = draws[i];
       if (d) {
         f.pantrySource = d;
-        accumulate(d);
+        drawByItem.set(
+          d.itemId,
+          roundQuantity((drawByItem.get(d.itemId) ?? 0) + d.consumedQty),
+        );
       }
     });
 
-    // 1. Today via React state — the debounced effect persists it.
     setMeals(
       meals.map((m) =>
-        m.id === targetId ? { ...m, foods: [...m.foods, ...todayFoods] } : m,
+        m.id === targetId ? { ...m, foods: [...m.foods, ...foods] } : m,
       ),
     );
-
-    // 2. Settlement: writes the aggregated pantry draws and fires the
-    //    toasts. Runs synchronously when there are no batch days,
-    //    otherwise tails the async batch loop so the batch days have a
-    //    chance to add their own draws first.
-    const settle = (writtenCount: number, skippedCount: number) => {
-      if (writtenCount > 0) {
-        toast.success(
-          skippedCount > 0
-            ? `Applied to ${writtenCount + 1} days (${skippedCount} skipped).`
-            : `Applied to ${writtenCount + 1} consecutive days.`,
-        );
-      } else if (skippedCount > 0) {
-        toast.error(
-          "Couldn't apply to other days - those days' meal slots don't match.",
-        );
-      }
-      for (const [itemId, qty] of drawByItem) applyPantryDelta(itemId, qty);
-      if (drawByItem.size > 0) {
-        toast.success(
-          `Used ${drawByItem.size} pantry item${drawByItem.size === 1 ? "" : "s"}`,
-        );
-      }
-    };
-
-    // 3. Extra days via direct IDB writes. Swallow per-day errors so one
-    //    bad day doesn't block the others. The reportStorageError trail
-    //    surfaces the issue without blocking the UI close. Crucially,
-    //    attribute the draw-down *after* confirming the slot exists, so
-    //    skipped days don't touch the pantry.
-    if (extraDates && extraDates.length > 0) {
-      void (async () => {
-        let writtenCount = 0;
-        let skippedCount = 0;
-        for (const [index, date] of extraDates.entries()) {
-          try {
-            const existing = await getDailyLog(date);
-            const baseMeals: Meal[] =
-              existing?.meals ?? meals.map((m) => ({ ...m, foods: [] }));
-            const updated = appendRecipeToNamedSlot(
-              baseMeals,
-              targetSlotName,
-              dayFoods[index],
-            );
-            if (!updated) {
-              skippedCount++;
-              continue;
-            }
-            // Slot matched — attribute draw-down for this day against the
-            // running balance, stamp each food, then save. The `updated`
-            // meals array references the same FoodItem objects we stamp
-            // here, so the stamps land in the saved log.
-            const dayDraws = planPerFoodConsumptionAgainstBalance(
-              dayFoods[index].map((f) => ({
-                name: f.name,
-                grams: f.portionSize,
-              })),
-              pantryItems,
-              balance,
-            );
-            dayFoods[index].forEach((f, i) => {
-              const d = dayDraws[i];
-              if (d) {
-                f.pantrySource = d;
-                accumulate(d);
-              }
-            });
-            await saveDailyLog(date, updated);
-            bumpPending();
-            writtenCount++;
-          } catch (err) {
-            reportStorageError(err);
-            skippedCount++;
-          }
-        }
-        settle(writtenCount, skippedCount);
-      })();
-    } else {
-      settle(0, 0);
+    for (const [itemId, qty] of drawByItem) applyPantryDelta(itemId, qty);
+    if (drawByItem.size > 0) {
+      toast.success(
+        `Used ${drawByItem.size} pantry item${drawByItem.size === 1 ? "" : "s"}`,
+      );
     }
-
     setApplyRecipeMealId(null);
   };
 
