@@ -39,6 +39,18 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    id: "2026-06-07-meal-scheduling-and-ai-day-planner",
+    date: "2026-06-07",
+    version: "0.7.0",
+    title: "Plan your week: recipe schedules, cards, and an AI day-planner",
+    body: `A big update to how you plan meals around your recipes.
+
+- **Schedule a recipe across days.** "Cook once, log for…" now saves a real schedule instead of writing into days you can't see. Pick a recipe, a date range, and the weekdays — it shows up in a new **Scheduled** list in Recipes (edit or cancel anytime), and on each of those days the matching meal slot offers a one-tap **"Log it."** Nothing is logged ahead of time, so your day stays honest to what you actually ate.
+- **Recipe cards.** Your recipes are now a tidy card grid with a diet badge — **Vegan / Vegetarian / Omnivore**, worked out from the ingredients — and the cuisine at a glance.
+- **Don't know what to eat today?** One tap asks the AI to build a breakfast / lunch / dinner day from **your own saved recipes** that lands near your remaining targets. Review it, shuffle for another, or log the whole day at once. It picks from what you've saved — it won't invent food — and counts toward your monthly AI usage.
+- **Recipe → shopping list.** Open a recipe and tap to send any of its ingredients straight to your shopping list.`,
+  },
+  {
     id: "2026-06-05-faster-food-lookups",
     date: "2026-06-05",
     version: "0.6.6",
