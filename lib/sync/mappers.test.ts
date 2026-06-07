@@ -7,6 +7,7 @@ import type {
   FastSession,
   FavoriteFood,
   FavoriteStore,
+  MealSchedule,
   MealTemplate,
   PantryItem,
   PantryNotification,
@@ -29,6 +30,8 @@ import {
   favoriteFoodToRow,
   favoriteStoreFromRow,
   favoriteStoreToRow,
+  mealScheduleFromRow,
+  mealScheduleToRow,
   mealTemplateFromRow,
   mealTemplateToRow,
   pantryItemFromRow,
@@ -703,5 +706,39 @@ describe("favourite food mappers", () => {
       updated_at: "2026-05-20T09:00:00.000Z",
     });
     expect(back).toEqual(FAV);
+  });
+});
+
+describe("meal schedule mappers", () => {
+  const SCHEDULE: MealSchedule = {
+    id: "66666666-6666-4666-8666-666666666666",
+    recipeId: "44444444-4444-4444-8444-444444444444",
+    recipeName: "Oats bowl",
+    mealNames: ["breakfast", "lunch"],
+    startDate: "2026-06-01",
+    endDate: "2026-06-30",
+    daysOfWeek: [1, 2, 3, 4, 5],
+    scale: 2,
+    sortOrder: 3,
+    createdAt: Date.parse("2026-05-13T08:00:00Z"),
+    updatedAt: Date.parse("2026-05-13T09:00:00Z"),
+  };
+
+  it("round-trips a meal schedule unchanged", () => {
+    const row = mealScheduleToRow(USER, SCHEDULE);
+    const back = mealScheduleFromRow({
+      ...row,
+      user_id: USER,
+      updated_at: "2026-05-13T09:00:00.000Z",
+    });
+    expect(back).toEqual(SCHEDULE);
+  });
+
+  it("snapshots the recipe name + carries the jsonb arrays", () => {
+    const row = mealScheduleToRow(USER, SCHEDULE);
+    expect(row.name).toBe("Oats bowl");
+    expect(row.recipe_id).toBe(SCHEDULE.recipeId);
+    expect(row.meal_names).toEqual(["breakfast", "lunch"]);
+    expect(row.days_of_week).toEqual([1, 2, 3, 4, 5]);
   });
 });

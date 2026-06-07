@@ -22,17 +22,22 @@ import { SkeletonListRow } from "@/components/ui/skeleton";
 import {
   addRecipe,
   computeSortBetween,
+  deleteMealSchedule,
   deleteRecipe,
+  listMealSchedules,
   listRecipes,
   setSortOrder,
   upsertRecipe,
+  type MealSchedule,
 } from "@/lib/db";
 import { recipeDietCompatibility } from "@/lib/diet";
+import { formatDaysOfWeek, formatScheduleRange } from "@/lib/meal-schedule";
 import { reportStorageError } from "@/lib/storage-status";
 import { bumpPending } from "@/lib/sync-status";
 import { useDataRev } from "@/lib/sync/data-bus";
 import { useEffect, useMemo, useState } from "react";
 import {
+  CalendarClock,
   CalendarPlus,
   ChefHat,
   Eye,
@@ -115,6 +120,9 @@ export function RecipesView({ profile, currentMeals }: Props) {
   const [sharing, setSharing] = useState<Recipe | null>(null);
   const [viewing, setViewing] = useState<Recipe | null>(null);
   const [batchApplying, setBatchApplying] = useState<Recipe | null>(null);
+  const [editingSchedule, setEditingSchedule] = useState<MealSchedule | null>(
+    null,
+  );
   const [pendingDelete, setPendingDelete] = useState<Recipe | null>(null);
   const [sharedOnly, setSharedOnly] = useState(false);
   const [sortMode, setSortMode] = useSortMode("sort:recipes", "recent");
@@ -147,6 +155,46 @@ export function RecipesView({ profile, currentMeals }: Props) {
       cancelled = true;
     };
   }, [recipesRev]);
+
+  // Meal schedules — the "Scheduled" management list below the filters.
+  const [schedules, setSchedules] = useState<MealSchedule[]>([]);
+  const schedulesRev = useDataRev("mealSchedules");
+  useEffect(() => {
+    let cancelled = false;
+    listMealSchedules()
+      .then((rows) => {
+        if (!cancelled) setSchedules(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setSchedules([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [schedulesRev]);
+
+  // Edit a schedule: resolve its recipe and open the scheduler pre-filled.
+  const editSchedule = (s: MealSchedule) => {
+    const recipe = recipes?.find((r) => r.id === s.recipeId);
+    if (!recipe) {
+      toast.error("That recipe was removed.");
+      return;
+    }
+    setBatchApplying(recipe);
+    setEditingSchedule(s);
+  };
+
+  // Cancel a schedule outright — it's a plan, not logged data, so no confirm.
+  const cancelSchedule = async (s: MealSchedule) => {
+    try {
+      await deleteMealSchedule(s.id);
+      bumpPending();
+      toast.success("Schedule canceled.");
+    } catch (err) {
+      reportStorageError(err);
+      toast.error("Couldn't cancel the schedule.");
+    }
+  };
 
   // Total shared count surfaces in the filter chip ("Shared (3)") so
   // the user has a glance-able answer to "how many of my recipes are
@@ -376,6 +424,59 @@ export function RecipesView({ profile, currentMeals }: Props) {
         </div>
       </div>
 
+      {schedules.length > 0 && (
+        <section className="space-y-2">
+          <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <CalendarClock className="h-3.5 w-3.5" />
+            Scheduled ({schedules.length})
+          </h3>
+          <ul className="divide-y divide-border/60 rounded-md border border-border/60 bg-card">
+            {schedules.map((s) => (
+              <li
+                key={s.id}
+                className="flex items-center gap-2 px-3 py-2.5"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {s.recipeName}
+                  </p>
+                  <p className="truncate text-[11px] text-muted-foreground">
+                    {s.mealNames
+                      .map((n) => n.charAt(0).toUpperCase() + n.slice(1))
+                      .join(", ")}{" "}
+                    · {formatDaysOfWeek(s.daysOfWeek)} ·{" "}
+                    {formatScheduleRange(s.startDate, s.endDate)}
+                    {s.scale !== 1
+                      ? ` · ×${s.scale.toFixed(2).replace(/\.?0+$/, "")}`
+                      : ""}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2 text-muted-foreground"
+                  onClick={() => editSchedule(s)}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  <span className="sr-only">Edit schedule</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 px-2 text-muted-foreground hover:text-destructive"
+                  onClick={() => void cancelSchedule(s)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span className="sr-only">Cancel schedule</span>
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {recipes === null ? (
         // Four placeholder rows roughly matching the actual
         // recipe-card layout - name + meta line - so the list
@@ -541,10 +642,14 @@ export function RecipesView({ profile, currentMeals }: Props) {
         <BatchApplyRecipeDialog
           open={batchApplying !== null}
           onOpenChange={(o) => {
-            if (!o) setBatchApplying(null);
+            if (!o) {
+              setBatchApplying(null);
+              setEditingSchedule(null);
+            }
           }}
           recipe={batchApplying}
           currentMeals={currentMeals}
+          editing={editingSchedule ?? undefined}
         />
       )}
       <AlertDialog
@@ -702,8 +807,8 @@ function SortableRecipeRow({
           size="icon"
           className="h-9 w-9 sm:h-8 sm:w-8"
           onClick={onBatchApply}
-          aria-label={`Cook ${recipe.name} for several days`}
-          title="Cook once, log for several days"
+          aria-label={`Schedule ${recipe.name} across several days`}
+          title="Schedule across several days"
         >
           <CalendarPlus className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
         </Button>

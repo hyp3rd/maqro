@@ -1,27 +1,9 @@
-import type { Meal } from "@/components/macro/types";
-
-/** Pure helpers for the meal-prep "apply this recipe across a date
- *  range" flow. Date math is component-based (YYYY-MM-DD strings)
- *  rather than Date-arithmetic so DST transitions and timezone
- *  quirks don't shift the range — a user picking "Mon to Fri" on
- *  a spring-forward week gets exactly five entries, not four or six. */
-
-/** The base meals for a batch-apply target day, before the recipe is appended.
- *  A day that already has a log keeps its own meals. A day with NO log yet gets
- *  the fallback slot LAYOUT — the same slot names / ids / sort order the user
- *  has today — but with EMPTY foods.
- *
- *  Critically NOT a copy of the fallback day's foods: cloning `m.foods` here
- *  would stamp today's entire day (every meal, recipe or not) onto every target
- *  day, then the caller would append the recipe on top — duplicating the target
- *  slot and pasting the rest of the day's meals where nothing was scheduled. */
-export function scaffoldBatchDay(
-  existing: readonly Meal[] | null,
-  fallback: readonly Meal[],
-): readonly Meal[] {
-  if (existing) return existing;
-  return fallback.map((m) => ({ ...m, foods: [] }));
-}
+/** Pure helpers for the meal-prep "schedule this recipe across a date
+ *  range" flow — enumerate the matching days and filter by weekday. Date
+ *  math is component-based (YYYY-MM-DD strings) rather than Date-arithmetic
+ *  so DST transitions and timezone quirks don't shift the range — a user
+ *  picking "Mon to Fri" on a spring-forward week gets exactly five entries,
+ *  not four or six. */
 
 /** Enumerate every YYYY-MM-DD between `start` and `end` inclusive,
  *  in ascending order. Returns an empty array if start > end (the UI

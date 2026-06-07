@@ -1,10 +1,12 @@
 "use client";
 
 import type { CoherenceIssue } from "@/lib/ai/plan-coherence";
+import type { MealSchedule } from "@/lib/db";
 import React from "react";
 import {
   AlertTriangle,
   BookmarkPlus,
+  CalendarCheck,
   ChefHat,
   Loader2,
   MoreHorizontal,
@@ -61,6 +63,11 @@ interface MealItemProps {
   onSaveAsTemplate: (mealId: number) => void;
   onAddFromTemplate: (mealId: number) => void;
   onApplyRecipe: (mealId: number) => void;
+  /** A schedule due for this slot today (if any) — drives the one-tap
+   *  "log it" offer shown on the empty slot. */
+  scheduledForSlot?: MealSchedule;
+  /** Log the scheduled recipe into this slot. */
+  onLogScheduled: (schedule: MealSchedule, mealId: number) => void;
   /** Open the meal-detail sheet (macro/micro breakdown + insights). */
   onOpenDetail: (mealId: number) => void;
   /** AI-regenerate ONLY this meal slot. The parent calls the
@@ -102,6 +109,8 @@ const MealItem: React.FC<MealItemProps> = ({
   onSaveAsTemplate,
   onAddFromTemplate,
   onApplyRecipe,
+  scheduledForSlot,
+  onLogScheduled,
   onOpenDetail,
   onRegenerate,
   regenerating,
@@ -259,6 +268,16 @@ const MealItem: React.FC<MealItemProps> = ({
             isOver ? "border-foreground/40" : "border-border/60"
           }`}
         >
+          {scheduledForSlot && !isOver && (
+            <button
+              type="button"
+              onClick={() => onLogScheduled(scheduledForSlot, meal.id)}
+              className="mb-3 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-foreground/40 bg-foreground px-3 py-2 text-[11px] font-medium text-background transition-colors hover:bg-foreground/90"
+            >
+              <CalendarCheck className="h-3.5 w-3.5" />
+              Scheduled: {scheduledForSlot.recipeName} — Log it
+            </button>
+          )}
           <p className="text-xs text-muted-foreground">
             {isOver ? "Drop here" : "No foods added yet"}
           </p>

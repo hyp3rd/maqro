@@ -29,6 +29,7 @@ vi.mock("@/lib/db", () => ({
   listDailyLogs: vi.fn(),
   listMealTemplates: vi.fn(),
   listRecipes: vi.fn(),
+  listMealSchedules: vi.fn().mockResolvedValue([]),
   // Same default-empty rationale as listBodyMeasurements: most tests
   // don't exercise pantry sync, so prime it with [] so the engine's
   // `await listPantryItems()` + `.map` doesn't blow up.
@@ -58,6 +59,7 @@ vi.mock("@/lib/db", () => ({
   applyServerMicronutrientProfile: vi.fn(),
   applyServerProfile: vi.fn(),
   applyServerRecipe: vi.fn(),
+  applyServerMealSchedule: vi.fn(),
   applyServerWeightEntry: vi.fn(),
   applyServerWaterIntake: vi.fn(),
   markBodyMeasurementSynced: vi.fn(),
@@ -72,6 +74,7 @@ vi.mock("@/lib/db", () => ({
   markFavoriteFoodSynced: vi.fn(),
   markProfileSynced: vi.fn(),
   markRecipeSynced: vi.fn(),
+  markMealScheduleSynced: vi.fn(),
   markWeightEntrySynced: vi.fn(),
   markWaterIntakeSynced: vi.fn(),
   upsertCustomFood: vi.fn(),
@@ -79,6 +82,7 @@ vi.mock("@/lib/db", () => ({
   upsertPantryItem: vi.fn(),
   upsertPantryNotification: vi.fn(),
   upsertRecipe: vi.fn(),
+  upsertMealSchedule: vi.fn(),
   // Pass A: UUID-collision recovery in the sync engine now uses
   // applyServerDeletion (silent local-only delete + clear tombstone)
   // instead of deleteX, so a re-mint cycle doesn't create a phantom
@@ -108,6 +112,7 @@ function newResult(): SyncResult {
       customFoods: 0,
       mealTemplates: 0,
       recipes: 0,
+      mealSchedules: 0,
       pantryItems: 0,
       pantryNotifications: 0,
       favoriteStores: 0,
@@ -125,6 +130,7 @@ function newResult(): SyncResult {
       customFoods: 0,
       mealTemplates: 0,
       recipes: 0,
+      mealSchedules: 0,
       pantryItems: 0,
       pantryNotifications: 0,
       favoriteStores: 0,

@@ -14,6 +14,7 @@ import {
   applyServerMealTemplate,
   applyServerPantryItem,
   applyServerPantryNotification,
+  applyServerMealSchedule,
   applyServerMicronutrientProfile,
   applyServerProfile,
   applyServerRecipe,
@@ -30,6 +31,7 @@ import {
   listFastSessions,
   listFavoriteFoods,
   listFavoriteStores,
+  listMealSchedules,
   listMealTemplates,
   listMicronutrientProfiles,
   listPantryItems,
@@ -44,6 +46,7 @@ import {
   markFavoriteFoodSynced,
   markFavoriteStoreSynced,
   markDailyLogSynced,
+  markMealScheduleSynced,
   markMealTemplateSynced,
   markPantryItemSynced,
   markPantryNotificationSynced,
@@ -52,6 +55,7 @@ import {
   markWaterIntakeSynced,
   markWeightEntrySynced,
   upsertCustomFood,
+  upsertMealSchedule,
   upsertMealTemplate,
   upsertPantryItem,
   upsertPantryNotification,
@@ -62,6 +66,7 @@ import {
   type DailyLog,
   type DeletionRecord,
   type FastSession,
+  type MealSchedule,
   type MealTemplate,
   type PantryItem,
   type PantryNotification,
@@ -89,6 +94,8 @@ import {
   favoriteFoodToRow,
   favoriteStoreFromRow,
   favoriteStoreToRow,
+  mealScheduleFromRow,
+  mealScheduleToRow,
   mealTemplateFromRow,
   mealTemplateToRow,
   micronutrientProfileFromRow,
@@ -115,6 +122,7 @@ import {
   type FastSessionRow,
   type FavoriteFoodRow,
   type FavoriteStoreRow,
+  type MealScheduleRow,
   type MealTemplateRow,
   type MicronutrientProfileRow,
   type PantryItemRow,
@@ -137,6 +145,7 @@ export type SyncResult = {
     customFoods: number;
     mealTemplates: number;
     recipes: number;
+    mealSchedules: number;
     pantryItems: number;
     pantryNotifications: number;
     favoriteStores: number;
@@ -154,6 +163,7 @@ export type SyncResult = {
     customFoods: number;
     mealTemplates: number;
     recipes: number;
+    mealSchedules: number;
     pantryItems: number;
     pantryNotifications: number;
     favoriteStores: number;
@@ -183,6 +193,7 @@ const ZERO_COUNTS = {
   customFoods: 0,
   mealTemplates: 0,
   recipes: 0,
+  mealSchedules: 0,
   pantryItems: 0,
   pantryNotifications: 0,
   favoriteStores: 0,
@@ -238,6 +249,7 @@ export async function runInitialSync(
   await pullCustomFoods(supabase, userId, result);
   await pullMealTemplates(supabase, userId, result);
   await pullRecipes(supabase, userId, result);
+  await pullMealSchedules(supabase, userId, result);
   await pullPantryItems(supabase, userId, result);
   await pullPantryNotifications(supabase, userId, result);
   await pullFavoriteStores(supabase, userId, result);
@@ -257,6 +269,7 @@ export async function runInitialSync(
   await pushCustomFoods(supabase, userId, result);
   await pushMealTemplates(supabase, userId, result);
   await pushRecipes(supabase, userId, result);
+  await pushMealSchedules(supabase, userId, result);
   await pushPantryItems(supabase, userId, result);
   await pushPantryNotifications(supabase, userId, result);
   await pushFavoriteStores(supabase, userId, result);
@@ -468,6 +481,7 @@ const DELETE_TARGET: Record<
   customFoods: { table: "custom_foods", pk: "id" },
   mealTemplates: { table: "meal_templates", pk: "id" },
   recipes: { table: "recipes", pk: "id" },
+  mealSchedules: { table: "meal_schedules", pk: "id" },
   dailyLogs: { table: "daily_logs", pk: "date" },
   weightHistory: { table: "weight_history", pk: "date" },
   bodyMeasurements: { table: "body_measurements", pk: "date" },
@@ -887,6 +901,65 @@ async function pushRecipeOnce(
     );
   }
   await markRecipeSynced(recipe.id, outcome.serverUpdatedAt);
+  return "synced";
+}
+
+/** @internal Exported for unit tests. Not part of the stable sync API. */
+export async function pushMealSchedules(
+  supabase: SupabaseClient,
+  userId: string,
+  result: SyncResult,
+) {
+  const schedules = await listMealSchedules();
+  for (const schedule of schedules) {
+    if (!isDirty(schedule)) continue;
+    const outcome = await pushMealScheduleOnce(
+      supabase,
+      userId,
+      schedule,
+      "push meal schedule",
+    );
+    if (outcome === "conflict") {
+      result.conflicts++;
+      continue;
+    }
+    if (outcome === "synced") result.pushed.mealSchedules++;
+  }
+}
+
+async function pushMealScheduleOnce(
+  supabase: SupabaseClient,
+  userId: string,
+  schedule: MealSchedule,
+  label: string,
+): Promise<"synced" | "conflict"> {
+  const row = mealScheduleToRow(userId, schedule);
+  const outcome = await pushRow(
+    supabase,
+    "meal_schedules",
+    row,
+    { id: schedule.id },
+    (schedule as MealSchedule & { serverUpdatedAt?: string | null })
+      .serverUpdatedAt,
+    label,
+  );
+  if (outcome.status === "conflict") return "conflict";
+  if (outcome.status === "uuid-collision") {
+    const newId = crypto.randomUUID();
+    await upsertMealSchedule({
+      ...schedule,
+      id: newId,
+      serverUpdatedAt: null,
+    } as MealSchedule & { serverUpdatedAt: null });
+    await applyServerDeletion("mealSchedules", schedule.id);
+    return pushMealScheduleOnce(
+      supabase,
+      userId,
+      { ...schedule, id: newId },
+      `${label} (re-mint retry)`,
+    );
+  }
+  await markMealScheduleSynced(schedule.id, outcome.serverUpdatedAt);
   return "synced";
 }
 
@@ -1372,6 +1445,37 @@ async function pullRecipes(
     result.pulled.recipes++;
   }
   if (result.pulled.recipes > before) notifyDataChanged("recipes");
+}
+
+async function pullMealSchedules(
+  supabase: SupabaseClient,
+  userId: string,
+  result: SyncResult,
+) {
+  const { data, error } = await withTimeout("pull meal schedules", (signal) =>
+    supabase
+      .from("meal_schedules")
+      .select(
+        "id, user_id, name, recipe_id, meal_names, start_date, end_date, days_of_week, scale, sort_order, created_at, updated_at",
+      )
+      .eq("user_id", userId)
+      .abortSignal(signal),
+  );
+  if (error) throw asError(error, "pull meal schedules");
+  if (!data) return;
+  const locals = new Map(
+    (await listMealSchedules()).map(
+      (s: MealSchedule & { serverUpdatedAt?: string | null }) => [s.id, s],
+    ),
+  );
+  const before = result.pulled.mealSchedules;
+  for (const row of data as MealScheduleRow[]) {
+    const localRow = locals.get(row.id);
+    if (!shouldApplyServer(localRow?.serverUpdatedAt, row.updated_at)) continue;
+    await applyServerMealSchedule(mealScheduleFromRow(row), row.updated_at);
+    result.pulled.mealSchedules++;
+  }
+  if (result.pulled.mealSchedules > before) notifyDataChanged("mealSchedules");
 }
 
 async function pullPantryItems(

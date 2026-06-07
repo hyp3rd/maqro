@@ -2,7 +2,8 @@
 
 import type { CoherenceIssue } from "@/lib/ai/plan-coherence";
 import { REFINERS } from "@/lib/ai/refiners";
-import type { PantryItem } from "@/lib/db";
+import type { MealSchedule, PantryItem } from "@/lib/db";
+import { schedulesForDay, scheduleTargetsSlot } from "@/lib/meal-schedule";
 import React from "react";
 import {
   AlertTriangle,
@@ -159,6 +160,11 @@ interface MealPlannerProps {
   onSaveAsTemplate: (mealId: number) => void;
   onAddFromTemplate: (mealId: number) => void;
   onApplyRecipe: (mealId: number) => void;
+  /** Active meal schedules — surfaced as a one-tap "log it" offer on their
+   *  matching day (only when viewing today). */
+  mealSchedules: readonly MealSchedule[];
+  /** Apply a scheduled recipe to a slot on today. */
+  onLogScheduled: (schedule: MealSchedule, mealId: number) => void;
   /** Open the meal-detail sheet for a slot (macro/micro breakdown). */
   onOpenMealDetail: (mealId: number) => void;
   /** Open the guided "Log meal" sheet — the mobile add-food entry
@@ -224,11 +230,19 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
   onSaveAsTemplate,
   onAddFromTemplate,
   onApplyRecipe,
+  mealSchedules,
+  onLogScheduled,
   onOpenMealDetail,
   onOpenLogMeal,
 }) => {
   const isError = mealPlanMessage.toLowerCase().includes("error");
   const dayIsEmpty = meals.every((m) => m.foods.length === 0);
+
+  // Schedules that fall on the displayed day — but only surface the "log it"
+  // offer when viewing TODAY (the day view is gated to today; you don't log
+  // ahead). Empty on past days.
+  const daySchedules =
+    selectedDate === today ? schedulesForDay(mealSchedules, today) : [];
 
   // Split coherence issues by scope so the UI can anchor per-meal
   // warnings to the offending card while showing day-level rules
@@ -582,6 +596,10 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
                 onSaveAsTemplate={onSaveAsTemplate}
                 onAddFromTemplate={onAddFromTemplate}
                 onApplyRecipe={onApplyRecipe}
+                scheduledForSlot={daySchedules.find((s) =>
+                  scheduleTargetsSlot(s, meal.name),
+                )}
+                onLogScheduled={onLogScheduled}
                 onOpenDetail={onOpenMealDetail}
                 onRegenerate={onRegenerateMeal}
                 regenerating={isGeneratingMealPlan}
