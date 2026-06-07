@@ -48,3 +48,16 @@ export type SocialPost = {
 
 /** The generator's per-platform output, before it's linted + persisted. */
 export type GeneratedPost = { platform: SocialPlatform; body: string };
+
+/** The fields a publish adapter needs (platform decides the adapter; body is the
+ *  text; imageUrl is the Instagram card). */
+export type PublishablePost = Pick<
+  SocialPost,
+  "platform" | "body" | "imageUrl"
+>;
+
+/** Outcome of a publish-adapter call. `id` is the platform post id; `url` a
+ *  permalink when one can be formed. */
+export type PublishResult =
+  | { ok: true; id: string; url?: string }
+  | { ok: false; error: string };

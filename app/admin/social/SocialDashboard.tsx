@@ -9,6 +9,7 @@ import {
   PLATFORM_MAX_CHARS,
   SOCIAL_PLATFORMS,
   type SocialCampaign,
+  type SocialPlatform,
   type SocialPost,
 } from "@/lib/social/types";
 import { useState } from "react";
@@ -42,9 +43,11 @@ async function downloadImage(url: string | null) {
 export function SocialDashboard({
   campaigns,
   posts,
+  configured,
 }: {
   campaigns: SocialCampaign[];
   posts: SocialPost[];
+  configured: Record<SocialPlatform, boolean>;
 }) {
   const router = useRouter();
   const [generating, setGenerating] = useState(false);
@@ -142,6 +145,7 @@ export function SocialDashboard({
                   <PostCard
                     key={p.id}
                     post={p}
+                    canPublish={configured[p.platform]}
                   />
                 ))}
               </div>
@@ -153,11 +157,32 @@ export function SocialDashboard({
   );
 }
 
-function PostCard({ post }: { post: SocialPost }) {
+function publishedPermalink(post: SocialPost): string | null {
+  if (!post.publishedId) return null;
+  if (post.platform === "linkedin") {
+    return `https://www.linkedin.com/feed/update/${post.publishedId}/`;
+  }
+  if (post.platform === "x") {
+    return `https://x.com/i/web/status/${post.publishedId}`;
+  }
+  return null;
+}
+
+function PostCard({
+  post,
+  canPublish,
+}: {
+  post: SocialPost;
+  canPublish: boolean;
+}) {
   const max = PLATFORM_MAX_CHARS[post.platform];
   const [body, setBody] = useState(post.body);
   const [savedBody, setSavedBody] = useState(post.body);
   const [status, setStatus] = useState(post.status);
+  const [publishedUrl, setPublishedUrl] = useState<string | null>(
+    publishedPermalink(post),
+  );
+  const [error, setError] = useState<string | null>(post.error);
   const [busy, setBusy] = useState(false);
 
   const lint = lintTone(body, { maxLength: max });
@@ -194,18 +219,34 @@ function PostCard({ post }: { post: SocialPost }) {
     }
   };
 
-  const markPosted = async () => {
+  // One button for both worlds: when the platform has credentials this posts
+  // live (and records the permalink / failure); when it doesn't, the route
+  // falls back to a manual mark-posted (the admin posted by hand).
+  const publish = async () => {
     setBusy(true);
+    setError(null);
     try {
       const res = await clientFetch(
         `/api/admin/social/posts/${post.id}/publish`,
         { method: "POST" },
       );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setStatus("published");
-      toast.success("Marked as posted.");
+      const data = (await res.json().catch(() => ({}))) as {
+        status?: string;
+        url?: string;
+        error?: string;
+        manual?: boolean;
+      };
+      if (data.status === "published") {
+        setStatus("published");
+        if (data.url) setPublishedUrl(data.url);
+        toast.success(data.manual ? "Marked as posted." : "Published.");
+      } else {
+        setStatus("failed");
+        setError(data.error ?? `HTTP ${res.status}`);
+        toast.error(data.error ?? "Couldn't publish.");
+      }
     } catch {
-      toast.error("Couldn't update.");
+      toast.error("Couldn't publish.");
     } finally {
       setBusy(false);
     }
@@ -219,6 +260,24 @@ function PostCard({ post }: { post: SocialPost }) {
           {status === "published" && (
             <Badge className="bg-emerald-600 text-[10px] hover:bg-emerald-600">
               Posted
+            </Badge>
+          )}
+          {status === "published" && publishedUrl && (
+            <a
+              href={publishedUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[11px] font-medium text-primary hover:underline"
+            >
+              View
+            </a>
+          )}
+          {status === "failed" && (
+            <Badge
+              variant="destructive"
+              className="text-[10px]"
+            >
+              Failed
             </Badge>
           )}
         </div>
@@ -250,6 +309,8 @@ function PostCard({ post }: { post: SocialPost }) {
           ))}
         </ul>
       )}
+
+      {error && <p className="mt-2 text-[11px] text-destructive">{error}</p>}
 
       {post.platform === "instagram" && post.imageUrl && (
         <div className="mt-2 space-y-1.5">
@@ -311,12 +372,12 @@ function PostCard({ post }: { post: SocialPost }) {
         {status !== "published" && (
           <Button
             type="button"
-            variant="ghost"
+            variant={canPublish ? "default" : "ghost"}
             size="sm"
-            onClick={() => void markPosted()}
+            onClick={() => void publish()}
             disabled={busy}
           >
-            Mark posted
+            {canPublish ? "Publish" : "Mark posted"}
           </Button>
         )}
       </div>

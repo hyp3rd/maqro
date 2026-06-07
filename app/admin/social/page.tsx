@@ -1,3 +1,4 @@
+import { configuredPlatforms } from "@/lib/social/env";
 import {
   type CampaignStatus,
   type PostStatus,
@@ -76,6 +77,7 @@ export default async function AdminSocialPage() {
     <SocialDashboard
       campaigns={data.campaigns}
       posts={data.posts}
+      configured={configuredPlatforms()}
     />
   );
 }

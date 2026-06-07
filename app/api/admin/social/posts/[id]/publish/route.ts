@@ -1,12 +1,16 @@
 import { requireAdmin } from "@/lib/rbac";
+import { publishPost } from "@/lib/social/publish";
+import type { PublishablePost, SocialPlatform } from "@/lib/social/types";
 import { getSupabaseSecretConfig } from "@/lib/supabase/env";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-/** Mark a post as published. Phase 1 is manual: the admin posts by hand, then
- *  flips this. Phase 2 swaps the per-platform adapter in here (call the X /
- *  LinkedIn / Instagram API, set `published_id` from the response, `failed` +
- *  `error` on a non-2xx) with no change to the dashboard. */
+// The adapters use node:crypto (X OAuth signing).
+export const runtime = "nodejs";
+
+/** Publish a post. If its platform has credentials, call the live API and record
+ *  published_id / failure. If not, fall back to a manual mark-posted (the admin
+ *  posted by hand). */
 export async function POST(
   _req: Request,
   ctx: { params: Promise<{ id: string }> },
@@ -25,11 +29,56 @@ export async function POST(
   const admin = createClient(config.url, config.secretKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
-  const { error } = await admin
+
+  const { data: row, error: loadErr } = await admin
     .from("social_posts")
-    .update({ status: "published", published_at: new Date().toISOString() })
+    .select("platform, body, image_url")
+    .eq("id", id)
+    .single();
+  if (loadErr || !row) {
+    return NextResponse.json({ error: "Post not found." }, { status: 404 });
+  }
+  const post: PublishablePost = {
+    platform: row.platform as SocialPlatform,
+    body: row.body as string,
+    imageUrl: (row.image_url as string | null) ?? null,
+  };
+
+  const result = await publishPost(post);
+
+  if (result.ok) {
+    await admin
+      .from("social_posts")
+      .update({
+        status: "published",
+        published_id: result.id || null,
+        published_at: new Date().toISOString(),
+        error: null,
+      })
+      .eq("id", id);
+    return NextResponse.json({
+      status: "published",
+      publishedId: result.id,
+      url: result.url,
+    });
+  }
+
+  if (!result.configured) {
+    // No credentials for this platform — the admin posted by hand; just mark it.
+    await admin
+      .from("social_posts")
+      .update({ status: "published", published_at: new Date().toISOString() })
+      .eq("id", id);
+    return NextResponse.json({ status: "published", manual: true });
+  }
+
+  // Configured but the platform API rejected it — record the failure.
+  await admin
+    .from("social_posts")
+    .update({ status: "failed", error: result.error })
     .eq("id", id);
-  if (error)
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ ok: true });
+  return NextResponse.json(
+    { status: "failed", error: result.error },
+    { status: 502 },
+  );
 }
