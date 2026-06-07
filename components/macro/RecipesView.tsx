@@ -31,13 +31,17 @@ import {
   deleteMealSchedule,
   deleteRecipe,
   listMealSchedules,
+  listPantryItems,
   listRecipes,
   setSortOrder,
   upsertRecipe,
+  upsertShoppingListMeta,
   type MealSchedule,
+  type PantryItem,
 } from "@/lib/db";
 import { recipeDietCompatibility } from "@/lib/diet";
 import { formatDaysOfWeek, formatScheduleRange } from "@/lib/meal-schedule";
+import { recipeShortfalls } from "@/lib/pantry/availability";
 import { reportStorageError } from "@/lib/storage-status";
 import { bumpPending } from "@/lib/sync-status";
 import { useDataRev } from "@/lib/sync/data-bus";
@@ -46,6 +50,7 @@ import {
   Beef,
   CalendarClock,
   CalendarPlus,
+  Check,
   ChefHat,
   Eye,
   GripVertical,
@@ -57,6 +62,7 @@ import {
   Salad,
   Search,
   Share2,
+  ShoppingCart,
   Sparkles,
   Trash2,
 } from "lucide-react";
@@ -207,6 +213,23 @@ export function RecipesView({ profile, currentMeals }: Props) {
       cancelled = true;
     };
   }, [schedulesRev]);
+
+  // Pantry inventory, for the per-schedule availability check below.
+  const [pantry, setPantry] = useState<PantryItem[]>([]);
+  const pantryRev = useDataRev("pantryItems");
+  useEffect(() => {
+    let cancelled = false;
+    listPantryItems()
+      .then((rows) => {
+        if (!cancelled) setPantry(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setPantry([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pantryRev]);
 
   // Edit a schedule: resolve its recipe and open the scheduler pre-filled.
   const editSchedule = (s: MealSchedule) => {
@@ -467,46 +490,14 @@ export function RecipesView({ profile, currentMeals }: Props) {
           </h3>
           <ul className="divide-y divide-border/60 rounded-md border border-border/60 bg-card">
             {schedules.map((s) => (
-              <li
+              <ScheduleRow
                 key={s.id}
-                className="flex items-center gap-2 px-3 py-2.5"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-foreground">
-                    {s.recipeName}
-                  </p>
-                  <p className="truncate text-[11px] text-muted-foreground">
-                    {s.mealNames
-                      .map((n) => n.charAt(0).toUpperCase() + n.slice(1))
-                      .join(", ")}{" "}
-                    · {formatDaysOfWeek(s.daysOfWeek)} ·{" "}
-                    {formatScheduleRange(s.startDate, s.endDate)}
-                    {s.scale !== 1
-                      ? ` · ×${s.scale.toFixed(2).replace(/\.?0+$/, "")}`
-                      : ""}
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 px-2 text-muted-foreground"
-                  onClick={() => editSchedule(s)}
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                  <span className="sr-only">Edit schedule</span>
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-8 px-2 text-muted-foreground hover:text-destructive"
-                  onClick={() => void cancelSchedule(s)}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  <span className="sr-only">Cancel schedule</span>
-                </Button>
-              </li>
+                schedule={s}
+                recipe={recipes?.find((r) => r.id === s.recipeId)}
+                pantry={pantry}
+                onEdit={() => editSchedule(s)}
+                onCancel={() => void cancelSchedule(s)}
+              />
             ))}
           </ul>
         </section>
@@ -717,6 +708,119 @@ export function RecipesView({ profile, currentMeals }: Props) {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+function ScheduleRow({
+  schedule,
+  recipe,
+  pantry,
+  onEdit,
+  onCancel,
+}: {
+  schedule: MealSchedule;
+  recipe: Recipe | undefined;
+  pantry: PantryItem[];
+  onEdit: () => void;
+  onCancel: () => void;
+}) {
+  const [added, setAdded] = useState(false);
+  const shortfalls = recipe
+    ? recipeShortfalls(recipe, pantry, schedule.scale)
+    : [];
+
+  const addMissing = async () => {
+    try {
+      await Promise.all(
+        shortfalls.map((s) =>
+          upsertShoppingListMeta(s.name, {
+            extraQty: Math.round(s.neededGrams),
+            extraUnit: "g",
+          }),
+        ),
+      );
+      setAdded(true);
+      toast.success(
+        `Added ${shortfalls.length} item${
+          shortfalls.length === 1 ? "" : "s"
+        } to your shopping list`,
+      );
+    } catch {
+      toast.error("Couldn't add to the shopping list.");
+    }
+  };
+
+  return (
+    <li className="px-3 py-2.5">
+      <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-foreground">
+            {schedule.recipeName}
+          </p>
+          <p className="truncate text-[11px] text-muted-foreground">
+            {schedule.mealNames
+              .map((n) => n.charAt(0).toUpperCase() + n.slice(1))
+              .join(", ")}{" "}
+            · {formatDaysOfWeek(schedule.daysOfWeek)} ·{" "}
+            {formatScheduleRange(schedule.startDate, schedule.endDate)}
+            {schedule.scale !== 1
+              ? ` · ×${schedule.scale.toFixed(2).replace(/\.?0+$/, "")}`
+              : ""}
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 px-2 text-muted-foreground"
+          onClick={onEdit}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+          <span className="sr-only">Edit schedule</span>
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-8 px-2 text-muted-foreground hover:text-destructive"
+          onClick={onCancel}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          <span className="sr-only">Cancel schedule</span>
+        </Button>
+      </div>
+
+      {/* Pantry availability — only when the user actually keeps a pantry,
+          else every schedule would read as "short on everything". */}
+      {recipe &&
+        pantry.length > 0 &&
+        (shortfalls.length === 0 ? (
+          <p className="mt-1.5 flex items-center gap-1 text-[11px] text-emerald-700 dark:text-emerald-400">
+            <Check className="h-3 w-3 shrink-0" />
+            Everything is in your pantry
+          </p>
+        ) : (
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="flex items-center gap-1 text-[11px] text-amber-700 dark:text-amber-400">
+              <ShoppingCart className="h-3 w-3 shrink-0" />
+              Short on {shortfalls.map((s) => s.name).join(", ")}
+            </span>
+            {added ? (
+              <span className="text-[11px] text-muted-foreground">
+                Added to list
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void addMissing()}
+                className="text-[11px] font-medium text-primary hover:underline"
+              >
+                Add to list
+              </button>
+            )}
+          </div>
+        ))}
+    </li>
   );
 }
 

@@ -56,6 +56,7 @@ const ITEMS: NavItem[] = [
   { href: "/admin/webhooks", label: "Webhooks" },
   { href: "/admin/audit", label: "Audit log" },
   { href: "/admin/inbox", label: "Inbox" },
+  { href: "/admin/social", label: "Social" },
   { href: "/admin/recipe-import-allowlist", label: "Import allowlist" },
   { href: "/admin/settings", label: "Settings" },
 ];
