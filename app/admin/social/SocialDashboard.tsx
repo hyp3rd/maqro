@@ -190,7 +190,7 @@ function linkedInDetail(l: LinkedInPanel): string {
       "Using a manual env token (expires in ~60 days, no auto-refresh)." +
       (l.oauthConfigured
         ? " Connect for a durable, auto-refreshing token."
-        : "")
+        : " Set LINKEDIN_CLIENT_ID, LINKEDIN_PRIMARY_CLIENT_SECRET, and SOCIAL_TOKEN_SECRET to enable Connect.")
     );
   }
   if (!l.connected && l.oauthConfigured) {

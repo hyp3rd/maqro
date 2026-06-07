@@ -17,9 +17,16 @@ export async function GET(request: Request): Promise<Response> {
   if (gate) return gate;
 
   const url = new URL(request.url);
-  if (url.searchParams.get("error")) {
+  const oauthError = url.searchParams.get("error");
+  if (oauthError) {
+    // Surface LinkedIn's actual reason (e.g. unauthorized_scope_error) rather
+    // than a generic "denied" — it's the difference between guessing and fixing.
+    const detail = url.searchParams.get("error_description") ?? oauthError;
     return NextResponse.redirect(
-      new URL(`${BACK}?error=linkedin-denied`, request.url),
+      new URL(
+        `${BACK}?error=linkedin-oauth&detail=${encodeURIComponent(detail.slice(0, 200))}`,
+        request.url,
+      ),
     );
   }
   const code = url.searchParams.get("code");
