@@ -17,6 +17,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { SkeletonListRow } from "@/components/ui/skeleton";
 import {
@@ -37,14 +43,18 @@ import { bumpPending } from "@/lib/sync-status";
 import { useDataRev } from "@/lib/sync/data-bus";
 import { useEffect, useMemo, useState } from "react";
 import {
+  Beef,
   CalendarClock,
   CalendarPlus,
   ChefHat,
   Eye,
   GripVertical,
+  Leaf,
   Link2,
+  MoreVertical,
   Pencil,
   Plus,
+  Salad,
   Search,
   Share2,
   Sparkles,
@@ -59,10 +69,7 @@ import {
   useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import {
-  SortableContext,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
+import { SortableContext, rectSortingStrategy } from "@dnd-kit/sortable";
 import { BatchApplyRecipeDialog } from "./BatchApplyRecipeDialog";
 import { GenerateRecipeDialog } from "./GenerateRecipeDialog";
 import { ImportRecipeDialog } from "./ImportRecipeDialog";
@@ -95,6 +102,34 @@ function totalKcal(r: Recipe): number {
     0,
   );
 }
+
+/** The strictest of {vegan, vegetarian, omnivore} a recipe satisfies — drives
+ *  the card's diet badge. Derived from the ingredients' `dietKind` snapshots
+ *  via `recipeDietCompatibility` (vegan ⊂ vegetarian ⊂ omnivore). */
+function recipeDietBadge(recipe: Recipe): "vegan" | "vegetarian" | "omnivore" {
+  const diets = recipeDietCompatibility(recipe);
+  if (diets.has("vegan")) return "vegan";
+  if (diets.has("vegetarian")) return "vegetarian";
+  return "omnivore";
+}
+
+const DIET_BADGE = {
+  vegan: {
+    icon: Leaf,
+    label: DIET_LABEL.vegan,
+    className: "text-emerald-600 dark:text-emerald-400",
+  },
+  vegetarian: {
+    icon: Salad,
+    label: DIET_LABEL.vegetarian,
+    className: "text-lime-600 dark:text-lime-400",
+  },
+  omnivore: {
+    icon: Beef,
+    label: DIET_LABEL.omnivore,
+    className: "text-muted-foreground",
+  },
+} as const;
 
 export function RecipesView({ profile, currentMeals }: Props) {
   const [recipes, setRecipes] = useState<Array<
@@ -543,9 +578,9 @@ export function RecipesView({ profile, currentMeals }: Props) {
         >
           <SortableContext
             items={filtered.map((r) => r.id)}
-            strategy={verticalListSortingStrategy}
+            strategy={rectSortingStrategy}
           >
-            <ul className="divide-y divide-border/60 rounded-md border border-border/60 bg-card">
+            <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {filtered.map((r) => (
                 <SortableRecipeRow
                   key={r.id}
@@ -706,122 +741,109 @@ function SortableRecipeRow({
     recipe.id,
     !draggable,
   );
-  const compat = recipeDietCompatibility(recipe);
+  const diet = recipeDietBadge(recipe);
+  const {
+    icon: DietIcon,
+    label: dietLabel,
+    className: dietClass,
+  } = DIET_BADGE[diet];
   const kcal = totalKcal(recipe);
   return (
     <li
       ref={setNodeRef as React.Ref<HTMLLIElement>}
       style={style}
-      // Layout swap at sm: on mobile we stack name+meta ON TOP of
-      // the action row, so the name gets the full row width. Five
-      // 36×36 action buttons + a drag handle used to consume
-      // ~240 px of a 375 px viewport, leaving the name with ~95 px
-      // and forcing aggressive truncation ("Sh...", "Tef..."). On
-      // sm+ the layout returns to single-row, where the name has
-      // plenty of room next to the actions.
-      className="flex flex-col gap-2 px-3 py-2.5 active:bg-muted/30 sm:flex-row sm:items-center sm:gap-2"
+      className="flex flex-col gap-1.5 rounded-lg border border-border/60 bg-card p-3 transition-colors hover:border-border"
     >
-      <div className="flex min-w-0 flex-1 items-start gap-1.5">
-        {draggable && (
-          <button
-            type="button"
-            {...handleProps}
-            className="flex h-9 w-7 shrink-0 cursor-grab items-center justify-center rounded text-muted-foreground hover:text-foreground active:cursor-grabbing sm:h-7"
-            aria-label={`Drag to reorder ${recipe.name}`}
+      {/* Top row: diet badge (left) · cuisine + drag handle + actions (right). */}
+      <div className="flex items-center justify-between gap-1">
+        {recipe.ingredients.length > 0 ? (
+          <span
+            className={`inline-flex shrink-0 items-center gap-1 text-[11px] font-medium ${dietClass}`}
           >
-            <GripVertical className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-          </button>
+            <DietIcon className="h-3.5 w-3.5" />
+            {dietLabel}
+          </span>
+        ) : (
+          <span />
         )}
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <span className="truncate text-sm font-medium">{recipe.name}</span>
-            {recipe.cuisine && (
-              <Badge
-                variant="secondary"
-                className="shrink-0 text-[10px] font-normal"
+        <div className="flex min-w-0 items-center gap-0.5">
+          {recipe.cuisine && (
+            <Badge
+              variant="secondary"
+              className="min-w-0 shrink truncate text-[10px] font-normal"
+            >
+              {recipe.cuisine}
+            </Badge>
+          )}
+          {draggable && (
+            <button
+              type="button"
+              {...handleProps}
+              className="flex h-7 w-6 shrink-0 cursor-grab items-center justify-center rounded text-muted-foreground hover:text-foreground active:cursor-grabbing"
+              aria-label={`Drag to reorder ${recipe.name}`}
+            >
+              <GripVertical className="h-3.5 w-3.5" />
+            </button>
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0 text-muted-foreground"
+                aria-label={`Actions for ${recipe.name}`}
               >
-                {recipe.cuisine}
-              </Badge>
-            )}
-          </div>
-          <div className="mt-0.5 flex flex-wrap items-center gap-2 font-mono text-[11px] tabular-nums text-muted-foreground">
-            <span>
-              {recipe.ingredients.length} ingredient
-              {recipe.ingredients.length === 1 ? "" : "s"}
-            </span>
-            <span>·</span>
-            <span>{Math.round(kcal)} kcal</span>
-            {compat.size > 0 && compat.size < 5 && (
-              <>
-                <span>·</span>
-                <span className="text-[10px]">
-                  {[...compat].map((d) => DIET_LABEL[d]).join(", ")}
-                </span>
-              </>
-            )}
-          </div>
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={onView}>
+                <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+                View
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onEdit}>
+                <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onShare}>
+                <Share2 className="h-3.5 w-3.5 text-muted-foreground" />
+                {recipe.shareSlug ? "Manage share" : "Share"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onBatchApply}>
+                <CalendarPlus className="h-3.5 w-3.5 text-muted-foreground" />
+                Schedule
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={onDelete}
+                className="text-destructive focus:text-destructive"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
-      <div className="-mx-1 flex items-center justify-end gap-0 sm:mx-0 sm:gap-0 sm:shrink-0">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-9 w-9 sm:h-8 sm:w-8"
-          onClick={onView}
-          aria-label={`View ${recipe.name}`}
-          title="View details"
-        >
-          <Eye className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-9 w-9 sm:h-8 sm:w-8"
-          onClick={onEdit}
-          aria-label={`Edit ${recipe.name}`}
-        >
-          <Pencil className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className={`h-9 w-9 sm:h-8 sm:w-8 ${
-            recipe.shareSlug ? "text-foreground" : "text-muted-foreground"
-          }`}
-          onClick={onShare}
-          aria-label={
-            recipe.shareSlug
-              ? `Manage share for ${recipe.name}`
-              : `Share ${recipe.name}`
-          }
-          title={recipe.shareSlug ? "Shared - click to manage" : "Share"}
-        >
-          <Share2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-9 w-9 sm:h-8 sm:w-8"
-          onClick={onBatchApply}
-          aria-label={`Schedule ${recipe.name} across several days`}
-          title="Schedule across several days"
-        >
-          <CalendarPlus className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-9 w-9 text-muted-foreground hover:text-destructive sm:h-8 sm:w-8"
-          onClick={onDelete}
-          aria-label={`Delete ${recipe.name}`}
-        >
-          <Trash2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-        </Button>
+
+      {/* Name — taps through to the detail view. */}
+      <button
+        type="button"
+        onClick={onView}
+        className="block min-w-0 text-left"
+      >
+        <span className="line-clamp-2 text-sm font-medium leading-snug text-foreground">
+          {recipe.name}
+        </span>
+      </button>
+
+      <div className="mt-auto flex items-center gap-1.5 font-mono text-[11px] tabular-nums text-muted-foreground">
+        <span>
+          {recipe.ingredients.length} ingredient
+          {recipe.ingredients.length === 1 ? "" : "s"}
+        </span>
+        <span>·</span>
+        <span>{Math.round(kcal)} kcal</span>
       </div>
     </li>
   );

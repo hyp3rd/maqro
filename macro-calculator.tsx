@@ -28,6 +28,7 @@ import { RecipesView } from "./components/macro/RecipesView";
 import { SaveTemplateDialog } from "./components/macro/SaveTemplateDialog";
 import { SettingsView } from "./components/macro/SettingsView";
 import { ShoppingListView } from "./components/macro/ShoppingListView";
+import { SuggestDayDialog } from "./components/macro/SuggestDayDialog";
 import { TemplatesView } from "./components/macro/TemplatesView";
 import { UpgradeDialog } from "./components/macro/UpgradeDialog";
 import { VoiceLogSheet } from "./components/macro/VoiceLogSheet";
@@ -431,6 +432,7 @@ const MacroCalculator = () => {
   // they have, we don't reopen even if the URL still has the
   // param. Cleared by navigation away.
   const [upgradeDialogDismissed, setUpgradeDialogDismissed] = useState(false);
+  const [suggestDayOpen, setSuggestDayOpen] = useState(false);
   // Meal templates: which dialog is open and for which meal. `null` =
   // no dialog. The dialogs themselves read templates from IDB on open.
   const [templateDialog, setTemplateDialog] = useState<
@@ -1133,6 +1135,46 @@ const MacroCalculator = () => {
     );
     for (const [itemId, qty] of drawByItem) applyPantryDelta(itemId, qty);
     toast.success(`Logged ${recipe.name}.`);
+  };
+
+  // "Log this day" from the suggester: apply each picked recipe to its slot on
+  // today in ONE meals update (a per-pick setMeals would clobber the prior).
+  // Pantry draws accumulate across the picks against a single running balance.
+  const logSuggestedDay = (picks: { recipe: Recipe; mealId: number }[]) => {
+    let nextId = Date.now();
+    const balance = new Map(
+      pantryItems.map((i) => [i.id, i.quantity] as const),
+    );
+    const drawByItem = new Map<string, number>();
+    let updated = meals;
+    for (const { recipe, mealId } of picks) {
+      const foods = recipe.ingredients.map((ing) =>
+        recipeIngredientToFood(ing, nextId++),
+      );
+      const draws = planPerFoodConsumptionAgainstBalance(
+        foods.map((f) => ({ name: f.name, grams: f.portionSize })),
+        pantryItems,
+        balance,
+      );
+      foods.forEach((f, i) => {
+        const d = draws[i];
+        if (d) {
+          f.pantrySource = d;
+          drawByItem.set(
+            d.itemId,
+            roundQuantity((drawByItem.get(d.itemId) ?? 0) + d.consumedQty),
+          );
+        }
+      });
+      updated = updated.map((m) =>
+        m.id === mealId ? { ...m, foods: [...m.foods, ...foods] } : m,
+      );
+    }
+    setMeals(updated);
+    for (const [itemId, qty] of drawByItem) applyPantryDelta(itemId, qty);
+    toast.success(
+      `Logged ${picks.length} meal${picks.length === 1 ? "" : "s"}.`,
+    );
   };
 
   // Handle portion size change
@@ -2064,6 +2106,7 @@ const MacroCalculator = () => {
           today={today}
           mealSchedules={mealSchedules}
           onLogScheduled={logScheduledRecipe}
+          onOpenSuggestDay={() => setSuggestDayOpen(true)}
           waterGoalMl={waterGoalMl(personalInfo)}
           units={personalInfo.units}
           goalPhase={activeGoalPhase}
@@ -2450,6 +2493,21 @@ const MacroCalculator = () => {
         }}
       />
 
+      {suggestDayOpen && (
+        <SuggestDayDialog
+          open={suggestDayOpen}
+          onOpenChange={setSuggestDayOpen}
+          meals={meals}
+          target={{
+            protein: calculatedValues.protein,
+            carbs: calculatedValues.carbs,
+            fat: calculatedValues.fat,
+            calories: calculatedValues.targetCalories,
+          }}
+          logged={totalMacros}
+          onApplyDay={logSuggestedDay}
+        />
+      )}
       <UpgradeDialog
         open={upgradeDialogOpen}
         onOpenChange={(open) => {
