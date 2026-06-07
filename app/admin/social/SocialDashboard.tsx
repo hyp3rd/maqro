@@ -8,6 +8,7 @@ import {
   PLATFORM_LABEL,
   PLATFORM_MAX_CHARS,
   SOCIAL_PLATFORMS,
+  type LinkedInPanel,
   type SocialCampaign,
   type SocialPlatform,
   type SocialPost,
@@ -44,10 +45,14 @@ export function SocialDashboard({
   campaigns,
   posts,
   configured,
+  linkedin,
+  notice,
 }: {
   campaigns: SocialCampaign[];
   posts: SocialPost[];
   configured: Record<SocialPlatform, boolean>;
+  linkedin: LinkedInPanel;
+  notice: { kind: "success" | "error"; text: string } | null;
 }) {
   const router = useRouter();
   const [generating, setGenerating] = useState(false);
@@ -107,6 +112,20 @@ export function SocialDashboard({
         </Button>
       </div>
 
+      {notice && (
+        <div
+          className={`rounded-md border px-3 py-2 text-sm ${
+            notice.kind === "success"
+              ? "border-emerald-600/40 text-emerald-700 dark:text-emerald-400"
+              : "border-destructive/40 text-destructive"
+          }`}
+        >
+          {notice.text}
+        </div>
+      )}
+
+      <LinkedInPanelCard linkedin={linkedin} />
+
       {campaigns.length === 0 ? (
         <p className="rounded-md border border-dashed border-border/60 px-4 py-10 text-center text-sm text-muted-foreground">
           No campaigns yet. They appear automatically after a release adds a
@@ -153,6 +172,61 @@ export function SocialDashboard({
           );
         })
       )}
+    </div>
+  );
+}
+
+function linkedInDetail(l: LinkedInPanel): string {
+  if (l.connected && l.source === "oauth") {
+    if (l.canAutoRefresh) {
+      return "Token auto-refreshes; posting stays available.";
+    }
+    return l.expiresAt
+      ? `Token expires ${l.expiresAt.slice(0, 10)}. Reconnect to renew (LinkedIn didn't issue a refresh token).`
+      : "Connected.";
+  }
+  if (l.connected && l.source === "env") {
+    return (
+      "Using a manual env token (expires in ~60 days, no auto-refresh)." +
+      (l.oauthConfigured
+        ? " Connect for a durable, auto-refreshing token."
+        : "")
+    );
+  }
+  if (!l.connected && l.oauthConfigured) {
+    return "Connect to enable LinkedIn publishing.";
+  }
+  return "Set LINKEDIN_CLIENT_ID, LINKEDIN_PRIMARY_CLIENT_SECRET, and SOCIAL_TOKEN_SECRET to connect.";
+}
+
+function LinkedInPanelCard({ linkedin }: { linkedin: LinkedInPanel }) {
+  return (
+    <div className="rounded-md border border-border/60 bg-card p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Badge variant="secondary">LinkedIn</Badge>
+          <span
+            className={`text-xs ${
+              linkedin.connected
+                ? "text-emerald-700 dark:text-emerald-400"
+                : "text-muted-foreground"
+            }`}
+          >
+            {linkedin.connected ? "Connected" : "Not connected"}
+          </span>
+        </div>
+        {linkedin.oauthConfigured && (
+          <a
+            href="/api/admin/social/linkedin/connect"
+            className="text-xs font-medium text-primary hover:underline"
+          >
+            {linkedin.connected ? "Reconnect" : "Connect LinkedIn"}
+          </a>
+        )}
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        {linkedInDetail(linkedin)}
+      </p>
     </div>
   );
 }

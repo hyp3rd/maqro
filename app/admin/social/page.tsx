@@ -1,6 +1,11 @@
 import { configuredPlatforms } from "@/lib/social/env";
 import {
+  linkedInOAuthConfigured,
+  linkedInStatus,
+} from "@/lib/social/linkedin-auth";
+import {
   type CampaignStatus,
+  type LinkedInPanel,
   type PostStatus,
   type SocialCampaign,
   type SocialPlatform,
@@ -41,6 +46,8 @@ type PostRow = {
 async function load(): Promise<{
   campaigns: SocialCampaign[];
   posts: SocialPost[];
+  configured: Record<SocialPlatform, boolean>;
+  linkedin: LinkedInPanel;
 } | null> {
   const config = getSupabaseSecretConfig();
   if (!config) return null;
@@ -61,10 +68,24 @@ async function load(): Promise<{
     : { data: [] };
   const posts = ((postRows ?? []) as PostRow[]).map(toPost);
 
-  return { campaigns, posts };
+  const status = await linkedInStatus(admin);
+  const configured: Record<SocialPlatform, boolean> = {
+    ...configuredPlatforms(),
+    linkedin: status.connected,
+  };
+  const linkedin: LinkedInPanel = {
+    ...status,
+    oauthConfigured: linkedInOAuthConfigured(),
+  };
+
+  return { campaigns, posts, configured, linkedin };
 }
 
-export default async function AdminSocialPage() {
+export default async function AdminSocialPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ connected?: string; error?: string }>;
+}) {
   const data = await load();
   if (!data) {
     return (
@@ -77,9 +98,39 @@ export default async function AdminSocialPage() {
     <SocialDashboard
       campaigns={data.campaigns}
       posts={data.posts}
-      configured={configuredPlatforms()}
+      configured={data.configured}
+      linkedin={data.linkedin}
+      notice={noticeFrom(await searchParams)}
     />
   );
+}
+
+const LINKEDIN_ERRORS: Record<string, string> = {
+  "linkedin-config":
+    "LinkedIn OAuth isn't configured. Set LINKEDIN_CLIENT_ID, LINKEDIN_PRIMARY_CLIENT_SECRET, and SOCIAL_TOKEN_SECRET.",
+  "linkedin-state":
+    "The connection request expired or didn't match. Try again.",
+  "linkedin-denied": "LinkedIn access was denied.",
+  "linkedin-storage":
+    "Token storage isn't available (the service-role key is missing).",
+  "linkedin-exchange":
+    "Couldn't complete the LinkedIn connection. Check LINKEDIN_ORG_ID and try again.",
+};
+
+function noticeFrom(sp: {
+  connected?: string;
+  error?: string;
+}): { kind: "success" | "error"; text: string } | null {
+  if (sp.connected === "linkedin") {
+    return { kind: "success", text: "LinkedIn connected." };
+  }
+  if (sp.error) {
+    return {
+      kind: "error",
+      text: LINKEDIN_ERRORS[sp.error] ?? "Couldn't connect LinkedIn.",
+    };
+  }
+  return null;
 }
 
 function toCampaign(r: CampaignRow): SocialCampaign {

@@ -64,6 +64,7 @@ type Env = {
   VAPID_SUBJECT?: string;
   ERROR_LOG_DISABLED?: string;
   SHARE_BADGE_SECRET?: string;
+  SOCIAL_TOKEN_SECRET?: string;
   // Optional shared cache for Open Food Facts lookups (Upstash Redis REST).
   // Unset = lookups fall through to a direct fetch (fail-open).
   UPSTASH_REDIS_REST_URL?: string;
@@ -115,6 +116,7 @@ function readEnv(source: NodeJS.ProcessEnv = process.env): Env {
     VAPID_SUBJECT: trimmed(source.VAPID_SUBJECT),
     ERROR_LOG_DISABLED: trimmed(source.ERROR_LOG_DISABLED),
     SHARE_BADGE_SECRET: trimmed(source.SHARE_BADGE_SECRET),
+    SOCIAL_TOKEN_SECRET: trimmed(source.SOCIAL_TOKEN_SECRET),
     UPSTASH_REDIS_REST_URL: trimmed(source.UPSTASH_REDIS_REST_URL),
     UPSTASH_REDIS_REST_TOKEN: trimmed(source.UPSTASH_REDIS_REST_TOKEN),
     VERCEL_URL: trimmed(source.VERCEL_URL),
@@ -182,6 +184,11 @@ export function validateEnvFor(e: Env): EnvIssue[] {
   if (e.SHARE_BADGE_SECRET && e.SHARE_BADGE_SECRET.length < 32) {
     err(
       "SHARE_BADGE_SECRET must be at least 32 characters (HMAC-SHA256 needs real entropy).",
+    );
+  }
+  if (e.SOCIAL_TOKEN_SECRET && e.SOCIAL_TOKEN_SECRET.length < 32) {
+    err(
+      "SOCIAL_TOKEN_SECRET must be at least 32 characters (it keys AES-256 for stored OAuth tokens).",
     );
   }
   if (

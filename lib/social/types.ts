@@ -61,3 +61,16 @@ export type PublishablePost = Pick<
 export type PublishResult =
   | { ok: true; id: string; url?: string }
   | { ok: false; error: string };
+
+/** LinkedIn connection state for the dashboard. `source` distinguishes a stored
+ *  OAuth connection (auto-refreshing) from a manual env token (no refresh). */
+export type LinkedInStatus = {
+  connected: boolean;
+  source: "oauth" | "env" | "none";
+  expiresAt: string | null;
+  canAutoRefresh: boolean;
+};
+
+/** What the page hands the dashboard: the status plus whether the OAuth
+ *  "Connect" flow is even available (app creds + encryption key present). */
+export type LinkedInPanel = LinkedInStatus & { oauthConfigured: boolean };

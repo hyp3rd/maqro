@@ -44,7 +44,7 @@ export async function POST(
     imageUrl: (row.image_url as string | null) ?? null,
   };
 
-  const result = await publishPost(post);
+  const result = await publishPost(post, admin);
 
   if (result.ok) {
     await admin
