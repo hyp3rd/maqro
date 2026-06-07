@@ -12,19 +12,11 @@ import {
 } from "@/components/ui/dialog";
 import { listRecipes } from "@/lib/db";
 import { recipeDietCompatibility } from "@/lib/diet";
-import { extraDatesFromToday } from "@/lib/meal-prep-batch";
 import { rankRecipesByFit, type SlotBudget } from "@/lib/recipe-ranking";
 import { scaleRecipeIngredients } from "@/lib/scale-recipe";
 import { reportStorageError } from "@/lib/storage-status";
 import { useEffect, useState } from "react";
-import {
-  CalendarDays,
-  ChefHat,
-  ChevronLeft,
-  Eye,
-  Minus,
-  Plus,
-} from "lucide-react";
+import { ChefHat, ChevronLeft, Eye } from "lucide-react";
 import { ServingsStepper } from "./ServingsStepper";
 
 type Props = {
@@ -42,11 +34,9 @@ type Props = {
    *  target exists (e.g. user hasn't filled the profile yet) — the
    *  dialog falls back to natural IDB order. */
   slotBudget?: SlotBudget;
-  /** Apply the picked recipe. `extraDates` is the meal-prep batch
-   *  payload — empty / undefined means "today only" (the original
-   *  single-apply path). When populated, the caller should write the
-   *  same scaled ingredients to the same-named slot on each date. */
-  onApply: (recipe: Recipe, extraDates?: string[]) => void;
+  /** Apply the picked recipe to the target slot on today. (To plan a recipe
+   *  across several days, the user schedules it from the Recipes view.) */
+  onApply: (recipe: Recipe) => void;
   /** When provided, the header shows a back affordance returning to the
    *  previous step (the guided Log-meal method picker). Omitted when the
    *  dialog is opened standalone from a meal's menu. */
@@ -68,11 +58,7 @@ export function ApplyRecipeDialog({
   // in the way of the one-click apply for the common 1× case, and
   // doesn't require a second confirm step.
   const [scale, setScale] = useState(1);
-  // Meal-prep batch: how many consecutive days (today + N-1 future
-  // days) the chosen recipe writes to. 1 = today only, the original
-  // single-apply behavior. Capped at 7 to match the helper.
-  const [days, setDays] = useState(1);
-  // Reset the steppers between opens using the "set state during
+  // Reset the stepper between opens using the "set state during
   // render on prop change" pattern. setState-in-effect would have
   // been the obvious place but it trips the
   // react-hooks/set-state-in-effect rule; setState during render is
@@ -87,7 +73,6 @@ export function ApplyRecipeDialog({
     setPrevOpen(open);
     if (!open) {
       setScale(1);
-      setDays(1);
       setExpandedId(null);
     }
   }
@@ -147,65 +132,22 @@ export function ApplyRecipeDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Servings + days steppers. Always visible above the list
-         *  (even when empty) so the user sees both affordances and
-         *  knows they can scale + batch before picking - discovering
-         *  either after the apply happened would be too late.
-         *
-         *  Days = 1 keeps the original single-apply behavior. Bumping
-         *  it copies the chosen recipe to the same-named slot on the
-         *  next N-1 consecutive days — the "cook once, log for the
-         *  week" flow. Stepper goes 1..7. */}
+        {/* Servings stepper, always visible above the list so the user knows
+            they can scale before picking. */}
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-y border-border/60 py-2">
           <ServingsStepper
             value={scale}
             onChange={setScale}
           />
-          <div className="flex items-center gap-2">
-            <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-              <CalendarDays className="h-3.5 w-3.5" />
-              Days
-            </span>
-            <div className="inline-flex h-9 items-center rounded-md border border-border/60 bg-background">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9 rounded-none rounded-l-md"
-                onClick={() => setDays((d) => Math.max(1, d - 1))}
-                disabled={days <= 1}
-                aria-label="Decrease days"
-              >
-                <Minus className="h-3.5 w-3.5" />
-              </Button>
-              <span
-                aria-live="polite"
-                className="min-w-[3.5ch] px-2 text-center font-mono text-sm tabular-nums"
-              >
-                {days}
-              </span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9 rounded-none rounded-r-md"
-                onClick={() => setDays((d) => Math.min(7, d + 1))}
-                disabled={days >= 7}
-                aria-label="Increase days"
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          </div>
-          {(scale !== 1 || days > 1) && (
-            <span className="basis-full text-[11px] text-muted-foreground">
-              {scale !== 1 &&
-                `Each portion × ${scale.toFixed(2).replace(/\.?0+$/, "")}`}
-              {scale !== 1 && days > 1 && " · "}
-              {days > 1 &&
-                `Writes to ${targetMealName} on ${days} consecutive days starting today`}
+          {scale !== 1 && (
+            <span className="text-[11px] text-muted-foreground">
+              Each portion × {scale.toFixed(2).replace(/\.?0+$/, "")}
             </span>
           )}
+          <span className="basis-full text-[11px] text-muted-foreground">
+            Applies to {targetMealName} today. To cook for several days,
+            schedule it from the Recipes view.
+          </span>
         </div>
 
         <div className="max-h-[60vh] overflow-y-auto py-2">
@@ -243,13 +185,9 @@ export function ApplyRecipeDialog({
                       <button
                         type="button"
                         onClick={() => {
-                          // Scale the ingredients by the current
-                          // multiplier before handing to onApply. The
-                          // caller treats the scaled ingredients the
-                          // same as the unscaled ones - same shape,
-                          // just bigger/smaller portionGrams. The 1×
-                          // path short-circuits to a no-op clone, so
-                          // there's no cost for the common case.
+                          // Scale the ingredients by the current multiplier
+                          // before handing to onApply. The 1× path is a no-op
+                          // clone, so there's no cost for the common case.
                           const scaled: Recipe = {
                             ...r,
                             ingredients: scaleRecipeIngredients(
@@ -257,18 +195,7 @@ export function ApplyRecipeDialog({
                               scale,
                             ),
                           };
-                          // Compute the batch dates fresh at click time
-                          // (not when the stepper changed) so a slow
-                          // user reading recipe metadata doesn't trip
-                          // the day rollover edge case. `extraDates`
-                          // is undefined for the today-only case; the
-                          // caller can treat that as the existing
-                          // single-day path.
-                          const extras = extraDatesFromToday(days, new Date());
-                          onApply(
-                            scaled,
-                            extras.length > 0 ? extras : undefined,
-                          );
+                          onApply(scaled);
                           onOpenChange(false);
                         }}
                         className="min-w-0 flex-1 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent"
