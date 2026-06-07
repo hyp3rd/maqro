@@ -65,6 +65,7 @@ type Env = {
   ERROR_LOG_DISABLED?: string;
   SHARE_BADGE_SECRET?: string;
   SOCIAL_TOKEN_SECRET?: string;
+  RESEND_WEBHOOK_SECRET?: string;
   // Optional shared cache for Open Food Facts lookups (Upstash Redis REST).
   // Unset = lookups fall through to a direct fetch (fail-open).
   UPSTASH_REDIS_REST_URL?: string;
@@ -117,6 +118,7 @@ function readEnv(source: NodeJS.ProcessEnv = process.env): Env {
     ERROR_LOG_DISABLED: trimmed(source.ERROR_LOG_DISABLED),
     SHARE_BADGE_SECRET: trimmed(source.SHARE_BADGE_SECRET),
     SOCIAL_TOKEN_SECRET: trimmed(source.SOCIAL_TOKEN_SECRET),
+    RESEND_WEBHOOK_SECRET: trimmed(source.RESEND_WEBHOOK_SECRET),
     UPSTASH_REDIS_REST_URL: trimmed(source.UPSTASH_REDIS_REST_URL),
     UPSTASH_REDIS_REST_TOKEN: trimmed(source.UPSTASH_REDIS_REST_TOKEN),
     VERCEL_URL: trimmed(source.VERCEL_URL),

@@ -1,5 +1,6 @@
 import { EmptyState } from "@/components/admin/EmptyState";
 import { PageHeader } from "@/components/admin/PageHeader";
+import { listDismissedEmailIds } from "@/lib/email/dismissed";
 import { listReceivedEmails } from "@/lib/email/receiving";
 import { requireAdmin } from "@/lib/rbac";
 import { Inbox as InboxIcon, MailWarning } from "lucide-react";
@@ -52,19 +53,22 @@ export default async function AdminInboxPage() {
     );
   }
 
+  const dismissed = await listDismissedEmailIds();
+  const emails = result.emails.filter((e) => !dismissed.has(e.id));
+
   return (
     <div className="space-y-6">
       <PageHeader
         icon={InboxIcon}
         title="Inbox"
         description={
-          result.emails.length === 0
+          emails.length === 0
             ? "Resend hasn't received any mail yet — once your inbound MX is configured, messages show up here. You can still compose new outbound mail from the Compose button."
-            : `${result.emails.length} message${result.emails.length === 1 ? "" : "s"} received.`
+            : `${emails.length} message${emails.length === 1 ? "" : "s"} received.`
         }
       />
       <InboxTabs />
-      <InboxList emails={result.emails} />
+      <InboxList emails={emails} />
     </div>
   );
 }
