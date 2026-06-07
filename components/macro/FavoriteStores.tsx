@@ -25,54 +25,53 @@ export function FavoriteStores() {
         {favorites.map((store) => (
           <li
             key={store.id}
-            className="flex items-center gap-2 px-3 py-2"
+            className="px-3 py-2"
           >
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="truncate text-sm font-medium">
-                  {store.name}
-                </span>
-                <Badge
-                  variant="secondary"
-                  className="shrink-0 text-[10px] uppercase tracking-wide"
-                >
-                  {store.kind}
-                </Badge>
-              </div>
-              {store.address && (
-                <p className="truncate text-xs text-muted-foreground">
-                  {store.address}
-                </p>
-              )}
+            {/* Stacked top-to-bottom so the name AND address each get the full
+                card width: chip · name · address · Directions. Only the
+                un-favourite star shares the chip's row. */}
+            <div className="flex items-start justify-between gap-2">
+              <Badge
+                variant="secondary"
+                className="shrink-0 text-[10px] uppercase tracking-wide"
+              >
+                {store.kind}
+              </Badge>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="-mr-1 -mt-1 h-7 w-7 shrink-0 text-amber-500"
+                aria-label={`Remove ${store.name} from favourites`}
+                onClick={() =>
+                  void toggle({
+                    id: store.id,
+                    name: store.name,
+                    kind: store.kind,
+                    lat: store.lat,
+                    lon: store.lon,
+                    address: store.address,
+                  })
+                }
+              >
+                <Star className="h-3.5 w-3.5 fill-amber-400" />
+              </Button>
             </div>
+            <p className="mt-1 truncate text-sm font-medium">{store.name}</p>
+            {store.address && (
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                {store.address}
+              </p>
+            )}
             <a
               href={storeDirectionsUrl(store, null)}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-primary hover:underline"
+              className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
             >
               <Navigation className="h-3 w-3" />
               Directions
             </a>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 shrink-0 text-amber-500"
-              aria-label={`Remove ${store.name} from favourites`}
-              onClick={() =>
-                void toggle({
-                  id: store.id,
-                  name: store.name,
-                  kind: store.kind,
-                  lat: store.lat,
-                  lon: store.lon,
-                  address: store.address,
-                })
-              }
-            >
-              <Star className="h-3.5 w-3.5 fill-amber-400" />
-            </Button>
           </li>
         ))}
       </ul>
