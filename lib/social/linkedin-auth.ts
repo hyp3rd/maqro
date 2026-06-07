@@ -11,7 +11,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 const AUTHORIZE_URL = "https://www.linkedin.com/oauth/v2/authorization";
 const TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken";
 const REDIRECT_PATH = "/api/admin/social/linkedin/callback";
-const SCOPES = "w_organization_social r_organization_social";
+// Only what's needed to post as the org. The org id comes from LINKEDIN_ORG_ID,
+// so we don't need r_organization_social (which an app may not be approved for).
+const SCOPES = "w_organization_social";
 const LINKEDIN_VERSION = "202605";
 // Refresh slightly before the real expiry so a publish never races the boundary.
 const REFRESH_SKEW_MS = 5 * 60 * 1000;

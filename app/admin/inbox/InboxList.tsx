@@ -2,11 +2,13 @@
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { clientFetch } from "@/lib/auth/client-fetch";
 import type { ReceivedEmailSummary } from "@/lib/email/receiving";
 import { cn } from "@/lib/utils";
 import { useMemo, useState } from "react";
-import { Paperclip, PenSquare, Search } from "lucide-react";
+import { Archive, Paperclip, PenSquare, Search } from "lucide-react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { ComposeEmailDialog } from "./ComposeEmailDialog";
 
 /** Client-side filterable list of received emails. Renders as
@@ -17,23 +19,41 @@ import { ComposeEmailDialog } from "./ComposeEmailDialog";
 export function InboxList({ emails }: { emails: ReceivedEmailSummary[] }) {
   const [query, setQuery] = useState("");
   const [composeOpen, setComposeOpen] = useState(false);
+  // Local copy so archiving removes a row immediately; the server already
+  // filters dismissed messages out on the next full load.
+  const [items, setItems] = useState(emails);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return emails;
-    return emails.filter(
+    if (!q) return items;
+    return items.filter(
       (e) =>
         e.from.toLowerCase().includes(q) ||
+        e.to.some((t) => t.toLowerCase().includes(q)) ||
         e.subject.toLowerCase().includes(q) ||
         e.snippet.toLowerCase().includes(q),
     );
-  }, [emails, query]);
+  }, [items, query]);
+
+  const archive = async (id: string) => {
+    setItems((prev) => prev.filter((e) => e.id !== id));
+    try {
+      const res = await clientFetch(
+        `/api/admin/inbox/${encodeURIComponent(id)}/dismiss`,
+        { method: "POST" },
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      toast.success("Archived.");
+    } catch {
+      toast.error("Couldn't archive — it may reappear on reload.");
+    }
+  };
 
   // Even with no inbound mail the operator should still be able
   // to compose — the Compose dialog isn't gated on having received
   // a message. Render an empty-state with the button rather than
   // bailing entirely.
-  if (emails.length === 0) {
+  if (items.length === 0) {
     return (
       <>
         <div className="flex justify-end">
@@ -67,7 +87,7 @@ export function InboxList({ emails }: { emails: ReceivedEmailSummary[] }) {
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search sender, subject, or body"
+            placeholder="Search sender, recipient, subject, or body"
             className="pl-8 text-sm"
           />
         </div>
@@ -95,6 +115,7 @@ export function InboxList({ emails }: { emails: ReceivedEmailSummary[] }) {
             <EmailRow
               key={email.id}
               email={email}
+              onArchive={archive}
             />
           ))}
         </ul>
@@ -103,14 +124,20 @@ export function InboxList({ emails }: { emails: ReceivedEmailSummary[] }) {
   );
 }
 
-function EmailRow({ email }: { email: ReceivedEmailSummary }) {
+function EmailRow({
+  email,
+  onArchive,
+}: {
+  email: ReceivedEmailSummary;
+  onArchive: (id: string) => void;
+}) {
   const initial = (email.from.match(/[A-Za-z0-9]/)?.[0] ?? "?").toUpperCase();
   return (
-    <li>
+    <li className="flex items-stretch">
       <Link
         href={`/admin/inbox/${encodeURIComponent(email.id)}`}
         className={cn(
-          "flex items-start gap-3 px-3 py-3 transition-colors hover:bg-accent/40 sm:px-4 sm:py-3.5",
+          "flex min-w-0 flex-1 items-start gap-3 px-3 py-3 transition-colors hover:bg-accent/40 sm:px-4 sm:py-3.5",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         )}
       >
@@ -146,6 +173,15 @@ function EmailRow({ email }: { email: ReceivedEmailSummary }) {
           )}
         </div>
       </Link>
+      <button
+        type="button"
+        onClick={() => onArchive(email.id)}
+        aria-label="Archive (hide from inbox)"
+        title="Archive (hide from inbox)"
+        className="flex shrink-0 items-center px-3 text-muted-foreground transition-colors hover:bg-accent/40 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <Archive className="h-4 w-4" />
+      </button>
     </li>
   );
 }

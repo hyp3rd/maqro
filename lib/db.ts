@@ -1,6 +1,5 @@
 import type {
   Food,
-  FoodItem,
   Meal,
   PersonalInfo,
   Recipe,

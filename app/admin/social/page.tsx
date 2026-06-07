@@ -84,7 +84,11 @@ async function load(): Promise<{
 export default async function AdminSocialPage({
   searchParams,
 }: {
-  searchParams: Promise<{ connected?: string; error?: string }>;
+  searchParams: Promise<{
+    connected?: string;
+    error?: string;
+    detail?: string;
+  }>;
 }) {
   const data = await load();
   if (!data) {
@@ -120,9 +124,16 @@ const LINKEDIN_ERRORS: Record<string, string> = {
 function noticeFrom(sp: {
   connected?: string;
   error?: string;
+  detail?: string;
 }): { kind: "success" | "error"; text: string } | null {
   if (sp.connected === "linkedin") {
     return { kind: "success", text: "LinkedIn connected." };
+  }
+  if (sp.error === "linkedin-oauth") {
+    return {
+      kind: "error",
+      text: `LinkedIn rejected the connection: ${sp.detail ?? "unknown error"}.`,
+    };
   }
   if (sp.error) {
     return {
