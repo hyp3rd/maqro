@@ -42,6 +42,12 @@ ships with privacy-respecting operational logging.
   Plans are **personalized** with a soft bias toward foods you've
   actually been eating (top of the last ~30 days of logs) so the
   generated rotation looks like your rotation.
+- **"Don't know what to eat today?"** - one tap asks the AI to build a
+  breakfast / lunch / dinner day from **your own saved recipes** that
+  lands near your remaining macro targets (what's left after what you've
+  already logged). Review the picks, **Shuffle** for another, or **Log
+  this day** to drop them all into today's slots — it only picks from
+  recipes you've saved, never inventing food.
 - **Log a meal (guided)** - on mobile, a step-by-step bottom-sheet:
   pick a meal slot, then pick _how_ — search foods, apply a recipe or
   template, scan a barcode, photograph the plate, or talk — and the
@@ -64,16 +70,22 @@ ships with privacy-respecting operational logging.
   template editor lets you rename slots, change defaults, and order
   them.
 - **Recipes** - named bundles of ingredients with optional cuisine
-  and prep notes. Build manually, generate via AI (now biased
-  toward foods from your recent rotation), drag-to-reorder
-  ingredients, **share via public URL** (auto-slug or custom for Pro)
-  with `public` / `members-only` / `disabled` visibility. Apply a
-  saved recipe to any meal slot and the dialog re-orders by
-  per-serving macro fit to that slot's share of the day — the top
-  recipe gets a **Best fit** badge when there's competition. A
-  **Days** stepper in the same dialog writes the recipe to that meal
-  slot across today + the next N-1 days (up to 7) — the "cook once,
-  log for the week" meal-prep flow.
+  and prep notes, browsed as a **card grid** with a diet badge
+  (**Vegan / Vegetarian / Omnivore**, derived from the ingredients)
+  and the cuisine at a glance. Build manually, generate via AI (biased
+  toward foods from your recent rotation), drag-to-reorder ingredients,
+  **share via public URL** (auto-slug or custom for Pro) with `public` /
+  `members-only` / `disabled` visibility. Apply a saved recipe to any
+  meal slot and the dialog re-orders by per-serving macro fit to that
+  slot's share of the day — the top recipe gets a **Best fit** badge
+  when there's competition. Open a recipe to send any of its ingredients
+  to your **shopping list** in a tap.
+- **Meal schedules** - schedule a recipe across a date range + chosen
+  weekdays (the "cook once, log for the week" meal-prep flow). Schedules
+  are **saved, not written ahead**: they live in a **Scheduled** list in
+  Recipes (edit / cancel anytime) and surface on each matching day as a
+  one-tap **"Scheduled → Log it"** offer on the empty slot — so the day
+  view stays honest to what you actually logged.
 - **Weight history + Progress** - log weigh-ins; see a sparkline,
   macro-adherence chart, **streak counter** with **milestone
   celebrations** (3, 7, 14, 30, 60, 100, 180, 365 days), **plateau
@@ -155,8 +167,8 @@ ships with privacy-respecting operational logging.
   preview-before-apply diff.
 - **Account (optional)** - passwordless email OTP via Supabase.
   Profile, daily logs, weight history, body measurements, custom
-  foods, meal templates, recipes, pantry, and shopping-list metadata
-  all sync across devices.
+  foods, meal templates, recipes, meal schedules, pantry, and
+  shopping-list metadata all sync across devices.
 - **Sync modes** - a per-device choice (Settings → Sync) for how
   edits reach your account: **Local-first** (stay on this device, save
   manually — with a gentle reminder after a quiet spell of unsaved
