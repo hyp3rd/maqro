@@ -112,3 +112,27 @@ export type PantryNotification = {
   createdAt: number;
   updatedAt: number;
 } & Versioned;
+
+/** A recipe scheduled to one or more meal slots across a date range + set of
+ *  weekdays — the meal-prep "cook once, log for…" plan. A schedule does NOT
+ *  write any log: the day view stays gated to today, so nothing is written
+ *  ahead. Instead it's surfaced on each matching day as a one-tap "log it"
+ *  offer. `recipeId` resolves to the *current* recipe at log time; `recipeName`
+ *  is a snapshot so the list still reads right after a rename. */
+export type MealSchedule = {
+  id: string;
+  recipeId: string;
+  recipeName: string;
+  /** Target slot names, lower-cased — matched by name on the day (slot ids
+   *  drift as the user edits their meal template; the name is the handle). */
+  mealNames: string[];
+  startDate: string;
+  endDate: string;
+  /** 0=Sun … 6=Sat. Empty = no day matches. */
+  daysOfWeek: number[];
+  /** Servings multiplier applied to the recipe at log time. */
+  scale: number;
+  createdAt: number;
+  updatedAt: number;
+} & Versioned &
+  Sortable;

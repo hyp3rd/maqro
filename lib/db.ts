@@ -15,6 +15,7 @@ import type {
   BodyMeasurement,
   CustomFood,
   DailyLog,
+  MealSchedule,
   MealTemplate,
   PantryNotification,
   Sortable,
@@ -24,7 +25,7 @@ import type {
 } from "@maqro/core/records";
 
 const DB_NAME = "maqro";
-const DB_VERSION = 18;
+const DB_VERSION = 19;
 
 const STORE_CUSTOM_FOODS = "customFoods";
 const STORE_PROFILE = "profile";
@@ -36,6 +37,7 @@ const STORE_BODY_MEASUREMENTS = "bodyMeasurements";
 const STORE_BLOOD_PRESSURE = "bloodPressure";
 const STORE_FAST_SESSIONS = "fastSessions";
 const STORE_RECIPES = "recipes";
+const STORE_MEAL_SCHEDULES = "mealSchedules";
 const STORE_PANTRY_ITEMS = "pantryItems";
 const STORE_PANTRY_NOTIFICATIONS = "pantryNotifications";
 const STORE_FAVORITE_STORES = "favoriteStores";
@@ -90,6 +92,7 @@ export type {
   BodyMeasurement,
   CustomFood,
   DailyLog,
+  MealSchedule,
   MealTemplate,
   PantryNotification,
   Sortable,
@@ -105,6 +108,7 @@ export type DeletableStore =
   | "customFoods"
   | "mealTemplates"
   | "recipes"
+  | "mealSchedules"
   | "dailyLogs"
   | "weightHistory"
   | "bodyMeasurements"
@@ -293,6 +297,7 @@ interface MacroDB extends DBSchema {
     value: Recipe & Versioned & Sortable;
     indexes: { byName: string };
   };
+  [STORE_MEAL_SCHEDULES]: { key: string; value: MealSchedule };
   [STORE_PANTRY_ITEMS]: {
     key: string;
     value: PantryItem;
@@ -510,6 +515,12 @@ function getDB(): Promise<IDBPDatabase<MacroDB>> {
       // more than one per day, so a date key would collide.
       if (oldVersion < 18) {
         db.createObjectStore(STORE_FAST_SESSIONS, { keyPath: "id" });
+      }
+      // v18 → v19: mealSchedules store. Additive — recipe-to-slot meal-prep
+      // schedules. id-keyed (client-minted UUID); surfaced as a "log it" offer
+      // on each matching day, never written ahead.
+      if (oldVersion < 19) {
+        db.createObjectStore(STORE_MEAL_SCHEDULES, { keyPath: "id" });
       }
     },
   });
@@ -1402,6 +1413,92 @@ export async function deleteRecipe(id: string): Promise<void> {
   const db = await getDB();
   await db.delete(STORE_RECIPES, id);
   await recordDeletion("recipes", id);
+  // Cascade: a meal schedule without its recipe is meaningless. Mirror the
+  // server-side `recipe_id … on delete cascade` locally so we don't strand
+  // orphans (and the tombstones propagate the deletes to other devices).
+  const schedules = await db.getAll(STORE_MEAL_SCHEDULES);
+  for (const s of schedules) {
+    if (s.recipeId === id) await deleteMealSchedule(s.id);
+  }
+}
+
+// ─── Meal schedules ─────────────────────────────────────────────────────────
+
+/** Save a new meal schedule. Mints a client-side UUID shared with Supabase. */
+export async function addMealSchedule(
+  schedule: Omit<MealSchedule, "id" | "createdAt" | "updatedAt">,
+): Promise<string> {
+  const db = await getDB();
+  const now = Date.now();
+  const id = mintId();
+  await db.put(STORE_MEAL_SCHEDULES, {
+    ...schedule,
+    id,
+    createdAt: now,
+    updatedAt: now,
+    localUpdatedAt: nowIso(),
+    serverUpdatedAt: null,
+  });
+  notifyDataChanged("mealSchedules");
+  return id;
+}
+
+/** Upsert a meal schedule at a specific id — the edit flow + the sync layer's
+ *  UUID-collision recovery. Bumps `updatedAt` + the local sync token. */
+export async function upsertMealSchedule(
+  schedule: MealSchedule & Partial<Versioned>,
+): Promise<void> {
+  const db = await getDB();
+  const existing = await db.get(STORE_MEAL_SCHEDULES, schedule.id);
+  await db.put(STORE_MEAL_SCHEDULES, {
+    ...schedule,
+    updatedAt: Date.now(),
+    localUpdatedAt: nowIso(),
+    serverUpdatedAt:
+      schedule.serverUpdatedAt ?? existing?.serverUpdatedAt ?? null,
+  });
+  notifyDataChanged("mealSchedules");
+}
+
+/** Sync-layer hook: write a server-pulled meal schedule. */
+export async function applyServerMealSchedule(
+  schedule: MealSchedule,
+  serverUpdatedAt: string,
+): Promise<void> {
+  const db = await getDB();
+  await db.put(STORE_MEAL_SCHEDULES, {
+    ...schedule,
+    localUpdatedAt: serverUpdatedAt,
+    serverUpdatedAt,
+  });
+}
+
+/** Sync-layer hook: refresh the version token after a successful push. */
+export async function markMealScheduleSynced(
+  id: string,
+  serverUpdatedAt: string,
+): Promise<void> {
+  const db = await getDB();
+  const row = await db.get(STORE_MEAL_SCHEDULES, id);
+  if (!row) return;
+  await db.put(STORE_MEAL_SCHEDULES, {
+    ...row,
+    localUpdatedAt: serverUpdatedAt,
+    serverUpdatedAt,
+  });
+}
+
+export async function listMealSchedules(): Promise<MealSchedule[]> {
+  const db = await getDB();
+  const rows = await db.getAll(STORE_MEAL_SCHEDULES);
+  return rows.sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export async function deleteMealSchedule(id: string): Promise<void> {
+  const db = await getDB();
+  await db.delete(STORE_MEAL_SCHEDULES, id);
+  await recordDeletion("mealSchedules", id);
+  notifyDataChanged("mealSchedules");
 }
 
 // ─── Pantry items ──────────────────────────────────────────────────────────
@@ -1985,6 +2082,7 @@ export async function applyServerDeletion(
     customFoods: STORE_CUSTOM_FOODS,
     mealTemplates: STORE_MEAL_TEMPLATES,
     recipes: STORE_RECIPES,
+    mealSchedules: STORE_MEAL_SCHEDULES,
     dailyLogs: STORE_DAILY_LOGS,
     weightHistory: STORE_WEIGHT_HISTORY,
     bodyMeasurements: STORE_BODY_MEASUREMENTS,

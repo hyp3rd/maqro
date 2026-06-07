@@ -30,6 +30,7 @@ export type SyncedTable =
   | "customFoods"
   | "mealTemplates"
   | "recipes"
+  | "mealSchedules"
   | "pantryItems"
   | "pantryNotifications"
   | "favoriteStores"
@@ -48,6 +49,7 @@ const subscribers: Record<SyncedTable, Set<() => void>> = {
   customFoods: new Set(),
   mealTemplates: new Set(),
   recipes: new Set(),
+  mealSchedules: new Set(),
   pantryItems: new Set(),
   pantryNotifications: new Set(),
   favoriteStores: new Set(),
@@ -70,6 +72,7 @@ const versions: Record<SyncedTable, number> = {
   customFoods: 0,
   mealTemplates: 0,
   recipes: 0,
+  mealSchedules: 0,
   pantryItems: 0,
   pantryNotifications: 0,
   favoriteStores: 0,

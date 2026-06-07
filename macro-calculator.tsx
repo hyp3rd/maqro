@@ -63,9 +63,12 @@ import {
   getDailyLog,
   listCustomFoods,
   listDailyLogs,
+  listMealSchedules,
   listPantryItems,
+  listRecipes,
   saveDailyLog,
   todayKey,
+  type MealSchedule,
   type MealTemplate,
   type PantryItem,
 } from "./lib/db";
@@ -74,7 +77,10 @@ import { waterGoalMl } from "./lib/hydration";
 import { aggregateMacroBreakdown, computeMacros } from "./lib/macros";
 import { getMarket, setHomeMarket } from "./lib/market";
 import { planDay, summarisePlan } from "./lib/meal-planner";
-import { appendRecipeToNamedSlot } from "./lib/meal-prep-batch";
+import {
+  appendRecipeToNamedSlot,
+  recipeIngredientToFood,
+} from "./lib/meal-prep-batch";
 import { applyPantryDelta } from "./lib/pantry/apply-delta";
 import {
   consumedUnitAmount,
@@ -86,6 +92,7 @@ import {
 import { replanPantryDeltas } from "./lib/pantry/replan";
 import { extractFoodPreferences } from "./lib/personalization/preferences";
 import { computeSlotBudget } from "./lib/recipe-ranking";
+import { scaleRecipeIngredients } from "./lib/scale-recipe";
 import { reportStorageError } from "./lib/storage-status";
 import { bumpPending, useSyncStatus } from "./lib/sync-status";
 import { useDataRev } from "./lib/sync/data-bus";
@@ -492,6 +499,25 @@ const MacroCalculator = () => {
       cancelled = true;
     };
   }, [pantryRev]);
+
+  // Meal schedules — recipe-to-slot plans surfaced on their matching day as a
+  // one-tap "log it" offer (never written ahead). Re-read on realtime arrival,
+  // same pattern as the pantry above.
+  const [mealSchedules, setMealSchedules] = useState<MealSchedule[]>([]);
+  const mealSchedulesRev = useDataRev("mealSchedules");
+  useEffect(() => {
+    let cancelled = false;
+    listMealSchedules()
+      .then((rows) => {
+        if (!cancelled) setMealSchedules(rows);
+      })
+      .catch(() => {
+        // No schedules / no IDB on this session; non-fatal.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mealSchedulesRev]);
 
   // Refs for dropdowns
   const suggestionsRef = useRef<HTMLDivElement | null>(null);
@@ -935,31 +961,7 @@ const MacroCalculator = () => {
     // enough, but distinct food ids are belt-and-braces).
     let nextId = Date.now();
     const cloneIngredients = (): FoodItem[] =>
-      recipe.ingredients.map((ing) => {
-        const r = ing.portionGrams / 100;
-        return {
-          id: nextId++,
-          name: ing.foodName,
-          protein: Number.parseFloat(
-            (ing.macrosPer100g.protein * r).toFixed(1),
-          ),
-          carbs: Number.parseFloat((ing.macrosPer100g.carbs * r).toFixed(1)),
-          fat: Number.parseFloat((ing.macrosPer100g.fat * r).toFixed(1)),
-          calories: Math.round(ing.macrosPer100g.calories * r),
-          portionSize: ing.portionGrams,
-          // Carry the recipe's frozen per-100g micronutrients (unscaled
-          // — the micro aggregator scales by portion/100), so a
-          // recipe-logged food contributes vitamins/minerals just like
-          // a directly-logged one.
-          micronutrients: ing.micronutrientsPer100g,
-          originalValues: {
-            proteinPer100g: ing.macrosPer100g.protein,
-            carbsPer100g: ing.macrosPer100g.carbs,
-            fatPer100g: ing.macrosPer100g.fat,
-            caloriesPer100g: ing.macrosPer100g.calories,
-          },
-        };
-      });
+      recipe.ingredients.map((ing) => recipeIngredientToFood(ing, nextId++));
 
     // Pre-clone today's foods + one set per batch day, so every food we
     // add (today and on each extra day) carries its own `pantrySource`
@@ -1088,6 +1090,49 @@ const MacroCalculator = () => {
     }
 
     setApplyRecipeMealId(null);
+  };
+
+  // One-tap "log it" for a scheduled recipe: resolve the recipe (current
+  // version) by id, scale it, and append to the chosen slot on today —
+  // mirrors the today-only path of handleApplyRecipe (clone → pantry draw →
+  // setMeals) without the meal-prep batch.
+  const logScheduledRecipe = async (schedule: MealSchedule, mealId: number) => {
+    const recipe = (await listRecipes()).find(
+      (r) => r.id === schedule.recipeId,
+    );
+    if (!recipe) {
+      toast.error("That recipe was removed — cancel the schedule in Recipes.");
+      return;
+    }
+    const scaled = scaleRecipeIngredients(recipe.ingredients, schedule.scale);
+    let nextId = Date.now();
+    const foods = scaled.map((ing) => recipeIngredientToFood(ing, nextId++));
+    const balance = new Map(
+      pantryItems.map((i) => [i.id, i.quantity] as const),
+    );
+    const draws = planPerFoodConsumptionAgainstBalance(
+      foods.map((f) => ({ name: f.name, grams: f.portionSize })),
+      pantryItems,
+      balance,
+    );
+    const drawByItem = new Map<string, number>();
+    foods.forEach((f, i) => {
+      const d = draws[i];
+      if (d) {
+        f.pantrySource = d;
+        drawByItem.set(
+          d.itemId,
+          roundQuantity((drawByItem.get(d.itemId) ?? 0) + d.consumedQty),
+        );
+      }
+    });
+    setMeals(
+      meals.map((m) =>
+        m.id === mealId ? { ...m, foods: [...m.foods, ...foods] } : m,
+      ),
+    );
+    for (const [itemId, qty] of drawByItem) applyPantryDelta(itemId, qty);
+    toast.success(`Logged ${recipe.name}.`);
   };
 
   // Handle portion size change
@@ -2017,6 +2062,8 @@ const MacroCalculator = () => {
           meals={meals}
           selectedDate={selectedDate}
           today={today}
+          mealSchedules={mealSchedules}
+          onLogScheduled={logScheduledRecipe}
           waterGoalMl={waterGoalMl(personalInfo)}
           units={personalInfo.units}
           goalPhase={activeGoalPhase}

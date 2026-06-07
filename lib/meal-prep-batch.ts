@@ -6,10 +6,43 @@
  *  unless the caller passes `new Date()` themselves). The
  *  IndexedDB write path lives in the calculator alongside the
  *  existing single-slot apply — see `handleApplyRecipe`. */
-import type { Meal } from "@/components/macro/types";
+import type {
+  FoodItem,
+  Meal,
+  RecipeIngredient,
+} from "@/components/macro/types";
 import { dateKey } from "@/lib/db";
 
 export { todayKey } from "@/lib/db";
+
+/** Expand one recipe ingredient into a per-portion `FoodItem` ready to log:
+ *  scales the per-100g macros by `portionGrams / 100`, carries the recipe's
+ *  frozen per-100g micronutrients (the aggregator scales by portion later), and
+ *  stamps `originalValues` so the slot UI can re-edit the portion. `id` is
+ *  caller-supplied so a multi-slot/day apply keeps its FoodItem ids
+ *  collision-free for dnd-kit keys. */
+export function recipeIngredientToFood(
+  ing: RecipeIngredient,
+  id: number,
+): FoodItem {
+  const r = ing.portionGrams / 100;
+  return {
+    id,
+    name: ing.foodName,
+    protein: Number.parseFloat((ing.macrosPer100g.protein * r).toFixed(1)),
+    carbs: Number.parseFloat((ing.macrosPer100g.carbs * r).toFixed(1)),
+    fat: Number.parseFloat((ing.macrosPer100g.fat * r).toFixed(1)),
+    calories: Math.round(ing.macrosPer100g.calories * r),
+    portionSize: ing.portionGrams,
+    micronutrients: ing.micronutrientsPer100g,
+    originalValues: {
+      proteinPer100g: ing.macrosPer100g.protein,
+      carbsPer100g: ing.macrosPer100g.carbs,
+      fatPer100g: ing.macrosPer100g.fat,
+      caloriesPer100g: ing.macrosPer100g.calories,
+    },
+  };
+}
 
 const MAX_BATCH_DAYS = 7;
 const MIN_BATCH_DAYS = 1;

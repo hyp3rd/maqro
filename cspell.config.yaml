@@ -9,7 +9,7 @@ ignorePaths:
   - .prettierrc.json
   - .prettierignore
   - messages/it.json
-  - "public/ciqual-*.json"
+  - public/ciqual-*.json
   - scripts/build-ciqual.py
 dictionaryDefinitions: []
 dictionaries: []
@@ -305,6 +305,7 @@ words:
   - rsquo
   - sandboxed
   - sanitisation
+  - sched
   - schemaname
   - Segoe
   - sendgrid

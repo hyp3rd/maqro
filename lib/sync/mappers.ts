@@ -17,6 +17,7 @@ import type {
   FastSession,
   FavoriteFood,
   FavoriteStore,
+  MealSchedule,
   MealTemplate,
   PantryItem,
   PantryNotification,
@@ -493,6 +494,59 @@ export function recipeFromRow(row: RecipeRow): Recipe & { sortOrder?: number } {
     sourceUrl: row.source_url ?? undefined,
     servings: row.servings ?? undefined,
     prepTimeMinutes: row.prep_time_minutes ?? undefined,
+    createdAt: Date.parse(row.created_at),
+    updatedAt: Date.parse(row.updated_at),
+  };
+}
+
+// ─── Meal schedules ──────────────────────────────────────────────────────────
+
+export type MealScheduleRow = {
+  id: string;
+  user_id: string;
+  /** Snapshot of the recipe name at schedule time (list label). */
+  name: string;
+  recipe_id: string;
+  meal_names: string[];
+  start_date: string;
+  end_date: string;
+  days_of_week: number[];
+  scale: number;
+  sort_order?: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export function mealScheduleToRow(
+  userId: string,
+  schedule: MealSchedule,
+): Omit<MealScheduleRow, "updated_at"> {
+  return {
+    id: schedule.id,
+    user_id: userId,
+    name: schedule.recipeName,
+    recipe_id: schedule.recipeId,
+    meal_names: schedule.mealNames,
+    start_date: schedule.startDate,
+    end_date: schedule.endDate,
+    days_of_week: schedule.daysOfWeek,
+    scale: schedule.scale,
+    sort_order: schedule.sortOrder ?? null,
+    created_at: new Date(schedule.createdAt).toISOString(),
+  };
+}
+
+export function mealScheduleFromRow(row: MealScheduleRow): MealSchedule {
+  return {
+    id: row.id,
+    recipeId: row.recipe_id,
+    recipeName: row.name,
+    mealNames: row.meal_names,
+    startDate: row.start_date,
+    endDate: row.end_date,
+    daysOfWeek: row.days_of_week,
+    scale: row.scale,
+    sortOrder: row.sort_order ?? undefined,
     createdAt: Date.parse(row.created_at),
     updatedAt: Date.parse(row.updated_at),
   };
