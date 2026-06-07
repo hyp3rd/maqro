@@ -10,9 +10,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { upsertShoppingListMeta } from "@/lib/db";
 import { useState } from "react";
-import { ExternalLink, Link2, Pencil } from "lucide-react";
+import {
+  Check,
+  ExternalLink,
+  Link2,
+  Pencil,
+  Plus,
+  ShoppingCart,
+} from "lucide-react";
 import Link from "next/link";
+import { toast } from "sonner";
 import type { Recipe } from "./types";
 
 /** Read-only details view for a saved recipe. The Recipes list only
@@ -75,6 +84,26 @@ function ViewBody({
   const [scaledServings, setScaledServings] = useState<number>(baseServings);
   const scale = baseServings > 0 ? scaledServings / baseServings : 1;
   const isScaled = scale !== 1 && Number.isFinite(scale) && scale > 0;
+
+  // "Missing any ingredients?" — reveals a per-ingredient "add to shopping
+  // list" control. Tracked locally for the check-mark; the add itself
+  // persists via upsertShoppingListMeta (the list auto-categorizes the aisle).
+  const [addToListMode, setAddToListMode] = useState(false);
+  const [addedToList, setAddedToList] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const addToShoppingList = async (name: string, grams: number) => {
+    try {
+      await upsertShoppingListMeta(name, {
+        extraQty: Math.round(grams),
+        extraUnit: "g",
+      });
+      setAddedToList((prev) => new Set(prev).add(name.toLowerCase()));
+      toast.success(`Added ${name} to your shopping list`);
+    } catch {
+      toast.error("Couldn't add to the shopping list.");
+    }
+  };
 
   const totals = recipe.ingredients.reduce(
     (acc, ing) => {
@@ -246,6 +275,20 @@ function ViewBody({
            *  than "P0.5"). Putting the macros on a dedicated row
            *  keeps every row's rhythm identical regardless of name
            *  length or macro magnitude. */}
+          <button
+            type="button"
+            onClick={() => setAddToListMode((v) => !v)}
+            aria-pressed={addToListMode}
+            className="mb-2 flex w-full items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-left transition-colors hover:bg-primary/10"
+          >
+            <ShoppingCart className="h-4 w-4 shrink-0 text-primary" />
+            <span className="flex-1 text-xs font-medium text-foreground">
+              Missing any ingredients?
+            </span>
+            <span className="text-[11px] text-muted-foreground">
+              {addToListMode ? "Done" : "Add to list"}
+            </span>
+          </button>
           <ul className="divide-y divide-border/60 rounded-md border border-border/60 bg-card">
             {recipe.ingredients.map((ing, idx) => {
               const scaledGrams = ing.portionGrams * scale;
@@ -253,16 +296,39 @@ function ViewBody({
               return (
                 <li
                   key={`${ing.foodName}-${idx}`}
-                  className="px-3 py-2"
+                  className="flex items-start gap-2 px-3 py-2"
                 >
-                  <p className="text-sm leading-snug">{ing.foodName}</p>
-                  <p className="mt-1 font-mono text-[11px] tabular-nums text-muted-foreground">
-                    {formatGrams(scaledGrams)}g ·{" "}
-                    {Math.round(ing.macrosPer100g.calories * ratio)} kcal · P
-                    {(ing.macrosPer100g.protein * ratio).toFixed(1)} · C
-                    {(ing.macrosPer100g.carbs * ratio).toFixed(1)} · F
-                    {(ing.macrosPer100g.fat * ratio).toFixed(1)}
-                  </p>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm leading-snug">{ing.foodName}</p>
+                    <p className="mt-1 font-mono text-[11px] tabular-nums text-muted-foreground">
+                      {formatGrams(scaledGrams)}g ·{" "}
+                      {Math.round(ing.macrosPer100g.calories * ratio)} kcal · P
+                      {(ing.macrosPer100g.protein * ratio).toFixed(1)} · C
+                      {(ing.macrosPer100g.carbs * ratio).toFixed(1)} · F
+                      {(ing.macrosPer100g.fat * ratio).toFixed(1)}
+                    </p>
+                  </div>
+                  {addToListMode &&
+                    (addedToList.has(ing.foodName.toLowerCase()) ? (
+                      <span
+                        className="flex h-8 w-8 shrink-0 items-center justify-center text-emerald-600 dark:text-emerald-400"
+                        aria-label={`${ing.foodName} added`}
+                      >
+                        <Check className="h-4 w-4" />
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void addToShoppingList(ing.foodName, scaledGrams)
+                        }
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border/60 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                        aria-label={`Add ${ing.foodName} to shopping list`}
+                        title="Add to shopping list"
+                      >
+                        <Plus className="h-4 w-4" />
+                      </button>
+                    ))}
                 </li>
               );
             })}

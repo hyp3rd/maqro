@@ -165,6 +165,8 @@ interface MealPlannerProps {
   mealSchedules: readonly MealSchedule[];
   /** Apply a scheduled recipe to a slot on today. */
   onLogScheduled: (schedule: MealSchedule, mealId: number) => void;
+  /** Open the AI "what to eat today?" day-suggester. */
+  onOpenSuggestDay: () => void;
   /** Open the meal-detail sheet for a slot (macro/micro breakdown). */
   onOpenMealDetail: (mealId: number) => void;
   /** Open the guided "Log meal" sheet — the mobile add-food entry
@@ -232,6 +234,7 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
   onApplyRecipe,
   mealSchedules,
   onLogScheduled,
+  onOpenSuggestDay,
   onOpenMealDetail,
   onOpenLogMeal,
 }) => {
@@ -376,6 +379,21 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
             <FastingCard onSelectView={onSelectView} />
           </div>
         </section>
+      )}
+
+      {/* "Don't know what to eat today?" — an AI day-suggester that picks a
+          breakfast/lunch/dinner combo from the user's saved recipes to fit the
+          remaining macro targets. Today-only (it logs into today's slots). */}
+      {selectedDate === today && (
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onOpenSuggestDay}
+          className="h-10 w-full gap-1.5"
+        >
+          <Sparkles className="h-4 w-4 text-primary" />
+          Don&apos;t know what to eat today?
+        </Button>
       )}
 
       {/* Mobile add-food entry point: one prominent button that opens
