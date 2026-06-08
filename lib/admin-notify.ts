@@ -33,7 +33,7 @@ export async function notifyAdmins(
     .from("push_subscriptions")
     .select("endpoint, p256dh, auth")
     .in("user_id", ids);
-  await Promise.all(
+  const pushResults = await Promise.all(
     (subs ?? []).map((s) =>
       sendPush(
         {
@@ -42,8 +42,15 @@ export async function notifyAdmins(
           auth: s.auth as string,
         },
         { title: msg.title, body: msg.body, url: msg.url, tag: "admin-inbox" },
-      ).catch(() => undefined),
+      ).catch(() => null),
     ),
+  );
+  // Diagnostic: with no subscriptions there's nothing to push to (the admin
+  // hasn't enabled notifications on this browser); push_ok=0 with subs>0 is a
+  // send/VAPID problem instead.
+  const pushOk = pushResults.filter((r) => r?.ok).length;
+  console.warn(
+    `[admin-notify] admins=${ids.length} subscriptions=${subs?.length ?? 0} push_ok=${pushOk}`,
   );
 
   // Email every admin (look up the address via the service-role auth admin API).
