@@ -209,6 +209,7 @@ const FoodItem: React.FC<FoodItemProps> = ({
                     onClick={() => startReplacingFood(mealId, food)}
                     variant="ghost"
                     size="icon"
+                    aria-label={`Replace ${food.name}`}
                     className="h-7 w-7 text-muted-foreground"
                   >
                     <Search className="h-3.5 w-3.5" />
@@ -225,6 +226,7 @@ const FoodItem: React.FC<FoodItemProps> = ({
                     onClick={() => startEditingFood(mealId, food)}
                     variant="ghost"
                     size="icon"
+                    aria-label={`Edit portion of ${food.name}`}
                     className="h-7 w-7 text-muted-foreground"
                   >
                     <Edit2 className="h-3.5 w-3.5" />
@@ -241,6 +243,7 @@ const FoodItem: React.FC<FoodItemProps> = ({
                     onClick={() => removeFood(mealId, food.id)}
                     variant="ghost"
                     size="icon"
+                    aria-label={`Remove ${food.name}`}
                     className="h-7 w-7 text-muted-foreground hover:text-destructive"
                   >
                     <Trash2 className="h-3.5 w-3.5" />

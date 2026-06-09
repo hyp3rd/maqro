@@ -1,5 +1,15 @@
 "use client";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SkeletonSettingRows } from "@/components/ui/skeleton";
@@ -85,6 +95,10 @@ export function PasskeysSection({ signedIn }: { signedIn: boolean }) {
   const [renamingId, setRenamingId] = React.useState<string | null>(null);
   const [renameInput, setRenameInput] = React.useState("");
   const [tick, setTick] = React.useState(0);
+  const [pendingRemove, setPendingRemove] = React.useState<{
+    id: string;
+    name: string;
+  } | null>(null);
 
   const refresh = React.useCallback(() => setTick((t) => t + 1), []);
 
@@ -405,7 +419,12 @@ export function PasskeysSection({ signedIn }: { signedIn: boolean }) {
                         variant="ghost"
                         className="h-8 w-8 text-muted-foreground hover:text-destructive"
                         aria-label={`Remove passkey ${row.friendly_name ?? row.id}`}
-                        onClick={() => void remove(row.id)}
+                        onClick={() =>
+                          setPendingRemove({
+                            id: row.id,
+                            name: row.friendly_name ?? row.id,
+                          })
+                        }
                         disabled={busy !== "idle"}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -435,6 +454,35 @@ export function PasskeysSection({ signedIn }: { signedIn: boolean }) {
           </div>
         </>
       )}
+      <AlertDialog
+        open={pendingRemove !== null}
+        onOpenChange={(o) => {
+          if (!o) setPendingRemove(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove this passkey?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingRemove
+                ? `"${pendingRemove.name}" will no longer be able to sign you in. Make sure you have another way to log in first.`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingRemove) void remove(pendingRemove.id);
+                setPendingRemove(null);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </section>,
   );
 }

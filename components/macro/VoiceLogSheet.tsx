@@ -77,7 +77,12 @@ type Phase =
   | { kind: "recording"; transcript: string }
   | { kind: "review"; transcript: string }
   | { kind: "parsing" }
-  | { kind: "error"; message: string; previousTranscript: string };
+  | {
+      kind: "error";
+      message: string;
+      previousTranscript: string;
+      isCap?: boolean;
+    };
 
 export function VoiceLogSheet({
   open,
@@ -274,7 +279,26 @@ function VoiceLogBody({
         }),
       });
       if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        const data = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          used?: number;
+          cap?: number;
+          kind?: string;
+        };
+        if (res.status === 402 || data.kind === "ai-cap-reached") {
+          // A retry (re-record or re-type) hits the same capped route, so
+          // surface the cap with a reset/upgrade hint and only a Close action.
+          setPhase({
+            kind: "error",
+            isCap: true,
+            previousTranscript: transcript,
+            message:
+              data.used != null && data.cap != null
+                ? `You've used all your AI logs this month (${data.used}/${data.cap}). The limit resets on the 1st, or upgrade in Settings.`
+                : "You've reached your monthly AI limit. It resets on the 1st, or upgrade in Settings.",
+          });
+          return;
+        }
         throw new Error(data.error ?? `Parsing failed (HTTP ${res.status})`);
       }
       const result = (await res.json()) as ResolvedMealPhoto;
@@ -367,6 +391,7 @@ function VoiceLogBody({
         {phase.kind === "error" && (
           <ErrorState
             message={phase.message}
+            isCap={phase.isCap}
             onRetry={() => {
               if (supported) setPhase({ kind: "idle" });
               else
@@ -526,11 +551,13 @@ function ReviewState({
 
 function ErrorState({
   message,
+  isCap,
   onRetry,
   onTypeInstead,
   onClose,
 }: {
   message: string;
+  isCap?: boolean;
   onRetry: () => void;
   /** Optional: drop the user into the textarea-typing variant
    *  of the review stage. Surfaced as a secondary button so a
@@ -546,15 +573,17 @@ function ErrorState({
         <p>{message}</p>
       </div>
       <div className="flex flex-wrap gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={onRetry}
-        >
-          Try again
-        </Button>
-        {onTypeInstead && (
+        {!isCap && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={onRetry}
+          >
+            Try again
+          </Button>
+        )}
+        {!isCap && onTypeInstead && (
           <Button
             type="button"
             size="sm"

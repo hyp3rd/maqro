@@ -24,6 +24,8 @@ export type UseFavoriteStores = {
   favIds: Set<string>;
   /** Star if not saved, unstar if saved. */
   toggle: (store: StorableStore) => Promise<void>;
+  /** Re-add a store (for an Undo after un-favouriting). */
+  add: (store: StorableStore) => Promise<void>;
 };
 
 /** Synced favourite-store list + a star toggle. Re-reads on every
@@ -72,5 +74,16 @@ export function useFavoriteStores(): UseFavoriteStores {
     [favIds],
   );
 
-  return { favorites, favIds, toggle };
+  /** Re-add a store (for an Undo after un-favouriting). Stable (no favIds dep)
+   *  so a deferred Undo callback re-adds rather than re-toggling stale state. */
+  const add = useCallback(async (store: StorableStore) => {
+    try {
+      await upsertFavoriteStore(store);
+      bumpPending();
+    } catch (err) {
+      reportStorageError(err);
+    }
+  }, []);
+
+  return { favorites, favIds, toggle, add };
 }

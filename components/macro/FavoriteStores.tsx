@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useFavoriteStores } from "@/hooks/use-favorite-stores";
 import { storeDirectionsUrl } from "@/lib/shopping/nearby";
 import { Navigation, Star } from "lucide-react";
+import { toast } from "sonner";
 
 /** The user's starred grocery stores, synced across devices. Shown in
  *  the otherwise-empty space beside the shopping list (and under the
@@ -12,7 +13,7 @@ import { Navigation, Star } from "lucide-react";
  *  Directions omit an origin, so Maps routes from the device's current
  *  location. */
 export function FavoriteStores() {
-  const { favorites, toggle } = useFavoriteStores();
+  const { favorites, toggle, add } = useFavoriteStores();
   if (favorites.length === 0) return null;
 
   return (
@@ -43,16 +44,20 @@ export function FavoriteStores() {
                 size="icon"
                 className="-mr-1 -mt-1 h-7 w-7 shrink-0 text-amber-500"
                 aria-label={`Remove ${store.name} from favourites`}
-                onClick={() =>
-                  void toggle({
+                onClick={() => {
+                  const data = {
                     id: store.id,
                     name: store.name,
                     kind: store.kind,
                     lat: store.lat,
                     lon: store.lon,
                     address: store.address,
-                  })
-                }
+                  };
+                  void toggle(data);
+                  toast.success(`Removed ${store.name} from favourites`, {
+                    action: { label: "Undo", onClick: () => void add(data) },
+                  });
+                }}
               >
                 <Star className="h-3.5 w-3.5 fill-amber-400" />
               </Button>
