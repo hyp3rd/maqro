@@ -160,6 +160,7 @@ interface MealPlannerProps {
   onSaveAsTemplate: (mealId: number) => void;
   onAddFromTemplate: (mealId: number) => void;
   onApplyRecipe: (mealId: number) => void;
+  onClearMeal: (mealId: number) => void;
   /** Active meal schedules — surfaced as a one-tap "log it" offer on their
    *  matching day (only when viewing today). */
   mealSchedules: readonly MealSchedule[];
@@ -232,6 +233,7 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
   onSaveAsTemplate,
   onAddFromTemplate,
   onApplyRecipe,
+  onClearMeal,
   mealSchedules,
   onLogScheduled,
   onOpenSuggestDay,
@@ -614,6 +616,7 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
                 onSaveAsTemplate={onSaveAsTemplate}
                 onAddFromTemplate={onAddFromTemplate}
                 onApplyRecipe={onApplyRecipe}
+                onClearMeal={onClearMeal}
                 scheduledForSlot={daySchedules.find((s) =>
                   scheduleTargetsSlot(s, meal.name),
                 )}

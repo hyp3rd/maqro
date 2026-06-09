@@ -1,5 +1,15 @@
 "use client";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useUser } from "@/hooks/use-user";
 import { decryptBytes, isEncryptedEnvelope } from "@/lib/export-crypto";
 import {
@@ -36,6 +46,7 @@ export function SavedReportsList({ refreshKey = 0 }: { refreshKey?: number }) {
   const [reports, setReports] = useState<SavedReport[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyPath, setBusyPath] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<SavedReport | null>(null);
 
   // Passphrase prompt (decrypt mode, with retry) — resolver pattern so the
   // open handler can await the entered passphrase.
@@ -203,7 +214,7 @@ export function SavedReportsList({ refreshKey = 0 }: { refreshKey?: number }) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => removeReport(r)}
+                    onClick={() => setPendingDelete(r)}
                     aria-label="Delete report"
                     className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-destructive"
                   >
@@ -224,6 +235,36 @@ export function SavedReportsList({ refreshKey = 0 }: { refreshKey?: number }) {
           </p>
         )}
       </div>
+
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(o) => {
+          if (!o) setPendingDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete archived report?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDelete
+                ? `The encrypted backup from ${fmtWhen(pendingDelete.exportedAt)} will be permanently deleted. This can't be undone.`
+                : ""}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (pendingDelete) void removeReport(pendingDelete);
+                setPendingDelete(null);
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {passOpen && (
         <PassphraseDialog

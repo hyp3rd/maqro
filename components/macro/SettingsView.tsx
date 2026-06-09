@@ -302,6 +302,7 @@ export function SettingsView({
       });
       // Bumps the CloudExportsList refreshKey so it pulls the new entry.
       setCloudRefreshKey((k) => k + 1);
+      toast.success("Backup saved to cloud.");
     } catch (e) {
       // buildWithProgress sets exportError on its failures; the encrypt /
       // upload calls can also fail with their own message.

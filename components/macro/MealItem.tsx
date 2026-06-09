@@ -12,6 +12,7 @@ import {
   MoreHorizontal,
   Plus,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 import { useDroppable } from "@dnd-kit/core";
 import {
@@ -28,6 +29,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import FoodItem from "./FoodItem";
@@ -63,6 +65,8 @@ interface MealItemProps {
   onSaveAsTemplate: (mealId: number) => void;
   onAddFromTemplate: (mealId: number) => void;
   onApplyRecipe: (mealId: number) => void;
+  /** Clear every food from this meal in one go (with an Undo toast). */
+  onClearMeal: (mealId: number) => void;
   /** A schedule due for this slot today (if any) — drives the one-tap
    *  "log it" offer shown on the empty slot. */
   scheduledForSlot?: MealSchedule;
@@ -109,6 +113,7 @@ const MealItem: React.FC<MealItemProps> = ({
   onSaveAsTemplate,
   onAddFromTemplate,
   onApplyRecipe,
+  onClearMeal,
   scheduledForSlot,
   onLogScheduled,
   onOpenDetail,
@@ -224,6 +229,15 @@ const MealItem: React.FC<MealItemProps> = ({
               >
                 <BookmarkPlus className="h-3.5 w-3.5 text-muted-foreground" />
                 Save as template
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => onClearMeal(meal.id)}
+                disabled={meal.foods.length === 0}
+                className="gap-2 text-destructive focus:text-destructive"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Clear meal
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

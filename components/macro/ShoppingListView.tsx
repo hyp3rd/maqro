@@ -4,6 +4,7 @@ import { SwipeRow } from "@/components/gestures/SwipeRow";
 import { Button } from "@/components/ui/button";
 import {
   addPantryItem,
+  deletePantryItem,
   listDailyLogs,
   listPantryItems,
   listShoppingListMeta,
@@ -34,6 +35,7 @@ import {
   Apple,
   Beef,
   Box,
+  CheckCheck,
   ChevronRight,
   Copy,
   Croissant,
@@ -281,14 +283,31 @@ export function ShoppingListView({ onGoToPlan }: Props = {}) {
     setPage(0);
   }
 
-  // Client-side pagination over the displayed list (computed +
-  // extras). Check-off state is keyed by item name, so it survives
-  // paging.
-  const totalPages = Math.max(1, Math.ceil(displayItems.length / PAGE_SIZE));
+  // Order the full list by aisle (store order) BEFORE paginating, so each aisle
+  // is contiguous and a section header doesn't repeat across pages — the
+  // gram-weight sort otherwise scatters one aisle across every page.
+  const aisleOrdered = useMemo(() => {
+    const rank = new Map(SHOPPING_AISLES.map((a, i) => [a, i] as const));
+    return displayItems
+      .map((item, i) => {
+        const key = nameKey(item.name);
+        const aisle =
+          meta.get(key)?.category ??
+          pantryByName.get(key)?.category ??
+          categorizeFallback(item.name);
+        return { item, i, rank: rank.get(aisle) ?? SHOPPING_AISLES.length };
+      })
+      .sort((a, b) => a.rank - b.rank || a.i - b.i)
+      .map((x) => x.item);
+  }, [displayItems, meta, pantryByName]);
+
+  // Client-side pagination over the aisle-ordered list. Check-off state is keyed
+  // by item name, so it survives paging.
+  const totalPages = Math.max(1, Math.ceil(aisleOrdered.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages - 1);
   const paged = useMemo(
-    () => displayItems.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE),
-    [displayItems, safePage],
+    () => aisleOrdered.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE),
+    [aisleOrdered, safePage],
   );
 
   /** Resolve the aisle for an item using a three-step chain:
@@ -417,6 +436,19 @@ export function ShoppingListView({ onGoToPlan }: Props = {}) {
     });
   }
 
+  /** Check or uncheck every item in an aisle in one tap — the per-aisle
+   *  "I've cleared this section" affordance. */
+  function checkAisle(names: string[], check: boolean) {
+    setChecked((prev) => {
+      const next = new Set(prev);
+      for (const n of names) {
+        if (check) next.add(n);
+        else next.delete(n);
+      }
+      return next;
+    });
+  }
+
   /** Save a qty edit from the action sheet. Routes to `extraQty` for
    *  extras (their source of truth) or `qtyOverride` /
    *  `appearancesOverride` for computed rows (preserving the original
@@ -486,6 +518,10 @@ export function ShoppingListView({ onGoToPlan }: Props = {}) {
     const existing = pantryByName.get(key);
     const addQty = it.totalGrams;
     const addUnit = it.isExtra ? (it.extraUnit ?? "g") : "g";
+    // Snapshot for the Undo: the prior pantry row (top-up) or the created id,
+    // plus the extra's restock values before they're cleared.
+    const priorMeta = meta.get(key);
+    let createdId: string | null = null;
     try {
       if (existing) {
         if (existing.unit !== addUnit) {
@@ -497,12 +533,12 @@ export function ShoppingListView({ onGoToPlan }: Props = {}) {
         const newQuantity =
           Math.round((existing.quantity + addQty) * 1000) / 1000;
         await upsertPantryItem({ ...existing, quantity: newQuantity });
-        toast.success(
-          `+${addQty} ${addUnit} of ${existing.name} added to pantry`,
-        );
       } else {
-        await addPantryItem({ name: it.name, quantity: addQty, unit: addUnit });
-        toast.success(`${it.name} added to pantry`);
+        createdId = await addPantryItem({
+          name: it.name,
+          quantity: addQty,
+          unit: addUnit,
+        });
       }
       if (it.isExtra) {
         await upsertShoppingListMeta(it.name, {
@@ -523,9 +559,69 @@ export function ShoppingListView({ onGoToPlan }: Props = {}) {
           return next;
         });
       }
+      toast.success(
+        existing
+          ? `+${addQty} ${addUnit} of ${existing.name} added to pantry`
+          : `${it.name} added to pantry`,
+        {
+          action: {
+            label: "Undo",
+            onClick: () =>
+              void undoSendToPantry({
+                name: it.name,
+                existing,
+                createdId,
+                isExtra: it.isExtra ?? false,
+                priorExtraQty: priorMeta?.extraQty ?? it.totalGrams,
+                priorExtraUnit: priorMeta?.extraUnit ?? it.extraUnit ?? "g",
+              }),
+          },
+        },
+      );
     } catch (err) {
       reportStorageError(err);
       toast.error("Couldn't send to pantry. Try again.");
+    }
+  }
+
+  /** Reverse a `sendToPantry`: restore the topped-up pantry row's prior
+   *  quantity (or delete the row we created), and put a cleared extra's restock
+   *  line back. Driven by the undo toast. */
+  async function undoSendToPantry(snap: {
+    name: string;
+    existing: PantryItem | undefined;
+    createdId: string | null;
+    isExtra: boolean;
+    priorExtraQty: number;
+    priorExtraUnit: string;
+  }) {
+    const key = nameKey(snap.name);
+    try {
+      if (snap.existing) {
+        await upsertPantryItem(snap.existing);
+      } else if (snap.createdId) {
+        await deletePantryItem(snap.createdId);
+      }
+      if (snap.isExtra) {
+        await upsertShoppingListMeta(snap.name, {
+          extraQty: snap.priorExtraQty,
+          extraUnit: snap.priorExtraUnit,
+        });
+        setMeta((prev) => {
+          const next = new Map(prev);
+          const m = next.get(key) ?? { name: key, updatedAt: Date.now() };
+          next.set(key, {
+            ...m,
+            extraQty: snap.priorExtraQty,
+            extraUnit: snap.priorExtraUnit,
+            updatedAt: Date.now(),
+          });
+          return next;
+        });
+      }
+    } catch (err) {
+      reportStorageError(err);
+      toast.error("Couldn't undo. Check the pantry.");
     }
   }
 
@@ -857,6 +953,7 @@ export function ShoppingListView({ onGoToPlan }: Props = {}) {
                   rows={rows}
                   checked={checked}
                   onToggleChecked={toggle}
+                  onCheckAisle={checkAisle}
                   meta={meta}
                   onSendToPantry={(it) => void sendToPantry(it)}
                   onRemoveFromList={(it) => void removeFromList(it)}
@@ -942,8 +1039,16 @@ export function ShoppingListView({ onGoToPlan }: Props = {}) {
 
         {checked.size > 0 && (
           <div className="flex items-center justify-between border-t border-border/60 px-3 py-2 sm:px-5">
-            <span className="text-[11px] tabular-nums text-muted-foreground">
-              {checked.size} of {items.length} marked
+            <span
+              className={`text-[11px] tabular-nums ${
+                remaining <= 0
+                  ? "font-medium text-emerald-600 dark:text-emerald-400"
+                  : "text-muted-foreground"
+              }`}
+            >
+              {remaining <= 0
+                ? "All done"
+                : `${checked.size} of ${items.length} marked`}
             </span>
             <Button
               type="button"
@@ -987,6 +1092,7 @@ type AisleSectionProps = {
   rows: DisplayItem[];
   checked: Set<string>;
   onToggleChecked: (name: string) => void;
+  onCheckAisle: (names: string[], check: boolean) => void;
   meta: Map<string, ShoppingListMeta>;
   onSendToPantry: (item: DisplayItem) => void;
   onRemoveFromList: (item: DisplayItem) => void;
@@ -1001,6 +1107,7 @@ function AisleSection({
   rows,
   checked,
   onToggleChecked,
+  onCheckAisle,
   meta,
   onSendToPantry,
   onRemoveFromList,
@@ -1012,6 +1119,9 @@ function AisleSection({
     id: `aisle:${aisle}`,
     data: { aisle },
   });
+  const aisleNames = rows.map((r) => r.name);
+  const allChecked =
+    aisleNames.length > 0 && aisleNames.every((n) => checked.has(n));
   return (
     <section
       ref={setNodeRef}
@@ -1036,11 +1146,26 @@ function AisleSection({
         >
           {aisle}
         </h3>
-        <span
-          className={`ml-auto font-mono text-[10px] tabular-nums opacity-70 ${color.text}`}
-        >
-          {rows.length}
-        </span>
+        <div className="ml-auto flex items-center gap-2">
+          <span
+            className={`font-mono text-[10px] tabular-nums opacity-70 ${color.text}`}
+          >
+            {rows.length}
+          </span>
+          <button
+            type="button"
+            onClick={() => onCheckAisle(aisleNames, !allChecked)}
+            aria-label={
+              allChecked ? `Uncheck all in ${aisle}` : `Check all in ${aisle}`
+            }
+            title={allChecked ? "Uncheck all" : "Check all"}
+            className={`flex h-5 w-5 items-center justify-center rounded transition-opacity ${color.text} ${
+              allChecked ? "opacity-100" : "opacity-50 hover:opacity-100"
+            }`}
+          >
+            <CheckCheck className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
       <ul className="divide-y divide-border/40">
         {rows.map((it) => (

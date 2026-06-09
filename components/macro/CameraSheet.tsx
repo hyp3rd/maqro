@@ -70,7 +70,7 @@ type Phase =
   | { kind: "capture" }
   | { kind: "looking-up"; code: string }
   | { kind: "identifying" }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string; isCap?: boolean };
 
 export function CameraSheet({
   open,
@@ -229,7 +229,25 @@ function CameraSheetBody({
         }),
       });
       if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        const data = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          used?: number;
+          cap?: number;
+          kind?: string;
+        };
+        if (res.status === 402 || data.kind === "ai-cap-reached") {
+          // A retry would deterministically 402 again — surface the cap with a
+          // reset/upgrade hint and no doomed "Try again".
+          setPhase({
+            kind: "error",
+            isCap: true,
+            message:
+              data.used != null && data.cap != null
+                ? `You've used all your AI scans this month (${data.used}/${data.cap}). The limit resets on the 1st, or upgrade in Settings.`
+                : "You've reached your monthly AI limit. It resets on the 1st, or upgrade in Settings.",
+          });
+          return;
+        }
         throw new Error(
           data.error ?? `Identification failed (HTTP ${res.status})`,
         );
@@ -311,16 +329,18 @@ function CameraSheetBody({
             <p>{phase.message}</p>
           </div>
           <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                setPhase({ kind: "capture" });
-                setResetKey((k) => k + 1);
-              }}
-            >
-              Try again
-            </Button>
+            {!phase.isCap && (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setPhase({ kind: "capture" });
+                  setResetKey((k) => k + 1);
+                }}
+              >
+                Try again
+              </Button>
+            )}
             <Button
               type="button"
               variant="outline"

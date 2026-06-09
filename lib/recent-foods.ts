@@ -50,33 +50,24 @@ function subMacros(src: MacroBreakdown, scale: number): MacroBreakdown {
   return out;
 }
 
-/** Reconstruct an addable per-100g `Food` from a logged item. Prefer the
- *  frozen `originalValues` snapshot (already per-100g); for legacy rows
- *  without it, divide the scaled values back out by the portion. */
+/** Reconstruct an addable per-100g `Food` from a logged item. The 4 main macros
+ *  come from the frozen `originalValues` snapshot when present (exact), else
+ *  they're divided back out of the scaled values by the portion. The
+ *  MacroBreakdown sub-macros are ALWAYS divided back out of the scaled top-level
+ *  values — `originalValues` only ever captured the 4 mains, so reading the
+ *  sub-macros from it silently dropped the breakdown on re-add. */
 function foodFromLoggedItem(item: FoodItem): Food {
   const ov = item.originalValues;
-  if (ov) {
-    return {
-      name: item.name.trim(),
-      protein: ov.proteinPer100g,
-      carbs: ov.carbsPer100g,
-      fat: ov.fatPer100g,
-      calories: ov.caloriesPer100g,
-      micronutrients: item.micronutrients,
-      ...subMacros(ov, 1),
-    };
-  }
-  // No snapshot: back the per-100g values out of the scaled ones. Guard
-  // the divide so a zero portion can never produce NaN/Infinity.
-  const ratio = item.portionSize > 0 ? 100 / item.portionSize : 1;
+  // Guard the divide so a zero portion can never produce NaN/Infinity.
+  const per100 = item.portionSize > 0 ? 100 / item.portionSize : 1;
   return {
     name: item.name.trim(),
-    protein: round1(item.protein * ratio),
-    carbs: round1(item.carbs * ratio),
-    fat: round1(item.fat * ratio),
-    calories: round1(item.calories * ratio),
+    protein: ov ? ov.proteinPer100g : round1(item.protein * per100),
+    carbs: ov ? ov.carbsPer100g : round1(item.carbs * per100),
+    fat: ov ? ov.fatPer100g : round1(item.fat * per100),
+    calories: ov ? ov.caloriesPer100g : round1(item.calories * per100),
     micronutrients: item.micronutrients,
-    ...subMacros(item, ratio),
+    ...subMacros(item, per100),
   };
 }
 

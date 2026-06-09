@@ -379,6 +379,7 @@ export function RecipesView({ profile, currentMeals }: Props) {
       setRecipes((prev) => (prev ? [created, ...prev] : [created]));
     }
     bumpPending();
+    toast.success(editing?.id ? "Recipe updated" : "Recipe saved");
     setEditing(undefined);
   }
 
