@@ -73,7 +73,11 @@ import {
 } from "./lib/db";
 import { dietBreakNudge, effectiveGoal } from "./lib/goal-phases";
 import { waterGoalMl } from "./lib/hydration";
-import { aggregateMacroBreakdown, computeMacros } from "./lib/macros";
+import {
+  aggregateMacroBreakdown,
+  computeMacros,
+  rescaleFoodMacros,
+} from "./lib/macros";
 import { getMarket, setHomeMarket } from "./lib/market";
 import { planDay, summarisePlan } from "./lib/meal-planner";
 import { recipeIngredientToFood } from "./lib/meal-prep-batch";
@@ -1309,6 +1313,42 @@ const MacroCalculator = () => {
   /** Re-insert an undone food at its original position (clamped to the current
    *  meal) and re-draw the pantry if it was linked. Reads the latest meals via
    *  the ref since the Undo toast's onClick fires after the removing render. */
+  /** Re-add every food cleared from a meal and re-draw their pantry links —
+   *  the Undo path for `clearMeal`. */
+  const restoreClearedMeal = (mealId: number, foods: FoodItem[]) => {
+    setMeals(
+      mealsRef.current.map((m) =>
+        m.id === mealId ? { ...m, foods: [...m.foods, ...foods] } : m,
+      ),
+    );
+    for (const f of foods) {
+      if (f.pantrySource) {
+        applyPantryDelta(f.pantrySource.itemId, f.pantrySource.consumedQty);
+      }
+    }
+  };
+
+  // Clear every food from a meal in one go (the meal's "Clear meal" menu
+  // action), giving back any pantry draw-downs — with an Undo toast that
+  // restores the foods and their draws, mirroring single-food removal.
+  const clearMeal = (mealId: number) => {
+    const meal = meals.find((m) => m.id === mealId);
+    if (!meal || meal.foods.length === 0) return;
+    const cleared = meal.foods;
+    setMeals(meals.map((m) => (m.id === mealId ? { ...m, foods: [] } : m)));
+    for (const f of cleared) {
+      if (f.pantrySource) {
+        applyPantryDelta(f.pantrySource.itemId, -f.pantrySource.consumedQty);
+      }
+    }
+    toast(`Cleared ${meal.name}`, {
+      action: {
+        label: "Undo",
+        onClick: () => restoreClearedMeal(mealId, cleared),
+      },
+    });
+  };
+
   const restoreRemovedFood = (
     mealId: number,
     food: FoodItem,
@@ -1486,7 +1526,6 @@ const MacroCalculator = () => {
       caloriesPer100g = dbFood.calories;
     }
 
-    const ratio = editingFood.portionSize / 100;
     // Re-scale the pantry draw-down to the new portion. The matched
     // item's live quantity already had the OLD draw-down subtracted, so
     // we apply only the delta; the new draw-down is capped at what would
@@ -1519,13 +1558,20 @@ const MacroCalculator = () => {
       }
     }
 
+    // Re-scale the 4 mains from the per-100g basis AND the MacroBreakdown
+    // sub-macros by the portion ratio. Previously the sub-macros (fiber,
+    // saturatedFat, sugars, …) were carried over via `...originalFood`
+    // unchanged, so a portion edit left them frozen at the old portion — which
+    // could make sat-fat exceed total fat and inflate the meal-insights fiber.
     const updatedFood = {
       ...originalFood,
       portionSize: editingFood.portionSize,
-      protein: Number.parseFloat((proteinPer100g * ratio).toFixed(1)),
-      carbs: Number.parseFloat((carbsPer100g * ratio).toFixed(1)),
-      fat: Number.parseFloat((fatPer100g * ratio).toFixed(1)),
-      calories: Math.round(caloriesPer100g * ratio),
+      ...rescaleFoodMacros(originalFood, editingFood.portionSize, {
+        protein: proteinPer100g,
+        carbs: carbsPer100g,
+        fat: fatPer100g,
+        calories: caloriesPer100g,
+      }),
       pantrySource: nextPantrySource,
     };
 
@@ -2107,6 +2153,7 @@ const MacroCalculator = () => {
             setLogFlowMealId(null);
             setApplyRecipeMealId(mealId);
           }}
+          onClearMeal={clearMeal}
           onOpenMealDetail={(mealId) => setMealDetailId(mealId)}
           onOpenLogMeal={() => {
             // Fresh entry from the FAB / "Log meal" button always starts

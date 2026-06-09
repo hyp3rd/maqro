@@ -353,3 +353,51 @@ describe("aggregateMacroBreakdown", () => {
     expect(result.fiber).toBe(2); // 2.023 → 2.0
   });
 });
+
+describe("rescaleFoodMacros", () => {
+  it("re-scales sub-macros by the portion ratio (the portion-edit fix)", async () => {
+    const { rescaleFoodMacros } = await import("./macros");
+    // Logged at 100 g; sub-macros already scaled to that portion. Edit to 50 g.
+    const result = rescaleFoodMacros(
+      { portionSize: 100, fiber: 30, saturatedFat: 9, sugars: 5 },
+      50,
+      { protein: 10, carbs: 60, fat: 12, calories: 300 },
+    );
+    // Mains come from the per-100g basis × newPortion/100.
+    expect(result.protein).toBe(5);
+    expect(result.carbs).toBe(30);
+    expect(result.fat).toBe(6);
+    expect(result.calories).toBe(150);
+    // Sub-macros scale by newPortion/oldPortion (50/100).
+    expect(result.fiber).toBe(15);
+    expect(result.saturatedFat).toBe(4.5);
+    expect(result.sugars).toBe(2.5);
+  });
+
+  it("keeps sat-fat within total fat after a downward edit (the reported bug)", async () => {
+    const { rescaleFoodMacros } = await import("./macros");
+    // Before the fix, sat-fat stayed frozen at the 100 g value (9) while fat
+    // scaled down — producing the impossible sat-fat (9) > fat (5).
+    const result = rescaleFoodMacros(
+      { portionSize: 100, saturatedFat: 9 },
+      50,
+      { protein: 0, carbs: 0, fat: 10, calories: 100 },
+    );
+    expect(result.fat).toBe(5);
+    expect(result.saturatedFat).toBe(4.5);
+    expect(result.saturatedFat ?? 0).toBeLessThanOrEqual(result.fat);
+  });
+
+  it("leaves sub-macros the food doesn't carry absent", async () => {
+    const { rescaleFoodMacros } = await import("./macros");
+    const result = rescaleFoodMacros({ portionSize: 100 }, 50, {
+      protein: 10,
+      carbs: 5,
+      fat: 2,
+      calories: 80,
+    });
+    expect(result.protein).toBe(5);
+    expect(result.fiber).toBeUndefined();
+    expect(result.saturatedFat).toBeUndefined();
+  });
+});

@@ -52,7 +52,7 @@ describe("recentLoggedFoods", () => {
     expect(r[0].lastPortion).toBe(80);
   });
 
-  it("reconstructs per-100g macros from the originalValues snapshot", () => {
+  it("reconstructs per-100g mains from the snapshot and backs sub-macros out of the scaled values", () => {
     const r = recentLoggedFoods(
       [
         log(
@@ -63,12 +63,14 @@ describe("recentLoggedFoods", () => {
             carbs: 0,
             fat: 10,
             calories: 300, // scaled to 200 g
+            fiber: 4, // scaled to 200 g — backs out to 2 per-100g
+            // originalValues only ever captures the 4 mains, never sub-macros,
+            // so the breakdown must come from the scaled top-level fields.
             originalValues: {
               proteinPer100g: 30,
               carbsPer100g: 0,
               fatPer100g: 5,
               caloriesPer100g: 150,
-              fiber: 2,
             },
           }),
         ),

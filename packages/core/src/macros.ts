@@ -149,3 +149,56 @@ export function aggregateMacroBreakdown(meals: Meal[]): MacroBreakdown {
   }
   return out;
 }
+
+/** The optional MacroBreakdown sub-macro keys. */
+const SUB_MACRO_KEYS: Array<keyof MacroBreakdown> = [
+  "sugars",
+  "addedSugars",
+  "fiber",
+  "saturatedFat",
+  "transFat",
+  "monoFat",
+  "polyFat",
+];
+
+/** Re-scale a logged food's macros to a new portion.
+ *
+ *  The four main macros are recomputed from the supplied per-100g basis
+ *  (captured in `originalValues` at log time, or a catalog lookup) times
+ *  `newPortion / 100`. The `MacroBreakdown` sub-macros (fiber, saturatedFat,
+ *  sugars, …) are stored ALREADY scaled to the food's current portion, so they
+ *  re-scale by the portion ratio (`newPortion / oldPortion`). Re-scaling them is
+ *  the step a portion edit previously skipped — which left sat-fat / fiber / and
+ *  sugars frozen at the old portion and could make sat-fat exceed total fat.
+ *  Sub-macros the food doesn't carry stay absent. */
+export function rescaleFoodMacros(
+  food: { portionSize: number } & MacroBreakdown,
+  newPortion: number,
+  per100: { protein: number; carbs: number; fat: number; calories: number },
+): {
+  protein: number;
+  carbs: number;
+  fat: number;
+  calories: number;
+} & MacroBreakdown {
+  const mainRatio = newPortion / 100;
+  const subRatio = food.portionSize > 0 ? newPortion / food.portionSize : 0;
+  const out: {
+    protein: number;
+    carbs: number;
+    fat: number;
+    calories: number;
+  } & MacroBreakdown = {
+    protein: Number.parseFloat((per100.protein * mainRatio).toFixed(1)),
+    carbs: Number.parseFloat((per100.carbs * mainRatio).toFixed(1)),
+    fat: Number.parseFloat((per100.fat * mainRatio).toFixed(1)),
+    calories: Math.round(per100.calories * mainRatio),
+  };
+  for (const key of SUB_MACRO_KEYS) {
+    const v = food[key];
+    if (typeof v === "number" && Number.isFinite(v)) {
+      out[key] = Number.parseFloat((v * subRatio).toFixed(1));
+    }
+  }
+  return out;
+}
