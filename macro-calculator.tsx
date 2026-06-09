@@ -2338,6 +2338,7 @@ const MacroCalculator = () => {
         aiAvailable={!!user}
         initialMealId={logFlowMealId}
         onMethod={handleLogMethod}
+        onQuickLog={logFoodToMeal}
       />
 
       <FoodSearchSheet

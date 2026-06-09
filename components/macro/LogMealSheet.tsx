@@ -20,7 +20,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../ui/dialog";
-import type { Meal } from "./types";
+import { QuickAddFoods } from "./QuickAddFoods";
+import type { Food, Meal } from "./types";
 
 /** The "how" the user wants to log to the chosen meal. Each maps to a
  *  full-screen tool the parent opens (search overlay, camera, recipe /
@@ -48,6 +49,9 @@ type Props = {
    *  opens the matching full-screen tool, pre-targeted to `mealId`, and
    *  closes this launcher. */
   onMethod: (method: LogMethod, mealId: number) => void;
+  /** One-tap log of a recent food straight from the method step, so the common
+   *  "re-add what I usually eat" path skips search entirely. */
+  onQuickLog: (food: Food, mealId: number, portion: number) => void;
 };
 
 type MethodTile = {
@@ -98,6 +102,7 @@ export function LogMealSheet({
   aiAvailable,
   initialMealId,
   onMethod,
+  onQuickLog,
 }: Props) {
   return (
     <Dialog
@@ -110,6 +115,7 @@ export function LogMealSheet({
           aiAvailable={aiAvailable}
           initialMealId={initialMealId ?? null}
           onMethod={onMethod}
+          onQuickLog={onQuickLog}
         />
       </DialogContent>
     </Dialog>
@@ -121,11 +127,13 @@ function LogMealFlow({
   aiAvailable,
   initialMealId,
   onMethod,
+  onQuickLog,
 }: {
   meals: Meal[];
   aiAvailable: boolean;
   initialMealId: number | null;
   onMethod: (method: LogMethod, mealId: number) => void;
+  onQuickLog: (food: Food, mealId: number, portion: number) => void;
 }) {
   // `null` = step 1 (pick a meal). Seeded from `initialMealId` so a
   // tool's "Back" returns straight to the method step.
@@ -201,6 +209,10 @@ function LogMealFlow({
               <ChevronLeft className="h-3.5 w-3.5" />
               Change meal
             </button>
+
+            <QuickAddFoods
+              onAdd={(food, portion) => onQuickLog(food, mealId, portion)}
+            />
 
             <div className="grid grid-cols-2 gap-2">
               {methods.map(({ key, icon: Icon, label, hint }) => (
