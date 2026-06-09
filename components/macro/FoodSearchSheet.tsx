@@ -341,6 +341,9 @@ function ResultRow({
               onChange={(e) =>
                 onSetGrams(clampGrams(Number.parseInt(e.target.value, 10)))
               }
+              onKeyDown={(e) => {
+                if (e.key === "Enter") onAdd();
+              }}
               className="h-10 w-20 text-center font-mono tabular-nums"
               min="1"
               max="2000"

@@ -186,6 +186,14 @@ const AddFoodForm: React.FC<AddFoodFormProps> = ({
             type="text"
             value={foodSearch}
             onChange={handleFoodSearch}
+            onKeyDown={(e) => {
+              // Enter locks in the top suggestion — the keyboard-first path.
+              const first = foodSuggestions[0];
+              if (e.key === "Enter" && showSuggestions && first) {
+                e.preventDefault();
+                handleFoodSelect(first);
+              }
+            }}
             placeholder="Search for a food…"
             className="pl-9 pr-9"
           />

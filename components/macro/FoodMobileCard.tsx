@@ -285,6 +285,9 @@ const FoodMobileCard: React.FC<Props> = ({
                     inputMode="numeric"
                     value={editingFood.portionSize}
                     onChange={handleEditPortionChange}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveEditedPortion();
+                    }}
                     className="h-12 flex-1 text-center font-mono text-lg tabular-nums"
                     min="1"
                     max="2000"
