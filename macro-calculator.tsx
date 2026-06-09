@@ -314,6 +314,13 @@ const MacroCalculator = () => {
   const selectedDate = explicitDate ?? today;
 
   const { meals, setMeals } = useDailyLog(selectedDate, DEFAULT_MEALS);
+  // Latest meals for deferred callbacks (the remove-food Undo toast fires after
+  // the removing render), since setMeals isn't a functional updater. Synced in
+  // an effect because writing a ref during render is disallowed.
+  const mealsRef = useRef(meals);
+  useEffect(() => {
+    mealsRef.current = meals;
+  }, [meals]);
 
   // State for new food being added
   const [newFood, setNewFood] = useState<FoodItem>({
@@ -1299,30 +1306,58 @@ const MacroCalculator = () => {
     setLogMealOpen(true);
   };
 
-  // Remove a food from a meal
-  const removeFood = (mealId: number, foodId: number) => {
-    // If the food drew from the pantry, give the quantity back.
-    const removed = meals
-      .find((m) => m.id === mealId)
-      ?.foods.find((f) => f.id === foodId);
-
-    const updatedMeals = meals.map((meal) => {
-      if (meal.id === mealId) {
+  /** Re-insert an undone food at its original position (clamped to the current
+   *  meal) and re-draw the pantry if it was linked. Reads the latest meals via
+   *  the ref since the Undo toast's onClick fires after the removing render. */
+  const restoreRemovedFood = (
+    mealId: number,
+    food: FoodItem,
+    index: number,
+  ) => {
+    setMeals(
+      mealsRef.current.map((m) => {
+        if (m.id !== mealId) return m;
+        const at = Math.max(0, Math.min(index, m.foods.length));
         return {
-          ...meal,
-          foods: meal.foods.filter((food) => food.id !== foodId),
+          ...m,
+          foods: [...m.foods.slice(0, at), food, ...m.foods.slice(at)],
         };
-      }
-      return meal;
-    });
+      }),
+    );
+    if (food.pantrySource) {
+      applyPantryDelta(food.pantrySource.itemId, food.pantrySource.consumedQty);
+    }
+  };
 
-    setMeals(updatedMeals);
-    if (removed?.pantrySource) {
+  // Remove a food from a meal, with an Undo toast — instant-with-recovery on
+  // desktop and mobile alike, so a mis-tap is never silent data loss.
+  const removeFood = (mealId: number, foodId: number) => {
+    const meal = meals.find((m) => m.id === mealId);
+    const index = meal?.foods.findIndex((f) => f.id === foodId) ?? -1;
+    const removed = index >= 0 ? meal?.foods[index] : undefined;
+    if (!removed) return;
+
+    setMeals(
+      meals.map((m) =>
+        m.id === mealId
+          ? { ...m, foods: m.foods.filter((f) => f.id !== foodId) }
+          : m,
+      ),
+    );
+    // If the food drew from the pantry, give the quantity back.
+    if (removed.pantrySource) {
       applyPantryDelta(
         removed.pantrySource.itemId,
         -removed.pantrySource.consumedQty,
       );
     }
+
+    toast(`Removed ${removed.name}`, {
+      action: {
+        label: "Undo",
+        onClick: () => restoreRemovedFood(mealId, removed, index),
+      },
+    });
   };
 
   /** Duplicate a logged food within its meal — the "I ate two of
