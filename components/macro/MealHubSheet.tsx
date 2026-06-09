@@ -168,10 +168,10 @@ function MealHubBody({
   const hasFoods = meal.foods.length > 0;
   const totalKcal = Math.round(meal.foods.reduce((s, f) => s + f.calories, 0));
   // The whole add-food set (quick-add, search, copy, the empty-meal actions)
-  // collapses behind one button so a populated meal opens on its contents +
-  // insights, not a wall of controls. An empty meal opens expanded — adding
-  // food is the only thing to do there.
-  const [addOpen, setAddOpen] = useState(!hasFoods);
+  // sits behind one collapsible button. It opens expanded by default — adding
+  // is the most common reason to open the hub, on a populated meal too — and
+  // can be collapsed to read the meal's contents + insights without scrolling.
+  const [addOpen, setAddOpen] = useState(true);
 
   /** One-tap re-add of a recent food at its last portion. */
   function quickAdd(food: Food, portion: number) {
