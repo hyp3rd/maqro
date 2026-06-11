@@ -37,6 +37,49 @@ describe("computeMealInsights", () => {
     expect(out.some((i) => i.title === "Low fiber")).toBe(false);
   });
 
+  it("does not claim low fiber when most of the meal's fiber is unknown", () => {
+    // One known-zero food out of several; the rest carry no fiber data.
+    // "Only 0g" would be an unfounded claim, not a finding.
+    const out = computeMealInsights({
+      calories: 500,
+      protein: 30,
+      carbs: 50,
+      fat: 15,
+      fiber: 0,
+      fiberKnownCalorieShare: 0.3,
+    });
+    expect(out.some((i) => i.title === "Low fiber")).toBe(false);
+  });
+
+  it("still flags low fiber when coverage is high", () => {
+    const out = computeMealInsights({
+      calories: 500,
+      protein: 30,
+      carbs: 50,
+      fat: 15,
+      fiber: 1,
+      fiberKnownCalorieShare: 0.9,
+    });
+    expect(out.some((i) => i.title === "Low fiber" && i.tone === "warn")).toBe(
+      true,
+    );
+  });
+
+  it("keeps the good-fiber positive even with partial coverage", () => {
+    // A high partial sum only understates the truth — never gate it.
+    const out = computeMealInsights({
+      calories: 500,
+      protein: 30,
+      carbs: 50,
+      fat: 15,
+      fiber: 9,
+      fiberKnownCalorieShare: 0.3,
+    });
+    expect(out.some((i) => i.title === "Good fiber" && i.tone === "good")).toBe(
+      true,
+    );
+  });
+
   it("flags high saturated fat and high added sugar", () => {
     const out = computeMealInsights({
       calories: 600,

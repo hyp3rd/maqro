@@ -8,7 +8,10 @@ import { clientFetch } from "@/lib/auth/client-fetch";
 import { FEATURES } from "@/lib/billing/tiers";
 import { getProfile, listMicronutrientProfiles } from "@/lib/db";
 import { computeMealInsights, type MealInsight } from "@/lib/meal-insights";
-import { aggregateMicronutrients } from "@/lib/micronutrients/aggregate";
+import {
+  aggregateMicronutrients,
+  resolveMealFiber,
+} from "@/lib/micronutrients/aggregate";
 import type { MicronutrientProfile } from "@/lib/micronutrients/types";
 import {
   getMicronutrientTargets,
@@ -111,10 +114,25 @@ export function MealDetail({ meal, goal }: { meal: Meal; goal?: DailyGoal }) {
       ),
     [meal],
   );
-  const fiber = sumSub(meal, "fiber");
   const saturatedFat = sumSub(meal, "saturatedFat");
   const addedSugars = sumSub(meal, "addedSugars");
   const sugars = sumSub(meal, "sugars");
+
+  // One profile map for everything fiber/micros below. Loads as [] for
+  // free users — the resolver still reads each food's own captured micros
+  // and the macro-side fiber.
+  const profileMap = useMemo(
+    () => new Map((profiles ?? []).map((p) => [p.nameKey, p])),
+    [profiles],
+  );
+
+  // Fiber resolved per food across BOTH stores (product micros → name
+  // profile → macro-side scaled value), so the breakdown line, the fiber
+  // insight, and the micronutrient panel can't contradict each other.
+  const { grams: fiber, knownCalorieShare: fiberCoverage } = useMemo(
+    () => resolveMealFiber(meal, profileMap),
+    [meal, profileMap],
+  );
 
   const targets = useMemo(
     () =>
@@ -129,9 +147,8 @@ export function MealDetail({ meal, goal }: { meal: Meal; goal?: DailyGoal }) {
   // micros (from OFF); the name-keyed profile cache fills the rest.
   const micros = useMemo(() => {
     if (!isPro || !profiles) return undefined;
-    const map = new Map(profiles.map((p) => [p.nameKey, p]));
-    return aggregateMicronutrients([meal], map);
-  }, [isPro, profiles, meal]);
+    return aggregateMicronutrients([meal], profileMap);
+  }, [isPro, profiles, profileMap, meal]);
 
   const insights = useMemo(
     () =>
@@ -141,13 +158,23 @@ export function MealDetail({ meal, goal }: { meal: Meal; goal?: DailyGoal }) {
         carbs: totals.carbs,
         fat: totals.fat,
         fiber,
+        fiberKnownCalorieShare: fiberCoverage,
         saturatedFat,
         addedSugars,
         micros: micros,
         microTargets: micros ? targets : undefined,
         goal: goal && goal.calories > 0 ? goal : undefined,
       }),
-    [totals, fiber, saturatedFat, addedSugars, micros, targets, goal],
+    [
+      totals,
+      fiber,
+      fiberCoverage,
+      saturatedFat,
+      addedSugars,
+      micros,
+      targets,
+      goal,
+    ],
   );
 
   const microRows = useMemo(() => {
@@ -299,6 +326,7 @@ export function MealDetail({ meal, goal }: { meal: Meal; goal?: DailyGoal }) {
         (isPro ? (
           <AiAdvice
             meal={meal}
+            fiberGrams={fiber}
             insights={insights}
             micros={micros}
             targets={targets}
@@ -444,11 +472,15 @@ type AdviceState =
 
 function AiAdvice({
   meal,
+  fiberGrams,
   insights,
   micros,
   targets,
 }: {
   meal: Meal;
+  /** Fiber resolved across both stores by the parent (`resolveMealFiber`)
+   *  — keeps the AI's input consistent with the rendered insight. */
+  fiberGrams: number | undefined;
   insights: MealInsight[];
   micros: ReturnType<typeof aggregateMicronutrients> | undefined;
   targets: Record<MicronutrientKey, number>;
@@ -490,7 +522,7 @@ function AiAdvice({
             protein: totals.protein,
             carbs: totals.carbs,
             fat: totals.fat,
-            fiber: sumSub(meal, "fiber"),
+            fiber: fiberGrams,
             saturatedFat: sumSub(meal, "saturatedFat"),
             addedSugars: sumSub(meal, "addedSugars"),
             foods: meal.foods.map((f) => ({
