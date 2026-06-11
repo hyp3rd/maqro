@@ -5,6 +5,7 @@ import {
   aggregateMicronutrients,
   computeMicronutrientWindow,
   foodNameKey,
+  resolveMealFiber,
 } from "./aggregate";
 import type { MicronutrientProfile } from "./types";
 
@@ -133,6 +134,75 @@ describe("aggregateMicronutrients", () => {
     f.micronutrients = { iron: 4 };
     const out = aggregateMicronutrients([meal([f])], profileMap([]));
     expect(out.iron).toBeCloseTo(10);
+  });
+
+  it("merges per NUTRIENT: the profile fills fields a partial product lacks", () => {
+    // OFF rows routinely carry a couple of values (here: sodium only).
+    // The profile's fiber/iron must still count — per-food fallback used
+    // to discard them the moment the product carried anything at all.
+    const f = food("Psyllium", 10);
+    f.micronutrients = { sodium: 50 };
+    const out = aggregateMicronutrients(
+      [meal([f])],
+      profileMap([profile("Psyllium", { fiber: 85, iron: 9, sodium: 999 })]),
+    );
+    expect(out.sodium).toBeCloseTo(5); // product value wins where present
+    expect(out.fiber).toBeCloseTo(8.5); // profile fills the gap
+    expect(out.iron).toBeCloseTo(0.9);
+  });
+
+  it("falls back to the macro-side scaled fiber when no per-100g source has it", () => {
+    const f = food("Bran cereal", 50);
+    f.fiber = 7.5; // MacroBreakdown fiber, already scaled to the 50 g portion
+    const out = aggregateMicronutrients([meal([f])], profileMap([]));
+    expect(out.fiber).toBeCloseTo(7.5); // added as-is, not re-scaled
+  });
+
+  it("prefers per-100g fiber sources over the macro-side value", () => {
+    const f = food("Bran cereal", 50);
+    f.fiber = 99; // stale/damaged macro-side value
+    f.micronutrients = { fiber: 30 };
+    const out = aggregateMicronutrients([meal([f])], profileMap([]));
+    expect(out.fiber).toBeCloseTo(15); // 30 per-100g × 0.5
+  });
+});
+
+describe("resolveMealFiber", () => {
+  it("resolves per food with the same chain as the aggregator", () => {
+    const fromMicros = food("Psyllium", 10);
+    fromMicros.micronutrients = { fiber: 85 };
+    const fromProfile = food("Apple", 120);
+    const fromMacro = food("Bran cereal", 50);
+    fromMacro.fiber = 7.5;
+    const { grams } = resolveMealFiber(
+      meal([fromMicros, fromProfile, fromMacro]),
+      profileMap([profile("Apple", { fiber: 2.4 })]),
+    );
+    // 8.5 (micros) + 2.88 (profile) + 7.5 (macro-side) = 18.88 → 18.9
+    expect(grams).toBeCloseTo(18.9);
+  });
+
+  it("returns undefined grams when no food has any fiber source", () => {
+    const { grams, knownCalorieShare } = resolveMealFiber(
+      meal([food("Mystery", 100)]),
+      profileMap([]),
+    );
+    expect(grams).toBeUndefined();
+    expect(knownCalorieShare).toBe(0);
+  });
+
+  it("reports the calorie share of fiber-known foods", () => {
+    const known = food("Apple", 100);
+    known.fiber = 2.4;
+    known.calories = 60;
+    const unknown = food("Mystery shake", 100);
+    unknown.calories = 240;
+    const { grams, knownCalorieShare } = resolveMealFiber(
+      meal([known, unknown]),
+      profileMap([]),
+    );
+    expect(grams).toBeCloseTo(2.4);
+    expect(knownCalorieShare).toBeCloseTo(0.2); // 60 of 300 kcal known
   });
 });
 

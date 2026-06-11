@@ -14,19 +14,29 @@ export function foodNameKey(name: string): string {
 /** Sum micronutrient totals across a set of meals, scaling each food's
  *  per-100g values by its portion.
  *
- *  Two sources, in priority order:
+ *  Two sources, merged PER NUTRIENT, in priority order:
  *    1. `food.micronutrients` — exact per-100g values captured from
  *       Open Food Facts when the food was added to the meal. Most
  *       accurate (the specific product the user logged).
  *    2. The name-keyed profile cache — an approximate per-100g profile
  *       the enrichment cron derived for the food's name. Covers
- *       historical logs (added before per-food capture) and foods
- *       logged without OFF data (builtin catalog, generic names).
+ *       historical logs (added before per-food capture), foods logged
+ *       without OFF data (builtin catalog, generic names), AND the
+ *       nutrients a product's partial OFF data didn't list. OFF rows
+ *       routinely carry just a couple of values (say sodium + calcium);
+ *       falling back per-food instead of per-nutrient used to discard
+ *       the profile's fiber/iron/zinc for exactly those foods.
+ *
+ *  Fiber additionally falls back to the food's top-level scaled
+ *  `MacroBreakdown.fiber` (the macro-side store) when neither per-100g
+ *  source knows it — fiber is the one nutrient tracked by both systems,
+ *  and the two surfaces (macro breakdown line, micronutrient panel)
+ *  must not contradict each other on the same screen.
  *
  *  Mirrors `aggregateMacroBreakdown`'s contract exactly: a nutrient is
  *  only present in the output if at least one contributing food carried
- *  it. A food with neither source contributes nothing — partial
- *  coverage rather than a misleading zero.
+ *  it. A food with no source contributes nothing — partial coverage
+ *  rather than a misleading zero.
  *
  *  Profiles are passed in as a Map keyed by `foodNameKey` so the caller
  *  controls the I/O (read from IDB once, aggregate many days) and this
@@ -40,20 +50,29 @@ export function aggregateMicronutrients(
 
   for (const meal of meals) {
     for (const food of meal.foods) {
-      // Prefer the food's own captured per-100g values; fall back to
-      // the name-keyed profile. Both are per-100g, so the scaling
-      // below is identical either way.
-      const per100Source =
-        food.micronutrients ??
-        profiles.get(foodNameKey(food.name))?.valuesPer100g;
-      if (!per100Source) continue;
+      const own = food.micronutrients;
+      const profile = profiles.get(foodNameKey(food.name))?.valuesPer100g;
       // portionSize is grams; values are per-100g.
       const ratio = food.portionSize / 100;
       if (!Number.isFinite(ratio) || ratio <= 0) continue;
       for (const key of MICRONUTRIENT_KEYS) {
-        const per100 = per100Source[key];
+        // Per-nutrient merge: the product's own value wins; the profile
+        // fills the nutrients the product didn't list.
+        const ownV = own?.[key];
+        const per100 =
+          typeof ownV === "number" && Number.isFinite(ownV)
+            ? ownV
+            : profile?.[key];
         if (typeof per100 === "number" && Number.isFinite(per100)) {
           totals[key] = (totals[key] ?? 0) + per100 * ratio;
+          seen[key] = true;
+        } else if (
+          key === "fiber" &&
+          typeof food.fiber === "number" &&
+          Number.isFinite(food.fiber)
+        ) {
+          // Macro-side fiber is already scaled to the portion — add as-is.
+          totals[key] = (totals[key] ?? 0) + food.fiber;
           seen[key] = true;
         }
       }
@@ -69,6 +88,57 @@ export function aggregateMicronutrients(
     }
   }
   return out;
+}
+
+/** The meal's best-known fiber, resolved per food with the SAME priority
+ *  chain `aggregateMicronutrients` uses for its fiber row — product
+ *  per-100g micros, then the name-keyed profile, then the macro-side
+ *  scaled `MacroBreakdown.fiber` — so the breakdown line, the fiber
+ *  insight, and the micronutrient panel all show one number.
+ *
+ *  Also reports how much of the meal is actually *known*:
+ *  `knownCalorieShare` is the calorie share of foods that contributed a
+ *  fiber value from any source. A "low fiber" claim built on one
+ *  known-zero food out of six is not a claim worth making — the caller
+ *  gates the warning on this share. `grams` is undefined when no food
+ *  has any fiber source (absent ≠ zero). */
+export function resolveMealFiber(
+  meal: Meal,
+  profiles: Map<string, MicronutrientProfile>,
+): { grams: number | undefined; knownCalorieShare: number } {
+  let any = false;
+  let sum = 0;
+  let knownCalories = 0;
+  let totalCalories = 0;
+  for (const food of meal.foods) {
+    totalCalories += food.calories;
+    const ownV = food.micronutrients?.fiber;
+    const per100 =
+      typeof ownV === "number" && Number.isFinite(ownV)
+        ? ownV
+        : profiles.get(foodNameKey(food.name))?.valuesPer100g.fiber;
+    const ratio = food.portionSize / 100;
+    let grams: number | undefined;
+    if (
+      typeof per100 === "number" &&
+      Number.isFinite(per100) &&
+      Number.isFinite(ratio) &&
+      ratio > 0
+    ) {
+      grams = per100 * ratio;
+    } else if (typeof food.fiber === "number" && Number.isFinite(food.fiber)) {
+      grams = food.fiber; // already scaled to the portion
+    }
+    if (grams !== undefined) {
+      any = true;
+      sum += grams;
+      knownCalories += food.calories;
+    }
+  }
+  return {
+    grams: any ? Math.round(sum * 10) / 10 : undefined,
+    knownCalorieShare: totalCalories > 0 ? knownCalories / totalCalories : 0,
+  };
 }
 
 /** A single day's micronutrient totals, tagged with its date. */

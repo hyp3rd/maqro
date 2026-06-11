@@ -24,6 +24,11 @@ export type MealInsightInput = {
   /** Sub-macros (per-meal totals, "where available"). */
   addedSugars?: number;
   fiber?: number;
+  /** Calorie share (0..1) of the foods whose fiber is actually known —
+   *  see `resolveMealFiber`. Gates the LOW-fiber warning: when most of
+   *  the meal's fiber is unknown, "only Xg" is not a supportable claim.
+   *  Omitted = assume full coverage (legacy callers). */
+  fiberKnownCalorieShare?: number;
   saturatedFat?: number;
   /** Aggregated micronutrient totals for the meal (Pro). */
   micros?: MicronutrientValues;
@@ -39,6 +44,10 @@ export type MealInsightInput = {
 // (sat fat ~20g, added sugar ~50g) and a balanced ~3-meal day.
 const FIBER_LOW_FLOOR_G = 3; // a sizeable meal under this reads as low-fiber
 const FIBER_GOOD_G = 7;
+// Warn "low fiber" only when fiber is known for foods covering at least
+// this calorie share of the meal. "Good fiber" needs no such gate: a high
+// partial sum only understates the truth.
+const FIBER_COVERAGE_FLOOR = 0.6;
 const SAT_FAT_WARN_G = 7;
 const ADDED_SUGAR_WARN_G = 12;
 const SIZEABLE_MEAL_KCAL = 300;
@@ -130,7 +139,8 @@ export function computeMealInsights(input: MealInsightInput): MealInsight[] {
       });
     } else if (
       calories >= SIZEABLE_MEAL_KCAL &&
-      input.fiber < FIBER_LOW_FLOOR_G
+      input.fiber < FIBER_LOW_FLOOR_G &&
+      (input.fiberKnownCalorieShare ?? 1) >= FIBER_COVERAGE_FLOOR
     ) {
       out.push({
         tone: "warn",
