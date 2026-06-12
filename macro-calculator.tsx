@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import { offCodeFromFoodId } from "@maqro/core/off";
 import type { ResolvedMealPhoto } from "./app/api/identify-meal/route";
 import { AdvancedSettingsSection } from "./components/macro/AdvancedSettingsSection";
 import { ApplyRecipeDialog } from "./components/macro/ApplyRecipeDialog";
@@ -65,6 +66,7 @@ import {
   listCustomFoods,
   listDailyLogs,
   listMealSchedules,
+  listMicronutrientProfiles,
   listPantryItems,
   listRecipes,
   saveDailyLog,
@@ -75,15 +77,12 @@ import {
 } from "./lib/db";
 import { dietBreakNudge, effectiveGoal } from "./lib/goal-phases";
 import { waterGoalMl } from "./lib/hydration";
-import {
-  aggregateMacroBreakdown,
-  computeMacros,
-  rescaleFoodMacros,
-  scaleSubMacros,
-} from "./lib/macros";
+import { computeMacros, rescaleFoodMacros, scaleSubMacros } from "./lib/macros";
 import { getMarket, setHomeMarket } from "./lib/market";
 import { planDay, summarisePlan } from "./lib/meal-planner";
 import { recipeIngredientToFood } from "./lib/meal-prep-batch";
+import { aggregateBreakdownWithProfiles } from "./lib/micronutrients/aggregate";
+import type { MicronutrientProfile } from "./lib/micronutrients/types";
 import { applyPantryDelta } from "./lib/pantry/apply-delta";
 import {
   consumedUnitAmount,
@@ -689,8 +688,40 @@ const MacroCalculator = () => {
   /** Derived: optional macro-breakdown (sugars / fiber / fat subtypes).
    *  Returns only the keys at least one food in today's meals
    *  contributed - the display layer hides rows where we have no data
-   *  so a blank seed-catalog entry doesn't render misleading "0g". */
-  const macroBreakdown = useMemo(() => aggregateMacroBreakdown(meals), [meals]);
+   *  so a blank seed-catalog entry doesn't render misleading "0g".
+   *
+   *  Resolved per food with the enrichment-profile fallback — the SAME
+   *  chain the meal sheet uses — so a food logged without OFF data still
+   *  contributes its backfilled sugars/fiber/sat-fat here, and the day
+   *  totals can't disagree with the per-meal view. For guests / free
+   *  users the profile store is simply empty and this reduces exactly to
+   *  the old top-level-only sum. */
+  const microProfilesRev = useDataRev("micronutrientProfiles");
+  const [microProfiles, setMicroProfiles] = useState<MicronutrientProfile[]>(
+    [],
+  );
+  useEffect(() => {
+    let cancelled = false;
+    listMicronutrientProfiles()
+      .then((rows) => {
+        if (!cancelled) setMicroProfiles(rows);
+      })
+      .catch(() => {
+        // Best-effort cache read; the breakdown falls back to the foods'
+        // own values.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [microProfilesRev]);
+  const macroBreakdown = useMemo(
+    () =>
+      aggregateBreakdownWithProfiles(
+        meals,
+        new Map(microProfiles.map((p) => [p.nameKey, p])),
+      ),
+    [meals, microProfiles],
+  );
 
   // Handle personal info input changes. Accepts arrays so the multi-value
   // fields (cuisinePreferences, allergies, dislikedFoods) and MacroSplit
@@ -729,6 +760,9 @@ const MacroCalculator = () => {
       // the name-keyed profile cache), so storing the raw per-100g
       // object keeps both paths on identical math.
       micronutrients: food.micronutrients,
+      // Exact-product provenance for the enrichment cron. Explicitly
+      // undefined for non-OFF picks so a prior selection's code clears.
+      offCode: offCodeFromFoodId(food.id),
     });
     setShowSuggestions(false);
   };
@@ -1191,6 +1225,7 @@ const MacroCalculator = () => {
       portionSize: grams,
       ...scaleSubMacros(food, ratio),
       micronutrients: food.micronutrients,
+      offCode: offCodeFromFoodId(food.id),
       pantrySource: drawDown ?? undefined,
       originalValues: {
         proteinPer100g: food.protein,
@@ -1711,6 +1746,7 @@ const MacroCalculator = () => {
       // Carry per-100g micronutrients onto the replacement (unscaled —
       // the aggregator scales). `newFood` here is the replacement Food.
       micronutrients: newFood.micronutrients,
+      offCode: offCodeFromFoodId(newFood.id),
       originalValues: {
         proteinPer100g: newFood.protein,
         carbsPer100g: newFood.carbs,

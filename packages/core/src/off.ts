@@ -3,7 +3,7 @@ import {
   type MicronutrientKey,
   type MicronutrientValues,
 } from "./rda";
-import type { Food } from "./types";
+import type { Food, MacroBreakdown } from "./types";
 
 /** Open Food Facts product → local domain transforms. Pure (no fetch, no
  *  cache), so they're shared by the web server helpers, the enrichment cron, and
@@ -35,6 +35,10 @@ export type OFFHit = {
     // to its canonical unit. Sodium is the only one that's also a macro-ish
     // field; the rest are genuine micros.
     sodium_100g?: number;
+    // Salt (NaCl). OFF normally derives sodium_100g from a salt-only label
+    // automatically, but incomplete rows can carry salt alone — the sodium
+    // fallback below converts it (sodium = salt / 2.5).
+    salt_100g?: number;
     potassium_100g?: number;
     calcium_100g?: number;
     iron_100g?: number;
@@ -174,5 +178,74 @@ export function offHitToMicronutrients(h: OFFHit): MicronutrientValues {
     if (raw === undefined) continue;
     out[key] = raw * MICRONUTRIENTS[key].offGramsToCanonical;
   }
+  // Salt-only rows: OFF usually derives sodium from a salt-declared label,
+  // but incomplete rows can carry salt_100g alone. sodium = salt / 2.5
+  // (NaCl is ~40% sodium by mass); grams → mg via the same canonical factor.
+  if (out.sodium === undefined) {
+    const salt = num(n.salt_100g);
+    if (salt !== undefined) {
+      out.sodium = (salt / 2.5) * MICRONUTRIENTS.sodium.offGramsToCanonical;
+    }
+  }
   return out;
+}
+
+/** Per-100g MacroBreakdown sub-macros from an OFF product. Same `_100g`
+ *  gram fields `hitToFood` reads — extracted separately so the enrichment
+ *  cron can backfill the breakdown for foods logged without OFF data. */
+export function offHitToBreakdown(h: OFFHit): MacroBreakdown {
+  const n = h.nutriments ?? {};
+  const out: MacroBreakdown = {};
+  const sugars = num(n.sugars_100g);
+  const addedSugars = num(n["sugars-added_100g"]);
+  const fiber = num(n.fiber_100g);
+  const saturatedFat = num(n["saturated-fat_100g"]);
+  const transFat = num(n["trans-fat_100g"]);
+  const monoFat = num(n["monounsaturated-fat_100g"]);
+  const polyFat = num(n["polyunsaturated-fat_100g"]);
+  if (sugars !== undefined) out.sugars = sugars;
+  if (addedSugars !== undefined) out.addedSugars = addedSugars;
+  if (fiber !== undefined) out.fiber = fiber;
+  if (saturatedFat !== undefined) out.saturatedFat = saturatedFat;
+  if (transFat !== undefined) out.transFat = transFat;
+  if (monoFat !== undefined) out.monoFat = monoFat;
+  if (polyFat !== undefined) out.polyFat = polyFat;
+  return out;
+}
+
+/** Per-nutrient median MacroBreakdown across multiple OFF products — the
+ *  breakdown twin of `medianMicronutrients`, for the name-search path. */
+export function medianBreakdown(hits: OFFHit[]): MacroBreakdown {
+  const buckets = new Map<keyof MacroBreakdown, number[]>();
+  for (const hit of hits) {
+    const b = offHitToBreakdown(hit);
+    for (const key of Object.keys(b) as Array<keyof MacroBreakdown>) {
+      const v = b[key];
+      if (typeof v === "number") {
+        const arr = buckets.get(key) ?? [];
+        arr.push(v);
+        buckets.set(key, arr);
+      }
+    }
+  }
+  const out: MacroBreakdown = {};
+  for (const [key, values] of buckets) {
+    values.sort((a, b) => a - b);
+    const mid = Math.floor(values.length / 2);
+    out[key] =
+      values.length % 2 === 0
+        ? (values[mid - 1] + values[mid]) / 2
+        : values[mid];
+  }
+  return out;
+}
+
+/** The OFF product code from a catalog `Food.id` ("off:3017620422003" →
+ *  "3017620422003"), or undefined for non-OFF ids. Captured onto the logged
+ *  `FoodItem.offCode` so the enrichment cron can resolve the EXACT product
+ *  instead of a name-search median or an AI guess. */
+export function offCodeFromFoodId(id: string | undefined): string | undefined {
+  if (!id || !id.startsWith("off:")) return undefined;
+  const code = id.slice(4).trim();
+  return /^\d{8,14}$/.test(code) ? code : undefined;
 }

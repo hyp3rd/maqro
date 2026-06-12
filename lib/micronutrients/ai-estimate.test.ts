@@ -1,5 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { sanitizeEstimate } from "./ai-estimate";
+import { sanitizeBreakdownEstimate, sanitizeEstimate } from "./ai-estimate";
+
+describe("sanitizeBreakdownEstimate", () => {
+  it("keeps plausible sugars / saturated fat and drops the rest", () => {
+    const out = sanitizeBreakdownEstimate({
+      sugars: 12.5,
+      saturatedFat: 3,
+      fiber: 5, // not a breakdown-estimate field — ignored
+      iron: 2,
+    });
+    expect(out).toEqual({ sugars: 12.5, saturatedFat: 3 });
+  });
+
+  it("rejects physically impossible or invalid values", () => {
+    const out = sanitizeBreakdownEstimate({
+      sugars: 140, // > 100 g per 100 g
+      saturatedFat: -1,
+    });
+    expect(out).toEqual({});
+    expect(sanitizeBreakdownEstimate(null)).toEqual({});
+    expect(sanitizeBreakdownEstimate("nope")).toEqual({});
+  });
+});
 
 describe("sanitizeEstimate", () => {
   it("keeps finite non-negative values for known nutrient keys", () => {

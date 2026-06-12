@@ -16,23 +16,27 @@ import { foodNameKey } from "./aggregate";
  *  background nicety that must not disturb the log-save flow that
  *  triggered it.
  *
- *  v1 sends names only. A logged `FoodItem` doesn't retain the Open
- *  Food Facts barcode (it's a numeric-id item by then), so the cron
- *  resolves these via a name search. The route's `offCode` field is
- *  reserved for a future change that threads product provenance
- *  through the log. */
+ *  Each name carries the logged item's `offCode` when one was captured
+ *  (OFF search picks and barcode scans alike), so the cron can resolve
+ *  the EXACT product instead of a name-search median or an AI guess —
+ *  the accuracy difference for branded foods. */
 export function enqueueMicronutrientEnrichment(meals: Meal[]): void {
   if (typeof window === "undefined") return;
-  const names = new Set<string>();
+  const byKey = new Map<string, string | undefined>();
   for (const meal of meals) {
     for (const food of meal.foods) {
       const key = foodNameKey(food.name);
-      if (key) names.add(key);
+      if (!key) continue;
+      // First-seen code wins; a later codeless occurrence must not erase it.
+      const existing = byKey.get(key);
+      byKey.set(key, existing ?? food.offCode);
     }
   }
-  if (names.size === 0) return;
+  if (byKey.size === 0) return;
 
-  const items = [...names].map((nameKey) => ({ nameKey }));
+  const items = [...byKey.entries()].map(([nameKey, offCode]) =>
+    offCode ? { nameKey, offCode } : { nameKey },
+  );
   void fetch("/api/micronutrient-enqueue", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

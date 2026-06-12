@@ -13,7 +13,7 @@ import { FEATURES } from "@/lib/billing/tiers";
 import type { DailyLog } from "@/lib/db";
 import { getProfile, listMicronutrientProfiles, todayKey } from "@/lib/db";
 import {
-  averageMicronutrients,
+  averageMicronutrientsDetailed,
   computeMicronutrientWindow,
   foodNameKey,
   type MicronutrientDay,
@@ -116,13 +116,20 @@ export function MicronutrientsSection({
   // a time). Null = all collapsed.
   const [expanded, setExpanded] = useState<MicronutrientKey | null>(null);
 
-  const { averages, daysCovered, window } = useMemo(() => {
+  const { averages, daysWith, daysCovered, window } = useMemo(() => {
     if (!logs || !profiles)
-      return { averages: {}, daysCovered: 0, window: [] as MicronutrientDay[] };
+      return {
+        averages: {},
+        daysWith: {},
+        daysCovered: 0,
+        window: [] as MicronutrientDay[],
+      };
     const map = new Map(profiles.map((p) => [p.nameKey, p]));
     const w = computeMicronutrientWindow(logs, map, today, windowDays);
+    const detailed = averageMicronutrientsDetailed(w);
     return {
-      averages: averageMicronutrients(w),
+      averages: detailed.totals,
+      daysWith: detailed.daysWith,
       daysCovered: w.length,
       window: w,
     };
@@ -175,6 +182,8 @@ export function MicronutrientsSection({
                 key={key}
                 nutrient={key}
                 value={averages[key]}
+                daysSeen={daysWith[key]}
+                dayCount={daysCovered}
                 target={targets[key]}
                 trend={trendPoints(window, key)}
                 expanded={expanded === key}
@@ -212,6 +221,8 @@ export function MicronutrientsSection({
 function NutrientBar({
   nutrient,
   value,
+  daysSeen,
+  dayCount,
   target,
   trend,
   expanded,
@@ -219,6 +230,11 @@ function NutrientBar({
 }: {
   nutrient: MicronutrientKey;
   value: number | undefined;
+  /** How many of the window's tracked days carried this nutrient — the
+   *  average is the mean over THOSE days, so partial coverage must be
+   *  visible or a 2-of-20-days nutrient reads like a daily habit. */
+  daysSeen: number | undefined;
+  dayCount: number;
   target: number;
   trend: LinePoint[];
   expanded: boolean;
@@ -251,6 +267,15 @@ function NutrientBar({
             <span className="ml-1.5 text-muted-foreground/70">
               {Math.round((value / target) * 100)}% target
             </span>
+            {/* Partial coverage caveat: the mean only spans the days this
+                nutrient had data, so say so when that's not every day. */}
+            {typeof daysSeen === "number" &&
+              dayCount > 1 &&
+              daysSeen < dayCount && (
+                <span className="ml-1.5 text-[10px] text-muted-foreground/60">
+                  {daysSeen}/{dayCount} days
+                </span>
+              )}
           </span>
         ) : (
           <span className="font-mono text-[11px] text-muted-foreground/60">

@@ -2,7 +2,9 @@ import type { FoodItem, Meal } from "@/components/macro/types";
 import type { DailyLog } from "@/lib/db";
 import { describe, expect, it } from "vitest";
 import {
+  aggregateBreakdownWithProfiles,
   aggregateMicronutrients,
+  averageMicronutrientsDetailed,
   computeMicronutrientWindow,
   foodNameKey,
   resolveMealFiber,
@@ -164,6 +166,68 @@ describe("aggregateMicronutrients", () => {
     f.micronutrients = { fiber: 30 };
     const out = aggregateMicronutrients([meal([f])], profileMap([]));
     expect(out.fiber).toBeCloseTo(15); // 30 per-100g × 0.5
+  });
+});
+
+describe("aggregateBreakdownWithProfiles", () => {
+  it("prefers the food's own scaled sub-macros (exact product data)", () => {
+    const f = food("Yogurt", 200);
+    f.sugars = 8; // already scaled to the 200 g portion
+    const out = aggregateBreakdownWithProfiles(
+      [meal([f])],
+      profileMap([
+        { ...profile("Yogurt", {}), breakdownPer100g: { sugars: 99 } },
+      ]),
+    );
+    expect(out.sugars).toBeCloseTo(8);
+  });
+
+  it("falls back to the profile's per-100g breakdown × portion", () => {
+    const f = food("Mystery bar", 50); // no top-level sub-macros
+    const out = aggregateBreakdownWithProfiles(
+      [meal([f])],
+      profileMap([
+        {
+          ...profile("Mystery bar", {}),
+          breakdownPer100g: { sugars: 30, saturatedFat: 10 },
+        },
+      ]),
+    );
+    expect(out.sugars).toBeCloseTo(15); // 30 × 0.5
+    expect(out.saturatedFat).toBeCloseTo(5);
+  });
+
+  it("resolves fiber through the micros chain, same as resolveMealFiber", () => {
+    const f = food("Psyllium", 10);
+    f.fiber = 99; // stale macro-side value loses to per-100g micros
+    f.micronutrients = { fiber: 85 };
+    const out = aggregateBreakdownWithProfiles([meal([f])], profileMap([]));
+    expect(out.fiber).toBeCloseTo(8.5);
+  });
+
+  it("omits keys no food contributed (absent ≠ zero)", () => {
+    const out = aggregateBreakdownWithProfiles(
+      [meal([food("Plain", 100)])],
+      profileMap([]),
+    );
+    expect(Object.keys(out)).toHaveLength(0);
+  });
+});
+
+describe("averageMicronutrientsDetailed", () => {
+  it("reports per-nutrient day coverage alongside the averages", () => {
+    const out = averageMicronutrientsDetailed([
+      { date: "2026-06-01", totals: { iron: 4, fiber: 10 } },
+      { date: "2026-06-02", totals: { iron: 6 } },
+      { date: "2026-06-03", totals: { iron: 8 } },
+    ]);
+    expect(out.dayCount).toBe(3);
+    expect(out.totals.iron).toBeCloseTo(6);
+    expect(out.daysWith.iron).toBe(3);
+    // Fiber appeared once — the mean spans that one day, and the
+    // coverage count makes that visible to the UI.
+    expect(out.totals.fiber).toBeCloseTo(10);
+    expect(out.daysWith.fiber).toBe(1);
   });
 });
 

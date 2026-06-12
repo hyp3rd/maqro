@@ -1,19 +1,23 @@
 import { getAnthropicConfig } from "@/lib/ai/env";
 import {
   fetchOffProductResult,
+  medianBreakdown,
   medianMicronutrients,
+  offHitToBreakdown,
   offHitToMicronutrients,
   searchOffHitsServer,
 } from "@/lib/ai/off-search";
 import { assertCronSecret } from "@/lib/auth/cron-secret";
 import { FEATURES } from "@/lib/billing/tiers";
 import { loadUserTier } from "@/lib/billing/usage";
+import { ciqualBreakdown } from "@/lib/ciqual-breakdown";
 import { ciqualMicronutrients } from "@/lib/ciqual-micros";
 import { estimateMicronutrientsAI } from "@/lib/micronutrients/ai-estimate";
 import type { MicronutrientValues } from "@/lib/micronutrients/types";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { getSupabaseSecretConfig } from "@/lib/supabase/env";
 import { NextResponse } from "next/server";
+import type { MacroBreakdown } from "@maqro/core/types";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 /** Vercel cron handler — drain the micronutrient enrichment queue.
@@ -144,6 +148,7 @@ export async function GET(req: Request): Promise<NextResponse> {
             values: result.values,
             source: result.source,
             source_code: offCode ?? null,
+            breakdown: result.breakdown ?? null,
             enriched_at: new Date().toISOString(),
           },
           { onConflict: "user_id,name_key" },
@@ -182,6 +187,10 @@ export async function GET(req: Request): Promise<NextResponse> {
 
 type ResolveResult = {
   values: MicronutrientValues;
+  /** Per-100g macro-breakdown values from the SAME source as `values`
+   *  (sugars, saturated fat, …), for the profile's breakdown backfill.
+   *  Undefined when the source carried none. */
+  breakdown?: MacroBreakdown;
   /** `defer` = OFF missed and AI wasn't permitted this run; the caller
    *  leaves the queue row for next time rather than writing a miss. */
   source: "barcode" | "search" | "ciqual" | "ai" | "miss" | "defer";
@@ -190,10 +199,19 @@ type ResolveResult = {
   aiCalled: boolean;
 };
 
-/** Resolve per-100g micronutrients for a food, in priority order:
+/** Treat an empty breakdown object as "none" so the profile column stays
+ *  null instead of `{}` (the read side checks per-key anyway; null keeps
+ *  the rows legible). */
+function orUndefined(b: MacroBreakdown): MacroBreakdown | undefined {
+  return Object.keys(b).length > 0 ? b : undefined;
+}
+
+/** Resolve per-100g micronutrients (+ macro breakdown) for a food, in
+ *  priority order:
  *    1. Exact OFF barcode lookup (when the queue row carried a code).
- *    2. OFF name search, median across the top matches.
- *    3. AI estimate — only when `opts.aiKey` is provided (configured +
+ *    2. CIQUAL curated lab values for generic foods.
+ *    3. OFF name search, median across the top matches.
+ *    4. AI estimate — only when `opts.aiKey` is provided (configured +
  *       under the per-run cap).
  *  Returns `source: "miss"` when AI ran and found nothing, or
  *  `source: "defer"` when OFF missed and AI wasn't permitted. */
@@ -207,8 +225,12 @@ async function resolveMicronutrients(
     const product = result.status === "hit" ? result.product : null;
     if (product) {
       const values = offHitToMicronutrients(product);
-      if (Object.keys(values).length > 0) {
-        return { values, source: "barcode", aiCalled: false };
+      const breakdown = orUndefined(offHitToBreakdown(product));
+      // The exact product counts as a hit when it carries EITHER kind of
+      // data — a product with a full label but no listed micros still
+      // gives us the authoritative breakdown.
+      if (Object.keys(values).length > 0 || breakdown) {
+        return { values, breakdown, source: "barcode", aiCalled: false };
       }
     }
     // Barcode lookup whiffed — fall through to a name search.
@@ -219,7 +241,8 @@ async function resolveMicronutrients(
   // before the OFF name search. Misses (branded / uncovered names) fall through.
   const ciqual = await ciqualMicronutrients(nameKey);
   if (ciqual && Object.keys(ciqual).length > 0) {
-    return { values: ciqual, source: "ciqual", aiCalled: false };
+    const breakdown = orUndefined((await ciqualBreakdown(nameKey)) ?? {});
+    return { values: ciqual, breakdown, source: "ciqual", aiCalled: false };
   }
 
   // Name search: median across the top hits rather than the first
@@ -228,14 +251,27 @@ async function resolveMicronutrients(
   const hits = await searchOffHitsServer(nameKey, 10);
   const median = medianMicronutrients(hits);
   if (Object.keys(median).length > 0) {
-    return { values: median, source: "search", aiCalled: false };
+    return {
+      values: median,
+      breakdown: orUndefined(medianBreakdown(hits)),
+      source: "search",
+      aiCalled: false,
+    };
   }
 
   // OFF had nothing. Try the AI estimate if permitted this run.
   if (opts.aiKey) {
     const estimate = await estimateMicronutrientsAI(nameKey, opts.aiKey);
-    if (Object.keys(estimate).length > 0) {
-      return { values: estimate, source: "ai", aiCalled: true };
+    if (
+      Object.keys(estimate.values).length > 0 ||
+      Object.keys(estimate.breakdown).length > 0
+    ) {
+      return {
+        values: estimate.values,
+        breakdown: orUndefined(estimate.breakdown),
+        source: "ai",
+        aiCalled: true,
+      };
     }
     // AI ran but couldn't estimate — a genuine miss.
     return { values: {}, source: "miss", aiCalled: true };

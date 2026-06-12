@@ -1,5 +1,6 @@
 import type { Versioned } from "@/lib/db";
 import type { MicronutrientValues } from "@/lib/rda";
+import type { MacroBreakdown } from "@maqro/core/types";
 
 // `MicronutrientValues` now lives in `lib/rda` (a leaf module) so the
 // food types can reference it without an import cycle. Re-exported
@@ -13,6 +14,8 @@ export type MicronutrientProfile = {
   /** How the values were resolved:
    *   - `barcode`: exact Open Food Facts product lookup (high
    *     confidence, single product).
+   *   - `ciqual`: ANSES-CIQUAL curated lab values for a generic food
+   *     (high confidence, reference data).
    *   - `search`: name search median across the top OFF matches
    *     (approximate, but grounded in real product data).
    *   - `ai`: an AI estimate, used only when Open Food Facts had no
@@ -23,13 +26,19 @@ export type MicronutrientProfile = {
    *     re-querying a name that will likely never resolve. The report
    *     renders these foods as "no data".
    *  Surfaced in the report so a medical reader can weigh the data. */
-  source: "barcode" | "search" | "ai" | "miss";
-  /** The OFF product code the values came from, when known. Lets a
-   *  future re-enrichment refresh the exact same product. */
+  source: "barcode" | "ciqual" | "search" | "ai" | "miss";
+  /** The OFF product code the values came from, when known. An exact
+   *  code arriving later (the user re-logs the product) re-queues a
+   *  non-barcode profile so it upgrades to the actual product's values. */
   sourceCode?: string;
   /** Per-100g values in each nutrient's canonical unit (see
    *  [lib/rda.ts](../rda.ts)). */
   valuesPer100g: MicronutrientValues;
+  /** Per-100g macro-breakdown values (sugars, saturated fat, …) resolved
+   *  by the same cron from the same source, so foods logged without OFF
+   *  data still get a breakdown. Absent on profiles written before the
+   *  backfill shipped. */
+  breakdownPer100g?: MacroBreakdown;
   /** When the cron last wrote this profile (epoch ms). */
   enrichedAt: number;
 } & Versioned;

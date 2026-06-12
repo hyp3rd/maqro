@@ -1,7 +1,11 @@
 "use client";
 
 import { UpgradeDialog } from "@/components/macro/UpgradeDialog";
-import type { Meal, PersonalInfo } from "@/components/macro/types";
+import type {
+  MacroBreakdown,
+  Meal,
+  PersonalInfo,
+} from "@/components/macro/types";
 import { useAiUsage } from "@/hooks/use-ai-usage";
 import { effectiveAge } from "@/lib/age";
 import { clientFetch } from "@/lib/auth/client-fetch";
@@ -10,6 +14,7 @@ import { getProfile, listMicronutrientProfiles } from "@/lib/db";
 import { computeMealInsights, type MealInsight } from "@/lib/meal-insights";
 import {
   aggregateMicronutrients,
+  aggregateBreakdownWithProfiles,
   resolveMealFiber,
 } from "@/lib/micronutrients/aggregate";
 import type { MicronutrientProfile } from "@/lib/micronutrients/types";
@@ -55,23 +60,6 @@ function sexFromGender(g: PersonalInfo["gender"] | undefined): BiologicalSex {
   return g === "male" || g === "female" ? g : "unspecified";
 }
 
-type SubMacroKey = "fiber" | "saturatedFat" | "addedSugars" | "sugars";
-/** Sum a sub-macro across the meal's foods (each already scaled to its
- *  portion). Returns undefined when no food carried the value, so the
- *  display distinguishes "absent" from "zero". */
-function sumSub(meal: Meal, key: SubMacroKey): number | undefined {
-  let any = false;
-  let sum = 0;
-  for (const f of meal.foods) {
-    const v = f[key];
-    if (typeof v === "number") {
-      any = true;
-      sum += v;
-    }
-  }
-  return any ? Math.round(sum * 10) / 10 : undefined;
-}
-
 /** The body of the per-meal view: macro breakdown, deterministic
  *  insights, micronutrients (Pro), and the AI "next time" advice (Pro).
  *  Header-less — the host (MealHubSheet) renders the meal title — and
@@ -114,17 +102,22 @@ export function MealDetail({ meal, goal }: { meal: Meal; goal?: DailyGoal }) {
       ),
     [meal],
   );
-  const saturatedFat = sumSub(meal, "saturatedFat");
-  const addedSugars = sumSub(meal, "addedSugars");
-  const sugars = sumSub(meal, "sugars");
-
-  // One profile map for everything fiber/micros below. Loads as [] for
-  // free users — the resolver still reads each food's own captured micros
-  // and the macro-side fiber.
+  // One profile map for everything below. Loads as [] for free users —
+  // the resolvers still read each food's own captured data.
   const profileMap = useMemo(
     () => new Map((profiles ?? []).map((p) => [p.nameKey, p])),
     [profiles],
   );
+
+  // Sub-macros resolved per food with the profile-backed fallback — the
+  // SAME chain the day totals use (aggregateBreakdownWithProfiles), so the
+  // meal sheet and the dashboard can't disagree on the same data. Foods
+  // logged without OFF data pick up the enrichment cron's backfill.
+  const breakdown = useMemo(
+    () => aggregateBreakdownWithProfiles([meal], profileMap),
+    [meal, profileMap],
+  );
+  const { saturatedFat, addedSugars, sugars } = breakdown;
 
   // Fiber resolved per food across BOTH stores (product micros → name
   // profile → macro-side scaled value), so the breakdown line, the fiber
@@ -327,6 +320,7 @@ export function MealDetail({ meal, goal }: { meal: Meal; goal?: DailyGoal }) {
           <AiAdvice
             meal={meal}
             fiberGrams={fiber}
+            breakdown={breakdown}
             insights={insights}
             micros={micros}
             targets={targets}
@@ -473,6 +467,7 @@ type AdviceState =
 function AiAdvice({
   meal,
   fiberGrams,
+  breakdown,
   insights,
   micros,
   targets,
@@ -481,6 +476,9 @@ function AiAdvice({
   /** Fiber resolved across both stores by the parent (`resolveMealFiber`)
    *  — keeps the AI's input consistent with the rendered insight. */
   fiberGrams: number | undefined;
+  /** Profile-backed sub-macro totals from the parent — same values the
+   *  sheet renders, so the AI reasons over what the user sees. */
+  breakdown: MacroBreakdown;
   insights: MealInsight[];
   micros: ReturnType<typeof aggregateMicronutrients> | undefined;
   targets: Record<MicronutrientKey, number>;
@@ -523,8 +521,8 @@ function AiAdvice({
             carbs: totals.carbs,
             fat: totals.fat,
             fiber: fiberGrams,
-            saturatedFat: sumSub(meal, "saturatedFat"),
-            addedSugars: sumSub(meal, "addedSugars"),
+            saturatedFat: breakdown.saturatedFat,
+            addedSugars: breakdown.addedSugars,
             foods: meal.foods.map((f) => ({
               name: f.name,
               grams: f.portionSize,
