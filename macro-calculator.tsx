@@ -1846,6 +1846,30 @@ const MacroCalculator = () => {
         return;
       }
 
+      // Auth and cap failures are GATES, not fallback cases: silently
+      // filling the day with the formula planner would hand a guest (or a
+      // capped free user) the feature the gate protects, behind an
+      // AI-labelled button, with the reason buried in a banner that
+      // auto-clears. Leave the day untouched and say why, persistently.
+      // The single-meal regenerate and refine paths already behave this
+      // way; this brings Auto-fill in line.
+      if (ai.kind === "not-authenticated") {
+        setMealPlanMessage("");
+        toast.error("Sign in to use AI meal planning.");
+        return;
+      }
+      if (ai.kind === "cap-reached") {
+        setMealPlanMessage("");
+        toast.error(
+          `AI monthly cap reached (${ai.used}/${ai.cap}) — resets on the 1st.`,
+        );
+        return;
+      }
+
+      // The remaining kinds are availability problems (no key configured,
+      // upstream rate-limit, transient failure) — there the deterministic
+      // formula planner is genuine resilience, clearly labelled as such.
+
       // Yield once so the spinner paints before the synchronous solve.
       await new Promise((resolve) => setTimeout(resolve, 50));
 
@@ -1865,15 +1889,11 @@ const MacroCalculator = () => {
       const prefix =
         ai.kind === "not-configured"
           ? "AI not configured - used formula. "
-          : ai.kind === "not-authenticated"
-            ? "Sign in to use AI planning - used formula. "
-            : ai.kind === "rate-limited"
-              ? "AI rate-limited - used formula. "
-              : ai.kind === "cap-reached"
-                ? `AI monthly cap reached (${ai.used}/${ai.cap}) - used formula. Resets the 1st. `
-                : ai.kind === "error"
-                  ? `AI failed (${ai.message}) - used formula. `
-                  : "";
+          : ai.kind === "rate-limited"
+            ? "AI rate-limited - used formula. "
+            : ai.kind === "error"
+              ? `AI failed (${ai.message}) - used formula. `
+              : "";
       const tail = summary.withinTolerance
         ? `Plan hits P:${fmt(summary.percent.protein)} C:${fmt(summary.percent.carbs)} F:${fmt(summary.percent.fat)} of target.`
         : `Plan within reach - P:${fmt(summary.percent.protein)} C:${fmt(summary.percent.carbs)} F:${fmt(summary.percent.fat)}. Limited by available foods.`;
