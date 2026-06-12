@@ -434,7 +434,7 @@ function SubscriptionPanel({
                   disabled={cancelBusy}
                   className="bg-red-600 text-white hover:bg-red-700"
                 >
-                  {cancelBusy ? "Cancelling…" : "Cancel at period end"}
+                  {cancelBusy ? "Canceling…" : "Cancel at period end"}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>

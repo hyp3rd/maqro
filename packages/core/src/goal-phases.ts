@@ -1,3 +1,4 @@
+import { addDays } from "./date";
 import type { GoalPhase, GoalPhaseKind, PersonalInfo } from "./types";
 
 /** Pure goal-phase logic. A phase plan lets a user sequence a cut → diet
@@ -28,18 +29,6 @@ const DAY_MS = 86_400_000;
 
 function clamp(n: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, n));
-}
-
-/** Increment a `YYYY-MM-DD` key by `days` in local-calendar terms (same idiom
- *  as `lib/fasting.ts`). */
-function addDays(date: string, days: number): string {
-  const [y, m, d] = date.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  dt.setDate(dt.getDate() + days);
-  const yy = dt.getFullYear();
-  const mm = (dt.getMonth() + 1).toString().padStart(2, "0");
-  const dd = dt.getDate().toString().padStart(2, "0");
-  return `${yy}-${mm}-${dd}`;
 }
 
 /** Whole local-calendar days from `a` to `b` (`b - a`). DST-safe (rounds). */

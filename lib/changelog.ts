@@ -442,7 +442,7 @@ The shopping list PDF report now also picks up the same restock rows and edits, 
     title: "Stop sample data leaking into real accounts",
     body: `Two related fixes around the "Try with sample data" flow.
 
-- Pantry, recipes, custom foods, templates and favourites you add while exploring as a guest now survive signing in — only the sample profile and logs are cleared. Before, any guest-mode work was wiped on sign-in alongside the sample data.
+- Pantry, recipes, custom foods, templates and favorites you add while exploring as a guest now survive signing in — only the sample profile and logs are cleared. Before, any guest-mode work was wiped on sign-in alongside the sample data.
 - The "this is sample data" marker is now stored inside your local database too, not only in browser storage. In private windows (or anywhere browser storage drops the flag), sample data could leak into your real account on sign-in; it can't anymore.`,
   },
   {
@@ -484,10 +484,10 @@ The shopping list PDF report now also picks up the same restock rows and edits, 
     id: "2026-05-27-favourite-stores-category-fix",
     date: "2026-05-27",
     version: "0.1.90",
-    title: "Favourite stores, fixable pantry categories, more shop types",
+    title: "Favorite stores, fixable pantry categories, more shop types",
     body: `More polish on the pantry + nearby-stores tools.
 
-- Star a shop in the "stores near you" results to save it as a favourite — your favourites show in a panel beside the shopping list and sync across your devices.
+- Star a shop in the "stores near you" results to save it as a favorite — your favorites show in a panel beside the shopping list and sync across your devices.
 - Got a pantry item filed under the wrong aisle (or "Other")? Pick the right category in the add/edit row; the correction sticks and syncs.
 - Nearby search now finds more places — health-food shops, delis, and farm shops alongside supermarkets and grocers — and "Directions" opens a proper route on Google Maps.`,
   },

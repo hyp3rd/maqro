@@ -358,8 +358,8 @@ export function NearbyStores() {
                       }
                       aria-label={
                         favIds.has(store.id)
-                          ? `Remove ${store.name} from favourites`
-                          : `Save ${store.name} to favourites`
+                          ? `Remove ${store.name} from favorites`
+                          : `Save ${store.name} to favorites`
                       }
                       className="shrink-0 text-muted-foreground transition-colors hover:text-amber-500"
                     >

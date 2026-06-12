@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 import * as db from "@/lib/db";
+import { reportStorageError } from "@/lib/storage-status";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { notifyDataChanged, subscribeDataChanged } from "./data-bus";
@@ -9,6 +10,11 @@ import { startRealtimeSubscription } from "./realtime";
 
 // Mock the IDB layer — applyServerX and deleteX are called by the
 // realtime handlers; tests assert on these.
+vi.mock("@/lib/storage-status", () => ({
+  reportStorageError: vi.fn(),
+  reportStorageOk: vi.fn(),
+}));
+
 vi.mock("@/lib/db", () => ({
   applyServerProfile: vi.fn(),
   applyServerDailyLog: vi.fn(),
@@ -204,6 +210,46 @@ describe("startRealtimeSubscription — payload dispatch", () => {
     expect(busCb).toHaveBeenCalledTimes(1);
 
     unsub();
+  });
+
+  it("routes a failed IDB apply to reportStorageError instead of dropping it", async () => {
+    const { sb, channels } = makeFakeSupabase();
+    startRealtimeSubscription(sb, USER_ID);
+
+    const customFoodsChannel = channels.find((c) => c.table === "custom_foods");
+    if (!customFoodsChannel) throw new Error("missing custom_foods channel");
+
+    // Quota / private-mode eviction: the IDB write rejects. Before the
+    // run() wrapper this escaped as an unhandled rejection and the
+    // storage-health banner never appeared.
+    vi.mocked(db.applyServerCustomFood).mockRejectedValueOnce(
+      new Error("QuotaExceededError"),
+    );
+
+    customFoodsChannel.onCallback({
+      eventType: "INSERT",
+      new: {
+        id: "abc",
+        user_id: USER_ID,
+        name: "Tofu",
+        protein: 8,
+        carbs: 2,
+        fat: 4,
+        calories: 76,
+        brand: null,
+        category: null,
+        sub_category: null,
+        diet_kind: null,
+        created_at: "2026-05-16T12:00:00Z",
+        updated_at: "2026-05-16T12:00:00Z",
+      },
+      old: {},
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(vi.mocked(reportStorageError)).toHaveBeenCalledTimes(1);
   });
 
   it("skips own-echo on profile (incoming updated_at matches local serverUpdatedAt)", async () => {

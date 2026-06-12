@@ -3,8 +3,9 @@
 import type { ResolvedPantryScan } from "@/app/api/identify-pantry/route";
 import { CameraView } from "@/components/capture/CameraView";
 import { Button } from "@/components/ui/button";
+import { useModalOverlay } from "@/hooks/use-modal-overlay";
 import { clientFetch } from "@/lib/auth/client-fetch";
-import { useEffect, useState } from "react";
+import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertCircle, Loader2, X } from "lucide-react";
 
@@ -34,30 +35,18 @@ type Phase =
   | { kind: "error"; message: string };
 
 export function PantryScanSheet({ open, onOpenChange, onScanResolved }: Props) {
-  useEffect(() => {
-    if (!open) return;
-    const htmlEl = document.documentElement;
-    const bodyEl = document.body;
-    const prevHtmlOverflow = htmlEl.style.overflow;
-    const prevBodyOverflow = bodyEl.style.overflow;
-    htmlEl.style.overflow = "hidden";
-    bodyEl.style.overflow = "hidden";
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onOpenChange(false);
-    }
-    window.addEventListener("keydown", onKey);
-    return () => {
-      htmlEl.style.overflow = prevHtmlOverflow;
-      bodyEl.style.overflow = prevBodyOverflow;
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open, onOpenChange]);
+  // Scroll-lock, Escape, focus-into-dialog + trap + restore — the shared
+  // overlay contract (see hooks/use-modal-overlay.ts).
+  const containerRef = useRef<HTMLDivElement>(null);
+  useModalOverlay(open, containerRef, () => onOpenChange(false));
 
   if (!open) return null;
   if (typeof document === "undefined") return null;
 
   return createPortal(
     <div
+      ref={containerRef}
+      tabIndex={-1}
       role="dialog"
       aria-modal="true"
       aria-label="Scan pantry"

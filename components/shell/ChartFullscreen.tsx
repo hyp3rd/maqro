@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useModalOverlay } from "@/hooks/use-modal-overlay";
+import { useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { RotateCcw, X } from "lucide-react";
 import { motion } from "motion/react";
@@ -69,27 +70,12 @@ export function ChartFullscreen({ onClose, title, children }: Props) {
   const lastTap = useRef(0);
   const portrait = useIsPortrait();
 
-  // Lock body scroll and wire Escape, matching CameraSheet /
-  // FoodSearchSheet. The overlay is mounted only while open (by the
-  // parent, via AnimatePresence), so transform state starts fresh from
-  // `IDENTITY` — no reset effect needed.
-  useEffect(() => {
-    const html = document.documentElement;
-    const body = document.body;
-    const prevHtml = html.style.overflow;
-    const prevBody = body.style.overflow;
-    html.style.overflow = "hidden";
-    body.style.overflow = "hidden";
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => {
-      html.style.overflow = prevHtml;
-      body.style.overflow = prevBody;
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
+  // Scroll-lock, Escape, focus-into-dialog + trap + restore — the shared
+  // overlay contract. The overlay is mounted only while open (by the parent,
+  // via AnimatePresence), so `open` is simply true and transform state
+  // starts fresh from `IDENTITY` — no reset effect needed.
+  const containerRef = useRef<HTMLDivElement>(null);
+  useModalOverlay(true, containerRef, onClose);
 
   if (typeof document === "undefined") return null;
 
@@ -175,6 +161,11 @@ export function ChartFullscreen({ onClose, title, children }: Props) {
 
   return createPortal(
     <motion.div
+      ref={containerRef}
+      tabIndex={-1}
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}

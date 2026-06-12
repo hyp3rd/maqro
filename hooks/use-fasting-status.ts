@@ -21,6 +21,7 @@ import { reportStorageError } from "@/lib/storage-status";
 import { bumpPending } from "@/lib/sync-status";
 import { notifyDataChanged, useDataRev } from "@/lib/sync/data-bus";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 
 /** Live intermittent-fasting status + mutators, usable from ANY surface
  *  (the day-view card AND the Topbar chip, which sits outside
@@ -54,6 +55,11 @@ export function useFastingStatus(): {
 } {
   const [profile, setProfile] = useState<PersonalInfo | null>(null);
   const [logs, setLogs] = useState<DailyLog[]>([]);
+  // Load *completion*, not data presence: getProfile() legitimately returns
+  // null for a never-saved profile, and conflating the two ("hydrated =
+  // profile !== null") blanked the Fasting page/card permanently for fresh
+  // users and on read failure. Same pattern as useProfile.
+  const [hydrated, setHydrated] = useState(false);
   const profileRev = useDataRev("profile");
   const logsRev = useDataRev("dailyLogs");
   const now = useNow();
@@ -65,12 +71,14 @@ export function useFastingStatus(): {
         if (cancelled) return;
         setProfile(p);
         setLogs(l);
+        setHydrated(true);
       })
       .catch((err) => {
         if (cancelled) return;
         reportStorageError(err);
         setProfile(null);
         setLogs([]);
+        setHydrated(true);
       });
     return () => {
       cancelled = true;
@@ -89,7 +97,16 @@ export function useFastingStatus(): {
   const writeFasting = useCallback(async (patch: Partial<FastingConfig>) => {
     try {
       const p = await getProfile();
-      if (!p) return;
+      if (!p) {
+        // Fasting config persists inside the profile row; without one there
+        // is nothing to write to. Seeding a synthetic profile here could
+        // clobber a real server profile mid-initial-sync (see useProfile),
+        // so tell the user instead of leaving the CTA a silent dead button.
+        toast.error(
+          "Set up your profile first — fasting tracking saves to it.",
+        );
+        return;
+      }
       const nextFasting: FastingConfig = {
         enabled: false,
         protocol: "16:8",
@@ -153,7 +170,7 @@ export function useFastingStatus(): {
     fasting,
     fastingHours,
     logs,
-    isHydrated: profile !== null,
+    isHydrated: hydrated,
     startFast,
     stopFast,
     disableFasting,

@@ -1,4 +1,5 @@
 import type { DailyLog } from "@/lib/db";
+import { addDays } from "@maqro/core/date";
 
 /** Derived streak state for the user's daily-log history. The
  *  longest streak is the all-time best; the current streak is the
@@ -25,20 +26,6 @@ export type StreakState = {
  *  user would start with a streak just for opening the app. */
 function isLogged(log: DailyLog): boolean {
   return log.meals.some((m) => m.foods.length > 0);
-}
-
-/** Increment a `YYYY-MM-DD` date string by `days` (positive or
- *  negative). Local-date arithmetic - we treat the date key as a
- *  calendar marker, not a timestamp, so DST and timezone shifts
- *  don't matter. */
-function addDays(date: string, days: number): string {
-  const [y, m, d] = date.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  dt.setDate(dt.getDate() + days);
-  const yy = dt.getFullYear();
-  const mm = (dt.getMonth() + 1).toString().padStart(2, "0");
-  const dd = dt.getDate().toString().padStart(2, "0");
-  return `${yy}-${mm}-${dd}`;
 }
 
 /** Compute the current + longest streak from a daily-log history.

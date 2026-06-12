@@ -1,16 +1,7 @@
 "use client";
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { DestructiveConfirmDialog } from "@/components/ui/destructive-confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -419,32 +410,14 @@ function ShareBody({
         </Button>
       </DialogFooter>
 
-      <AlertDialog
+      <DestructiveConfirmDialog
         open={confirmingRevoke}
         onOpenChange={setConfirmingRevoke}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Revoke this link?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Anyone with the URL will get a 404. You can create a new link
-              later, but it&apos;ll be a different URL.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                setConfirmingRevoke(false);
-                void revoke();
-              }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Revoke link
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title="Revoke this link?"
+        description="Anyone with the URL will get a 404. You can create a new link later, but it'll be a different URL."
+        actionLabel="Revoke link"
+        onConfirm={() => void revoke()}
+      />
     </>
   );
 }
