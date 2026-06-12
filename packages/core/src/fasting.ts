@@ -1,3 +1,4 @@
+import { addDays } from "./date";
 import type { DailyLog, Versioned } from "./records";
 import type { Meal, PersonalInfo } from "./types";
 
@@ -227,17 +228,6 @@ export function lateCaloriePct(meals: Meal[], cutoffHour: number): number {
   }
   if (total <= 0) return 0;
   return Math.round((late / total) * 100);
-}
-
-/** Increment a `YYYY-MM-DD` key by `days` in local-calendar terms. */
-function addDays(date: string, days: number): string {
-  const [y, m, d] = date.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  dt.setDate(dt.getDate() + days);
-  const yy = dt.getFullYear();
-  const mm = (dt.getMonth() + 1).toString().padStart(2, "0");
-  const dd = dt.getDate().toString().padStart(2, "0");
-  return `${yy}-${mm}-${dd}`;
 }
 
 export type FastingStreak = { current: number; longest: number };

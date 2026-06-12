@@ -1,16 +1,7 @@
 "use client";
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { DestructiveConfirmDialog } from "@/components/ui/destructive-confirm-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -680,34 +671,15 @@ export function MyFoodsView({ onChange }: { onChange?: () => void }) {
         onSave={handleConfirmOffSave}
       />
 
-      <AlertDialog
+      <DestructiveConfirmDialog
         open={pendingDelete !== null}
         onOpenChange={(o) => {
           if (!o) setPendingDelete(null);
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Delete &ldquo;{pendingDelete?.name}&rdquo;?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              This removes the food from My Foods. Past meal logs that already
-              contain it keep their entries — only future searches will stop
-              suggesting it.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmDelete}
-              className="bg-red-600 text-white hover:bg-red-700"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title={<>Delete &ldquo;{pendingDelete?.name}&rdquo;?</>}
+        description="This removes the food from My Foods. Past meal logs that already contain it keep their entries — only future searches will stop suggesting it."
+        onConfirm={confirmDelete}
+      />
     </div>
   );
 }

@@ -61,11 +61,13 @@ import { FEATURES } from "./lib/billing/tiers";
 import {
   addCustomFood,
   customToFood,
+  getDailyLog,
   listCustomFoods,
   listDailyLogs,
   listMealSchedules,
   listPantryItems,
   listRecipes,
+  saveDailyLog,
   todayKey,
   type MealSchedule,
   type MealTemplate,
@@ -77,6 +79,7 @@ import {
   aggregateMacroBreakdown,
   computeMacros,
   rescaleFoodMacros,
+  scaleSubMacros,
 } from "./lib/macros";
 import { getMarket, setHomeMarket } from "./lib/market";
 import { planDay, summarisePlan } from "./lib/meal-planner";
@@ -93,6 +96,7 @@ import { replanPantryDeltas } from "./lib/pantry/replan";
 import { extractFoodPreferences } from "./lib/personalization/preferences";
 import { computeSlotBudget } from "./lib/recipe-ranking";
 import { scaleRecipeIngredients } from "./lib/scale-recipe";
+import { reportStorageError } from "./lib/storage-status";
 import { bumpPending, useSyncStatus } from "./lib/sync-status";
 import { useDataRev } from "./lib/sync/data-bus";
 
@@ -317,14 +321,23 @@ const MacroCalculator = () => {
   const [explicitDate, setExplicitDate] = useState<string | null>(null);
   const selectedDate = explicitDate ?? today;
 
-  const { meals, setMeals } = useDailyLog(selectedDate, DEFAULT_MEALS);
-  // Latest meals for deferred callbacks (the remove-food Undo toast fires after
-  // the removing render), since setMeals isn't a functional updater. Synced in
-  // an effect because writing a ref during render is disallowed.
+  const {
+    meals,
+    setMeals,
+    isHydrated: dayHydrated,
+  } = useDailyLog(selectedDate, DEFAULT_MEALS);
+  // Latest meals / selected date / hydration for deferred callbacks (the Undo
+  // toasts fire seconds after the removing render, possibly after the user
+  // navigated to another day) — setMeals isn't a functional updater. Synced in
+  // an effect because writing refs during render is disallowed.
   const mealsRef = useRef(meals);
+  const selectedDateRef = useRef(selectedDate);
+  const dayHydratedRef = useRef(dayHydrated);
   useEffect(() => {
     mealsRef.current = meals;
-  }, [meals]);
+    selectedDateRef.current = selectedDate;
+    dayHydratedRef.current = dayHydrated;
+  }, [meals, selectedDate, dayHydrated]);
 
   // State for new food being added
   const [newFood, setNewFood] = useState<FoodItem>({
@@ -700,14 +713,6 @@ const MacroCalculator = () => {
     setSelectedFood(food);
     setFoodSearch(food.name);
     const ratio = portionSize / 100;
-    // Helper: scale an optional per-100g sub-macro to the chosen
-    // portion. Returns undefined when the source food doesn't carry a
-    // value - preserved so the daily-totals breakdown can distinguish
-    // "unknown" from "zero" downstream.
-    const scaleOpt = (v: number | undefined) =>
-      typeof v === "number"
-        ? Number.parseFloat((v * ratio).toFixed(1))
-        : undefined;
     setNewFood({
       ...newFood,
       name: food.name,
@@ -715,13 +720,10 @@ const MacroCalculator = () => {
       carbs: Number.parseFloat((food.carbs * ratio).toFixed(1)),
       fat: Number.parseFloat((food.fat * ratio).toFixed(1)),
       calories: Math.round(food.calories * ratio),
-      sugars: scaleOpt(food.sugars),
-      addedSugars: scaleOpt(food.addedSugars),
-      fiber: scaleOpt(food.fiber),
-      saturatedFat: scaleOpt(food.saturatedFat),
-      transFat: scaleOpt(food.transFat),
-      monoFat: scaleOpt(food.monoFat),
-      polyFat: scaleOpt(food.polyFat),
+      // Every sub-macro key comes back explicitly (value or undefined), so
+      // selecting a new food clears the previous selection's stale values
+      // out of the spread-over newFood state.
+      ...scaleSubMacros(food, ratio),
       // Per-100g micronutrients pass through UNSCALED — the micro
       // aggregator scales by portion/100 itself (same as it does for
       // the name-keyed profile cache), so storing the raw per-100g
@@ -1178,10 +1180,6 @@ const MacroCalculator = () => {
   const logFoodToMeal = (food: Food, mealId: number, grams: number) => {
     if (grams <= 0) return;
     const ratio = grams / 100;
-    const scaleOpt = (v: number | undefined) =>
-      typeof v === "number"
-        ? Number.parseFloat((v * ratio).toFixed(1))
-        : undefined;
     const drawDown = planFoodDrawDown(food.name, grams);
     const item: FoodItem = {
       id: Date.now(),
@@ -1191,13 +1189,7 @@ const MacroCalculator = () => {
       fat: Number.parseFloat((food.fat * ratio).toFixed(1)),
       calories: Math.round(food.calories * ratio),
       portionSize: grams,
-      sugars: scaleOpt(food.sugars),
-      addedSugars: scaleOpt(food.addedSugars),
-      fiber: scaleOpt(food.fiber),
-      saturatedFat: scaleOpt(food.saturatedFat),
-      transFat: scaleOpt(food.transFat),
-      monoFat: scaleOpt(food.monoFat),
-      polyFat: scaleOpt(food.polyFat),
+      ...scaleSubMacros(food, ratio),
       micronutrients: food.micronutrients,
       pantrySource: drawDown ?? undefined,
       originalValues: {
@@ -1310,22 +1302,59 @@ const MacroCalculator = () => {
     setLogMealOpen(true);
   };
 
-  /** Re-insert an undone food at its original position (clamped to the current
-   *  meal) and re-draw the pantry if it was linked. Reads the latest meals via
-   *  the ref since the Undo toast's onClick fires after the removing render. */
+  /** Shared Undo-restore plumbing. The toast outlives day navigation and meal
+   *  ids repeat across days (DEFAULT_MEALS 1–4), so a bare setMeals would land
+   *  the foods on whichever day is selected when Undo is tapped — or be
+   *  clobbered mid day-switch by the hook's load effect. While the captured
+   *  day is still displayed AND hydrated, restore in memory (keeps edits the
+   *  500 ms write debounce hasn't flushed); otherwise write straight to that
+   *  date's IDB row — saveDailyLog's data-bus notify re-hydrates the hook if
+   *  the user switches back. Pantry re-draws only after the restore lands. */
+  const restoreIntoDay = (
+    date: string,
+    patch: (meals: Meal[]) => Meal[],
+    pantryDraws: FoodItem[],
+  ) => {
+    const redraw = () => {
+      for (const f of pantryDraws) {
+        if (f.pantrySource) {
+          applyPantryDelta(f.pantrySource.itemId, f.pantrySource.consumedQty);
+        }
+      }
+    };
+    if (date === selectedDateRef.current && dayHydratedRef.current) {
+      setMeals(patch(mealsRef.current));
+      redraw();
+      return;
+    }
+    void (async () => {
+      try {
+        const log = await getDailyLog(date);
+        await saveDailyLog(date, patch(log?.meals ?? DEFAULT_MEALS));
+        bumpPending();
+        redraw();
+      } catch (err) {
+        reportStorageError(err);
+        toast.error("Couldn't undo. Try again.");
+      }
+    })();
+  };
+
   /** Re-add every food cleared from a meal and re-draw their pantry links —
    *  the Undo path for `clearMeal`. */
-  const restoreClearedMeal = (mealId: number, foods: FoodItem[]) => {
-    setMeals(
-      mealsRef.current.map((m) =>
-        m.id === mealId ? { ...m, foods: [...m.foods, ...foods] } : m,
-      ),
+  const restoreClearedMeal = (
+    date: string,
+    mealId: number,
+    foods: FoodItem[],
+  ) => {
+    restoreIntoDay(
+      date,
+      (ms) =>
+        ms.map((m) =>
+          m.id === mealId ? { ...m, foods: [...m.foods, ...foods] } : m,
+        ),
+      foods,
     );
-    for (const f of foods) {
-      if (f.pantrySource) {
-        applyPantryDelta(f.pantrySource.itemId, f.pantrySource.consumedQty);
-      }
-    }
   };
 
   // Clear every food from a meal in one go (the meal's "Clear meal" menu
@@ -1344,29 +1373,32 @@ const MacroCalculator = () => {
     toast(`Cleared ${meal.name}`, {
       action: {
         label: "Undo",
-        onClick: () => restoreClearedMeal(mealId, cleared),
+        onClick: () => restoreClearedMeal(selectedDate, mealId, cleared),
       },
     });
   };
 
+  /** Re-insert an undone food at its original position (clamped) on the day
+   *  it was removed from — the Undo path for `removeFood`. */
   const restoreRemovedFood = (
+    date: string,
     mealId: number,
     food: FoodItem,
     index: number,
   ) => {
-    setMeals(
-      mealsRef.current.map((m) => {
-        if (m.id !== mealId) return m;
-        const at = Math.max(0, Math.min(index, m.foods.length));
-        return {
-          ...m,
-          foods: [...m.foods.slice(0, at), food, ...m.foods.slice(at)],
-        };
-      }),
+    restoreIntoDay(
+      date,
+      (ms) =>
+        ms.map((m) => {
+          if (m.id !== mealId) return m;
+          const at = Math.max(0, Math.min(index, m.foods.length));
+          return {
+            ...m,
+            foods: [...m.foods.slice(0, at), food, ...m.foods.slice(at)],
+          };
+        }),
+      [food],
     );
-    if (food.pantrySource) {
-      applyPantryDelta(food.pantrySource.itemId, food.pantrySource.consumedQty);
-    }
   };
 
   // Remove a food from a meal, with an Undo toast — instant-with-recovery on
@@ -1395,7 +1427,7 @@ const MacroCalculator = () => {
     toast(`Removed ${removed.name}`, {
       action: {
         label: "Undo",
-        onClick: () => restoreRemovedFood(mealId, removed, index),
+        onClick: () => restoreRemovedFood(selectedDate, mealId, removed, index),
       },
     });
   };

@@ -1,5 +1,7 @@
-import type { Food, FoodItem, MacroBreakdown } from "@/components/macro/types";
+import type { Food, FoodItem } from "@/components/macro/types";
 import type { DailyLog } from "@/lib/db";
+import { scaleSubMacros } from "@/lib/macros";
+import { addDays } from "@maqro/core/date";
 
 /** Ranking for the quick-add list: most-recently-logged first, or
  *  most-frequently-logged first (your staples). */
@@ -29,33 +31,13 @@ function round1(v: number): number {
   return Number.parseFloat(v.toFixed(1));
 }
 
-/** Copy the optional sub-macros, scaling each present value (×1 when the
- *  source is already per-100g, ×ratio when dividing a scaled item back
- *  out). Explicit per field so the result is a clean `MacroBreakdown`
- *  with no stray keys. */
-function subMacros(src: MacroBreakdown, scale: number): MacroBreakdown {
-  const out: MacroBreakdown = {};
-  if (typeof src.sugars === "number") out.sugars = round1(src.sugars * scale);
-  if (typeof src.addedSugars === "number")
-    out.addedSugars = round1(src.addedSugars * scale);
-  if (typeof src.fiber === "number") out.fiber = round1(src.fiber * scale);
-  if (typeof src.saturatedFat === "number")
-    out.saturatedFat = round1(src.saturatedFat * scale);
-  if (typeof src.transFat === "number")
-    out.transFat = round1(src.transFat * scale);
-  if (typeof src.monoFat === "number")
-    out.monoFat = round1(src.monoFat * scale);
-  if (typeof src.polyFat === "number")
-    out.polyFat = round1(src.polyFat * scale);
-  return out;
-}
-
 /** Reconstruct an addable per-100g `Food` from a logged item. The 4 main macros
  *  come from the frozen `originalValues` snapshot when present (exact), else
  *  they're divided back out of the scaled values by the portion. The
  *  MacroBreakdown sub-macros are ALWAYS divided back out of the scaled top-level
- *  values — `originalValues` only ever captured the 4 mains, so reading the
- *  sub-macros from it silently dropped the breakdown on re-add. */
+ *  values (via the shared `scaleSubMacros`) — `originalValues` only ever
+ *  captured the 4 mains, so reading the sub-macros from it silently dropped
+ *  the breakdown on re-add. */
 function foodFromLoggedItem(item: FoodItem): Food {
   const ov = item.originalValues;
   // Guard the divide so a zero portion can never produce NaN/Infinity.
@@ -67,7 +49,7 @@ function foodFromLoggedItem(item: FoodItem): Food {
     fat: ov ? ov.fatPer100g : round1(item.fat * per100),
     calories: ov ? ov.caloriesPer100g : round1(item.calories * per100),
     micronutrients: item.micronutrients,
-    ...subMacros(item, per100),
+    ...scaleSubMacros(item, per100),
   };
 }
 
@@ -95,7 +77,7 @@ export function recentLoggedFoods(
   const windowDays = opts.windowDays ?? DEFAULT_WINDOW_DAYS;
   const limit = opts.limit ?? DEFAULT_LIMIT;
   const sort = opts.sort ?? "recent";
-  const cutoff = dateMinusDays(opts.todayKey, windowDays);
+  const cutoff = addDays(opts.todayKey, -windowDays);
 
   type Acc = { name: string; item: FoodItem; lastDate: string; count: number };
   const byName = new Map<string, Acc>();
@@ -175,7 +157,7 @@ export function pastMealsForSlot(
 ): PastMeal[] {
   const windowDays = opts.windowDays ?? DEFAULT_WINDOW_DAYS;
   const limit = opts.limit ?? DEFAULT_PAST_MEAL_LIMIT;
-  const cutoff = dateMinusDays(opts.todayKey, windowDays);
+  const cutoff = addDays(opts.todayKey, -windowDays);
   const slot = slotName.trim().toLowerCase();
   if (!slot) return [];
 
@@ -202,17 +184,4 @@ export function pastMealsForSlot(
   }
   out.sort((a, b) => (a.date < b.date ? 1 : -1));
   return out.slice(0, limit);
-}
-
-/** YYYY-MM-DD calendar arithmetic — treat the key as a date marker, not a
- *  timestamp, so DST/timezone can't move the cutoff. Mirrors the helper in
- *  [lib/personalization/preferences.ts](./personalization/preferences.ts). */
-function dateMinusDays(date: string, days: number): string {
-  const [y, m, d] = date.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  dt.setDate(dt.getDate() - days);
-  const yy = dt.getFullYear();
-  const mm = (dt.getMonth() + 1).toString().padStart(2, "0");
-  const dd = dt.getDate().toString().padStart(2, "0");
-  return `${yy}-${mm}-${dd}`;
 }

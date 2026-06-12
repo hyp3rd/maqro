@@ -2,18 +2,9 @@
 
 import type { ResolvedPantryScan } from "@/app/api/identify-pantry/route";
 import { SwipeRow } from "@/components/gestures/SwipeRow";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DestructiveConfirmDialog } from "@/components/ui/destructive-confirm-dialog";
 import {
   Dialog,
   DialogContent,
@@ -530,32 +521,20 @@ export function PantryView({ aiAvailable = false }: { aiAvailable?: boolean }) {
         )}
       </section>
 
-      <AlertDialog
+      <DestructiveConfirmDialog
         open={pendingDelete !== null}
         onOpenChange={(o) => {
           if (!o) setPendingDelete(null);
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove from pantry?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingDelete
-                ? `"${pendingDelete.name}" will be removed from your pantry on all your devices.`
-                : ""}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => pendingDelete && handleDelete(pendingDelete)}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Remove
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title="Remove from pantry?"
+        description={
+          pendingDelete
+            ? `"${pendingDelete.name}" will be removed from your pantry on all your devices.`
+            : ""
+        }
+        actionLabel="Remove"
+        onConfirm={() => pendingDelete && handleDelete(pendingDelete)}
+      />
 
       {aiAvailable && (
         <>
@@ -953,7 +932,7 @@ function PantryItemEditor({
           inputMode="decimal"
           placeholder="g/ml (1)"
           className="h-8 w-20 text-center text-sm"
-          aria-label="Density in grams per millilitre"
+          aria-label="Density in grams per milliliter"
         />
       )}
       {/* Per-item low-stock override ("warn when ≤ this many"). Blank =

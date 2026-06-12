@@ -16,6 +16,7 @@ import {
   applyServerDeletion,
   getProfileRecord,
 } from "@/lib/db";
+import { reportStorageError } from "@/lib/storage-status";
 import type {
   RealtimeChannel,
   RealtimePostgresChangesPayload,
@@ -101,9 +102,7 @@ export function startRealtimeSubscription(
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "profiles", filter },
-        (payload) => {
-          void handleProfile(payload);
-        },
+        run(handleProfile),
       )
       .subscribe(buildSubscribeHandler()),
   );
@@ -114,9 +113,7 @@ export function startRealtimeSubscription(
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "daily_logs", filter },
-        (payload) => {
-          void handleDailyLog(payload);
-        },
+        run(handleDailyLog),
       )
       .subscribe(buildSubscribeHandler()),
   );
@@ -127,9 +124,7 @@ export function startRealtimeSubscription(
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "weight_history", filter },
-        (payload) => {
-          void handleWeight(payload);
-        },
+        run(handleWeight),
       )
       .subscribe(buildSubscribeHandler()),
   );
@@ -140,9 +135,7 @@ export function startRealtimeSubscription(
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "water_intake", filter },
-        (payload) => {
-          void handleWater(payload);
-        },
+        run(handleWater),
       )
       .subscribe(buildSubscribeHandler()),
   );
@@ -153,9 +146,7 @@ export function startRealtimeSubscription(
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "custom_foods", filter },
-        (payload) => {
-          void handleCustomFood(payload);
-        },
+        run(handleCustomFood),
       )
       .subscribe(buildSubscribeHandler()),
   );
@@ -166,9 +157,7 @@ export function startRealtimeSubscription(
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "meal_templates", filter },
-        (payload) => {
-          void handleMealTemplate(payload);
-        },
+        run(handleMealTemplate),
       )
       .subscribe(buildSubscribeHandler()),
   );
@@ -179,9 +168,7 @@ export function startRealtimeSubscription(
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "recipes", filter },
-        (payload) => {
-          void handleRecipe(payload);
-        },
+        run(handleRecipe),
       )
       .subscribe(buildSubscribeHandler()),
   );
@@ -192,9 +179,7 @@ export function startRealtimeSubscription(
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "pantry_items", filter },
-        (payload) => {
-          void handlePantryItem(payload);
-        },
+        run(handlePantryItem),
       )
       .subscribe(buildSubscribeHandler()),
   );
@@ -205,9 +190,7 @@ export function startRealtimeSubscription(
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "pantry_notifications", filter },
-        (payload) => {
-          void handlePantryNotification(payload);
-        },
+        run(handlePantryNotification),
       )
       .subscribe(buildSubscribeHandler()),
   );
@@ -218,9 +201,7 @@ export function startRealtimeSubscription(
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "favorite_stores", filter },
-        (payload) => {
-          void handleFavoriteStore(payload);
-        },
+        run(handleFavoriteStore),
       )
       .subscribe(buildSubscribeHandler()),
   );
@@ -230,9 +211,7 @@ export function startRealtimeSubscription(
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "favorite_foods", filter },
-        (payload) => {
-          void handleFavoriteFood(payload);
-        },
+        run(handleFavoriteFood),
       )
       .subscribe(buildSubscribeHandler()),
   );
@@ -248,9 +227,7 @@ export function startRealtimeSubscription(
           table: "micronutrient_profiles",
           filter,
         },
-        (payload) => {
-          void handleMicronutrientProfile(payload);
-        },
+        run(handleMicronutrientProfile),
       )
       .subscribe(buildSubscribeHandler()),
   );
@@ -273,6 +250,17 @@ export function startRealtimeSubscription(
  *  generic on the callback isn't propagated. We cast inside each
  *  handler. */
 type LoosePayload = RealtimePostgresChangesPayload<Record<string, unknown>>;
+
+/** Wrap an async payload handler for `.on(...)`: a failed IDB apply (quota,
+ *  private-mode eviction, closed connection) surfaces through the
+ *  storage-health banner via `reportStorageError` instead of vanishing as an
+ *  unhandled rejection — a silently dropped cross-device change is exactly
+ *  the failure that banner exists for. */
+function run(handler: (payload: LoosePayload) => Promise<void>) {
+  return (payload: LoosePayload) => {
+    handler(payload).catch(reportStorageError);
+  };
+}
 
 /** Helper: pull a typed `new` payload out of a postgres_changes event,
  *  guarding against partial rows (Realtime sometimes sends only PK

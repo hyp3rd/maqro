@@ -5,50 +5,45 @@ import { useRecentFoods } from "@/hooks/use-recent-foods";
 import type { RecentSort } from "@/lib/recent-foods";
 import { cn } from "@/lib/utils";
 import { useState, type ReactNode } from "react";
-import { Plus, Search, Star } from "lucide-react";
+import { Plus, Star } from "lucide-react";
 import type { Food } from "./types";
 
 /** The three sources the quick-add card switches between. `recent` and
- *  `frequent` are the same logged foods under a different sort; `favourites`
+ *  `frequent` are the same logged foods under a different sort; `favorites`
  *  is the explicitly-pinned list. */
-type QuickAddTab = "recent" | "frequent" | "favourites";
+type QuickAddTab = "recent" | "frequent" | "favorites";
 
-const TABS: QuickAddTab[] = ["recent", "frequent", "favourites"];
+const TABS: QuickAddTab[] = ["recent", "frequent", "favorites"];
 
 /** A single bounded "Quick add" card shared by the food-search empty state
- *  and the meal hub. One segmented control switches the source (Recent ·
- *  Frequent · Favourites); the active list scrolls inside a fixed height so
- *  the card never grows into a wall. Each row one-tap re-adds at its last
- *  portion via `onAdd`, with a star to pin/unpin (synced).
- *
- *  `onSearch` (hub only) surfaces a Search button in the header — omitted in
- *  the food-search sheet, where the user is already searching. Renders
- *  nothing until loaded; when there's nothing to surface *and* no search
- *  entry, `emptyFallback` shows instead. */
+ *  and the Log-meal method step. One segmented control switches the source
+ *  (Recent · Frequent · Favorites); the active list scrolls inside a fixed
+ *  height so the card never grows into a wall. Each row one-tap re-adds at
+ *  its last portion via `onAdd`, with a star to pin/unpin (synced). Renders
+ *  nothing until loaded; when there's nothing to surface, `emptyFallback`
+ *  shows instead. */
 export function QuickAddFoods({
   onAdd,
-  onSearch,
   emptyFallback,
 }: {
   onAdd: (food: Food, portion: number) => void;
-  onSearch?: () => void;
   emptyFallback?: ReactNode;
 }) {
   const [tab, setTab] = useState<QuickAddTab>("recent");
-  // `favourites` doesn't re-sort the recents read; keep it on "recent".
+  // `favorites` doesn't re-sort the recents read; keep it on "recent".
   const recentSort: RecentSort = tab === "frequent" ? "frequent" : "recent";
   const { recents, loaded } = useRecentFoods({ limit: 12, sort: recentSort });
   const { favorites, isFavorite, toggle } = useFavoriteFoods();
 
   if (!loaded) return null;
 
-  // With no recents, no favourites and no way to search from here, defer to
-  // the caller's fallback (e.g. the search sheet's "start typing" hint).
-  if (recents.length === 0 && favorites.length === 0 && !onSearch) {
+  // With no recents and no favorites, defer to the caller's fallback
+  // (e.g. the search sheet's "start typing" hint).
+  if (recents.length === 0 && favorites.length === 0) {
     return <>{emptyFallback ?? null}</>;
   }
 
-  const isFav = tab === "favourites";
+  const isFav = tab === "favorites";
   const rows = isFav
     ? favorites.map((f) => ({
         key: f.id,
@@ -89,16 +84,6 @@ export function QuickAddFoods({
             </button>
           ))}
         </div>
-        {onSearch && (
-          <button
-            type="button"
-            onClick={onSearch}
-            className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-border/60 px-2.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <Search className="h-3.5 w-3.5" />
-            Search
-          </button>
-        )}
       </div>
 
       {rows.length > 0 ? (
@@ -121,7 +106,7 @@ export function QuickAddFoods({
       ) : (
         <p className="px-1 py-5 text-center text-xs text-muted-foreground">
           {isFav
-            ? "No favourites yet — tap the ☆ on any food to pin it."
+            ? "No favorites yet — tap the ☆ on any food to pin it."
             : "No recent foods yet — they'll show up here as you log."}
         </p>
       )}
@@ -171,7 +156,7 @@ function FoodRow({
       <button
         type="button"
         onClick={onToggleFavorite}
-        aria-label={favorited ? `Unfavourite ${name}` : `Favourite ${name}`}
+        aria-label={favorited ? `Unfavorite ${name}` : `Favorite ${name}`}
         aria-pressed={favorited}
         className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground"
       >

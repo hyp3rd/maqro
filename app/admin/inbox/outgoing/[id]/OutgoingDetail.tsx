@@ -109,7 +109,7 @@ export function OutgoingDetail({ id }: { id: string }) {
         toast.error(body.error ?? `Cancel failed (${res.status})`);
         return;
       }
-      toast.success("Scheduled send cancelled.");
+      toast.success("Scheduled send canceled.");
       setReloadKey((k) => k + 1);
     } finally {
       setCancelling(false);
@@ -217,7 +217,7 @@ export function OutgoingDetail({ id }: { id: string }) {
                 className="h-8 gap-1.5 border-red-500/40 text-red-700 hover:bg-red-500/10 hover:text-red-700 dark:text-red-400 dark:hover:text-red-400"
               >
                 <XCircle className="h-3.5 w-3.5" />
-                {cancelling ? "Cancelling…" : "Cancel scheduled send"}
+                {cancelling ? "Canceling…" : "Cancel scheduled send"}
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
@@ -240,7 +240,7 @@ export function OutgoingDetail({ id }: { id: string }) {
                   disabled={cancelling}
                   className="bg-red-600 text-white hover:bg-red-700"
                 >
-                  {cancelling ? "Cancelling…" : "Cancel send"}
+                  {cancelling ? "Canceling…" : "Cancel send"}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>

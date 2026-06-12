@@ -1,4 +1,5 @@
 import type { DailyLog } from "@/lib/db";
+import { addDays } from "@maqro/core/date";
 
 /** One food + how often the user has eaten it in the lookback
  *  window. `name` is the verbatim string the user logged — that's
@@ -59,7 +60,7 @@ export function extractFoodPreferences(
 ): FoodPreference[] {
   const windowDays = opts.windowDays ?? DEFAULT_WINDOW_DAYS;
   const topN = opts.topN ?? DEFAULT_TOP_N;
-  const cutoff = dateMinusDays(opts.todayKey, windowDays);
+  const cutoff = addDays(opts.todayKey, -windowDays);
 
   const counts = new Map<string, number>();
   for (const log of logs) {
@@ -88,18 +89,4 @@ export function extractFoodPreferences(
       return a.name.localeCompare(b.name);
     })
     .slice(0, topN);
-}
-
-/** YYYY-MM-DD arithmetic. We treat the date key as a calendar
- *  marker, not a timestamp, so DST and timezone shifts can't
- *  change the cutoff. Mirrors the helper in
- *  [lib/streaks.ts](../streaks.ts). */
-function dateMinusDays(date: string, days: number): string {
-  const [y, m, d] = date.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  dt.setDate(dt.getDate() - days);
-  const yy = dt.getFullYear();
-  const mm = (dt.getMonth() + 1).toString().padStart(2, "0");
-  const dd = dt.getDate().toString().padStart(2, "0");
-  return `${yy}-${mm}-${dd}`;
 }

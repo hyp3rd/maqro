@@ -1,8 +1,9 @@
 "use client";
 
 import { useFoodSearch } from "@/hooks/use-food-search";
+import { useModalOverlay } from "@/hooks/use-modal-overlay";
 import { cn } from "@/lib/utils";
-import { useEffect, useState } from "react";
+import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, Loader2, Minus, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
@@ -58,30 +59,17 @@ export function FoodSearchSheet({
   onLogFood,
   onBack,
 }: Props) {
-  // Body-scroll lock + Escape-to-close while open, matching CameraSheet.
-  useEffect(() => {
-    if (!open) return;
-    const htmlEl = document.documentElement;
-    const bodyEl = document.body;
-    const prevHtml = htmlEl.style.overflow;
-    const prevBody = bodyEl.style.overflow;
-    htmlEl.style.overflow = "hidden";
-    bodyEl.style.overflow = "hidden";
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onOpenChange(false);
-    }
-    window.addEventListener("keydown", onKey);
-    return () => {
-      htmlEl.style.overflow = prevHtml;
-      bodyEl.style.overflow = prevBody;
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open, onOpenChange]);
+  // Scroll-lock, Escape, focus trap + restore — the shared overlay contract.
+  // The search Input's autoFocus wins the initial focus (the hook honors it).
+  const containerRef = useRef<HTMLDivElement>(null);
+  useModalOverlay(open, containerRef, () => onOpenChange(false));
 
   if (!open || typeof document === "undefined") return null;
 
   return createPortal(
     <div
+      ref={containerRef}
+      tabIndex={-1}
       role="dialog"
       aria-modal="true"
       aria-label={`Add food to ${mealName}`}
@@ -121,18 +109,26 @@ function FoodSearchBody({
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [grams, setGrams] = useState(DEFAULT_GRAMS);
   const search = useFoodSearch(query, customFoodsRev);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   /** Log a food, toast, and collapse the editor. Shared by the inline Add
-   *  button (current grams), the per-row quick "+" (100 g), and QuickAddFoods
-   *  (a recent food's last portion). */
+   *  button (current grams), the per-row quick "+" (editor grams when open,
+   *  100 g otherwise), and QuickAddFoods (a recent food's last portion). */
   function logFood(food: Food, portion: number) {
     if (mealId === null || portion < 1) return;
+    // Inline add (Enter / "Add Xg") unmounts the editor with keyboard focus
+    // inside it, which would strand focus on <body> mid-list. Return it to
+    // the search box — the flow is search → add → search the next. Scoped to
+    // the inline path so the quick "+" and recents keep focus in place for
+    // repeat adds.
+    const wasInlineAdd = openKey === foodKey(food);
     onLogFood(food, mealId, portion);
     const kcal = Math.round((food.calories * portion) / 100);
     toast.success(
       `Added ${food.name} (${portion} g, ${kcal} kcal) to ${mealName}`,
     );
     setOpenKey(null);
+    if (wasInlineAdd) searchInputRef.current?.focus();
   }
 
   function toggleRow(food: Food) {
@@ -171,6 +167,7 @@ function FoodSearchBody({
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
+            ref={searchInputRef}
             value={query}
             onChange={(e) => {
               setQuery(e.target.value);
@@ -196,7 +193,10 @@ function FoodSearchBody({
               open={open}
               grams={open ? grams : DEFAULT_GRAMS}
               onToggle={() => toggleRow(food)}
-              onQuickAdd={() => logFood(food, DEFAULT_GRAMS)}
+              // With the row's editor open, the quick "+" honors the chosen
+              // grams — otherwise tapping it right after picking "50 g" would
+              // silently log 100 g. Closed rows keep the one-tap 100 g default.
+              onQuickAdd={() => logFood(food, open ? grams : DEFAULT_GRAMS)}
               onSetGrams={(g) => setGrams(g)}
               onAdd={() => logFood(food, grams)}
             />
@@ -258,6 +258,9 @@ function ResultRow({
           type="button"
           onClick={onToggle}
           aria-expanded={open}
+          // Only one editor is open at a time, so a single fixed id links
+          // every toggle to it; closed rows reference nothing.
+          aria-controls={open ? "food-portion-editor" : undefined}
           className="min-w-0 flex-1 text-left"
         >
           <span className="flex items-center gap-2">
@@ -282,15 +285,19 @@ function ResultRow({
           size="icon"
           className="h-9 w-9 shrink-0"
           onClick={onQuickAdd}
-          aria-label={`Add 100 g of ${food.name}`}
-          title="Add 100 g"
+          disabled={grams < 1}
+          aria-label={`Add ${grams} g of ${food.name}`}
+          title={`Add ${grams} g`}
         >
           <Plus className="h-4 w-4" />
         </Button>
       </div>
 
       {open && (
-        <div className="space-y-3 border-t border-border/60 px-3 py-3">
+        <div
+          id="food-portion-editor"
+          className="space-y-3 border-t border-border/60 px-3 py-3"
+        >
           <p className="flex flex-wrap items-center gap-x-2 font-mono text-xs tabular-nums">
             <span className="font-semibold text-foreground">{kcal} kcal</span>
             <span className="text-muted-foreground/40">·</span>

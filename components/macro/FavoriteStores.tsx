@@ -20,7 +20,7 @@ export function FavoriteStores() {
     <div className="space-y-2">
       <h4 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-        Favourite stores
+        Favorite stores
       </h4>
       <ul className="divide-y divide-border/60 rounded-md border border-border/60">
         {favorites.map((store) => (
@@ -43,7 +43,7 @@ export function FavoriteStores() {
                 variant="ghost"
                 size="icon"
                 className="-mr-1 -mt-1 h-7 w-7 shrink-0 text-amber-500"
-                aria-label={`Remove ${store.name} from favourites`}
+                aria-label={`Remove ${store.name} from favorites`}
                 onClick={() => {
                   const data = {
                     id: store.id,
@@ -54,7 +54,7 @@ export function FavoriteStores() {
                     address: store.address,
                   };
                   void toggle(data);
-                  toast.success(`Removed ${store.name} from favourites`, {
+                  toast.success(`Removed ${store.name} from favorites`, {
                     action: { label: "Undo", onClick: () => void add(data) },
                   });
                 }}

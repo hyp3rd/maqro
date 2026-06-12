@@ -4,6 +4,7 @@ import type {
   Meal,
   PersonalInfo,
 } from "@/components/macro/types";
+import { addDays } from "@maqro/core/date";
 import {
   clearDemoSeededStores,
   isProfileMarkedAsDemo,
@@ -82,21 +83,21 @@ function demoGoalPhases(now: number): GoalPhase[] {
     {
       id: "demo-cut-1",
       kind: "cut",
-      startDate: subtractDays(today, 70), // 10 wks ago; 9-wk cut → ends 1 wk ago
+      startDate: addDays(today, -70), // 10 wks ago; 9-wk cut → ends 1 wk ago
       durationWeeks: 9,
       weeklyRateKg: rate,
     },
     {
       id: "demo-break",
       kind: "dietBreak",
-      startDate: subtractDays(today, 7), // active now (2-wk break)
+      startDate: addDays(today, -7), // active now (2-wk break)
       durationWeeks: 2,
       weeklyRateKg: 0,
     },
     {
       id: "demo-cut-2",
       kind: "cut",
-      startDate: subtractDays(today, -7), // resumes in 1 wk
+      startDate: addDays(today, 7), // resumes in 1 wk
       durationWeeks: 8,
       weeklyRateKg: rate,
     },
@@ -390,17 +391,6 @@ const DAY_TEMPLATES: DayTemplate[] = [
   ],
 ];
 
-/** Subtract `n` days from a `YYYY-MM-DD` date string. */
-function subtractDays(date: string, n: number): string {
-  const [y, m, d] = date.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  dt.setDate(dt.getDate() - n);
-  const yy = dt.getFullYear();
-  const mm = (dt.getMonth() + 1).toString().padStart(2, "0");
-  const dd = dt.getDate().toString().padStart(2, "0");
-  return `${yy}-${mm}-${dd}`;
-}
-
 /** Produce 7 days of meal logs ending on `today`. The current day
  *  is included so the user lands on the planner with today already
  *  populated - feels live, not historical-only. */
@@ -410,7 +400,7 @@ export function getDemoMealLogs(
 ): DailyLog[] {
   const logs: DailyLog[] = [];
   for (let offset = 6; offset >= 0; offset--) {
-    const date = subtractDays(today, offset);
+    const date = addDays(today, -offset);
     const template = DAY_TEMPLATES[offset % DAY_TEMPLATES.length];
     const meals = template(offset * 100);
     // Stamp a believable per-food `loggedAt` so the IF features (eating
@@ -461,7 +451,7 @@ export function getDemoWeightHistory(
     (Math.sin(i * 12.9898) * 43758.5453) % 1 || 0;
 
   for (let offset = days - 1; offset >= 0; offset--) {
-    const date = subtractDays(today, offset);
+    const date = addDays(today, -offset);
     // Linear trend from 68.8 → 68.0 across 14 days = -0.057 kg/day
     const trend = 68.0 + offset * 0.057;
     const kg = round1(trend + noise(offset) * 0.3);
@@ -492,7 +482,7 @@ export function getDemoWaterLogs(
     (Math.sin(i * 78.233) * 43758.5453) % 1 || 0;
 
   for (let offset = days - 1; offset >= 0; offset--) {
-    const date = subtractDays(today, offset);
+    const date = addDays(today, -offset);
     // Centre ~2.1 L with ±0.3 L noise, rounded to a tidy 10 ml.
     const ml = Math.round((2100 + noise(offset) * 300) / 10) * 10;
     const recordedAt = now - offset * 24 * 3600_000;

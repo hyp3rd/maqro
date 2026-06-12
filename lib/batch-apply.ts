@@ -4,6 +4,11 @@
  *  so DST transitions and timezone quirks don't shift the range — a user
  *  picking "Mon to Fri" on a spring-forward week gets exactly five entries,
  *  not four or six. */
+import { addDays } from "@maqro/core/date";
+
+// Re-exported for existing importers (BatchApplyRecipeDialog, tests); the
+// canonical implementation lives in @maqro/core/date.
+export { addDays };
 
 /** Enumerate every YYYY-MM-DD between `start` and `end` inclusive,
  *  in ascending order. Returns an empty array if start > end (the UI
@@ -41,16 +46,4 @@ export function dayOfWeek(date: string): number {
   const [y, m, d] = date.split("-").map(Number);
   if (y === undefined || m === undefined || d === undefined) return 0;
   return new Date(y, m - 1, d).getDay();
-}
-
-/** Add `days` to a YYYY-MM-DD string. Negative values move
- *  backwards. Component-based via `setDate` so a 1-day add across
- *  spring-forward / fall-back yields exactly the next calendar day,
- *  not 23 or 25 hours later. */
-export function addDays(date: string, days: number): string {
-  const [y, m, d] = date.split("-").map(Number);
-  if (y === undefined || m === undefined || d === undefined) return date;
-  const dt = new Date(y, m - 1, d);
-  dt.setDate(dt.getDate() + days);
-  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
 }

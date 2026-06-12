@@ -1586,21 +1586,32 @@ function NotificationsSection() {
             // together. Enable: subscribe at the OS layer first, then
             // flip the DB flag - failure on either side leaves us
             // consistent (either both off, or no DB write). Disable:
-            // mirror by tearing down OS-side first.
-            if (next) {
-              const { enablePush } = await import("@/lib/push/client");
-              const res = await enablePush();
-              if (!res.ok) {
-                toast.error(res.reason ?? "Couldn't enable push.");
-                return;
+            // mirror by tearing down OS-side first. The success toasts
+            // are gated on update()'s result — a failed upsert reverts
+            // the toggle, and claiming success then would lie. The
+            // try/catch covers the dynamic import + any escape from the
+            // push helpers; without it the rejection of this voided
+            // handler vanishes and the toggle silently does nothing.
+            try {
+              if (next) {
+                const { enablePush } = await import("@/lib/push/client");
+                const res = await enablePush();
+                if (!res.ok) {
+                  toast.error(res.reason ?? "Couldn't enable push.");
+                  return;
+                }
+                if (await update({ pushEnabled: true })) {
+                  toast.success("Push notifications enabled on this device.");
+                }
+              } else {
+                const { disablePush } = await import("@/lib/push/client");
+                await disablePush();
+                if (await update({ pushEnabled: false })) {
+                  toast.success("Push notifications disabled.");
+                }
               }
-              await update({ pushEnabled: true });
-              toast.success("Push notifications enabled on this device.");
-            } else {
-              const { disablePush } = await import("@/lib/push/client");
-              await disablePush();
-              await update({ pushEnabled: false });
-              toast.success("Push notifications disabled.");
+            } catch {
+              toast.error("Couldn't update push notifications. Try again.");
             }
           }}
         />

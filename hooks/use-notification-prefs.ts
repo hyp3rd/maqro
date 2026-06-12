@@ -2,6 +2,7 @@
 
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 
 export type NotificationPrefs = {
   dailyReminder: boolean;
@@ -30,9 +31,10 @@ export type NotificationPrefsState =
 export type UseNotificationPrefsResult = {
   state: NotificationPrefsState;
   /** Optimistically toggle one or both flags. The local state flips
-   *  immediately so the UI doesn't lag; on failure we revert and
-   *  surface the error. */
-  update: (patch: Partial<NotificationPrefs>) => Promise<void>;
+   *  immediately so the UI doesn't lag; on failure we revert, surface
+   *  the error via toast, and resolve `false` so callers can gate their
+   *  own success feedback. */
+  update: (patch: Partial<NotificationPrefs>) => Promise<boolean>;
 };
 
 /** Default reminder hour for new users — 18:00 local. Mirrors the
@@ -134,15 +136,15 @@ export function useNotificationPrefs(): UseNotificationPrefsResult {
   }, []);
 
   const update = useCallback(
-    async (patch: Partial<NotificationPrefs>) => {
+    async (patch: Partial<NotificationPrefs>): Promise<boolean> => {
       const supabase = getSupabaseBrowser();
-      if (!supabase) return;
+      if (!supabase) return false;
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) return false;
 
-      if (state.status !== "ok") return;
+      if (state.status !== "ok") return false;
       const previous = state.data;
       const next: NotificationPrefs = { ...previous, ...patch };
 
@@ -166,11 +168,13 @@ export function useNotificationPrefs(): UseNotificationPrefsResult {
         );
       if (error) {
         setState({ status: "ok", data: previous });
-        // Surfacing through state.message would clobber the ok-branch
-        // we just reverted to; log instead and let the user retry the
-        // toggle.
+        // Surfacing through state.message would clobber the ok-branch we
+        // just reverted to — toast instead. Without it the toggle reverts
+        // silently (possibly off-screen) and the user believes the
+        // preference saved.
         console.error("[notification-prefs] upsert failed:", error);
-        return;
+        toast.error("Couldn't save notification settings. Try again.");
+        return false;
       }
 
       // First-opt-in welcome email. The endpoint is idempotent at
@@ -197,6 +201,7 @@ export function useNotificationPrefs(): UseNotificationPrefsResult {
           },
         );
       }
+      return true;
     },
     // `state` is in the deps so we read the freshest snapshot. The
     // callback re-creates on each state change — fine for an

@@ -4,9 +4,10 @@ import type { ResolvedMealPhoto } from "@/app/api/identify-meal/route";
 import { CameraView } from "@/components/capture/CameraView";
 import type { DietPreference, Food } from "@/components/macro/types";
 import { Button } from "@/components/ui/button";
+import { useModalOverlay } from "@/hooks/use-modal-overlay";
 import { clientFetch } from "@/lib/auth/client-fetch";
 import { listCustomFoods } from "@/lib/db";
-import { useEffect, useState } from "react";
+import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AlertCircle, ChevronLeft, Loader2, X } from "lucide-react";
 
@@ -84,28 +85,12 @@ export function CameraSheet({
   onSwitchToPairPhone,
   onBack,
 }: Props) {
-  // Body-scroll lock while open. Mobile Safari is particularly
-  // bad about scrolling the page behind a fixed overlay; setting
-  // overflow:hidden on <html> + <body> stops both the page and
-  // the rubber-band scroll behind the sheet.
-  useEffect(() => {
-    if (!open) return;
-    const htmlEl = document.documentElement;
-    const bodyEl = document.body;
-    const prevHtmlOverflow = htmlEl.style.overflow;
-    const prevBodyOverflow = bodyEl.style.overflow;
-    htmlEl.style.overflow = "hidden";
-    bodyEl.style.overflow = "hidden";
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onOpenChange(false);
-    }
-    window.addEventListener("keydown", onKey);
-    return () => {
-      htmlEl.style.overflow = prevHtmlOverflow;
-      bodyEl.style.overflow = prevBodyOverflow;
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open, onOpenChange]);
+  // Scroll-lock, Escape, focus-into-dialog + trap + restore — the shared
+  // overlay contract. Nothing in here takes focus on its own on the happy
+  // path, so the hook focuses the container itself and screen readers
+  // announce "Camera"; closing returns focus to the launcher button.
+  const containerRef = useRef<HTMLDivElement>(null);
+  useModalOverlay(open, containerRef, () => onOpenChange(false));
 
   if (!open) return null;
 
@@ -126,6 +111,8 @@ export function CameraSheet({
 
   return createPortal(
     <div
+      ref={containerRef}
+      tabIndex={-1}
       role="dialog"
       aria-modal="true"
       aria-label="Camera"

@@ -102,6 +102,41 @@ export function computeMacros(p: PersonalInfo, now?: number): CalculatedValues {
   };
 }
 
+/** The optional MacroBreakdown sub-macro keys — the ONE canonical list.
+ *  Every aggregation/scaling path iterates this; a new sub-macro added here
+ *  propagates everywhere (hand-copied key lists are how the sat-fat/fiber
+ *  portion-edit drift happened). */
+export const SUB_MACRO_KEYS: ReadonlyArray<keyof MacroBreakdown> = [
+  "sugars",
+  "addedSugars",
+  "fiber",
+  "saturatedFat",
+  "transFat",
+  "monoFat",
+  "polyFat",
+];
+
+/** Scale each present sub-macro by `ratio` (per-100g → portion, or portion →
+ *  new portion), rounded to 1dp. Every key is returned EXPLICITLY — a value
+ *  the source doesn't carry comes back as `undefined`, not omitted — so
+ *  spreading the result over previous state clears stale values from an
+ *  earlier food (e.g. selecting food A with sugars, then food B without,
+ *  must not keep A's sugars). "Absent" stays distinguishable from zero. */
+export function scaleSubMacros(
+  src: MacroBreakdown,
+  ratio: number,
+): MacroBreakdown {
+  const out: MacroBreakdown = {};
+  for (const key of SUB_MACRO_KEYS) {
+    const v = src[key];
+    out[key] =
+      typeof v === "number" && Number.isFinite(v)
+        ? Number.parseFloat((v * ratio).toFixed(1))
+        : undefined;
+  }
+  return out;
+}
+
 /** Sum the optional macro-breakdown fields across every FoodItem in the
  *  passed meals. Only includes a key in the output when at least one
  *  food contributed a value — otherwise the display layer would render
@@ -112,27 +147,15 @@ export function computeMacros(p: PersonalInfo, now?: number): CalculatedValues {
  *  paths that don't yet propagate the per-100g scaling) simply skip
  *  the sum for those fields. */
 export function aggregateMacroBreakdown(meals: Meal[]): MacroBreakdown {
-  const totals: Record<keyof MacroBreakdown, number> = {
-    sugars: 0,
-    addedSugars: 0,
-    fiber: 0,
-    saturatedFat: 0,
-    transFat: 0,
-    monoFat: 0,
-    polyFat: 0,
-  };
-  const seen: Record<keyof MacroBreakdown, boolean> = {
-    sugars: false,
-    addedSugars: false,
-    fiber: false,
-    saturatedFat: false,
-    transFat: false,
-    monoFat: false,
-    polyFat: false,
-  };
+  const totals = {} as Record<keyof MacroBreakdown, number>;
+  const seen = {} as Record<keyof MacroBreakdown, boolean>;
+  for (const key of SUB_MACRO_KEYS) {
+    totals[key] = 0;
+    seen[key] = false;
+  }
   for (const meal of meals) {
     for (const food of meal.foods) {
-      for (const key of Object.keys(totals) as Array<keyof MacroBreakdown>) {
+      for (const key of SUB_MACRO_KEYS) {
         const v = food[key];
         if (typeof v === "number" && Number.isFinite(v)) {
           totals[key] += v;
@@ -142,24 +165,13 @@ export function aggregateMacroBreakdown(meals: Meal[]): MacroBreakdown {
     }
   }
   const out: MacroBreakdown = {};
-  for (const key of Object.keys(totals) as Array<keyof MacroBreakdown>) {
+  for (const key of SUB_MACRO_KEYS) {
     if (seen[key]) {
       out[key] = Math.round(totals[key] * 10) / 10;
     }
   }
   return out;
 }
-
-/** The optional MacroBreakdown sub-macro keys. */
-const SUB_MACRO_KEYS: Array<keyof MacroBreakdown> = [
-  "sugars",
-  "addedSugars",
-  "fiber",
-  "saturatedFat",
-  "transFat",
-  "monoFat",
-  "polyFat",
-];
 
 /** Re-scale a logged food's macros to a new portion.
  *
@@ -194,11 +206,6 @@ export function rescaleFoodMacros(
     fat: Number.parseFloat((per100.fat * mainRatio).toFixed(1)),
     calories: Math.round(per100.calories * mainRatio),
   };
-  for (const key of SUB_MACRO_KEYS) {
-    const v = food[key];
-    if (typeof v === "number" && Number.isFinite(v)) {
-      out[key] = Number.parseFloat((v * subRatio).toFixed(1));
-    }
-  }
+  Object.assign(out, scaleSubMacros(food, subRatio));
   return out;
 }

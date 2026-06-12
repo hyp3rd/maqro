@@ -64,6 +64,7 @@ import {
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
+import { addDays } from "@maqro/core/date";
 import { FavoriteStores } from "./FavoriteStores";
 import { NearbyStores } from "./NearbyStores";
 import { ShoppingItemSheet } from "./ShoppingItemSheet";
@@ -132,16 +133,6 @@ function presetRange(
       return { start: addDays(today, -back), end: addDays(today, 6 - back) };
     }
   }
-}
-
-function addDays(date: string, days: number): string {
-  const [y, m, d] = date.split("-").map(Number);
-  const dt = new Date(y, m - 1, d);
-  dt.setDate(dt.getDate() + days);
-  const yy = dt.getFullYear();
-  const mm = (dt.getMonth() + 1).toString().padStart(2, "0");
-  const dd = dt.getDate().toString().padStart(2, "0");
-  return `${yy}-${mm}-${dd}`;
 }
 
 /** Friendly day label — "Mon May 15" for the date-range banner. */
@@ -812,7 +803,20 @@ export function ShoppingListView({ onGoToPlan }: Props = {}) {
     }
   }
 
-  const remaining = items.length - checked.size;
+  // Count against the rows the user can actually check (aisleOrdered =
+  // computed-minus-hidden + extras), not the raw computed list — `items`
+  // still includes hidden rows and excludes extras, so counting it makes
+  // "All done" unreachable with a hidden item and lets "left" go negative
+  // with extras. Intersect `checked` too: it can retain names of rows
+  // later removed by swipe (clearChecks only fires on range change).
+  const visibleCount = aisleOrdered.length;
+  const checkedVisible = useMemo(() => {
+    const names = new Set(aisleOrdered.map((it) => it.name));
+    let n = 0;
+    for (const name of checked) if (names.has(name)) n++;
+    return n;
+  }, [aisleOrdered, checked]);
+  const remaining = visibleCount - checkedVisible;
 
   // Resolve the open sheet's item from the live display set so it
   // reflects edits (e.g. a qty change) without a stale snapshot.
@@ -901,8 +905,8 @@ export function ShoppingListView({ onGoToPlan }: Props = {}) {
           {dayLabel(start)} → {dayLabel(end)}{" "}
           {items.length > 0 && (
             <>
-              · {items.length} item{items.length === 1 ? "" : "s"}
-              {checked.size > 0 && ` · ${remaining} left`}
+              · {visibleCount} item{visibleCount === 1 ? "" : "s"}
+              {checkedVisible > 0 && ` · ${remaining} left`}
             </>
           )}
         </div>
@@ -1022,7 +1026,7 @@ export function ShoppingListView({ onGoToPlan }: Props = {}) {
               Prev
             </Button>
             <span className="text-[11px] tabular-nums text-muted-foreground">
-              Page {safePage + 1} of {totalPages} · {items.length} items
+              Page {safePage + 1} of {totalPages} · {visibleCount} items
             </span>
             <Button
               type="button"
@@ -1037,7 +1041,7 @@ export function ShoppingListView({ onGoToPlan }: Props = {}) {
           </div>
         )}
 
-        {checked.size > 0 && (
+        {checkedVisible > 0 && (
           <div className="flex items-center justify-between border-t border-border/60 px-3 py-2 sm:px-5">
             <span
               className={`text-[11px] tabular-nums ${
@@ -1048,7 +1052,7 @@ export function ShoppingListView({ onGoToPlan }: Props = {}) {
             >
               {remaining <= 0
                 ? "All done"
-                : `${checked.size} of ${items.length} marked`}
+                : `${checkedVisible} of ${visibleCount} marked`}
             </span>
             <Button
               type="button"

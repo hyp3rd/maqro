@@ -1,15 +1,6 @@
 "use client";
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { DestructiveConfirmDialog } from "@/components/ui/destructive-confirm-dialog";
 import { useUser } from "@/hooks/use-user";
 import { decryptBytes, isEncryptedEnvelope } from "@/lib/export-crypto";
 import {
@@ -236,35 +227,21 @@ export function SavedReportsList({ refreshKey = 0 }: { refreshKey?: number }) {
         )}
       </div>
 
-      <AlertDialog
+      <DestructiveConfirmDialog
         open={pendingDelete !== null}
         onOpenChange={(o) => {
           if (!o) setPendingDelete(null);
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete archived report?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingDelete
-                ? `The encrypted backup from ${fmtWhen(pendingDelete.exportedAt)} will be permanently deleted. This can't be undone.`
-                : ""}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (pendingDelete) void removeReport(pendingDelete);
-                setPendingDelete(null);
-              }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title="Delete archived report?"
+        description={
+          pendingDelete
+            ? `The encrypted backup from ${fmtWhen(pendingDelete.exportedAt)} will be permanently deleted. This can't be undone.`
+            : ""
+        }
+        onConfirm={() => {
+          if (pendingDelete) void removeReport(pendingDelete);
+        }}
+      />
 
       {passOpen && (
         <PassphraseDialog

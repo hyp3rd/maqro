@@ -1,16 +1,7 @@
 "use client";
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { DestructiveConfirmDialog } from "@/components/ui/destructive-confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { SkeletonSettingRows } from "@/components/ui/skeleton";
 import { useDisplayName } from "@/hooks/use-display-name";
@@ -454,35 +445,22 @@ export function PasskeysSection({ signedIn }: { signedIn: boolean }) {
           </div>
         </>
       )}
-      <AlertDialog
+      <DestructiveConfirmDialog
         open={pendingRemove !== null}
         onOpenChange={(o) => {
           if (!o) setPendingRemove(null);
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remove this passkey?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingRemove
-                ? `"${pendingRemove.name}" will no longer be able to sign you in. Make sure you have another way to log in first.`
-                : ""}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (pendingRemove) void remove(pendingRemove.id);
-                setPendingRemove(null);
-              }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Remove
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title="Remove this passkey?"
+        description={
+          pendingRemove
+            ? `"${pendingRemove.name}" will no longer be able to sign you in. Make sure you have another way to log in first.`
+            : ""
+        }
+        actionLabel="Remove"
+        onConfirm={() => {
+          if (pendingRemove) void remove(pendingRemove.id);
+        }}
+      />
     </section>,
   );
 }

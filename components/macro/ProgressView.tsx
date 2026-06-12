@@ -71,6 +71,7 @@ import {
   TrendingDown,
   TrendingUp,
 } from "lucide-react";
+import { toast } from "sonner";
 import { ExportReportDialog } from "./ExportReportDialog";
 
 const WINDOW_DAYS = 60;
@@ -193,6 +194,9 @@ export function ProgressView({
       .catch((err) => {
         if (cancelled) return;
         reportStorageError(err);
+        // Without this, the per-section copy ("No weigh-ins yet", "No logs
+        // yet") would tell a user with months of history they have no data.
+        toast.error("Couldn't load your progress data. Try refreshing.");
         setWeights([]);
         setLogs([]);
         setMeasurements([]);
@@ -1473,11 +1477,18 @@ function BodyMeasurementsSection({
           )}
         </div>
       )}
-      <BodyMeasurementForm
-        latest={latest}
-        units={units}
-        onSaved={onSaved}
-      />
+      {/* Mount only after the entries load resolves: the form's useState
+          initializers seed from `latest`, so mounting while entries === null
+          permanently captures empty fields and the documented pre-fill never
+          happens. Gating (not key-remounting) keeps the form stable across
+          saves and sync revs — no wiped input or lost "Saved" flash. */}
+      {entries !== null && (
+        <BodyMeasurementForm
+          latest={latest}
+          units={units}
+          onSaved={onSaved}
+        />
+      )}
     </section>
   );
 }

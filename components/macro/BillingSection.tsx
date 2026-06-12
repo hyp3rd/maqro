@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useAiUsage } from "@/hooks/use-ai-usage";
 import { clientFetch } from "@/lib/auth/client-fetch";
 import { useState } from "react";
+import { toast } from "sonner";
 import { BillingDetails } from "./BillingDetails";
 import { UpgradeDialog } from "./UpgradeDialog";
 
@@ -37,15 +38,21 @@ export function BillingSection() {
     setPortalBusy(true);
     try {
       const res = await clientFetch("/api/billing/portal", { method: "POST" });
-      const data = (await res.json()) as { url?: string; error?: string };
+      // Guard the parse: a platform 5xx returns an HTML body that would
+      // reject json() before the ok-check below ever ran.
+      const data = (await res.json().catch(() => ({}))) as {
+        url?: string;
+        error?: string;
+      };
       if (!res.ok || !data.url) {
-        // 503 = Stripe not configured. Other errors propagate
-        // to the user via alert; no toast available here without
-        // additional imports.
-        alert(data.error ?? "Couldn't open the billing portal.");
+        toast.error(data.error ?? "Couldn't open the billing portal.");
         return;
       }
       window.location.assign(data.url);
+    } catch {
+      // Network failure on a payment-recovery path must not be silent —
+      // without this the button just flashes "Opening…" and resets.
+      toast.error("Network error. Try again.");
     } finally {
       setPortalBusy(false);
     }

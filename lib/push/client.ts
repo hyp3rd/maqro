@@ -72,63 +72,83 @@ export async function enablePush(): Promise<{ ok: boolean; reason?: string }> {
     };
   }
 
-  // 1. VAPID key.
-  const keyRes = await fetch("/api/push/vapid-key");
-  if (!keyRes.ok) {
+  // The whole flow funnels rejections into the same { ok: false, reason }
+  // shape the explicit checks use — a network drop on the VAPID fetch, an
+  // AbortError from a browser whose push service is unreachable (Brave with
+  // shields up, de-Googled Android), or a failing subscribe POST otherwise
+  // escape the async boundary and the toggle silently does nothing.
+  try {
+    // 1. VAPID key.
+    const keyRes = await fetch("/api/push/vapid-key");
+    if (!keyRes.ok) {
+      return {
+        ok: false,
+        reason: "Push notifications aren't configured on this deployment.",
+      };
+    }
+    const { publicKey } = (await keyRes.json()) as { publicKey?: string };
+    if (!publicKey) {
+      return { ok: false, reason: "Missing VAPID key from server." };
+    }
+
+    // 2. Service worker - we registered it in ServiceWorkerProvider; if
+    //    no registration is ready yet, push isn't ready either.
+    const registration = await navigator.serviceWorker.ready;
+
+    // 3. Permission. `Notification.requestPermission` returns the
+    //    current value if already decided, so this is safe on repeat
+    //    calls.
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") {
+      return { ok: false, reason: "Notification permission was denied." };
+    }
+
+    // 4. Subscribe (or pick up an existing subscription).
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        // The DOM lib's `applicationServerKey` is typed as
+        // `BufferSource` (ArrayBuffer-backed), but TS 5.x widened
+        // Uint8Array's `buffer` to `ArrayBufferLike` which includes
+        // SharedArrayBuffer. The runtime is fine with our plain
+        // Uint8Array; the `.buffer as ArrayBuffer` cast narrows back
+        // to what the DOM signature expects.
+        applicationServerKey: urlBase64ToUint8Array(publicKey)
+          .buffer as ArrayBuffer,
+      });
+    }
+
+    // 5. POST to server. The subscription object's toJSON() produces
+    //    exactly the shape the API expects.
+    const json = subscription.toJSON();
+    const res = await clientFetch("/api/push/subscribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        endpoint: json.endpoint,
+        keys: json.keys,
+        userAgent: navigator.userAgent,
+      }),
+    });
+    if (!res.ok) {
+      return { ok: false, reason: "Server rejected the subscription." };
+    }
+    return { ok: true };
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      return {
+        ok: false,
+        reason:
+          "This browser's push service is unreachable — a privacy setting or extension may be blocking it.",
+      };
+    }
     return {
       ok: false,
-      reason: "Push notifications aren't configured on this deployment.",
+      reason:
+        "Couldn't enable push notifications. Check your connection and try again.",
     };
   }
-  const { publicKey } = (await keyRes.json()) as { publicKey?: string };
-  if (!publicKey) {
-    return { ok: false, reason: "Missing VAPID key from server." };
-  }
-
-  // 2. Service worker - we registered it in ServiceWorkerProvider; if
-  //    no registration is ready yet, push isn't ready either.
-  const registration = await navigator.serviceWorker.ready;
-
-  // 3. Permission. `Notification.requestPermission` returns the
-  //    current value if already decided, so this is safe on repeat
-  //    calls.
-  const permission = await Notification.requestPermission();
-  if (permission !== "granted") {
-    return { ok: false, reason: "Notification permission was denied." };
-  }
-
-  // 4. Subscribe (or pick up an existing subscription).
-  let subscription = await registration.pushManager.getSubscription();
-  if (!subscription) {
-    subscription = await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      // The DOM lib's `applicationServerKey` is typed as
-      // `BufferSource` (ArrayBuffer-backed), but TS 5.x widened
-      // Uint8Array's `buffer` to `ArrayBufferLike` which includes
-      // SharedArrayBuffer. The runtime is fine with our plain
-      // Uint8Array; the `.buffer as ArrayBuffer` cast narrows back
-      // to what the DOM signature expects.
-      applicationServerKey: urlBase64ToUint8Array(publicKey)
-        .buffer as ArrayBuffer,
-    });
-  }
-
-  // 5. POST to server. The subscription object's toJSON() produces
-  //    exactly the shape the API expects.
-  const json = subscription.toJSON();
-  const res = await clientFetch("/api/push/subscribe", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      endpoint: json.endpoint,
-      keys: json.keys,
-      userAgent: navigator.userAgent,
-    }),
-  });
-  if (!res.ok) {
-    return { ok: false, reason: "Server rejected the subscription." };
-  }
-  return { ok: true };
 }
 
 /** Tear down push on this browser. Two-step: unsubscribe from the

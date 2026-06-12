@@ -354,6 +354,20 @@ describe("aggregateMacroBreakdown", () => {
   });
 });
 
+describe("scaleSubMacros", () => {
+  it("scales present values and returns absent keys explicitly undefined", async () => {
+    const { scaleSubMacros } = await import("./macros");
+    const result = scaleSubMacros({ sugars: 12, fiber: 3 }, 0.5);
+    expect(result.sugars).toBe(6);
+    expect(result.fiber).toBe(1.5);
+    // Absent values come back as EXPLICIT undefined keys, so spreading the
+    // result over previous state clears a prior food's stale sub-macros.
+    expect("saturatedFat" in result).toBe(true);
+    expect(result.saturatedFat).toBeUndefined();
+    expect("transFat" in result).toBe(true);
+  });
+});
+
 describe("rescaleFoodMacros", () => {
   it("re-scales sub-macros by the portion ratio (the portion-edit fix)", async () => {
     const { rescaleFoodMacros } = await import("./macros");

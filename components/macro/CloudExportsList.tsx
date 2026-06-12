@@ -1,16 +1,7 @@
 "use client";
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { DestructiveConfirmDialog } from "@/components/ui/destructive-confirm-dialog";
 import {
   deleteExport,
   downloadExport,
@@ -246,35 +237,21 @@ export function CloudExportsList({ refreshKey, onPickForImport }: Props) {
           </li>
         ))}
       </ul>
-      <AlertDialog
+      <DestructiveConfirmDialog
         open={pendingDelete !== null}
         onOpenChange={(o) => {
           if (!o) setPendingDelete(null);
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete cloud copy?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingDelete
-                ? `The cloud copy from ${formatExportedAt(pendingDelete.exportedAt)} will be deleted. Local data is unaffected.`
-                : ""}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (pendingDelete) void remove(pendingDelete);
-                setPendingDelete(null);
-              }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title="Delete cloud copy?"
+        description={
+          pendingDelete
+            ? `The cloud copy from ${formatExportedAt(pendingDelete.exportedAt)} will be deleted. Local data is unaffected.`
+            : ""
+        }
+        onConfirm={() => {
+          if (pendingDelete) void remove(pendingDelete);
+        }}
+      />
     </>
   );
 }
