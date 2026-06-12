@@ -3,7 +3,9 @@ import { cacheGet, cacheSetFireAndForget } from "@/lib/cache/redis";
 import { offCountryTag } from "@/lib/markets";
 import {
   hitToFood,
+  medianBreakdown,
   medianMicronutrients,
+  offHitToBreakdown,
   offHitToMicronutrients,
   type OFFHit,
 } from "@maqro/core/off";
@@ -11,7 +13,14 @@ import {
 // Re-export the pure OFF transforms (now in @maqro/core) so existing
 // `@/lib/ai/off-search` importers — the barcode route, the enrichment cron — are
 // unchanged.
-export { hitToFood, medianMicronutrients, offHitToMicronutrients, type OFFHit };
+export {
+  hitToFood,
+  medianBreakdown,
+  medianMicronutrients,
+  offHitToBreakdown,
+  offHitToMicronutrients,
+  type OFFHit,
+};
 
 /** Server-side Open Food Facts transport + the optional cross-instance cache.
  *  The pure product→`Food` / micronutrient transforms live in `@maqro/core/off`

@@ -44,6 +44,10 @@ function foodFromLoggedItem(item: FoodItem): Food {
   const per100 = item.portionSize > 0 ? 100 / item.portionSize : 1;
   return {
     name: item.name.trim(),
+    // Re-mint the OFF id so a quick re-add re-captures `offCode` through
+    // the same logFoodToMeal path a fresh search pick takes — exact-product
+    // provenance survives the recents round-trip.
+    id: item.offCode ? `off:${item.offCode}` : undefined,
     protein: ov ? ov.proteinPer100g : round1(item.protein * per100),
     carbs: ov ? ov.carbsPer100g : round1(item.carbs * per100),
     fat: ov ? ov.fatPer100g : round1(item.fat * per100),

@@ -76,6 +76,12 @@ export type FoodItem = {
    *  the pantry item's own unit. Persisted with the meal (daily_logs
    *  stores `meals` as JSON), so the link survives reloads. */
   pantrySource?: { itemId: string; consumedQty: number };
+  /** Open Food Facts product code captured at log time (from the catalog
+   *  `Food.id` "off:<code>" — search picks and barcode scans alike). Lets
+   *  the micronutrient-enrichment cron resolve the EXACT product instead
+   *  of a name-search median or an AI estimate — the accuracy difference
+   *  for branded foods. Rides the meals JSONB; no migration needed. */
+  offCode?: string;
   originalValues?: {
     proteinPer100g: number;
     carbsPer100g: number;

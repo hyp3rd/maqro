@@ -51,6 +51,26 @@ describe("enqueueMicronutrientEnrichment", () => {
     expect(keys).toEqual(["lentils", "spinach"]);
   });
 
+  it("threads a logged item's offCode through, first code seen winning", () => {
+    const coded = food("Whey Isolate (Brand)");
+    coded.offCode = "8001234567890";
+    const codeless = food("whey isolate (brand)"); // same name, no code
+    const plain = food("Spinach");
+    enqueueMicronutrientEnrichment([meal([codeless, coded, plain])]);
+    const call = (
+      globalThis.fetch as unknown as { mock: { calls: unknown[][] } }
+    ).mock.calls[0];
+    const body = JSON.parse((call[1] as { body: string }).body) as {
+      items: { nameKey: string; offCode?: string }[];
+    };
+    const whey = body.items.find((i) => i.nameKey === "whey isolate (brand)");
+    // The codeless occurrence came first, but the code must still land.
+    expect(whey?.offCode).toBe("8001234567890");
+    const spinach = body.items.find((i) => i.nameKey === "spinach");
+    expect(spinach).toBeDefined();
+    expect("offCode" in (spinach ?? {})).toBe(false);
+  });
+
   it("does not fire when there are no foods", () => {
     enqueueMicronutrientEnrichment([meal([])]);
     expect(globalThis.fetch).not.toHaveBeenCalled();

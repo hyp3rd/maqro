@@ -91,32 +91,80 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const names = [...byKey.keys()];
   try {
-    // Skip names that already have a profile — no point re-enriching.
+    // Existing profiles: skip names already enriched — UNLESS this save
+    // carries an exact product code for a name whose profile came from an
+    // approximate source (search median / AI guess / miss). Those upgrade:
+    // re-queue with the code so the cron's barcode step replaces the
+    // approximation with the actual product's values. A profile already
+    // sourced from a barcode (or from this same code) never re-queues.
     const { data: existing } = await supabase
       .from("micronutrient_profiles")
-      .select("name_key")
+      .select("name_key, source, source_code")
       .eq("user_id", user.id)
       .in("name_key", names);
-    const enriched = new Set((existing ?? []).map((r) => r.name_key as string));
+    const profileByKey = new Map(
+      (existing ?? []).map((r) => [
+        r.name_key as string,
+        {
+          source: r.source as string,
+          sourceCode: (r.source_code as string | null) ?? undefined,
+        },
+      ]),
+    );
 
-    const rows = [...byKey.values()]
-      .filter((v) => !enriched.has(v.nameKey))
-      .map((v) => ({
-        user_id: user.id,
-        name_key: v.nameKey,
-        off_code: v.offCode ?? null,
-      }));
-    if (rows.length === 0) return NextResponse.json({ enqueued: 0 });
+    const fresh: {
+      user_id: string;
+      name_key: string;
+      off_code: string | null;
+    }[] = [];
+    const upgrades: typeof fresh = [];
+    for (const v of byKey.values()) {
+      const profile = profileByKey.get(v.nameKey);
+      if (!profile) {
+        fresh.push({
+          user_id: user.id,
+          name_key: v.nameKey,
+          off_code: v.offCode ?? null,
+        });
+      } else if (
+        v.offCode &&
+        profile.source !== "barcode" &&
+        profile.sourceCode !== v.offCode
+      ) {
+        upgrades.push({
+          user_id: user.id,
+          name_key: v.nameKey,
+          off_code: v.offCode,
+        });
+      }
+    }
+    if (fresh.length === 0 && upgrades.length === 0) {
+      return NextResponse.json({ enqueued: 0 });
+    }
 
-    // On-conflict-do-nothing: a name already queued stays as-is (don't
-    // reset its attempts counter). `ignoreDuplicates` maps to ON
-    // CONFLICT DO NOTHING against the (user_id, name_key) unique index.
-    const { error } = await supabase
-      .from("micronutrient_queue")
-      .upsert(rows, { onConflict: "user_id,name_key", ignoreDuplicates: true });
-    if (error) throw error;
+    // Fresh names: on-conflict-do-nothing — a name already queued stays
+    // as-is (don't reset its attempts counter). `ignoreDuplicates` maps to
+    // ON CONFLICT DO NOTHING against the (user_id, name_key) unique index.
+    if (fresh.length > 0) {
+      const { error } = await supabase
+        .from("micronutrient_queue")
+        .upsert(fresh, {
+          onConflict: "user_id,name_key",
+          ignoreDuplicates: true,
+        });
+      if (error) throw error;
+    }
+    // Upgrades: conflict UPDATES the row so the code lands even on a
+    // name that's already queued (attempts isn't in the payload, so an
+    // existing row's retry counter is preserved).
+    if (upgrades.length > 0) {
+      const { error } = await supabase
+        .from("micronutrient_queue")
+        .upsert(upgrades, { onConflict: "user_id,name_key" });
+      if (error) throw error;
+    }
 
-    return NextResponse.json({ enqueued: rows.length });
+    return NextResponse.json({ enqueued: fresh.length + upgrades.length });
   } catch (err) {
     // Best-effort: enrichment enqueue failing must never disrupt the
     // log-save flow that triggered it. Log and report success-shaped

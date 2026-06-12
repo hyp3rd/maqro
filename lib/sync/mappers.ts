@@ -5,6 +5,7 @@
 import type {
   Food,
   FoodKind,
+  MacroBreakdown,
   Meal,
   PersonalInfo,
   Recipe,
@@ -738,8 +739,11 @@ export type MicronutrientProfileRow = {
   user_id: string;
   name_key: string;
   values: MicronutrientValues;
-  source: "barcode" | "search" | "ai" | "miss";
+  source: "barcode" | "ciqual" | "search" | "ai" | "miss";
   source_code: string | null;
+  /** Per-100g macro-breakdown backfill (migration 0065); null on rows
+   *  written before the column existed. */
+  breakdown: MacroBreakdown | null;
   enriched_at: string;
   updated_at: string;
 };
@@ -754,6 +758,7 @@ export function micronutrientProfileToRow(
     values: profile.valuesPer100g,
     source: profile.source,
     source_code: profile.sourceCode ?? null,
+    breakdown: profile.breakdownPer100g ?? null,
     enriched_at: new Date(profile.enrichedAt).toISOString(),
   };
 }
@@ -766,6 +771,7 @@ export function micronutrientProfileFromRow(
     valuesPer100g: row.values ?? {},
     source: row.source,
     sourceCode: row.source_code ?? undefined,
+    breakdownPer100g: row.breakdown ?? undefined,
     enrichedAt: Date.parse(row.enriched_at),
   };
 }

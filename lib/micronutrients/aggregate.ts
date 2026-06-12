@@ -1,6 +1,7 @@
-import type { Meal } from "@/components/macro/types";
+import type { MacroBreakdown, Meal } from "@/components/macro/types";
 import type { DailyLog } from "@/lib/db";
 import { MICRONUTRIENT_KEYS, type MicronutrientKey } from "@/lib/rda";
+import { SUB_MACRO_KEYS } from "@maqro/core/macros";
 import type { MicronutrientProfile, MicronutrientTotals } from "./types";
 
 /** Lowercased + trimmed food name — the join key between a logged
@@ -141,6 +142,83 @@ export function resolveMealFiber(
   };
 }
 
+/** Sum the MacroBreakdown sub-macros across meals with the profile-backed
+ *  fallback — the breakdown twin of `aggregateMicronutrients`, replacing the
+ *  top-level-only `aggregateMacroBreakdown` wherever profiles are available.
+ *
+ *  ONE per-food chain, shared with the meal sheet so the day totals and the
+ *  per-meal view can never disagree on the same data:
+ *    - fiber: exactly `resolveMealFiber`'s chain — product micros → profile
+ *      micros (per-100g × portion) → macro-side scaled value.
+ *    - every other key: the food's own scaled value first (exact product
+ *      data captured at log time) → the profile's per-100g breakdown
+ *      backfill × portion. The order differs from fiber deliberately: the
+ *      top-level value IS the product's own label here, while the profile
+ *      is a name-keyed approximation.
+ *  Same omit-unseen contract as every aggregator: a key appears only when
+ *  at least one food contributed it. */
+export function aggregateBreakdownWithProfiles(
+  meals: Meal[],
+  profiles: Map<string, MicronutrientProfile>,
+): MacroBreakdown {
+  const totals = {} as Record<keyof MacroBreakdown, number>;
+  const seen = {} as Record<keyof MacroBreakdown, boolean>;
+  for (const key of SUB_MACRO_KEYS) {
+    totals[key] = 0;
+    seen[key] = false;
+  }
+  for (const meal of meals) {
+    for (const food of meal.foods) {
+      const profile = profiles.get(foodNameKey(food.name));
+      const ratio = food.portionSize / 100;
+      const ratioOk = Number.isFinite(ratio) && ratio > 0;
+      for (const key of SUB_MACRO_KEYS) {
+        let grams: number | undefined;
+        if (key === "fiber") {
+          const ownV = food.micronutrients?.fiber;
+          const per100 =
+            typeof ownV === "number" && Number.isFinite(ownV)
+              ? ownV
+              : profile?.valuesPer100g.fiber;
+          if (
+            typeof per100 === "number" &&
+            Number.isFinite(per100) &&
+            ratioOk
+          ) {
+            grams = per100 * ratio;
+          } else if (
+            typeof food.fiber === "number" &&
+            Number.isFinite(food.fiber)
+          ) {
+            grams = food.fiber;
+          }
+        } else {
+          const own = food[key];
+          const backfill = profile?.breakdownPer100g?.[key];
+          if (typeof own === "number" && Number.isFinite(own)) {
+            grams = own;
+          } else if (
+            typeof backfill === "number" &&
+            Number.isFinite(backfill) &&
+            ratioOk
+          ) {
+            grams = backfill * ratio;
+          }
+        }
+        if (grams !== undefined) {
+          totals[key] += grams;
+          seen[key] = true;
+        }
+      }
+    }
+  }
+  const out: MacroBreakdown = {};
+  for (const key of SUB_MACRO_KEYS) {
+    if (seen[key]) out[key] = Math.round(totals[key] * 10) / 10;
+  }
+  return out;
+}
+
 /** A single day's micronutrient totals, tagged with its date. */
 export type MicronutrientDay = { date: string; totals: MicronutrientTotals };
 
@@ -181,6 +259,27 @@ export function computeMicronutrientWindow(
 export function averageMicronutrients(
   days: MicronutrientDay[],
 ): MicronutrientTotals {
+  return averageMicronutrientsDetailed(days).totals;
+}
+
+export type MicronutrientAverages = {
+  /** Per-nutrient mean over the days that carried it (see the contract
+   *  above — NOT diluted across the whole window). */
+  totals: MicronutrientTotals;
+  /** Per nutrient: how many of the window's tracked days actually carried
+   *  it. A mean built on 2 of 20 days is a very different claim than one
+   *  built on 18 of 20 — the UI surfaces this so the average can't read
+   *  as more habitual than the data supports. */
+  daysWith: Partial<Record<MicronutrientKey, number>>;
+  /** Tracked days in the window (days with at least one enriched food). */
+  dayCount: number;
+};
+
+/** `averageMicronutrients` plus the per-nutrient coverage needed to display
+ *  the average honestly ("12 mg · on 8 of 20 tracked days"). */
+export function averageMicronutrientsDetailed(
+  days: MicronutrientDay[],
+): MicronutrientAverages {
   const sums = {} as Record<MicronutrientKey, number>;
   const counts = {} as Record<MicronutrientKey, number>;
   for (const day of days) {
@@ -192,11 +291,13 @@ export function averageMicronutrients(
       }
     }
   }
-  const out: MicronutrientTotals = {};
+  const totals: MicronutrientTotals = {};
+  const daysWith: Partial<Record<MicronutrientKey, number>> = {};
   for (const key of MICRONUTRIENT_KEYS) {
     if (counts[key] > 0) {
-      out[key] = Math.round((sums[key] / counts[key]) * 10) / 10;
+      totals[key] = Math.round((sums[key] / counts[key]) * 10) / 10;
+      daysWith[key] = counts[key];
     }
   }
-  return out;
+  return { totals, daysWith, dayCount: days.length };
 }
