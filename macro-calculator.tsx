@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { offCodeFromFoodId } from "@maqro/core/off";
 import type { ResolvedMealPhoto } from "./app/api/identify-meal/route";
+import { SignInPromptDialog } from "./components/auth/SignInPromptDialog";
 import { AdvancedSettingsSection } from "./components/macro/AdvancedSettingsSection";
 import { ApplyRecipeDialog } from "./components/macro/ApplyRecipeDialog";
 import { ApplyTemplateDialog } from "./components/macro/ApplyTemplateDialog";
@@ -449,6 +450,13 @@ const MacroCalculator = () => {
   // they have, we don't reopen even if the URL still has the
   // param. Cleared by navigation away.
   const [upgradeDialogDismissed, setUpgradeDialogDismissed] = useState(false);
+  // Gate modals for AI actions: a signed-out user gets the sign-in prompt
+  // (the string is the feature name shown in its copy); a capped free user
+  // gets the upgrade dialog with the ai-cap framing.
+  const [signInPromptFeature, setSignInPromptFeature] = useState<string | null>(
+    null,
+  );
+  const [capUpgradeOpen, setCapUpgradeOpen] = useState(false);
   const [suggestDayOpen, setSuggestDayOpen] = useState(false);
   // Meal templates: which dialog is open and for which meal. `null` =
   // no dialog. The dialogs themselves read templates from IDB on open.
@@ -1849,20 +1857,17 @@ const MacroCalculator = () => {
       // Auth and cap failures are GATES, not fallback cases: silently
       // filling the day with the formula planner would hand a guest (or a
       // capped free user) the feature the gate protects, behind an
-      // AI-labelled button, with the reason buried in a banner that
-      // auto-clears. Leave the day untouched and say why, persistently.
-      // The single-meal regenerate and refine paths already behave this
-      // way; this brings Auto-fill in line.
+      // AI-labelled button. Leave the day untouched and open the proper
+      // modal — sign-in prompt or the upgrade dialog — instead of a toast
+      // that vanishes before it's read.
       if (ai.kind === "not-authenticated") {
         setMealPlanMessage("");
-        toast.error("Sign in to use AI meal planning.");
+        setSignInPromptFeature("AI meal planning");
         return;
       }
       if (ai.kind === "cap-reached") {
         setMealPlanMessage("");
-        toast.error(
-          `AI monthly cap reached (${ai.used}/${ai.cap}) — resets on the 1st.`,
-        );
+        setCapUpgradeOpen(true);
         return;
       }
 
@@ -1963,19 +1968,26 @@ const MacroCalculator = () => {
       }
       // Unlike Auto-fill, we don't fall back to the deterministic
       // planner for refinements - it has no notion of free-text
-      // constraints. Just surface the failure and leave the plan as-is.
+      // constraints. Auth/cap gates open their proper modals; the
+      // availability failures surface in the banner, plan untouched.
+      if (ai.kind === "not-authenticated") {
+        setMealPlanMessage("");
+        setSignInPromptFeature("AI refinements");
+        return;
+      }
+      if (ai.kind === "cap-reached") {
+        setMealPlanMessage("");
+        setCapUpgradeOpen(true);
+        return;
+      }
       const msg =
         ai.kind === "not-configured"
           ? "AI not configured - refinement skipped."
-          : ai.kind === "not-authenticated"
-            ? "Sign in to use AI refinements."
-            : ai.kind === "rate-limited"
-              ? "AI rate-limited - try again shortly."
-              : ai.kind === "cap-reached"
-                ? `AI monthly cap reached (${ai.used}/${ai.cap}). Resets the 1st.`
-                : ai.kind === "error"
-                  ? `Refinement failed: ${ai.message}`
-                  : "Refinement failed.";
+          : ai.kind === "rate-limited"
+            ? "AI rate-limited - try again shortly."
+            : ai.kind === "error"
+              ? `Refinement failed: ${ai.message}`
+              : "Refinement failed.";
       setMealPlanMessage(msg);
     } catch (error) {
       setMealPlanMessage("Error refining meal plan. Please try again.");
@@ -2077,18 +2089,24 @@ const MacroCalculator = () => {
         return;
       }
       const action = target.foods.length === 0 ? "Generation" : "Regeneration";
+      if (ai.kind === "not-authenticated") {
+        setMealPlanMessage("");
+        setSignInPromptFeature(`AI meal ${action.toLowerCase()}`);
+        return;
+      }
+      if (ai.kind === "cap-reached") {
+        setMealPlanMessage("");
+        setCapUpgradeOpen(true);
+        return;
+      }
       const msg =
         ai.kind === "not-configured"
           ? `AI not configured - ${action.toLowerCase()} skipped.`
-          : ai.kind === "not-authenticated"
-            ? `Sign in to use AI ${action.toLowerCase()}.`
-            : ai.kind === "rate-limited"
-              ? "AI rate-limited - try again shortly."
-              : ai.kind === "cap-reached"
-                ? `AI monthly cap reached (${ai.used}/${ai.cap}). Resets the 1st.`
-                : ai.kind === "error"
-                  ? `${action} failed: ${ai.message}`
-                  : `${action} failed.`;
+          : ai.kind === "rate-limited"
+            ? "AI rate-limited - try again shortly."
+            : ai.kind === "error"
+              ? `${action} failed: ${ai.message}`
+              : `${action} failed.`;
       setMealPlanMessage(msg);
     } catch (error) {
       setMealPlanMessage(`Error regenerating ${target.name}. Try again.`);
@@ -2337,6 +2355,7 @@ const MacroCalculator = () => {
         onMealPhotoResolved={(result) => setMealPhotoResult(result)}
         onSwitchToPairPhone={() => setPairPhoneOpen(true)}
         onBack={logFlowMealId !== null ? backToMethod : undefined}
+        onUpgrade={() => setCapUpgradeOpen(true)}
       />
 
       <VoiceLogSheet
@@ -2350,6 +2369,7 @@ const MacroCalculator = () => {
         // a meal slot before anything actually writes to IDB.
         onResolved={(result) => setMealPhotoResult(result)}
         onBack={logFlowMealId !== null ? backToMethod : undefined}
+        onUpgrade={() => setCapUpgradeOpen(true)}
       />
 
       <PairPhoneDialog
@@ -2586,6 +2606,20 @@ const MacroCalculator = () => {
         }}
         defaultPlan={urlPlan ?? "plus"}
         reason="settings"
+      />
+      <SignInPromptDialog
+        open={signInPromptFeature !== null}
+        onOpenChange={(o) => {
+          if (!o) setSignInPromptFeature(null);
+        }}
+        feature={signInPromptFeature ?? undefined}
+        next="/app"
+      />
+      <UpgradeDialog
+        open={capUpgradeOpen}
+        onOpenChange={setCapUpgradeOpen}
+        reason="ai-cap"
+        defaultPlan="plus"
       />
     </AppShell>
   );

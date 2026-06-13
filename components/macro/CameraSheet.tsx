@@ -9,7 +9,7 @@ import { clientFetch } from "@/lib/auth/client-fetch";
 import { listCustomFoods } from "@/lib/db";
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertCircle, ChevronLeft, Loader2, X } from "lucide-react";
+import { AlertCircle, ChevronLeft, Loader2, Sparkles, X } from "lucide-react";
 
 /** Full-screen camera sheet. Replaces the previous shadcn `Dialog`
  *  layout because the small modal cramped both the barcode reticle
@@ -65,6 +65,10 @@ type Props = {
    *  (returning to the guided Log-meal method step) instead of an
    *  outright close. Omitted when opened standalone (desktop Scan). */
   onBack?: () => void;
+  /** Hitting the monthly AI cap renders an Upgrade button that calls this
+   *  — the parent closes the sheet and opens the upgrade dialog (it can't
+   *  stack inside this z-[60] portal). */
+  onUpgrade?: () => void;
 };
 
 type Phase =
@@ -84,6 +88,7 @@ export function CameraSheet({
   onMealPhotoResolved,
   onSwitchToPairPhone,
   onBack,
+  onUpgrade,
 }: Props) {
   // Scroll-lock, Escape, focus-into-dialog + trap + restore — the shared
   // overlay contract. Nothing in here takes focus on its own on the happy
@@ -137,6 +142,14 @@ export function CameraSheet({
           onSwitchToPairPhone();
           onOpenChange(false);
         }}
+        onUpgrade={
+          onUpgrade
+            ? () => {
+                onOpenChange(false);
+                onUpgrade();
+              }
+            : undefined
+        }
       />
     </div>,
     document.body,
@@ -153,6 +166,7 @@ function CameraSheetBody({
   onPicked,
   onMealPhotoResolved,
   onSwitchToPairPhone,
+  onUpgrade,
 }: {
   aiAvailable: boolean;
   initialMode?: "scan" | "photo";
@@ -163,6 +177,7 @@ function CameraSheetBody({
   onPicked: (food: Food) => void;
   onMealPhotoResolved: (result: ResolvedMealPhoto) => void;
   onSwitchToPairPhone: () => void;
+  onUpgrade?: () => void;
 }) {
   const [resetKey, setResetKey] = useState(0);
   const [phase, setPhase] = useState<Phase>({ kind: "capture" });
@@ -326,6 +341,17 @@ function CameraSheetBody({
                 }}
               >
                 Try again
+              </Button>
+            )}
+            {phase.isCap && onUpgrade && (
+              <Button
+                type="button"
+                variant="secondary"
+                className="gap-1.5"
+                onClick={onUpgrade}
+              >
+                <Sparkles className="h-4 w-4" />
+                Upgrade
               </Button>
             )}
             <Button
