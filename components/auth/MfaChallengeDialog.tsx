@@ -16,6 +16,7 @@ import {
   type MfaChallengeResolver,
   subscribeMfaChallenge,
 } from "@/lib/auth/mfa-challenge-bus";
+import { getVerifiedTotpFactorId } from "@/lib/auth/mfa-factors";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { useEffect, useRef, useState } from "react";
 import { Loader2, ShieldCheck } from "lucide-react";
@@ -65,21 +66,19 @@ export function MfaChallengeDialog() {
         resolver.reject("failed");
         return;
       }
-      try {
-        const { data } = await supabase.auth.mfa.listFactors();
-        const verified = data?.totp.find((f) => f.status === "verified");
-        if (!verified) {
-          resolver.reject("failed");
-          return;
-        }
-        resolverRef.current = resolver;
-        setFactorId(verified.id);
-        setCode("");
-        setError(null);
-        setOpen(true);
-      } catch {
+      // getVerifiedTotpFactorId folds a thrown listFactors (signed out
+      // elsewhere, Supabase outage) into `null`, so both "no factor" and
+      // "lookup failed" reject the bus promise the same way.
+      const verifiedId = await getVerifiedTotpFactorId(supabase);
+      if (!verifiedId) {
         resolver.reject("failed");
+        return;
       }
+      resolverRef.current = resolver;
+      setFactorId(verifiedId);
+      setCode("");
+      setError(null);
+      setOpen(true);
     });
   }, []);
 

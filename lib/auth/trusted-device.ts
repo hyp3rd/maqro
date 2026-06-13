@@ -32,6 +32,38 @@ export type CookieSource = {
   get(name: string): { value: string } | undefined;
 };
 
+/** The single definition of "this device is trusted right now": the id of an
+ *  unexpired `mfa_trusted_devices` row for (userId, deviceId), or `null`.
+ *  Returns the row id (not just a bool) so the `/check` route can bump
+ *  `last_used_at` on the same row without re-querying. Default-deny: an RLS
+ *  denial, a DB error, or a thrown query all collapse to `null` so a Supabase
+ *  blip can never auto-bypass MFA. The SELECT runs with whatever client the
+ *  caller passes (the user's cookie-session client, via the
+ *  `mfa_trusted_devices` owner-read RLS policy).
+ *
+ *  Both gate paths funnel through here so "what counts as trusted" can't drift
+ *  between the proxy/API gate and the login-time `/check` endpoint. */
+export async function findTrustedDeviceRowId(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: SupabaseClient<any, any, any>,
+  userId: string,
+  deviceId: string,
+): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from("mfa_trusted_devices")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("device_id", deviceId)
+      .gt("trusted_until", new Date().toISOString())
+      .maybeSingle();
+    if (error || !data) return null;
+    return (data as { id: string }).id;
+  } catch {
+    return null;
+  }
+}
+
 export async function isCurrentDeviceTrusted(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: SupabaseClient<any, any, any>,
@@ -41,20 +73,7 @@ export async function isCurrentDeviceTrusted(
   const raw = cookieSource.get(DEVICE_ID_COOKIE)?.value;
   const deviceId = validateDeviceId(raw);
   if (!deviceId) return false;
-
-  try {
-    const { data, error } = await supabase
-      .from("mfa_trusted_devices")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("device_id", deviceId)
-      .gt("trusted_until", new Date().toISOString())
-      .maybeSingle();
-    if (error) return false;
-    return !!data;
-  } catch {
-    return false;
-  }
+  return (await findTrustedDeviceRowId(supabase, userId, deviceId)) !== null;
 }
 
 /** API-route convenience: build the `MfaUpgradeOptions` payload that

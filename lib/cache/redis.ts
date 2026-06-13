@@ -75,6 +75,85 @@ export function cacheSetFireAndForget(
   }
 }
 
+/** Whether the Upstash cache is configured (both env vars present). Lets a
+ *  caller skip a coalescing/lock path entirely when there's no Redis — so it
+ *  doesn't pay poll latency only to fall through to the origin. */
+export function cacheConfigured(): boolean {
+  return getRedis() !== null;
+}
+
+/** Acquire a lock / set-if-absent with a millisecond TTL — Redis
+ *  `SET key value NX PX ttl`. Returns `true` ONLY if this call created the key.
+ *  Fail-open: an unconfigured cache or ANY error returns `false` (the caller
+ *  treats it as "didn't acquire" and proceeds without the lock). The TTL is the
+ *  self-heal — a crashed holder's lock expires on its own. */
+export async function cacheSetIfAbsent(
+  key: string,
+  value: string,
+  ttlMs: number,
+): Promise<boolean> {
+  const redis = getRedis();
+  if (!redis) return false;
+  try {
+    const res = await redis.set(key, value, { nx: true, px: ttlMs });
+    return res === "OK";
+  } catch (err) {
+    console.warn("[cache] setIfAbsent failed for %s:", key, err);
+    return false;
+  }
+}
+
+/** Awaited string write with a millisecond TTL. Unlike `cacheSetFireAndForget`
+ *  this resolves before returning, so a producer can be sure a consumer polling
+ *  the key will see it. Fail-open: no-op when unconfigured or on error. */
+export async function cacheSetString(
+  key: string,
+  value: string,
+  ttlMs: number,
+): Promise<void> {
+  const redis = getRedis();
+  if (!redis) return;
+  try {
+    await redis.set(key, value, { px: ttlMs });
+  } catch (err) {
+    console.warn("[cache] setString failed for %s:", key, err);
+  }
+}
+
+/** Read a raw string value (not JSON-deserialized). `null` on miss/error. */
+export async function cacheGetString(key: string): Promise<string | null> {
+  const redis = getRedis();
+  if (!redis) return null;
+  try {
+    const v = await redis.get<string>(key);
+    return typeof v === "string" ? v : null;
+  } catch (err) {
+    console.warn("[cache] getString failed for %s:", key, err);
+    return null;
+  }
+}
+
+/** Best-effort delete. When `expected` is given, only deletes if the current
+ *  value still matches (compare-and-delete) so a lock holder never releases a
+ *  successor's lock. Fail-open. */
+export async function cacheDelete(
+  key: string,
+  expected?: string,
+): Promise<void> {
+  const redis = getRedis();
+  if (!redis) return;
+  try {
+    if (expected === undefined) {
+      await redis.del(key);
+      return;
+    }
+    const current = await redis.get<string>(key);
+    if (current === expected) await redis.del(key);
+  } catch (err) {
+    console.warn("[cache] delete failed for %s:", key, err);
+  }
+}
+
 /** Health probe for the status page: `"skipped"` when the cache is unconfigured,
  *  `"ok"` when a PING round-trips, `"fail"` on any error. Optional + fail-open,
  *  so a failure here is surfaced on /status but never affects overall health. */
