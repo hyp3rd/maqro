@@ -56,20 +56,6 @@ export function MiniLineChart({
   // Hooks must run before the early return. The expensive
   // path-string builds are memoized so hover-driven re-renders only
   // touch the tooltip overlay, not the line itself.
-  // Left padding sized for the widest reasonable Y-axis label.
-  // Bumped from 40 → 56 so the right-anchored axis text never
-  // clips off the SVG's left edge — happens on imperial weight
-  // ("165.3 lb"), 4-digit kcal ("2,557 kcal"), and any other yUnit
-  // longer than a single character. 56 still leaves plenty of
-  // horizontal room for the actual chart on a 320px-wide viewport
-  // (~140px after the viewBox scales down from 640).
-  const padding = useMemo(
-    () => ({ top: 12, right: 16, bottom: 28, left: 56 }),
-    [],
-  );
-  const innerW = width - padding.left - padding.right;
-  const innerH = height - padding.top - padding.bottom;
-
   const { xMin, xSpan, yMin, ySpan } = useMemo(() => {
     if (data.length === 0) {
       return { xMin: 0, xSpan: 1, yMin: 0, ySpan: 1 };
@@ -95,6 +81,26 @@ export function MiniLineChart({
     yMax += pad;
     return { xMin, xSpan, yMin, ySpan: yMax - yMin };
   }, [data, yIncludeZero, targetY]);
+
+  // Left axis gutter, sized to the WIDEST actual y-tick label so the
+  // right-anchored tick text — which grows LEFTWARD from `padding.left` —
+  // never clips off the SVG's left edge. A fixed 56 fit "165.3 lb" / kcal but
+  // clipped 4-digit micronutrient values with a decimal + a multi-char unit
+  // ("5876.6 mg"). Measured the same way the ticks render. text-[10px] mono ≈
+  // 6.2 user-units/char (matches the tooltip's own estimate), + the 6px gap to
+  // the grid line + breathing room. Floored at 44 (tidy gutter for short labels
+  // like "20kg"), capped at 96 so a pathological value can't swallow the chart.
+  const padding = useMemo(() => {
+    const widest = Math.max(
+      ...[0, 0.25, 0.5, 0.75, 1].map(
+        (t) => `${Math.round((yMin + t * ySpan) * 10) / 10}${yUnit}`.length,
+      ),
+    );
+    const left = Math.min(96, Math.max(44, Math.ceil(widest * 6.2) + 14));
+    return { top: 12, right: 16, bottom: 28, left };
+  }, [yMin, ySpan, yUnit]);
+  const innerW = width - padding.left - padding.right;
+  const innerH = height - padding.top - padding.bottom;
 
   const xScale = (x: number) => padding.left + ((x - xMin) / xSpan) * innerW;
   const yScale = (y: number) => padding.top + (1 - (y - yMin) / ySpan) * innerH;
