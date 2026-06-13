@@ -21,8 +21,9 @@ import {
 } from "@/lib/db";
 import { extractFoodPreferences } from "@/lib/personalization/preferences";
 import { useState } from "react";
-import { Loader2, Sparkles } from "lucide-react";
+import { Loader2, LogIn, Sparkles } from "lucide-react";
 import type { RecipeDraft } from "./RecipeForm";
+import { UpgradeDialog } from "./UpgradeDialog";
 
 const HINT_MAX = 200;
 
@@ -35,12 +36,9 @@ type Props = {
   onDraft: (draft: RecipeDraft) => void;
 };
 
-type AiResultKind =
-  | "ok"
-  | "not-configured"
-  | "not-authenticated"
-  | "rate-limited"
-  | "error";
+/** Error + which gate (if any) it represents — `auth`/`cap` render a
+ *  proper CTA (sign-in / upgrade) instead of bare text. */
+type GenerateError = { message: string; gate?: "auth" | "cap" };
 
 export function GenerateRecipeDialog({
   open,
@@ -79,7 +77,8 @@ function GenerateRecipeDialogBody({
 }) {
   const [hint, setHint] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<GenerateError | null>(null);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
 
   async function handleGenerate() {
     setBusy(true);
@@ -147,24 +146,35 @@ function GenerateRecipeDialogBody({
       });
 
       if (!res.ok) {
-        const kind: AiResultKind =
-          res.status === 401
-            ? "not-authenticated"
-            : res.status === 503
-              ? "not-configured"
-              : res.status === 429
-                ? "rate-limited"
-                : "error";
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        const message =
-          kind === "not-configured"
-            ? "AI suggestion isn't configured on this deployment."
-            : kind === "not-authenticated"
-              ? "Sign in to use AI suggestions."
-              : kind === "rate-limited"
-                ? "AI is rate-limited. Try again shortly."
-                : (data.error ?? "AI request failed.");
-        throw new Error(message);
+        const data = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          used?: number;
+          cap?: number;
+        };
+        if (res.status === 401) {
+          setError({
+            message: "AI recipe generation needs an account.",
+            gate: "auth",
+          });
+        } else if (res.status === 402) {
+          setError({
+            message:
+              typeof data.used === "number" && typeof data.cap === "number"
+                ? `You've used all your AI generations this month (${data.used}/${data.cap}). Resets on the 1st.`
+                : "You've reached your monthly AI limit. Resets on the 1st.",
+            gate: "cap",
+          });
+        } else {
+          setError({
+            message:
+              res.status === 503
+                ? "AI suggestion isn't configured on this deployment."
+                : res.status === 429
+                  ? "AI is rate-limited. Try again shortly."
+                  : (data.error ?? "AI request failed."),
+          });
+        }
+        return;
       }
 
       const data = (await res.json()) as { recipe?: RecipeDraft };
@@ -172,7 +182,9 @@ function GenerateRecipeDialogBody({
       onDraft(data.recipe);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "AI request failed.");
+      setError({
+        message: err instanceof Error ? err.message : "AI request failed.",
+      });
     } finally {
       setBusy(false);
     }
@@ -210,14 +222,49 @@ function GenerateRecipeDialogBody({
         />
 
         {error && (
-          <p
-            role="alert"
-            className="text-xs text-destructive"
-          >
-            {error}
-          </p>
+          <div className="space-y-2">
+            <p
+              role="alert"
+              className="text-xs text-destructive"
+            >
+              {error.message}
+            </p>
+            {error.gate === "auth" && (
+              <Button
+                type="button"
+                size="sm"
+                className="gap-1.5"
+                onClick={() =>
+                  window.location.assign(
+                    `/login?next=${encodeURIComponent("/app?view=recipes")}`,
+                  )
+                }
+              >
+                <LogIn className="h-3.5 w-3.5" />
+                Sign in
+              </Button>
+            )}
+            {error.gate === "cap" && (
+              <Button
+                type="button"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setUpgradeOpen(true)}
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                Upgrade
+              </Button>
+            )}
+          </div>
         )}
       </div>
+
+      <UpgradeDialog
+        open={upgradeOpen}
+        onOpenChange={setUpgradeOpen}
+        reason="ai-cap"
+        defaultPlan="plus"
+      />
 
       <DialogFooter className="gap-2 sm:gap-2">
         <Button

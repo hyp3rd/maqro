@@ -462,7 +462,7 @@ type AdviceState =
   | { status: "idle" }
   | { status: "loading" }
   | { status: "done"; advice: string }
-  | { status: "error"; message: string };
+  | { status: "error"; message: string; isCap?: boolean };
 
 function AiAdvice({
   meal,
@@ -486,6 +486,7 @@ function AiAdvice({
   const [state, setState] = useState<AdviceState>({ status: "idle" });
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [dontAsk, setDontAsk] = useState(false);
+  const [capUpgradeOpen, setCapUpgradeOpen] = useState(false);
 
   const totals = meal.foods.reduce(
     (a, f) => ({
@@ -543,6 +544,7 @@ function AiAdvice({
           setState({
             status: "error",
             message: "You've used this month's request allowance.",
+            isCap: true,
           });
         } else {
           setState({
@@ -626,12 +628,30 @@ function AiAdvice({
               : "Suggest tweaks for next time"}
           </Button>
           {state.status === "error" && (
-            <p className="text-center text-xs text-destructive">
-              {state.message}
-            </p>
+            <div className="space-y-2 text-center">
+              <p className="text-xs text-destructive">{state.message}</p>
+              {state.isCap && (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => setCapUpgradeOpen(true)}
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Upgrade
+                </Button>
+              )}
+            </div>
           )}
         </>
       )}
+
+      <UpgradeDialog
+        open={capUpgradeOpen}
+        onOpenChange={setCapUpgradeOpen}
+        reason="ai-cap"
+        defaultPlan="plus"
+      />
 
       <AlertDialog
         open={confirmOpen}

@@ -27,6 +27,7 @@ import {
   Loader2,
   Mic,
   Send,
+  Sparkles,
   Square,
 } from "lucide-react";
 
@@ -70,6 +71,9 @@ type Props = {
    *  Log-meal method step. Omitted when opened standalone (desktop
    *  Talk button). */
   onBack?: () => void;
+  /** Hitting the monthly AI cap renders an Upgrade button that calls
+   *  this — the parent closes the sheet and opens the upgrade dialog. */
+  onUpgrade?: () => void;
 };
 
 type Phase =
@@ -91,6 +95,7 @@ export function VoiceLogSheet({
   dietPreference,
   onResolved,
   onBack,
+  onUpgrade,
 }: Props) {
   return (
     <Dialog
@@ -117,6 +122,14 @@ export function VoiceLogSheet({
               onOpenChange(false);
             }}
             onClose={() => onOpenChange(false)}
+            onUpgrade={
+              onUpgrade
+                ? () => {
+                    onOpenChange(false);
+                    onUpgrade();
+                  }
+                : undefined
+            }
           />
         )}
       </DialogContent>
@@ -129,11 +142,13 @@ function VoiceLogBody({
   dietPreference,
   onResolved,
   onClose,
+  onUpgrade,
 }: {
   aiAvailable: boolean;
   dietPreference?: DietPreference;
   onResolved: (r: ResolvedMealPhoto) => void;
   onClose: () => void;
+  onUpgrade?: () => void;
 }) {
   // We snapshot supported-ness at mount; if SpeechRecognition was
   // missing, we skip straight to the typing flow. We don't try
@@ -392,6 +407,7 @@ function VoiceLogBody({
           <ErrorState
             message={phase.message}
             isCap={phase.isCap}
+            onUpgrade={onUpgrade}
             onRetry={() => {
               if (supported) setPhase({ kind: "idle" });
               else
@@ -552,12 +568,14 @@ function ReviewState({
 function ErrorState({
   message,
   isCap,
+  onUpgrade,
   onRetry,
   onTypeInstead,
   onClose,
 }: {
   message: string;
   isCap?: boolean;
+  onUpgrade?: () => void;
   onRetry: () => void;
   /** Optional: drop the user into the textarea-typing variant
    *  of the review stage. Surfaced as a secondary button so a
@@ -581,6 +599,17 @@ function ErrorState({
             onClick={onRetry}
           >
             Try again
+          </Button>
+        )}
+        {isCap && onUpgrade && (
+          <Button
+            type="button"
+            size="sm"
+            className="gap-1.5"
+            onClick={onUpgrade}
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            Upgrade
           </Button>
         )}
         {!isCap && onTypeInstead && (

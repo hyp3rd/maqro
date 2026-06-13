@@ -16,7 +16,8 @@ import {
 import { listRecipes } from "@/lib/db";
 import { recipePerServingMacros } from "@/lib/recipe-ranking";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ChefHat, Loader2, RefreshCw, Sparkles } from "lucide-react";
+import { ChefHat, Loader2, LogIn, RefreshCw, Sparkles } from "lucide-react";
+import { UpgradeDialog } from "./UpgradeDialog";
 import type { Meal, Recipe } from "./types";
 
 type Macros = { protein: number; carbs: number; fat: number; calories: number };
@@ -41,6 +42,7 @@ type ViewState =
   | { status: "ok"; picks: Pick[]; note: string | null }
   | { status: "empty" }
   | { status: "cap"; used: number; cap: number }
+  | { status: "auth" }
   | { status: "error"; message: string };
 
 function resultToState(
@@ -50,8 +52,7 @@ function resultToState(
 ): ViewState {
   if (result.kind === "cap-reached")
     return { status: "cap", used: result.used, cap: result.cap };
-  if (result.kind === "not-authenticated")
-    return { status: "error", message: "Sign in to use AI suggestions." };
+  if (result.kind === "not-authenticated") return { status: "auth" };
   if (result.kind === "not-configured")
     return { status: "error", message: "AI isn't available here." };
   if (result.kind === "rate-limited")
@@ -83,6 +84,7 @@ export function SuggestDayDialog({
   onApplyDay,
 }: Props) {
   const [state, setState] = useState<ViewState>({ status: "loading" });
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
   const autoRan = useRef(false);
 
   // The parent mounts this fresh per open, so `target`/`logged`/`meals` here
@@ -190,9 +192,41 @@ export function SuggestDayDialog({
             <p className="text-sm font-medium">Monthly AI limit reached</p>
             <p className="max-w-xs text-xs text-muted-foreground">
               You&apos;ve used all your AI suggestions this month ({state.used}/
-              {state.cap}). It resets on the 1st — or upgrade in Settings for
-              more.
+              {state.cap}). It resets on the 1st — or upgrade for more.
             </p>
+            <Button
+              type="button"
+              size="sm"
+              className="mt-2 gap-1.5"
+              onClick={() => setUpgradeOpen(true)}
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Upgrade
+            </Button>
+          </div>
+        )}
+
+        {state.status === "auth" && (
+          <div className="flex flex-col items-center gap-2 py-8 text-center">
+            <Sparkles className="h-6 w-6 text-muted-foreground/60" />
+            <p className="text-sm font-medium">Sign in to continue</p>
+            <p className="max-w-xs text-xs text-muted-foreground">
+              AI day suggestions use your monthly allowance, which is tied to
+              your account.
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              className="mt-2 gap-1.5"
+              onClick={() =>
+                window.location.assign(
+                  `/login?next=${encodeURIComponent("/app")}`,
+                )
+              }
+            >
+              <LogIn className="h-3.5 w-3.5" />
+              Sign in
+            </Button>
           </div>
         )}
 
@@ -289,6 +323,12 @@ export function SuggestDayDialog({
           )}
         </DialogFooter>
       </DialogContent>
+      <UpgradeDialog
+        open={upgradeOpen}
+        onOpenChange={setUpgradeOpen}
+        reason="ai-cap"
+        defaultPlan="plus"
+      />
     </Dialog>
   );
 }
