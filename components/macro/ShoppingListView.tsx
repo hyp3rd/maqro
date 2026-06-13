@@ -1,5 +1,6 @@
 "use client";
 
+import { SwipeHint } from "@/components/gestures/SwipeHint";
 import { SwipeRow } from "@/components/gestures/SwipeRow";
 import { Button } from "@/components/ui/button";
 import {
@@ -949,6 +950,12 @@ export function ShoppingListView({ onGoToPlan }: Props = {}) {
             onDragEnd={handleDragEnd}
             onDragCancel={handleDragCancel}
           >
+            <SwipeHint
+              storageKey="maqro:hint:shopping-swipe"
+              className="mx-5 mb-1 mt-3"
+            >
+              Swipe a row left to remove it, right to send it to your pantry.
+            </SwipeHint>
             <div className="divide-y divide-border/40">
               {groupedByAisle.map(({ aisle, rows }) => (
                 <AisleSection

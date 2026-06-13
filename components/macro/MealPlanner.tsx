@@ -161,6 +161,10 @@ interface MealPlannerProps {
   onAddFromTemplate: (mealId: number) => void;
   onApplyRecipe: (mealId: number) => void;
   onClearMeal: (mealId: number) => void;
+  /** Pulse signal for the slot a food was just logged to. A fresh object
+   *  per add (identity drives the effect) so the matching MealItem flashes
+   *  and scrolls into view; null before the first add. */
+  loggedMealSignal: { mealId: number } | null;
   /** Active meal schedules — surfaced as a one-tap "log it" offer on their
    *  matching day (only when viewing today). */
   mealSchedules: readonly MealSchedule[];
@@ -234,6 +238,7 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
   onAddFromTemplate,
   onApplyRecipe,
   onClearMeal,
+  loggedMealSignal,
   mealSchedules,
   onLogScheduled,
   onOpenSuggestDay,
@@ -359,6 +364,8 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
             calculatedValues={calculatedValues}
             totalMacros={totalMacros}
             breakdown={macroBreakdown}
+            selectedDate={selectedDate}
+            today={today}
           />
         </div>
       </section>
@@ -617,6 +624,7 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
                 onAddFromTemplate={onAddFromTemplate}
                 onApplyRecipe={onApplyRecipe}
                 onClearMeal={onClearMeal}
+                loggedSignal={loggedMealSignal}
                 scheduledForSlot={daySchedules.find((s) =>
                   scheduleTargetsSlot(s, meal.name),
                 )}

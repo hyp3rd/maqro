@@ -1,4 +1,5 @@
 import { MfaPendingBanner } from "@/components/auth/MfaPendingBanner";
+import { MobileNavDrawer } from "@/components/marketing/MobileNavDrawer";
 import { RevealSection } from "@/components/marketing/RevealSection";
 import { StructuredData } from "@/components/marketing/StructuredData";
 import { UserMenu } from "@/components/marketing/UserMenu";
@@ -182,9 +183,12 @@ async function SiteHeader() {
             />
           ) : (
             <>
+              {/* Sign in is desktop-only in the bar — on mobile it lives in
+                  the drawer below, so the cramped phone header keeps just the
+                  primary "Open app" CTA. */}
               <Link
                 href="/login"
-                className="rounded-md px-2.5 py-1.5 text-muted-foreground hover:text-foreground"
+                className="hidden rounded-md px-2.5 py-1.5 text-muted-foreground hover:text-foreground sm:inline-block"
               >
                 {t("signIn")}
               </Link>
@@ -197,6 +201,19 @@ async function SiteHeader() {
               </Link>
             </>
           )}
+          <MobileNavDrawer
+            signedIn={signedInEmail !== null}
+            sections={[
+              { href: "#features", label: t("features") },
+              { href: "#pricing", label: t("pricing") },
+              { href: "#faq", label: t("faq") },
+            ]}
+            labels={{
+              menu: "Open menu",
+              signIn: t("signIn"),
+              openApp: t("openApp"),
+            }}
+          />
         </nav>
       </div>
     </header>

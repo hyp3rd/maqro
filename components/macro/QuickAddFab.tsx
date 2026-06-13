@@ -1,5 +1,6 @@
 "use client";
 
+import { haptic } from "@/lib/haptics";
 import { Plus } from "lucide-react";
 
 /** Thumb-zone "Log meal" button for the meal log.
@@ -18,7 +19,10 @@ export function QuickAddFab({ onOpen }: { onOpen: () => void }) {
   return (
     <button
       type="button"
-      onClick={onOpen}
+      onClick={() => {
+        haptic("tap");
+        onOpen();
+      }}
       aria-label="Log meal"
       className="fixed right-4 bottom-[calc(env(safe-area-inset-bottom)+5rem)] z-30 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg ring-1 ring-black/5 transition-transform duration-200 active:scale-95 md:hidden"
     >

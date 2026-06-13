@@ -2,7 +2,7 @@
 
 import { StreakChip } from "@/components/macro/StreakChip";
 import { NumberTicker } from "@/components/shell/NumberTicker";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Loader2, Share2 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -21,6 +21,39 @@ interface DailyTotalsProps {
    *  mislead). When the whole object is empty, the breakdown row is
    *  hidden entirely. */
   breakdown?: MacroBreakdown;
+  /** Displayed day + today's key. Used to fire the one-shot "calorie
+   *  target met" celebration only while viewing today — never when
+   *  scrolling back to a past day that already crossed its target. */
+  selectedDate: string;
+  today: string;
+}
+
+const GOAL_CELEBRATION_PREFIX = "maqro:goal:reached:";
+
+/** One-shot "you hit today's calorie target" celebration, keyed by day in
+ *  localStorage so it fires exactly once — not on every subsequent add, and
+ *  not again after a reload. Mirrors the streak-milestone guard in
+ *  StreakChip. Gated to today so reviewing a past day never re-fires it. */
+function useGoalReachedCelebration(
+  reached: boolean,
+  isToday: boolean,
+  dayKey: string,
+): void {
+  useEffect(() => {
+    if (!isToday || !reached) return;
+    const key = `${GOAL_CELEBRATION_PREFIX}${dayKey}`;
+    try {
+      if (window.localStorage.getItem(key)) return;
+      window.localStorage.setItem(key, "1");
+    } catch {
+      // Private mode: can't persist, so skip the toast too — otherwise it
+      // would re-fire on every render with no flag to suppress it.
+      return;
+    }
+    toast.success("🎯 Today's calorie target met", {
+      description: "Nice work staying on plan.",
+    });
+  }, [reached, isToday, dayKey]);
 }
 
 const SUB_MACRO_LABELS: Record<keyof MacroBreakdown, string> = {
@@ -45,9 +78,24 @@ const DailyTotals: React.FC<DailyTotalsProps> = ({
   calculatedValues,
   totalMacros,
   breakdown,
+  selectedDate,
+  today,
 }) => {
   const pct = (current: number, target: number) =>
     target === 0 ? 0 : Math.min(Math.round((current / target) * 100), 100);
+
+  // The single most actionable number on the page: how many calories are
+  // left against today's target. The tiles show consumed/target, which
+  // forces the user to do the subtraction in their head — this does it for
+  // them. Held back until the first food is logged so a brand-new day shows
+  // the cold-start guidance below, not a lone "2,100 kcal left".
+  const targetCalories = Math.round(calculatedValues.targetCalories);
+  const consumedCalories = Math.round(totalMacros.calories);
+  const remainingCalories = targetCalories - consumedCalories;
+  const showRemaining = targetCalories > 0 && consumedCalories > 0;
+
+  const goalReached = targetCalories > 0 && consumedCalories >= targetCalories;
+  useGoalReachedCelebration(goalReached, selectedDate === today, today);
 
   const rows: Row[] = [
     {
@@ -96,6 +144,29 @@ const DailyTotals: React.FC<DailyTotalsProps> = ({
           />
         </div>
       </div>
+      {showRemaining && (
+        <p className="mb-3 text-sm">
+          {remainingCalories > 0 ? (
+            <>
+              <span className="font-semibold tabular-nums text-foreground">
+                {remainingCalories.toLocaleString()}
+              </span>{" "}
+              <span className="text-muted-foreground">kcal left today</span>
+            </>
+          ) : remainingCalories === 0 ? (
+            <span className="font-medium text-emerald-600 dark:text-emerald-400">
+              Daily target reached
+            </span>
+          ) : (
+            <>
+              <span className="font-semibold tabular-nums text-amber-600 dark:text-amber-400">
+                {Math.abs(remainingCalories).toLocaleString()}
+              </span>{" "}
+              <span className="text-muted-foreground">kcal over target</span>
+            </>
+          )}
+        </p>
+      )}
       <div className="grid grid-cols-2 gap-x-3 gap-y-4 sm:grid-cols-4 sm:gap-x-4">
         {rows.map((row) => {
           const current = totalMacros[row.key];

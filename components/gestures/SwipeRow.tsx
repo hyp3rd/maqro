@@ -1,6 +1,7 @@
 "use client";
 
 import { useCoarsePointer } from "@/hooks/use-coarse-pointer";
+import { haptic } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
 import { type ReactNode } from "react";
 import {
@@ -116,8 +117,16 @@ export function SwipeRow({
     const rightFired =
       onSwipeRight &&
       (dx >= SWIPE_DISTANCE_PX || vx >= SWIPE_VELOCITY_PX_PER_S);
-    if (leftFired) onSwipeLeft?.();
-    else if (rightFired) onSwipeRight?.();
+    // Confirm the committed action with a haptic before the handler
+    // runs: left is the destructive side (per this component's
+    // contract), right is the send-somewhere side.
+    if (leftFired) {
+      haptic("warning");
+      onSwipeLeft?.();
+    } else if (rightFired) {
+      haptic("success");
+      onSwipeRight?.();
+    }
     // Always spring back to centre; the row's actual visual change
     // (deletion, recolor) flows through React state, not the drag
     // animation. Keeping the spring identical for fired / not-fired

@@ -115,6 +115,15 @@ export function yearlyDiscountPct(plan: PlanData): number {
   return Math.round((1 - plan.yearlyEur / fullYearAtMonthlyRate) * 100);
 }
 
+/** Absolute euros saved over a year by paying yearly instead of
+ *  monthly. The percentage alone reads as abstract; the concrete
+ *  "€12/yr" is the figure that actually moves the choice. Returns 0
+ *  for the free tier or any plan with no real discount. */
+export function yearlySavingsEur(plan: PlanData): number {
+  if (plan.monthlyEur === 0) return 0;
+  return Math.max(0, plan.monthlyEur * 12 - plan.yearlyEur);
+}
+
 /** Stable section keys for the feature-matrix grouping. The order
  *  here is the render order. Resolved via
  *  `pricingPage.matrix.sections.<key>` on the consumer side. */

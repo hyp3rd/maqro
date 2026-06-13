@@ -77,6 +77,7 @@ import {
   type PantryItem,
 } from "./lib/db";
 import { dietBreakNudge, effectiveGoal } from "./lib/goal-phases";
+import { haptic } from "./lib/haptics";
 import { waterGoalMl } from "./lib/hydration";
 import { computeMacros, rescaleFoodMacros, scaleSubMacros } from "./lib/macros";
 import { getMarket, setHomeMarket } from "./lib/market";
@@ -488,6 +489,21 @@ const MacroCalculator = () => {
   const [logFlowMealId, setLogFlowMealId] = useState<number | null>(null);
   // Meal-detail sheet: which meal slot's breakdown is open (by id).
   const [mealDetailId, setMealDetailId] = useState<number | null>(null);
+  // Pulse signal for the most-recently-logged meal slot. A fresh object
+  // each log (identity, not value, drives the consumer's effect) so the
+  // target MealItem flashes + scrolls into view even when the same meal
+  // is logged twice in a row. Null until the first add this session.
+  const [loggedMealSignal, setLoggedMealSignal] = useState<{
+    mealId: number;
+  } | null>(null);
+  /** Fire the "food landed" feedback for `mealId`: a success haptic plus
+   *  the visual pulse on that meal card. Funnelled through every add path
+   *  (inline form, guided search, recents, recipe/template copy) so the
+   *  confirmation is identical regardless of how the food got there. */
+  const signalMealLogged = (mealId: number) => {
+    haptic("success");
+    setLoggedMealSignal({ mealId });
+  };
   // Initial view honors `?view=…` if present, so links from emails
   // ("Manage email preferences" → /app?view=settings, weekly recap →
   // /app?view=progress) and the Stripe Customer Portal's return URL
@@ -1199,6 +1215,9 @@ const MacroCalculator = () => {
 
     setMeals(updatedMeals);
     if (drawDown) applyPantryDelta(drawDown.itemId, drawDown.consumedQty);
+    signalMealLogged(
+      Number.parseInt(newFood.selectedMealId?.toString() || "0"),
+    );
 
     // Reset the new food form
     setNewFood({
@@ -1251,6 +1270,7 @@ const MacroCalculator = () => {
       ),
     );
     if (drawDown) applyPantryDelta(drawDown.itemId, drawDown.consumedQty);
+    signalMealLogged(mealId);
   };
 
   /** Copy a previous day's meal slot into `targetMealId` — append all its
@@ -1287,6 +1307,7 @@ const MacroCalculator = () => {
       ),
     );
     for (const [itemId, qty] of drawByItem) applyPantryDelta(itemId, qty);
+    signalMealLogged(targetMealId);
     const dest = meals.find((m) => m.id === targetMealId);
     toast.success(
       `Copied ${cloned.length} food${cloned.length === 1 ? "" : "s"} to ${
@@ -1406,6 +1427,7 @@ const MacroCalculator = () => {
   const clearMeal = (mealId: number) => {
     const meal = meals.find((m) => m.id === mealId);
     if (!meal || meal.foods.length === 0) return;
+    haptic("warning");
     const cleared = meal.foods;
     setMeals(meals.map((m) => (m.id === mealId ? { ...m, foods: [] } : m)));
     for (const f of cleared) {
@@ -2260,6 +2282,7 @@ const MacroCalculator = () => {
             setApplyRecipeMealId(mealId);
           }}
           onClearMeal={clearMeal}
+          loggedMealSignal={loggedMealSignal}
           onOpenMealDetail={(mealId) => setMealDetailId(mealId)}
           onOpenLogMeal={() => {
             // Fresh entry from the FAB / "Log meal" button always starts

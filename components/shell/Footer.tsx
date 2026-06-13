@@ -38,7 +38,7 @@ export function Footer() {
     <>
       <footer
         aria-label="Site footer"
-        className="border-t border-border/60 bg-background/60 px-safe-or-5 py-3 pb-safe-plus-2 text-[11px] text-muted-foreground"
+        className="border-t border-border/60 bg-background/60 px-safe-or-5 py-3 pb-safe-plus-2 text-xs text-muted-foreground sm:text-[11px]"
       >
         <div className="mx-auto flex max-w-5xl flex-col items-center gap-2 sm:flex-row sm:justify-between">
           <span className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-center text-foreground/80 sm:text-left">
