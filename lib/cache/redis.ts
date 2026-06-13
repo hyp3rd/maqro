@@ -133,9 +133,15 @@ export async function cacheGetString(key: string): Promise<string | null> {
   }
 }
 
-/** Best-effort delete. When `expected` is given, only deletes if the current
- *  value still matches (compare-and-delete) so a lock holder never releases a
- *  successor's lock. Fail-open. */
+/** Lua: delete the key only if its value still equals ARGV[1]. Runs atomically
+ *  on the Redis server, so there's no GET→DEL gap in which a successor's lock
+ *  (acquired after this holder's TTL lapsed) could be deleted by mistake. */
+const CAS_DELETE_LUA =
+  "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
+
+/** Best-effort delete. When `expected` is given, deletes only if the current
+ *  value still matches — atomically, via a Lua compare-and-delete — so a lock
+ *  holder never releases a successor's lock. Fail-open. */
 export async function cacheDelete(
   key: string,
   expected?: string,
@@ -147,8 +153,7 @@ export async function cacheDelete(
       await redis.del(key);
       return;
     }
-    const current = await redis.get<string>(key);
-    if (current === expected) await redis.del(key);
+    await redis.eval(CAS_DELETE_LUA, [key], [expected]);
   } catch (err) {
     console.warn("[cache] delete failed for %s:", key, err);
   }

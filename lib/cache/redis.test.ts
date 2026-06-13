@@ -14,24 +14,25 @@ import {
 // Mock the Upstash client as a real (constructable) class so no real connection
 // is attempted; `ctorSpy` records construction, `getMock`/`setMock` drive
 // behavior. `vi.hoisted` because the `vi.mock` factory runs before module init.
-const { getMock, setMock, pingMock, delMock, ctorSpy, afterMock } = vi.hoisted(
-  () => ({
+const { getMock, setMock, pingMock, delMock, evalMock, ctorSpy, afterMock } =
+  vi.hoisted(() => ({
     getMock: vi.fn(),
     setMock: vi.fn(),
     pingMock: vi.fn(),
     delMock: vi.fn(),
+    evalMock: vi.fn(),
     ctorSpy: vi.fn(),
     // `after(cb)` runs the callback synchronously here; in a real request it runs
     // after the response is sent. Tests override per-case to simulate out-of-scope.
     afterMock: vi.fn((cb: () => unknown) => cb()),
-  }),
-);
+  }));
 vi.mock("@upstash/redis", () => ({
   Redis: class {
     get = getMock;
     set = setMock;
     ping = pingMock;
     del = delMock;
+    eval = evalMock;
     constructor() {
       ctorSpy();
     }
@@ -47,6 +48,7 @@ describe("lib/cache/redis", () => {
     setMock.mockReset();
     pingMock.mockReset();
     delMock.mockReset();
+    evalMock.mockReset();
     afterMock.mockReset();
     afterMock.mockImplementation((cb: () => unknown) => cb());
   });
@@ -255,20 +257,25 @@ describe("lib/cache/redis", () => {
         delMock.mockResolvedValueOnce(1);
         await cacheDelete("lock");
         expect(delMock).toHaveBeenCalledWith("lock");
+        expect(evalMock).not.toHaveBeenCalled();
+      });
+
+      it("cacheDelete(key, expected) compare-and-deletes via an atomic Lua CAS", async () => {
+        evalMock.mockResolvedValueOnce(1);
+        await cacheDelete("lock", "mine");
+        expect(evalMock).toHaveBeenCalledWith(
+          expect.stringContaining("redis.call('del'"),
+          ["lock"],
+          ["mine"],
+        );
+        // The compare happens server-side atomically — no client GET/DEL gap.
         expect(getMock).not.toHaveBeenCalled();
-      });
-
-      it("cacheDelete(key, expected) compare-and-deletes only its own value", async () => {
-        getMock.mockResolvedValueOnce("mine");
-        delMock.mockResolvedValueOnce(1);
-        await cacheDelete("lock", "mine");
-        expect(delMock).toHaveBeenCalledWith("lock");
-      });
-
-      it("cacheDelete(key, expected) does NOT delete a successor's lock", async () => {
-        getMock.mockResolvedValueOnce("someone-else");
-        await cacheDelete("lock", "mine");
         expect(delMock).not.toHaveBeenCalled();
+      });
+
+      it("cacheDelete(key, expected) tolerates the CAS no-op (value changed → 0)", async () => {
+        evalMock.mockResolvedValueOnce(0);
+        await expect(cacheDelete("lock", "mine")).resolves.toBeUndefined();
       });
 
       it("cacheDelete swallows a Redis error (fail-open)", async () => {
