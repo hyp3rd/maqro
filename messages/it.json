@@ -38,7 +38,7 @@
     "items": {
       "mealPlanning": {
         "title": "Pianificazione pasti intelligente",
-        "body": "Completa la giornata sui tuoi target macro con un solver deterministico — oppure lascia che Claude componga un piano coerente. Rigenera una singola porzione quando non torna."
+        "body": "Completa la giornata sui tuoi target macro — oppure lascia che Claude componga un piano. Rigenera una singola porzione quando non torna."
       },
       "logging": {
         "title": "Registra con foto, barcode o voce",
@@ -141,7 +141,7 @@
     "items": {
       "storage": {
         "q": "Dove vengono salvati i miei dati?",
-        "a": "Sul tuo dispositivo, in IndexedDB. Se accedi, gli stessi dati si sincronizzano su un progetto Supabase privato (con RLS, solo tu puoi leggerli). Per default nulla esce dal tuo dispositivo."
+        "a": "Sul tuo dispositivo, nel browser. Se accedi, gli stessi dati si sincronizzano su un progetto cloud privato che solo tu puoi leggere. Per default nulla esce dal tuo dispositivo."
       },
       "account": {
         "q": "Serve un account per usarla?",
@@ -153,7 +153,7 @@
       },
       "ai": {
         "q": "L'AI è obbligatoria?",
-        "a": "Niente affatto. Il pianificatore deterministico raggiunge i tuoi target macro senza alcuna AI. I piani AI Plus / Pro esistono per chi vuole l'auto-fill AI e il riconoscimento da foto."
+        "a": "Niente affatto. Il pianificatore raggiunge i tuoi target macro senza alcuna AI. I piani AI Plus / Pro esistono per chi vuole l'auto-fill AI e il riconoscimento da foto."
       },
       "cancel": {
         "q": "Posso disdire quando voglio?",
@@ -161,7 +161,7 @@
       },
       "offline": {
         "q": "Funziona offline?",
-        "a": "Sì. Dopo la prima visita il service worker mette in cache la shell dell'app, così puoi aprirla e usarla senza rete. Le nuove generazioni AI e la sincronizzazione richiedono connettività."
+        "a": "Sì. La prima volta che usi l'app la salviamo sul tuo dispositivo, così puoi aprirla e usarla senza internet. Le nuove generazioni AI e la sincronizzazione richiedono connessione."
       },
       "gdpr": {
         "q": "E il GDPR?",
@@ -340,7 +340,7 @@
         "trends": { "label": "Trend + rilevamento dei plateau" },
         "barcode": {
           "label": "Scansione codice a barre (lookup etichette)",
-          "detail": "`BarcodeDetector` live (o fallback zxing) → Open Food Facts. Nessun utilizzo AI."
+          "detail": "Scanner di codici a barre con ricerca su Open Food Facts. Nessun utilizzo AI."
         },
         "photoMealId": {
           "label": "Identificazione del pasto da foto",
@@ -369,12 +369,12 @@
         },
         "importRecipesUrl": {
           "label": "Importa ricette da un URL",
-          "detail": "Fetch lato server + strutturazione AI. Solo Plus + Pro."
+          "detail": "Importa una ricetta da una pagina web. Solo Plus + Pro."
         },
         "priorityQueue": { "label": "Coda API prioritaria" },
-        "localStorage": { "label": "Storage local-first (IndexedDB)" },
+        "localStorage": { "label": "Storage locale (sul tuo dispositivo)" },
         "syncDevices": {
-          "label": "Sincronizzazione tra dispositivi (Supabase)"
+          "label": "Sincronizzazione tra dispositivi (nel cloud)"
         },
         "cloudBackup": { "label": "Backup cloud (export JSON)" },
         "encryptedBackup": {
@@ -460,7 +460,7 @@
       },
       "dataStorage": {
         "q": "Dove vengono salvati i miei dati?",
-        "a": "Sul tuo dispositivo, nell'IndexedDB del browser. Se sei sul piano Pro e hai effettuato l'accesso, le stesse righe vengono sincronizzate anche su un progetto Supabase (controlli tu il deployment; row-level security lega ogni riga al tuo id utente). I piani Free e Plus girano completamente local-first. Vedi la privacy policy su /privacy per il quadro completo."
+        "a": "Sul tuo dispositivo, nel browser. Se sei sul piano Pro e hai effettuato l'accesso, gli stessi dati si sincronizzano su un progetto cloud privato che solo tu puoi leggere. I piani Free e Plus restano interamente sul tuo dispositivo. Vedi la privacy policy su /privacy per il quadro completo."
       },
       "refunds": {
         "q": "Offrite rimborsi?",

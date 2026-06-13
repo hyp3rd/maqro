@@ -168,7 +168,7 @@ function GenerateRecipeDialogBody({
           setError({
             message:
               res.status === 503
-                ? "AI suggestion isn't configured on this deployment."
+                ? "AI recipe suggestions aren't available on this instance."
                 : res.status === 429
                   ? "AI is rate-limited. Try again shortly."
                   : (data.error ?? "AI request failed."),

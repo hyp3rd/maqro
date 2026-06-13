@@ -1566,8 +1566,8 @@ function NotificationsSection() {
               </select>
               <p className="text-[11px] text-muted-foreground">
                 Local time in{" "}
-                <span className="font-mono">{timezone ?? "UTC"}</span>. The cron
-                picks this up within an hour.
+                <span className="font-mono">{timezone ?? "UTC"}</span>. Your
+                reminders use this within an hour.
               </p>
             </div>
           </div>

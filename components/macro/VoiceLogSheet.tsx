@@ -339,12 +339,8 @@ function VoiceLogBody({
         <DialogHeader>
           <DialogTitle>Voice logging unavailable</DialogTitle>
           <DialogDescription>
-            This deployment doesn&apos;t have AI configured, so voice meal
-            parsing is off. Reach out to the operator or check{" "}
-            <code className="rounded bg-muted px-1 font-mono text-[11px]">
-              ANTHROPIC_API_KEY
-            </code>{" "}
-            in the env.
+            This instance doesn&apos;t have AI enabled, so voice meal logging
+            isn&apos;t available. Contact the administrator to turn it on.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

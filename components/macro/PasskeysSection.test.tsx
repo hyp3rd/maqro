@@ -77,7 +77,7 @@ describe("PasskeysSection - render branches", () => {
     const { PasskeysSection } = await import("./PasskeysSection");
     render(<PasskeysSection signedIn={true} />);
     await waitFor(() =>
-      expect(screen.queryByText(/aren't enabled/i)).not.toBeNull(),
+      expect(screen.queryByText(/aren't available/i)).not.toBeNull(),
     );
   });
 

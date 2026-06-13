@@ -53,7 +53,12 @@ ships with privacy-respecting operational logging.
   template, scan a barcode, photograph the plate, or talk — and the
   right full-screen tool opens, pre-targeted to that slot (with a
   "back to method" affordance throughout). Desktop keeps the inline
-  Add Food form, with the meal picker as icon tiles.
+  Add Food form, with the meal picker as icon tiles. A meal that
+  already has food gets a quick **Add food** in its `⋯` menu that jumps
+  straight to that slot's recents + search — no need to restart the
+  flow. Adding a food flashes its card, scrolls it into view, and (on
+  supported devices) gives a light haptic tap; the day header shows
+  **calories left** against today's target.
 - **Meal insights** - tap any logged meal for a detail sheet: macro
   share + sub-macros, a micronutrient read (Pro), and a deterministic
   **balance check** that flags imbalances ("fat-heavy", "low fiber",
@@ -1107,6 +1112,38 @@ Done (in roughly chronological order):
     planner, and enrichment cron share one cached entry per query.
     Fail-open — with no Upstash env every lookup falls back to a direct
     fetch; write-through survives the response via `after()`
+
+- **Phase 24 (Meal scheduling, marketing automation, admin depth +
+  mobile-logging polish)** -
+  - **Meal schedules + AI day-planner** - schedule a recipe across a date
+    range / weekdays as a saved "cook once, log for the week" plan
+    (surfaced as a one-tap "Log it" on each matching day, never written
+    ahead); a "Don't know what to eat today?" one-tap AI day built from
+    your own saved recipes against your remaining macros.
+  - **Release social automation** - a changelog entry auto-drafts X /
+    LinkedIn / Instagram posts in a strict professional voice
+    (deterministic tone-lint) for review + approval in `/admin/social`
+    before posting, with a branded release OG card.
+  - **Admin inbox** - a Resend-backed inbound mailbox with archive (+ undo
+    via a real un-dismiss), recipient filter, compose / reply /
+    scheduled-send, and new-message push + email to admins.
+  - **Complimentary tiers** - grant or revoke Plus / Pro outside Stripe
+    (optional expiry) from a user's admin page, stored in a write-locked
+    `comp_grants` table so it can't be self-granted; the tier resolver
+    takes the highest of paid / comp / grandfather, so a grant never
+    downgrades a paid plan.
+  - **Admin QoL + visual pass** - destructive confirms with undo, in-flight
+    locks, 44px touch targets, mobile-safe data tables, and a consistent
+    PageHeader / StatCard / empty-state system across the panel.
+  - **Mobile-logging polish** - add food straight from a populated meal's
+    menu, a meal-card flash + scroll + light haptic on every add, a
+    "calories left today" line, a calorie-target-met celebration, and
+    sign-in / upgrade prompts (not toasts) when an AI feature needs an
+    account or Pro.
+  - **Micronutrient accuracy** - branded staples keep their Open Food Facts
+    barcode through logging so the enrichment cron upgrades them from the
+    real product, not an AI estimate; CIQUAL generic foods + a
+    market-biased food search.
 
 Considered, deliberately not pursuing:
 

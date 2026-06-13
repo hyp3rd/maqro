@@ -368,9 +368,8 @@ function MfaSectionBody({ signedIn }: { signedIn: boolean }) {
       <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
         {header}
         <p className="px-5 py-4 text-xs text-muted-foreground">
-          Two-factor authentication isn&apos;t enabled on this deployment. The
-          maintainer needs to turn it on in the Supabase project&apos;s Auth
-          settings before this surface becomes available.
+          Two-factor authentication isn&apos;t available on this instance.
+          Contact the administrator to enable it.
         </p>
       </section>
     );

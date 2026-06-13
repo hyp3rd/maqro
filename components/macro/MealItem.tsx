@@ -239,6 +239,23 @@ const MealItem: React.FC<MealItemProps> = ({
               align="end"
               className="w-44"
             >
+              {/* Fast path for an already-populated meal: jump straight into
+                  the per-meal hub (recents + search, pre-targeted to this
+                  slot) instead of the full Log-meal flow. The empty slot
+                  already has its own "Quick add" chip, so this only earns its
+                  place once there's food to add to. */}
+              {meal.foods.length > 0 && (
+                <>
+                  <DropdownMenuItem
+                    onClick={() => onOpenDetail(meal.id)}
+                    className="gap-2"
+                  >
+                    <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+                    Add food
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
               <DropdownMenuItem
                 onClick={() => onRegenerate(meal.id)}
                 disabled={regenerating}

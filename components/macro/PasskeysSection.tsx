@@ -276,8 +276,8 @@ export function PasskeysSection({ signedIn }: { signedIn: boolean }) {
       <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
         {header}
         <p className="px-5 py-4 text-xs text-muted-foreground">
-          Passkeys aren&apos;t enabled on this deployment. The maintainer needs
-          to turn them on in the Supabase project&apos;s Auth settings.
+          Passkeys aren&apos;t available on this instance. Contact the
+          administrator to enable them.
         </p>
       </section>,
     );
