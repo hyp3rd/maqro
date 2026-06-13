@@ -118,6 +118,46 @@ describe("resolveTier", () => {
     expect(resolveTier({ isPremium: true })).toBe("plus");
   });
 
+  it("indefinite comp Pro grant resolves to pro", () => {
+    expect(resolveTier({ compTier: "pro" })).toBe("pro");
+  });
+
+  it("comp Plus grant resolves to plus", () => {
+    expect(resolveTier({ compTier: "plus" })).toBe("plus");
+  });
+
+  it("comp grant with a future expiry is honored", () => {
+    expect(
+      resolveTier({ compTier: "pro", compUntil: "2099-01-01T00:00:00Z" }),
+    ).toBe("pro");
+  });
+
+  it("comp grant past its expiry is ignored", () => {
+    expect(
+      resolveTier({ compTier: "pro", compUntil: "2000-01-01T00:00:00Z" }),
+    ).toBe("free");
+  });
+
+  it("comp grant never downgrades a higher paid tier (comp plus + paid pro = pro)", () => {
+    expect(
+      resolveTier({
+        compTier: "plus",
+        stripePriceId: "price_pro_m",
+        subscriptionStatus: "active",
+      }),
+    ).toBe("pro");
+  });
+
+  it("comp grant raises above a lower paid tier (comp pro + paid plus = pro)", () => {
+    expect(
+      resolveTier({
+        compTier: "pro",
+        stripePriceId: "price_plus_m",
+        subscriptionStatus: "active",
+      }),
+    ).toBe("pro");
+  });
+
   it("unknown price ID with active status falls back to free", () => {
     expect(
       resolveTier({

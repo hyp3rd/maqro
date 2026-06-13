@@ -163,6 +163,10 @@ export default async function AdminHome() {
         className="space-y-3"
       >
         <SectionHeading>People</SectionHeading>
+        {/* The StatCard (icon halo + label + 2rem value) is too wide to fit
+            3-up on a phone without clipping the label — so 2-up on mobile,
+            with Premium spanning the full row so there's no half-empty
+            orphan. Restores 3-up at sm+ where there's room. */}
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <StatCard
             label="Profiles"
@@ -184,6 +188,7 @@ export default async function AdminHome() {
             icon={CreditCard}
             href="/admin/users?filter=premium"
             tone="emerald"
+            className="col-span-2 sm:col-span-1"
             hint={
               stats.profiles > 0
                 ? `${Math.round((stats.premium / stats.profiles) * 100)}% of users`
@@ -236,7 +241,9 @@ export default async function AdminHome() {
         className="space-y-3"
       >
         <SectionHeading>Engagement · last 24h</SectionHeading>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {/* Stay 2-up until lg — four 2rem-headline cards are cramped at the
+            sm breakpoint; they only breathe at desktop widths. */}
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <StatCard
             label="Push sent"
             value={stats.pushSendsLast24h.toLocaleString()}
@@ -304,11 +311,11 @@ export default async function AdminHome() {
             />
           </div>
         ) : (
-          <ul className="overflow-hidden rounded-lg border border-border/60 bg-card">
+          <ul className="divide-y divide-border/60 overflow-hidden rounded-lg border border-border/60 bg-card">
             {recentAudit.map((row) => (
               <li
                 key={row.id}
-                className="flex items-center justify-between gap-3 border-b border-border/60 px-4 py-2.5 text-xs last:border-b-0"
+                className="flex items-center justify-between gap-3 px-4 py-2.5 text-xs"
               >
                 <div className="min-w-0 flex-1 space-y-0.5">
                   <p className="font-mono text-[11px] font-medium">

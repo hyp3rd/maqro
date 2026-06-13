@@ -123,7 +123,7 @@ export function AdminNav({
           </DropdownMenuTrigger>
           <DropdownMenuContent
             align="end"
-            className="min-w-[200px]"
+            className="min-w-[15rem]"
           >
             <DropdownMenuLabel className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
               Admin
@@ -134,7 +134,10 @@ export function AdminNav({
                 <DropdownMenuItem
                   key={item.href}
                   onSelect={() => router.push(item.href)}
-                  className={`cursor-pointer text-xs ${active ? "font-semibold text-foreground" : "text-muted-foreground"}`}
+                  // Roomier than the dense default: full text-sm + py-2.5 so the
+                  // 10-item list reads as a comfortable mobile nav, not a
+                  // cramped context menu. Active item also gets an accent bar.
+                  className={`cursor-pointer border-l-2 py-2.5 ${active ? "border-foreground bg-accent/40 font-semibold text-foreground" : "border-transparent text-muted-foreground"}`}
                 >
                   {item.label}
                 </DropdownMenuItem>
@@ -144,9 +147,9 @@ export function AdminNav({
             <DropdownMenuItem
               onSelect={() => void exitAdmin()}
               disabled={exiting}
-              className="cursor-pointer text-xs text-rose-700 focus:text-rose-700 dark:text-rose-400 dark:focus:text-rose-400"
+              className="cursor-pointer border-l-2 border-transparent py-2.5 text-rose-700 focus:text-rose-700 dark:text-rose-400 dark:focus:text-rose-400"
             >
-              <LogOut className="mr-2 h-3 w-3" />
+              <LogOut className="mr-2 h-4 w-4" />
               {exiting ? "Exiting…" : "Exit admin"}
             </DropdownMenuItem>
           </DropdownMenuContent>

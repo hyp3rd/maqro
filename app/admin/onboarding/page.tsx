@@ -333,10 +333,21 @@ function DailyTable({ rows }: { rows: Row[] }) {
         <table className="w-full text-sm">
           <thead className="border-b border-border/60 bg-muted/30 text-[10px] uppercase tracking-wider text-muted-foreground">
             <tr>
-              <th className="px-4 py-2 text-left font-medium">Day</th>
+              {/* Day stays pinned while the numeric columns scroll on a phone;
+                  the mid-funnel steps drop out under sm so Start → Finished →
+                  Skipped (the columns operators actually scan) stay on screen. */}
+              {/* Opaque bg (not bg-muted/30) so the scrolling numeric header
+                  cells don't bleed through the pinned Day label. */}
+              <th className="sticky left-0 z-10 bg-muted px-4 py-2 text-left font-medium">
+                Day
+              </th>
               <th className="px-4 py-2 text-right font-medium">Start</th>
-              <th className="px-4 py-2 text-right font-medium">Step 1</th>
-              <th className="px-4 py-2 text-right font-medium">Step 2</th>
+              <th className="hidden px-4 py-2 text-right font-medium sm:table-cell">
+                Step 1
+              </th>
+              <th className="hidden px-4 py-2 text-right font-medium sm:table-cell">
+                Step 2
+              </th>
               <th className="px-4 py-2 text-right font-medium">Step 3</th>
               <th className="px-4 py-2 text-right font-medium">Finished</th>
               <th className="px-4 py-2 text-right font-medium">Skipped</th>
@@ -356,26 +367,32 @@ function DailyTable({ rows }: { rows: Row[] }) {
                 .filter((r) => r.action === "skip")
                 .reduce((acc, r) => acc + r.count, 0);
               return (
-                <tr key={day}>
-                  <td className="whitespace-nowrap px-4 py-2 font-mono text-[11px] text-muted-foreground">
+                <tr
+                  key={day}
+                  className="group transition-colors hover:bg-accent/30"
+                >
+                  {/* Opaque bg occludes the scrolling columns; group-hover tints
+                      it in lockstep with the row so the pinned cell doesn't read
+                      as an un-highlighted notch on hover. */}
+                  <td className="sticky left-0 z-10 whitespace-nowrap bg-card px-4 py-2.5 font-mono text-[11px] text-muted-foreground transition-colors group-hover:bg-accent/30">
                     {day}
                   </td>
-                  <td className="px-4 py-2 text-right font-mono text-xs tabular-nums">
+                  <td className="px-4 py-2.5 text-right font-mono text-xs tabular-nums">
                     {at(0, "enter")}
                   </td>
-                  <td className="px-4 py-2 text-right font-mono text-xs tabular-nums">
+                  <td className="hidden px-4 py-2.5 text-right font-mono text-xs tabular-nums sm:table-cell">
                     {at(1, "enter")}
                   </td>
-                  <td className="px-4 py-2 text-right font-mono text-xs tabular-nums">
+                  <td className="hidden px-4 py-2.5 text-right font-mono text-xs tabular-nums sm:table-cell">
                     {at(2, "enter")}
                   </td>
-                  <td className="px-4 py-2 text-right font-mono text-xs tabular-nums">
+                  <td className="px-4 py-2.5 text-right font-mono text-xs tabular-nums">
                     {at(3, "enter")}
                   </td>
-                  <td className="px-4 py-2 text-right font-mono text-xs tabular-nums text-emerald-700 dark:text-emerald-400">
+                  <td className="px-4 py-2.5 text-right font-mono text-xs tabular-nums text-emerald-700 dark:text-emerald-400">
                     {finish}
                   </td>
-                  <td className="px-4 py-2 text-right font-mono text-xs tabular-nums text-amber-700 dark:text-amber-400">
+                  <td className="px-4 py-2.5 text-right font-mono text-xs tabular-nums text-amber-700 dark:text-amber-400">
                     {skip}
                   </td>
                 </tr>

@@ -40,7 +40,10 @@ export function PageHeader({
 }: {
   icon?: LucideIcon;
   title: string;
-  description?: string;
+  /** String for the common case; ReactNode when a page needs richer
+   *  subtitle content (e.g. the user-detail page puts a CopyableId
+   *  here). Rendered inside the muted subtitle `<p>` either way. */
+  description?: React.ReactNode;
   tone?: Tone;
   actions?: React.ReactNode;
 }) {
