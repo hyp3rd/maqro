@@ -3,6 +3,7 @@
 import { CopyableId } from "@/components/admin/CopyableId";
 import { EmptyState } from "@/components/admin/EmptyState";
 import { JsonViewer } from "@/components/admin/JsonViewer";
+import { PageHeader } from "@/components/admin/PageHeader";
 import { Pill } from "@/components/admin/Pill";
 import {
   AlertDialog,
@@ -25,10 +26,12 @@ import {
   ArrowLeft,
   Ban,
   CheckCircle2,
+  Gift,
   Loader2,
   Radio,
   ShieldX,
   Trash2,
+  Users,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -72,6 +75,7 @@ type UserDetail = {
     currentPeriodEnd: string;
     cancelAtPeriodEnd: boolean;
   } | null;
+  comp: { tier: CompTier; expiresAt: string | null } | null;
   recentActions: Array<{
     id: string;
     created_at: string;
@@ -81,13 +85,17 @@ type UserDetail = {
   }>;
 };
 
+type CompTier = "plus" | "pro";
+
 type Action =
   | "ban"
   | "unban"
   | "trace"
   | "untrace"
   | "cancel_subscription"
-  | "delete_user";
+  | "delete_user"
+  | "grant_comp"
+  | "revoke_comp";
 
 /** Whitelisted ban durations matching the route's accepted set.
  *  "permanent" maps to 100y at the API; we keep the human label
@@ -109,6 +117,8 @@ const ACTION_LABELS: Record<Action, string> = {
   untrace: "Stop tracing",
   cancel_subscription: "Cancel subscription",
   delete_user: "Delete user",
+  grant_comp: "Grant comp access",
+  revoke_comp: "Revoke comp access",
 };
 
 export default function AdminUserDetailPage() {
@@ -161,7 +171,11 @@ export default function AdminUserDetailPage() {
 
   async function doAction(
     action: Action,
-    extras: { banDuration?: BanDuration } = {},
+    extras: {
+      banDuration?: BanDuration;
+      compTier?: CompTier;
+      compUntil?: string;
+    } = {},
   ) {
     setPendingAction(action);
     try {
@@ -174,6 +188,8 @@ export default function AdminUserDetailPage() {
             action,
             reason: reason || undefined,
             ...(extras.banDuration ? { banDuration: extras.banDuration } : {}),
+            ...(extras.compTier ? { compTier: extras.compTier } : {}),
+            ...(extras.compUntil ? { compUntil: extras.compUntil } : {}),
           }),
         },
       );
@@ -219,19 +235,29 @@ export default function AdminUserDetailPage() {
     <div className="space-y-5">
       <BackLink />
 
-      <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 space-y-1.5">
-          <h1 className="truncate text-lg font-semibold tracking-tight">
-            {u.email ?? "(no email)"}
-          </h1>
+      <PageHeader
+        icon={Users}
+        title={u.email ?? "(no email)"}
+        tone={u.role === "admin" ? "blue" : isBanned ? "red" : "default"}
+        description={
           <CopyableId
             value={u.id}
             display={u.id}
             className="-ml-1"
           />
-          <div className="flex flex-wrap gap-1.5 pt-1">
+        }
+        actions={
+          <>
             <Pill tone={u.role === "admin" ? "blue" : "muted"}>{u.role}</Pill>
             {u.isPremium && <Pill tone="emerald">Premium</Pill>}
+            {u.comp && (
+              <Pill
+                tone="emerald"
+                icon={Gift}
+              >
+                Comp {u.comp.tier}
+              </Pill>
+            )}
             {isBanned && (
               <Pill
                 tone="red"
@@ -248,9 +274,9 @@ export default function AdminUserDetailPage() {
                 Traced
               </Pill>
             )}
-          </div>
-        </div>
-      </header>
+          </>
+        }
+      />
 
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Card title="Identity">
@@ -399,6 +425,17 @@ export default function AdminUserDetailPage() {
               }}
             />
           </div>
+
+          <CompAccessPanel
+            comp={u.comp}
+            pendingGrant={pendingAction === "grant_comp"}
+            pendingRevoke={pendingAction === "revoke_comp"}
+            reasonProvided={reason.trim().length > 0}
+            onGrant={(tier, until) =>
+              void doAction("grant_comp", { compTier: tier, compUntil: until })
+            }
+            onRevoke={() => void doAction("revoke_comp")}
+          />
         </div>
       </section>
 
@@ -758,6 +795,128 @@ function DeleteUserDialog({
       </AlertDialogContent>
     </AlertDialog>
   );
+}
+
+/** Comp access — grant/revoke a complimentary Plus/Pro tier outside Stripe.
+ *  When a grant is active it shows the tier + expiry and a Revoke button;
+ *  otherwise a tier picker + optional expiry + Grant. Grant reuses the shared
+ *  Reason field above (the route requires it), so the button stays disabled
+ *  until a reason is typed — same gate as Ban/Trace. */
+function CompAccessPanel({
+  comp,
+  pendingGrant,
+  pendingRevoke,
+  reasonProvided,
+  onGrant,
+  onRevoke,
+}: {
+  comp: UserDetail["comp"];
+  pendingGrant: boolean;
+  pendingRevoke: boolean;
+  reasonProvided: boolean;
+  onGrant: (tier: CompTier, until: string | undefined) => void;
+  onRevoke: () => void;
+}) {
+  const [tier, setTier] = useState<CompTier>("pro");
+  const [expiry, setExpiry] = useState(""); // YYYY-MM-DD; "" = indefinite
+
+  return (
+    <div className="space-y-2 border-t border-border/60 pt-3">
+      <div className="flex items-center gap-1.5">
+        <Gift className="h-3.5 w-3.5 text-muted-foreground" />
+        <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          Comp access
+        </h4>
+      </div>
+      {comp ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Pill
+            tone="emerald"
+            icon={Gift}
+          >
+            Comp {comp.tier}
+          </Pill>
+          <span className="text-xs text-muted-foreground">
+            {comp.expiresAt
+              ? `until ${formatDate(comp.expiresAt)}`
+              : "indefinite — until revoked"}
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              haptic("warning");
+              onRevoke();
+            }}
+            disabled={pendingRevoke}
+            className="h-8 gap-1.5 coarse:h-11"
+          >
+            <X className="h-3.5 w-3.5" />
+            {pendingRevoke ? "Working…" : "Revoke comp"}
+          </Button>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="space-y-1">
+            <span className="block text-[11px] text-muted-foreground">
+              Tier
+            </span>
+            <select
+              value={tier}
+              onChange={(e) => setTier(e.target.value as CompTier)}
+              disabled={pendingGrant}
+              className="h-9 rounded-md border border-border bg-background px-2 text-sm"
+            >
+              <option value="pro">Pro</option>
+              <option value="plus">Plus</option>
+            </select>
+          </label>
+          <label className="space-y-1">
+            <span className="block text-[11px] text-muted-foreground">
+              Expires (optional)
+            </span>
+            <input
+              type="date"
+              value={expiry}
+              onChange={(e) => setExpiry(e.target.value)}
+              disabled={pendingGrant}
+              className="h-9 rounded-md border border-border bg-background px-2 text-sm"
+            />
+          </label>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => {
+              haptic("success");
+              onGrant(tier, expiry ? localEndOfDayIso(expiry) : undefined);
+            }}
+            disabled={pendingGrant || !reasonProvided}
+            className="h-9 gap-1.5 coarse:h-11"
+            title={reasonProvided ? undefined : "Enter a reason above first"}
+          >
+            <Gift className="h-3.5 w-3.5" />
+            {pendingGrant ? "Working…" : "Grant comp"}
+          </Button>
+        </div>
+      )}
+      <p className="text-[11px] text-muted-foreground">
+        Grants a membership tier without Stripe billing. Takes effect
+        immediately; the reason is recorded in the audit log.
+      </p>
+    </div>
+  );
+}
+
+/** Turn a `<input type="date">` value (YYYY-MM-DD, the operator's local
+ *  calendar day) into the ISO instant at the END of that day in the operator's
+ *  LOCAL timezone. Building it as local (not UTC) means "until today" is always
+ *  a future instant — so it passes the route's `expiry > now` check — and the
+ *  grant lasts through the whole of the day the admin actually picked,
+ *  regardless of their offset. */
+function localEndOfDayIso(date: string): string {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(y, m - 1, d, 23, 59, 59, 999).toISOString();
 }
 
 function formatDate(iso: string): string {

@@ -450,7 +450,16 @@ async function AppTable({
                     )}
                   </td>
                   <td className="px-4 py-2.5 font-mono text-[10px] text-muted-foreground">
-                    {row.payload ? JSON.stringify(row.payload) : "—"}
+                    {row.payload ? (
+                      <span
+                        className="block max-w-[16rem] truncate"
+                        title={JSON.stringify(row.payload)}
+                      >
+                        {JSON.stringify(row.payload)}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
                   </td>
                 </tr>
               ))}
@@ -576,9 +585,16 @@ async function AuthTable({
                       {row.ip_address ?? "—"}
                     </td>
                     <td className="px-4 py-2.5 font-mono text-[10px] text-muted-foreground">
-                      {detail && Object.keys(detail).length > 0
-                        ? JSON.stringify(detail)
-                        : "—"}
+                      {detail && Object.keys(detail).length > 0 ? (
+                        <span
+                          className="block max-w-[16rem] truncate"
+                          title={JSON.stringify(detail)}
+                        >
+                          {JSON.stringify(detail)}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                   </tr>
                 );

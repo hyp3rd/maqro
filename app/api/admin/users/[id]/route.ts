@@ -40,6 +40,9 @@ type UserDetail = {
     currentPeriodEnd: string;
     cancelAtPeriodEnd: boolean;
   } | null;
+  /** Active complimentary (admin-granted) tier, if any. `expiresAt`
+   *  null = indefinite. Drives the Membership card's grant/revoke UI. */
+  comp: { tier: "plus" | "pro"; expiresAt: string | null } | null;
   /** Recent admin-audit-log rows targeting this user. Newest
    *  first, capped at 10 — the full history lives on the audit
    *  page, this is just the "is anything in flight" preview. */
@@ -154,6 +157,24 @@ export async function GET(
     }
   }
 
+  // Active comp grant (admin-granted tier outside Stripe). Service-role read
+  // bypasses RLS. A grant whose `expires_at` is in the past is treated as
+  // inactive — it stays in the table for audit but no longer entitles, so the
+  // UI shouldn't present it as live.
+  const { data: compRow } = await admin
+    .from("comp_grants")
+    .select("tier, expires_at")
+    .eq("user_id", id)
+    .maybeSingle();
+  const compTier = compRow?.tier as "plus" | "pro" | undefined;
+  const compExpiresAt = (compRow?.expires_at as string | undefined) ?? null;
+  const compActive =
+    compTier != null &&
+    (compExpiresAt === null || new Date(compExpiresAt).getTime() > Date.now());
+  const comp: UserDetail["comp"] = compActive
+    ? { tier: compTier, expiresAt: compExpiresAt }
+    : null;
+
   const { data: recentRows } = await admin
     .from("admin_audit_log")
     .select("id, created_at, action, admin_user_id, payload")
@@ -177,6 +198,7 @@ export async function GET(
       (profile?.subscription_status as string | undefined) ?? null,
     traced: (profile?.traced as boolean | undefined) ?? false,
     subscription,
+    comp,
     recentActions: (recentRows as UserDetail["recentActions"] | null) ?? [],
   };
   return NextResponse.json(detail);

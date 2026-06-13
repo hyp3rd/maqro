@@ -5,6 +5,7 @@ import { CopyableId } from "@/components/admin/CopyableId";
 import { EmptyState } from "@/components/admin/EmptyState";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { Pill } from "@/components/admin/Pill";
+import { NumberTicker } from "@/components/shell/NumberTicker";
 import { Button } from "@/components/ui/button";
 import { DestructiveConfirmDialog } from "@/components/ui/destructive-confirm-dialog";
 import { Input } from "@/components/ui/input";
@@ -210,9 +211,9 @@ export default function AdminUsersPage() {
                 setFilter(f);
                 setPage(1);
               }}
-              className={`rounded-full px-2.5 py-1 text-[11px] transition-colors ${
+              className={`rounded-full px-3 py-1.5 text-xs transition-colors ${
                 filter === f
-                  ? "bg-foreground text-background"
+                  ? "bg-primary text-primary-foreground"
                   : "bg-muted/40 text-muted-foreground hover:bg-muted"
               }`}
             >
@@ -222,7 +223,7 @@ export default function AdminUsersPage() {
         </div>
         {data && (
           <p className="text-[11px] tabular-nums text-muted-foreground sm:ml-auto">
-            {data.total} total
+            <NumberTicker value={data.total} /> total
           </p>
         )}
       </div>

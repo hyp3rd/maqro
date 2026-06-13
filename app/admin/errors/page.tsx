@@ -78,6 +78,19 @@ export default function AdminErrorsPage() {
   >({ status: "loading" });
   // Selected row id for the detail drawer (right-side panel).
   const [selected, setSelected] = React.useState<string | null>(null);
+  // On phones the detail panel stacks BELOW the list, so a row tap updates
+  // something off-screen with no feedback. Scroll it into view (only under
+  // lg, where the layout is stacked — desktop is already side-by-side).
+  const detailRef = React.useRef<HTMLDivElement>(null);
+  function selectRow(id: string) {
+    setSelected(id);
+    if (
+      typeof window !== "undefined" &&
+      window.matchMedia("(max-width: 1023px)").matches
+    ) {
+      detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
   // Pipeline diagnostic: POST a known event straight to /api/errors and
   // surface the exact response, so "nothing is logging" can be pinned to
   // a layer instead of guessed. `{ok:true}` = pipeline healthy (so the
@@ -342,7 +355,7 @@ export default function AdminErrorsPage() {
                 <li key={row.id}>
                   <button
                     type="button"
-                    onClick={() => setSelected(row.id)}
+                    onClick={() => selectRow(row.id)}
                     className={`flex w-full items-start gap-3 px-4 py-2.5 text-left transition-colors hover:bg-accent/30 ${
                       selected === row.id ? "bg-accent/40" : ""
                     }`}
@@ -384,7 +397,10 @@ export default function AdminErrorsPage() {
         </div>
 
         {/* Detail drawer */}
-        <aside className="rounded-lg border border-border/60 bg-card p-4 lg:sticky lg:top-20 lg:self-start">
+        <aside
+          ref={detailRef}
+          className="scroll-mt-20 rounded-lg border border-border/60 bg-card p-4 lg:sticky lg:top-20 lg:self-start"
+        >
           {!selectedRow ? (
             <p className="py-8 text-center text-xs text-muted-foreground">
               Select an event to see the stack and context.
@@ -487,7 +503,7 @@ function DetailPanel({
         )}
       </div>
 
-      <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+      <dl className="grid grid-cols-1 gap-x-3 gap-y-1.5 sm:grid-cols-2">
         <DetailRow
           label="When"
           value={new Date(row.created_at).toLocaleString()}

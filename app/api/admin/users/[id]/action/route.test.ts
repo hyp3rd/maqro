@@ -27,6 +27,8 @@ const {
   mockSubsList,
   mockSubsUpdate,
   mockCascadeDelete,
+  mockCompUpsert,
+  mockCompDeleteEq,
 } = vi.hoisted(() => ({
   mockRequireAdmin: vi.fn(),
   mockWriteAuditLog: vi.fn(async () => {}),
@@ -48,6 +50,14 @@ const {
   mockProfileSelectMaybeSingle: vi.fn(),
   mockSubsList: vi.fn(),
   mockSubsUpdate: vi.fn(),
+  // comp_grants upsert (grant_comp) + delete().eq() (revoke_comp). Widened so
+  // an error-branch test can override with `{ error: { message } }`.
+  mockCompUpsert: vi.fn(
+    async () => ({ error: null }) as { error: { message: string } | null },
+  ),
+  mockCompDeleteEq: vi.fn(
+    async () => ({ error: null }) as { error: { message: string } | null },
+  ),
   // Mocking the cascade helper here keeps the route test scoped
   // to dispatch + audit-log behaviour. The helper itself has its
   // own coverage in lib/user-deletion.test.ts. Widened return so
@@ -81,6 +91,9 @@ vi.mock("@supabase/supabase-js", () => ({
       }),
       // profile update chain (for trace/untrace)
       update: () => ({ eq: mockProfileUpdateEq }),
+      // comp_grants upsert (grant_comp) + delete().eq() (revoke_comp)
+      upsert: mockCompUpsert,
+      delete: () => ({ eq: mockCompDeleteEq }),
     }),
   })),
 }));
@@ -114,6 +127,8 @@ beforeEach(() => {
   });
   mockSubsUpdate.mockResolvedValue({ id: "sub_1", cancel_at_period_end: true });
   mockCascadeDelete.mockResolvedValue({ ok: true });
+  mockCompUpsert.mockResolvedValue({ error: null });
+  mockCompDeleteEq.mockResolvedValue({ error: null });
 });
 
 describe("POST /api/admin/users/[id]/action — guards", () => {
@@ -415,6 +430,110 @@ describe("POST /api/admin/users/[id]/action — delete_user", () => {
     expect(mockWriteAuditLog).toHaveBeenCalledWith(
       expect.objectContaining({ action: "user.delete" }),
     );
+  });
+});
+
+describe("POST /api/admin/users/[id]/action — comp grants", () => {
+  it("rejects grant_comp with no reason", async () => {
+    const { POST } = await loadRoute();
+    const res = await POST(req({ action: "grant_comp", compTier: "pro" }), {
+      params: Promise.resolve({ id: VALID_ID }),
+    });
+    expect(res.status).toBe(400);
+    expect(mockCompUpsert).not.toHaveBeenCalled();
+  });
+
+  it("rejects grant_comp with no tier", async () => {
+    const { POST } = await loadRoute();
+    const res = await POST(req({ action: "grant_comp", reason: "comp" }), {
+      params: Promise.resolve({ id: VALID_ID }),
+    });
+    expect(res.status).toBe(400);
+    expect(mockCompUpsert).not.toHaveBeenCalled();
+  });
+
+  it("rejects grant_comp with an expiry in the past", async () => {
+    const { POST } = await loadRoute();
+    const res = await POST(
+      req({
+        action: "grant_comp",
+        compTier: "pro",
+        reason: "comp",
+        compUntil: "2000-01-01T00:00:00Z",
+      }),
+      { params: Promise.resolve({ id: VALID_ID }) },
+    );
+    expect(res.status).toBe(400);
+    expect(mockCompUpsert).not.toHaveBeenCalled();
+  });
+
+  it("grants comp Pro (indefinite) + audits user.comp.grant", async () => {
+    const { POST } = await loadRoute();
+    const res = await POST(
+      req({ action: "grant_comp", compTier: "pro", reason: "partner deal" }),
+      { params: Promise.resolve({ id: VALID_ID }) },
+    );
+    expect(res.status).toBe(200);
+    expect(mockCompUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: VALID_ID,
+        tier: "pro",
+        expires_at: null,
+        granted_by: ADMIN_ID,
+        reason: "partner deal",
+      }),
+      expect.objectContaining({ onConflict: "user_id" }),
+    );
+    expect(mockWriteAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "user.comp.grant",
+        targetUserId: VALID_ID,
+        payload: expect.objectContaining({ tier: "pro", expiresAt: null }),
+      }),
+    );
+  });
+
+  it("grants comp with a future expiry (ISO)", async () => {
+    const future = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { POST } = await loadRoute();
+    const res = await POST(
+      req({
+        action: "grant_comp",
+        compTier: "plus",
+        reason: "trial extension",
+        compUntil: future,
+      }),
+      { params: Promise.resolve({ id: VALID_ID }) },
+    );
+    expect(res.status).toBe(200);
+    expect(mockCompUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({ tier: "plus", expires_at: future }),
+      expect.anything(),
+    );
+  });
+
+  it("revoke_comp deletes the grant + audits user.comp.revoke (no reason required)", async () => {
+    const { POST } = await loadRoute();
+    const res = await POST(req({ action: "revoke_comp" }), {
+      params: Promise.resolve({ id: VALID_ID }),
+    });
+    expect(res.status).toBe(200);
+    expect(mockCompDeleteEq).toHaveBeenCalledWith("user_id", VALID_ID);
+    expect(mockWriteAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "user.comp.revoke" }),
+    );
+  });
+
+  it("returns 500 + reports when the comp upsert fails", async () => {
+    mockCompUpsert.mockResolvedValueOnce({ error: { message: "RLS denied" } });
+    const { POST } = await loadRoute();
+    const res = await POST(
+      req({ action: "grant_comp", compTier: "pro", reason: "x" }),
+      { params: Promise.resolve({ id: VALID_ID }) },
+    );
+    expect(res.status).toBe(500);
+    expect(mockReportServerError).toHaveBeenCalled();
+    expect(mockWriteAuditLog).not.toHaveBeenCalled();
   });
 });
 

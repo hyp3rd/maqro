@@ -1,6 +1,7 @@
 "use client";
 
 import { EmptyState } from "@/components/admin/EmptyState";
+import { PageHeader } from "@/components/admin/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DestructiveConfirmDialog } from "@/components/ui/destructive-confirm-dialog";
@@ -17,7 +18,7 @@ import {
   type SocialPost,
 } from "@/lib/social/types";
 import { useState } from "react";
-import { Loader2, Sparkles } from "lucide-react";
+import { Loader2, Megaphone, Sparkles } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -94,26 +95,26 @@ export function SocialDashboard({
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold">Social posts</h1>
-          <p className="text-sm text-muted-foreground">
-            AI-drafted from the latest changelog entry. Review, edit, then post.
-          </p>
-        </div>
-        <Button
-          type="button"
-          onClick={() => void generate()}
-          disabled={generating}
-        >
-          {generating ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Sparkles className="h-4 w-4" />
-          )}
-          Generate now
-        </Button>
-      </div>
+      <PageHeader
+        icon={Megaphone}
+        title="Social posts"
+        description="AI-drafted from the latest changelog entry. Review, edit, then post."
+        tone="blue"
+        actions={
+          <Button
+            type="button"
+            onClick={() => void generate()}
+            disabled={generating}
+          >
+            {generating ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4" />
+            )}
+            Generate now
+          </Button>
+        }
+      />
 
       {notice && (
         <div

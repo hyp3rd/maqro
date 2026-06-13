@@ -17,6 +17,7 @@ const {
   mockGetSupabaseSecretConfig,
   mockGetUserById,
   mockProfileMaybeSingle,
+  mockCompMaybeSingle,
   mockSubsList,
   mockAuditLogChain,
 } = vi.hoisted(() => ({
@@ -31,6 +32,7 @@ const {
   ),
   mockGetUserById: vi.fn(),
   mockProfileMaybeSingle: vi.fn(),
+  mockCompMaybeSingle: vi.fn(),
   mockSubsList: vi.fn(),
   // Captures the chained admin_audit_log SELECT — the inner
   // `.limit(10)` resolves to a Promise.
@@ -54,6 +56,11 @@ vi.mock("@supabase/supabase-js", () => ({
           select: () => ({
             eq: () => ({ maybeSingle: mockProfileMaybeSingle }),
           }),
+        };
+      }
+      if (table === "comp_grants") {
+        return {
+          select: () => ({ eq: () => ({ maybeSingle: mockCompMaybeSingle }) }),
         };
       }
       // admin_audit_log
@@ -117,6 +124,8 @@ beforeEach(() => {
     ],
   });
   mockAuditLogChain.mockResolvedValue({ data: [], error: null });
+  // Default: no comp grant.
+  mockCompMaybeSingle.mockResolvedValue({ data: null, error: null });
 });
 
 describe("GET /api/admin/users/[id]", () => {
@@ -238,6 +247,43 @@ describe("GET /api/admin/users/[id]", () => {
     });
     const body = (await res.json()) as { bannedUntil: string };
     expect(body.bannedUntil).toBe("infinity");
+  });
+
+  it("returns comp:null when there's no grant", async () => {
+    const { GET } = await loadRoute();
+    const res = await GET(reqStub, {
+      params: Promise.resolve({ id: VALID_ID }),
+    });
+    const body = (await res.json()) as { comp: unknown };
+    expect(body.comp).toBeNull();
+  });
+
+  it("surfaces an active comp grant (indefinite)", async () => {
+    mockCompMaybeSingle.mockResolvedValueOnce({
+      data: { tier: "pro", expires_at: null },
+      error: null,
+    });
+    const { GET } = await loadRoute();
+    const res = await GET(reqStub, {
+      params: Promise.resolve({ id: VALID_ID }),
+    });
+    const body = (await res.json()) as {
+      comp: { tier: string; expiresAt: string | null } | null;
+    };
+    expect(body.comp).toEqual({ tier: "pro", expiresAt: null });
+  });
+
+  it("treats a past-expiry comp grant as inactive (comp:null)", async () => {
+    mockCompMaybeSingle.mockResolvedValueOnce({
+      data: { tier: "pro", expires_at: "2000-01-01T00:00:00Z" },
+      error: null,
+    });
+    const { GET } = await loadRoute();
+    const res = await GET(reqStub, {
+      params: Promise.resolve({ id: VALID_ID }),
+    });
+    const body = (await res.json()) as { comp: unknown };
+    expect(body.comp).toBeNull();
   });
 
   it("includes recent audit-log actions when present", async () => {

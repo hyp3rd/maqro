@@ -16,8 +16,15 @@ const BodySchema = z.object({
     "untrace",
     "cancel_subscription",
     "delete_user",
+    "grant_comp",
+    "revoke_comp",
   ]),
   banDuration: z.enum(["24h", "7d", "30d", "permanent"]).optional(),
+  /** Tier to comp-grant (grant_comp only). */
+  compTier: z.enum(["plus", "pro"]).optional(),
+  /** ISO expiry for the comp grant (grant_comp only). Omitted =
+   *  indefinite (until revoked). Parsed + future-checked in the handler. */
+  compUntil: z.string().optional(),
   reason: z.string().optional(),
 });
 
@@ -45,6 +52,12 @@ const BodySchema = z.object({
  *                           reason; the route's self-target guard
  *                           prevents an admin from deleting themselves
  *                           through this path. Audit row: `user.delete`.
+ *    - `grant_comp`       - grants a complimentary Plus/Pro tier outside
+ *                           Stripe by upserting `comp_grants` (service-role
+ *                           only). Optional `compUntil` expiry; requires a
+ *                           reason. Audit row: `user.comp.grant`.
+ *    - `revoke_comp`      - removes the comp grant (idempotent). Audit row:
+ *                           `user.comp.revoke`.
  *
  *  Five-plus endpoints would be cleaner from a REST purity
  *  standpoint but the action panel renders all the buttons against
@@ -62,6 +75,8 @@ const ACTIONS_REQUIRING_REASON = new Set<ActionKind>([
   "ban",
   "trace",
   "delete_user",
+  // A comp grant is a paid-feature bypass — the audit trail needs the "why".
+  "grant_comp",
 ]);
 
 export async function POST(
@@ -94,7 +109,7 @@ export async function POST(
 
   const parsed = await parseBody(req, BodySchema);
   if (!parsed.ok) return parsed.response;
-  const { action, banDuration } = parsed.data;
+  const { action, banDuration, compTier, compUntil } = parsed.data;
   const reason = parsed.data.reason?.trim() || null;
   if (ACTIONS_REQUIRING_REASON.has(action) && !reason) {
     return NextResponse.json(
@@ -294,6 +309,98 @@ export async function POST(
         ok: true,
         cancelAtPeriodEnd: updated.cancel_at_period_end,
       });
+    }
+
+    case "grant_comp": {
+      // Admin-granted complimentary tier (Plus/Pro) outside Stripe — written
+      // to `comp_grants` via the service-role client (the only write path;
+      // see migration 0066's RLS). resolveTier reads it the same way it reads
+      // the grandfather flag, so the grant takes effect everywhere the tier
+      // gate runs, with no Stripe round-trip.
+      if (!compTier) {
+        return NextResponse.json(
+          { error: "A tier (plus or pro) is required to grant comp access." },
+          { status: 400 },
+        );
+      }
+      let expiresAt: string | null = null;
+      if (compUntil) {
+        const t = new Date(compUntil);
+        if (Number.isNaN(t.getTime())) {
+          return NextResponse.json(
+            { error: "Invalid expiry date." },
+            { status: 400 },
+          );
+        }
+        if (t.getTime() <= Date.now()) {
+          return NextResponse.json(
+            { error: "Expiry must be in the future." },
+            { status: 400 },
+          );
+        }
+        expiresAt = t.toISOString();
+      }
+      const { error } = await admin
+        .from("comp_grants")
+        .upsert(
+          {
+            user_id: targetUserId,
+            tier: compTier,
+            expires_at: expiresAt,
+            granted_by: guard.userId,
+            reason,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id" },
+        );
+      if (error) {
+        await reportServerError(error, {
+          route: "/api/admin/users/[id]/action",
+          context: { action, targetUserId },
+        });
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      await writeAuditLog({
+        adminUserId: guard.userId,
+        action: "user.comp.grant",
+        targetUserId,
+        payload: { reason, tier: compTier, expiresAt },
+      });
+      const { recordTraceEvent } = await import("@/lib/admin-trace");
+      void recordTraceEvent({
+        userId: targetUserId,
+        kind: "admin.comp.grant",
+        payload: { reason, tier: compTier, expiresAt, by_admin: guard.userId },
+      });
+      return NextResponse.json({ ok: true, tier: compTier, expiresAt });
+    }
+
+    case "revoke_comp": {
+      // Idempotent: deleting a non-existent grant is a no-op success.
+      const { error } = await admin
+        .from("comp_grants")
+        .delete()
+        .eq("user_id", targetUserId);
+      if (error) {
+        await reportServerError(error, {
+          route: "/api/admin/users/[id]/action",
+          context: { action, targetUserId },
+        });
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      await writeAuditLog({
+        adminUserId: guard.userId,
+        action: "user.comp.revoke",
+        targetUserId,
+        payload: { reason },
+      });
+      const { recordTraceEvent } = await import("@/lib/admin-trace");
+      void recordTraceEvent({
+        userId: targetUserId,
+        kind: "admin.comp.revoke",
+        payload: { reason, by_admin: guard.userId },
+      });
+      return NextResponse.json({ ok: true });
     }
   }
 }

@@ -5,18 +5,24 @@
  *  receive a weekly recap email?" — funnels through this module so
  *  that adding a new tier or moving a feature is a one-place edit.
  *
- *  Tier resolution order (highest privilege wins):
- *    1. `profiles.role = 'admin'`           → `pro` (staff / maintainer)
- *    2. `profiles.is_grandfathered = true`  → `pro` (existing users at C2 launch)
+ *  Tier resolution (admin short-circuits; otherwise the HIGHEST grant
+ *  any signal justifies wins):
+ *    0. `profiles.role = 'admin'`           → `pro` (staff / maintainer)
+ *    1. `profiles.is_grandfathered = true`  → `pro` (existing users at C2 launch)
+ *    2. `comp_grants` (admin comp)          → its tier (plus/pro)
  *    3. `profiles.stripe_price_id` matches `pro` price → `pro`
  *    4. `profiles.stripe_price_id` matches `plus` price → `plus`
  *    5. `profiles.is_premium = true` w/ no price ID → `plus` (legacy C1 customers)
  *    6. Otherwise → `free`
  *
- *  Why a separate `is_grandfathered` flag: the C2 launch promises
- *  existing sync users free Pro for 12 months. Without a flag, we'd
- *  conflate "you were here before the change" with "you paid", and
- *  any future migration would risk yanking sync from those users. */
+ *  Modeling 1–5 as a MAX (rather than ordered early-returns) means a
+ *  comp grant — or grandfather flag — can only ever RAISE a user's
+ *  tier, never downgrade a higher paid subscription they also hold.
+ *
+ *  Why separate `is_grandfathered` / `comp_grants`: both grant a tier
+ *  OUTSIDE Stripe. Without distinct signals we'd conflate "was here
+ *  before the change" / "comped by an admin" with "paid", and a future
+ *  billing migration could yank entitlement from those users. */
 import { STRIPE_PRICES } from "./stripe";
 
 export type Tier = "free" | "plus" | "pro";
@@ -44,6 +50,11 @@ export type TierResolutionInput = {
   /** Stripe subscription status — only "entitled" statuses
    *  promote the user past free, even if a price ID is present. */
   subscriptionStatus?: string | null;
+  /** Admin-granted complimentary tier from `comp_grants` (outside
+   *  Stripe). Honors `compUntil` like the grandfather flag. */
+  compTier?: Tier | null;
+  /** When the comp grant expires (ISO). null = indefinite. */
+  compUntil?: string | null;
   /** Override for tests. Date.now() at call time otherwise. */
   now?: Date;
 };
@@ -51,18 +62,29 @@ export type TierResolutionInput = {
 const ENTITLED = new Set(["active", "trialing", "past_due"]);
 
 export function resolveTier(input: TierResolutionInput): Tier {
+  // Staff / maintainer override is absolute and outranks everything.
   if (input.role === "admin") return "pro";
-  if (input.isGrandfathered === true) {
-    const now = input.now ?? new Date();
-    const until = input.grandfatherUntil
-      ? new Date(input.grandfatherUntil)
-      : null;
-    // Treat a missing expiry as "still grandfathered" — the
-    // launch migration always sets it, but a hand-edited row
-    // could omit it; the safe default is to honor the flag.
-    if (!until || until.getTime() > now.getTime()) {
-      return "pro";
-    }
+
+  const now = input.now ?? new Date();
+  // A grant with no expiry, or one still in the future, is active. A
+  // missing expiry is honored (the launch/grant paths always set one when
+  // they mean to time-box it; a null means "until revoked").
+  const active = (until?: string | null): boolean =>
+    !until || new Date(until).getTime() > now.getTime();
+
+  // Collect every tier the signals justify; the highest wins. A max (not an
+  // ordered early-return) guarantees a non-billing grant only ever raises
+  // the tier — e.g. a comp Plus never downgrades a paid Pro.
+  let best: Tier = "free";
+  const consider = (t: Tier) => {
+    if (TIER_RANK[t] > TIER_RANK[best]) best = t;
+  };
+
+  if (input.isGrandfathered === true && active(input.grandfatherUntil)) {
+    consider("pro");
+  }
+  if (input.compTier && active(input.compUntil)) {
+    consider(input.compTier);
   }
 
   const entitled =
@@ -70,18 +92,24 @@ export function resolveTier(input: TierResolutionInput): Tier {
     input.subscriptionStatus !== undefined &&
     ENTITLED.has(input.subscriptionStatus);
   if (entitled && input.stripePriceId) {
-    if (input.stripePriceId === STRIPE_PRICES.proMonthly()) return "pro";
-    if (input.stripePriceId === STRIPE_PRICES.proYearly()) return "pro";
-    if (input.stripePriceId === STRIPE_PRICES.aiPlusMonthly()) return "plus";
-    if (input.stripePriceId === STRIPE_PRICES.aiPlusYearly()) return "plus";
+    if (
+      input.stripePriceId === STRIPE_PRICES.proMonthly() ||
+      input.stripePriceId === STRIPE_PRICES.proYearly()
+    ) {
+      consider("pro");
+    } else if (
+      input.stripePriceId === STRIPE_PRICES.aiPlusMonthly() ||
+      input.stripePriceId === STRIPE_PRICES.aiPlusYearly()
+    ) {
+      consider("plus");
+    }
   }
 
-  // Legacy path — pre-C2 customers have is_premium=true but no
-  // price ID we can match against (the column didn't exist).
-  // Treat them as plus.
-  if (input.isPremium === true) return "plus";
+  // Legacy path — pre-C2 customers have is_premium=true but no price ID we
+  // can match against (the column didn't exist). Treat them as plus.
+  if (input.isPremium === true) consider("plus");
 
-  return "free";
+  return best;
 }
 
 /** Per-tier monthly AI generation cap. `null` = unmetered. */

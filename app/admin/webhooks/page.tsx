@@ -14,6 +14,7 @@ import { haptic } from "@/lib/haptics";
 import * as React from "react";
 import {
   CheckCircle2,
+  Clock,
   ExternalLink,
   Loader2,
   Play,
@@ -95,6 +96,19 @@ export default function AdminWebhooksPage() {
     | { kind: "error"; message: string }
   >({ kind: "loading" });
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  // Scroll the (stacked-below) detail panel into view on a row tap under lg,
+  // where the master-detail is a single column — otherwise the tap updates a
+  // panel off-screen with no feedback. Desktop is side-by-side; no scroll.
+  const detailRef = React.useRef<HTMLDivElement>(null);
+  function selectRow(id: string) {
+    setSelectedId(id);
+    if (
+      typeof window !== "undefined" &&
+      window.matchMedia("(max-width: 1023px)").matches
+    ) {
+      detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }
   const [detail, setDetail] = React.useState<
     | { kind: "idle" }
     | { kind: "loading" }
@@ -335,7 +349,7 @@ export default function AdminWebhooksPage() {
                   <li key={row.id}>
                     <button
                       type="button"
-                      onClick={() => setSelectedId(row.id)}
+                      onClick={() => selectRow(row.id)}
                       className={`flex w-full items-start gap-3 px-4 py-2.5 text-left transition-colors hover:bg-accent/30 ${
                         isSelected ? "bg-accent/40" : ""
                       }`}
@@ -372,7 +386,10 @@ export default function AdminWebhooksPage() {
           )}
         </div>
 
-        <aside className="min-w-0 rounded-lg border border-border/60 bg-card p-4 lg:sticky lg:top-20 lg:self-start">
+        <aside
+          ref={detailRef}
+          className="min-w-0 scroll-mt-20 rounded-lg border border-border/60 bg-card p-4 lg:sticky lg:top-20 lg:self-start"
+        >
           {detail.kind === "idle" ? (
             <p className="py-8 text-center text-xs text-muted-foreground">
               Select an event to inspect its payload or replay it.
@@ -437,9 +454,9 @@ function StatusIcon({ status }: { status: ListRow["processing_status"] }) {
     );
   }
   return (
-    <span
+    <Clock
       aria-label="Pending"
-      className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500"
+      className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500"
     />
   );
 }
@@ -523,7 +540,7 @@ function DetailPanel({
         </div>
       </div>
 
-      <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+      <dl className="grid grid-cols-1 gap-x-3 gap-y-1.5 sm:grid-cols-2">
         <WebhookField
           label="Received"
           value={new Date(row.created_at).toLocaleString()}

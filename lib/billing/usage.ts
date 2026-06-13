@@ -1,6 +1,28 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { AI_CAPS, resolveTier, type Tier } from "./tiers";
 
+/** Read the user's complimentary (admin-granted) tier from `comp_grants`.
+ *  Fail-CLOSED: any read error (RLS denial, table-missing during a partial
+ *  deploy) returns "no comp", which is the same safe-side default as the rest
+ *  of this module — a comped user briefly seeing free is recoverable, the
+ *  reverse isn't. `comp_grants` is owner-readable, so this works with the
+ *  caller's session client; the service-role client (admin routes) reads it
+ *  too. */
+async function readCompGrant(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<{ tier: Tier | null; until: string | null }> {
+  const { data } = await supabase
+    .from("comp_grants")
+    .select("tier, expires_at")
+    .eq("user_id", userId)
+    .maybeSingle();
+  return {
+    tier: (data?.tier as Tier | undefined) ?? null,
+    until: (data?.expires_at as string | undefined) ?? null,
+  };
+}
+
 /** Lightweight tier lookup for routes that only need the gating
  *  decision (no AI-quota arithmetic). Reads the same profile shape
  *  as `getCurrentMonthUsage` and routes through the same
@@ -14,13 +36,16 @@ export async function loadUserTier(
   supabase: SupabaseClient,
   userId: string,
 ): Promise<Tier> {
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select(
-      "is_premium, role, subscription_status, stripe_price_id, is_grandfathered, grandfather_until",
-    )
-    .eq("user_id", userId)
-    .maybeSingle();
+  const [{ data: profile }, comp] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select(
+        "is_premium, role, subscription_status, stripe_price_id, is_grandfathered, grandfather_until",
+      )
+      .eq("user_id", userId)
+      .maybeSingle(),
+    readCompGrant(supabase, userId),
+  ]);
   return resolveTier({
     role: (profile?.role as string | undefined) ?? null,
     isPremium: (profile?.is_premium as boolean | undefined) ?? null,
@@ -30,6 +55,8 @@ export async function loadUserTier(
     stripePriceId: (profile?.stripe_price_id as string | undefined) ?? null,
     subscriptionStatus:
       (profile?.subscription_status as string | undefined) ?? null,
+    compTier: comp.tier,
+    compUntil: comp.until,
   });
 }
 
@@ -102,13 +129,16 @@ export async function getCurrentMonthUsage(
   // early supporters — migration 0012). Either being set means the
   // caller is unmetered; from the rest of the helper's POV it's a
   // single `isUnmetered` signal.
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select(
-      "is_premium, role, subscription_status, current_period_end, stripe_price_id, is_grandfathered, grandfather_until",
-    )
-    .eq("user_id", userId)
-    .maybeSingle();
+  const [{ data: profile, error: profileError }, comp] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select(
+        "is_premium, role, subscription_status, current_period_end, stripe_price_id, is_grandfathered, grandfather_until",
+      )
+      .eq("user_id", userId)
+      .maybeSingle(),
+    readCompGrant(supabase, userId),
+  ]);
   if (profileError) {
     console.error("[ai-usage] profile read failed:", profileError);
   }
@@ -128,6 +158,8 @@ export async function getCurrentMonthUsage(
       (profile?.grandfather_until as string | undefined) ?? null,
     stripePriceId: (profile?.stripe_price_id as string | undefined) ?? null,
     subscriptionStatus,
+    compTier: comp.tier,
+    compUntil: comp.until,
   });
   const isPremium = tier !== "free";
   const { data: usage, error: usageError } = await supabase
