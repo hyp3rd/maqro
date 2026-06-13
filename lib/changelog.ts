@@ -39,6 +39,19 @@ export type ChangelogEntry = {
 
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    id: "2026-06-13-faster-mobile-logging",
+    date: "2026-06-13",
+    version: "0.8.11",
+    title: "Faster, more tactile logging on your phone",
+    body: `Small touches that make logging on a phone quicker and more satisfying.
+
+- **Add food straight from a meal.** Once a meal already has something in it, its menu (the ⋯ button) now has a quick **Add food** — drop in one more thing without stepping through the whole "Log meal" flow.
+- **Logging you can feel.** Add a food and its meal card lights up and scrolls into view, with a gentle buzz so you know it landed.
+- **Calories left, right on your daily card.** No more mental math — see how much you have left against today's target the moment you start logging.
+- **A quiet well-done.** Reach your calorie target for the day and you'll get a small confirmation.
+- **Clearer prompts at limits.** When something needs an account or Pro, you now get a proper sign-in or upgrade prompt instead of a toast that's easy to miss.`,
+  },
+  {
     id: "2026-06-07-meal-scheduling-and-ai-day-planner",
     date: "2026-06-07",
     version: "0.7.0",
