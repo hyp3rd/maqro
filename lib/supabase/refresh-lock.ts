@@ -219,31 +219,37 @@ export async function coalescedGetUser(
 
   if (await cacheSetIfAbsent(lockKey, nonce, LOCK_TTL_MS)) {
     // Winner: do the real refresh, then publish the rotated cookies for losers.
-    const res = await deps.getUser();
+    // The whole section is wrapped so the lock is ALWAYS released in `finally`
+    // — even if getUser() itself throws (a non-AuthError from the cookie
+    // storage adapter, a lock-acquire timeout) — instead of leaking the lock
+    // until its TTL lapses and forcing every concurrent request to fall open.
     try {
-      // Capture the FULL auth-cookie set the SDK wrote — including the empty
-      // "delete this stale chunk" cookies a shrinking session emits — so losers
-      // replicate the winner's cookie state exactly (no orphaned chunk that
-      // would corrupt the next combineChunks).
-      const authCookies = deps
-        .readResponseAuthCookies()
-        .map((c) => sanitizeCookie(c))
-        .filter((c) => isAuthCookieName(c.name));
-      // Publish ONLY a genuine refresh: a signed-in result AND at least one
-      // non-empty token cookie. A sign-out / expiry clears every cookie (all
-      // empty) — never replay that to losers, or it would sign them out too.
-      const isRealRefresh =
-        res.data.user !== null && authCookies.some((c) => c.value !== "");
-      if (isRealRefresh) {
-        const env = encryptBundle(JSON.stringify(authCookies));
-        if (env) await cacheSetString(resultKey, env, RESULT_TTL_MS);
+      const res = await deps.getUser();
+      try {
+        // Capture the FULL auth-cookie set the SDK wrote — including the empty
+        // "delete this stale chunk" cookies a shrinking session emits — so
+        // losers replicate the winner's cookie state exactly (no orphaned
+        // chunk that would corrupt the next combineChunks).
+        const authCookies = deps
+          .readResponseAuthCookies()
+          .map((c) => sanitizeCookie(c))
+          .filter((c) => isAuthCookieName(c.name));
+        // Publish ONLY a genuine refresh: a signed-in result AND at least one
+        // non-empty token cookie. A sign-out / expiry clears every cookie (all
+        // empty) — never replay that to losers, or it would sign them out too.
+        const isRealRefresh =
+          res.data.user !== null && authCookies.some((c) => c.value !== "");
+        if (isRealRefresh) {
+          const env = encryptBundle(JSON.stringify(authCookies));
+          if (env) await cacheSetString(resultKey, env, RESULT_TTL_MS);
+        }
+      } catch {
+        // Publishing is best-effort; the winner already has its session.
       }
-    } catch {
-      // Publishing is best-effort; the winner already has its session.
+      return res;
     } finally {
       await cacheDelete(lockKey, nonce); // compare-and-delete: only our lock
     }
-    return res;
   }
 
   // Loser: wait briefly for the winner's published cookies, then reuse them.

@@ -1,8 +1,10 @@
+import type { NextRequest, NextResponse } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { User } from "@supabase/supabase-js";
 import {
   type SanitizedCookie,
   coalescedGetUser,
+  coalescedGetUserForProxy,
   decryptBundle,
   encryptBundle,
   isAuthCookieName,
@@ -88,6 +90,31 @@ const freshResponseCookies = (): SanitizedCookie[] => [
     sameSite: "lax",
     maxAge: 3600,
   },
+];
+
+// A refresh that shrinks a chunked session: two fresh chunks PLUS the empty
+// "delete the old single cookie" marker the SDK emits. Losers must replicate
+// all three verbatim.
+const chunkedResponseCookies = (): SanitizedCookie[] => [
+  {
+    name: `${AUTH_COOKIE}.0`,
+    value: "base64-PART0",
+    path: "/",
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    maxAge: 3600,
+  },
+  {
+    name: `${AUTH_COOKIE}.1`,
+    value: "base64-PART1",
+    path: "/",
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax",
+    maxAge: 3600,
+  },
+  { name: AUTH_COOKIE, value: "", path: "/", maxAge: 0 },
 ];
 
 describe("peekSession", () => {
@@ -353,5 +380,140 @@ describe("coalescedGetUser", () => {
     await Promise.all(calls);
 
     expect(acquired.filter(Boolean).length).toBe(1);
+  });
+
+  it("winner does NOT publish when AUTH_REFRESH_CACHE_SECRET is unset (degraded → losers fall open)", async () => {
+    delete process.env.AUTH_REFRESH_CACHE_SECRET; // Redis on, secret off
+    const deps = makeDeps({ responseCookies: freshResponseCookies() });
+    await coalescedGetUser(deps);
+    const lockKey = refreshLockKey("rt-1");
+    // Nothing encrypts, so nothing is published — but the lock is still released
+    // (the winner has its session; losers will fall open to their own getUser).
+    expect(redis.store.has(`${lockKey}:r`)).toBe(false);
+    expect(redis.store.has(lockKey)).toBe(false);
+  });
+
+  it("releases the lock even when the winner's getUser throws", async () => {
+    const boom = new Error("cookie adapter blew up");
+    const deps = makeDeps({
+      getUser: vi.fn(async () => {
+        throw boom;
+      }),
+    });
+    await expect(coalescedGetUser(deps)).rejects.toBe(boom);
+    // The lock must not leak until its TTL — the finally releases it.
+    expect(redis.store.has(refreshLockKey("rt-1"))).toBe(false);
+  });
+
+  it("winner publishes the FULL multi-chunk set, including stale-chunk deletions", async () => {
+    const deps = makeDeps({ responseCookies: chunkedResponseCookies() });
+    await coalescedGetUser(deps);
+    const env = redis.store.get(`${refreshLockKey("rt-1")}:r`);
+    expect(env).toBeTruthy();
+    expect(JSON.parse(decryptBundle(env!)!)).toEqual(chunkedResponseCookies());
+  });
+
+  it("loser plants the FULL multi-chunk set verbatim", async () => {
+    const lockKey = refreshLockKey("rt-1");
+    redis.store.set(lockKey, "winner-nonce");
+    redis.store.set(
+      `${lockKey}:r`,
+      encryptBundle(JSON.stringify(chunkedResponseCookies()))!,
+    );
+    const plantCookies = vi.fn();
+    await coalescedGetUser(makeDeps({ plantCookies }));
+    expect(plantCookies).toHaveBeenCalledWith(chunkedResponseCookies());
+  });
+});
+
+describe("coalescedGetUserForProxy (NextRequest/NextResponse adapter)", () => {
+  const user = { id: "user-1" } as never;
+
+  beforeEach(() => {
+    redis.reset();
+    process.env.AUTH_REFRESH_CACHE_SECRET = SECRET;
+  });
+  afterEach(() => {
+    delete process.env.AUTH_REFRESH_CACHE_SECRET;
+  });
+
+  type Stored = { name: string; value: string; [k: string]: unknown };
+  function fakeCookieJar(initial: { name: string; value: string }[] = []) {
+    const map = new Map<string, Stored>(initial.map((c) => [c.name, { ...c }]));
+    return {
+      getAll: () => [...map.values()],
+      get: (name: string) => map.get(name),
+      set: (name: string, value: string, options?: Record<string, unknown>) => {
+        map.set(name, { name, value, ...(options ?? {}) });
+      },
+    };
+  }
+
+  const nearExpiryReq = (refreshToken: string) =>
+    fakeCookieJar([
+      authCookie({ expires_at: nowSec() + 30, refresh_token: refreshToken }),
+    ]);
+
+  it("winner: refreshes, publishes, releases — via the real request/response closures", async () => {
+    const request = { cookies: nearExpiryReq("rt-proxy") };
+    const response = { cookies: fakeCookieJar() };
+    const supabase = {
+      auth: {
+        getUser: vi.fn(async () => {
+          // Simulate the SDK writing the rotated cookie to the response.
+          response.cookies.set(AUTH_COOKIE, "base64-FRESHTOKEN", {
+            path: "/",
+            httpOnly: true,
+            secure: true,
+            sameSite: "lax",
+            maxAge: 3600,
+          });
+          return { data: { user } };
+        }),
+      },
+    };
+    const res = await coalescedGetUserForProxy(
+      request as unknown as NextRequest,
+      supabase as never,
+      (() => response) as unknown as () => NextResponse,
+    );
+    expect(res.data.user).toBe(user);
+    const lockKey = refreshLockKey("rt-proxy");
+    expect(redis.store.has(lockKey)).toBe(false); // released
+    expect(redis.store.get(`${lockKey}:r`)).toBeTruthy(); // published
+  });
+
+  it("loser: plants the winner's cookies onto BOTH request and response, then reads the fresh token", async () => {
+    const lockKey = refreshLockKey("rt-proxy");
+    redis.store.set(lockKey, "winner-nonce");
+    redis.store.set(
+      `${lockKey}:r`,
+      encryptBundle(JSON.stringify(freshResponseCookies()))!,
+    );
+
+    const request = { cookies: nearExpiryReq("rt-proxy") };
+    const response = { cookies: fakeCookieJar() };
+    let tokenSeenByGetUser: string | undefined;
+    const supabase = {
+      auth: {
+        getUser: vi.fn(async () => {
+          // The loser must have planted the fresh token onto the request
+          // BEFORE getUser runs, so the SDK reads it (no second refresh).
+          tokenSeenByGetUser = request.cookies.get(AUTH_COOKIE)?.value;
+          return { data: { user } };
+        }),
+      },
+    };
+
+    const res = await coalescedGetUserForProxy(
+      request as unknown as NextRequest,
+      supabase as never,
+      (() => response) as unknown as () => NextResponse,
+    );
+
+    expect(res.data.user).toBe(user);
+    expect(tokenSeenByGetUser).toBe("base64-FRESHTOKEN"); // planted on request
+    expect(response.cookies.get(AUTH_COOKIE)?.value).toBe("base64-FRESHTOKEN"); // and response
+    expect(redis.store.get(lockKey)).toBe("winner-nonce"); // loser never touches the lock
   });
 });

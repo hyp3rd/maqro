@@ -254,6 +254,19 @@ export function validateEnvFor(e: Env): EnvIssue[] {
       "UPSTASH_REDIS_REST_TOKEN is set but UPSTASH_REDIS_REST_URL is missing.",
     );
   }
+  if (
+    e.UPSTASH_REDIS_REST_URL &&
+    e.UPSTASH_REDIS_REST_TOKEN &&
+    !e.AUTH_REFRESH_CACHE_SECRET
+  ) {
+    // Warn, not error: the proxy refresh-lock fails open to per-request
+    // refresh, so the app still works — but the deploy sign-out fix stays
+    // inert until the secret is set (the lock can't hand rotated cookies to
+    // concurrent requests, so each races the single-use refresh token).
+    warn(
+      "Upstash is configured but AUTH_REFRESH_CACHE_SECRET is not - the proxy session refresh-lock can't hand rotated cookies to concurrent requests, so it falls back to per-request refresh (the deploy sign-out race). Set AUTH_REFRESH_CACHE_SECRET (>=32 chars) to activate the fix.",
+    );
+  }
 
   // --- Production-only requirements ---
 
