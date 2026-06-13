@@ -163,9 +163,11 @@ export default async function AdminHome() {
         className="space-y-3"
       >
         <SectionHeading>People</SectionHeading>
-        {/* Three short counts fit at 375px; `grid-cols-2 sm:grid-cols-3` left
-            the third card orphaned on its own row on phones. */}
-        <div className="grid grid-cols-3 gap-3">
+        {/* The StatCard (icon halo + label + 2rem value) is too wide to fit
+            3-up on a phone without clipping the label — so 2-up on mobile,
+            with Premium spanning the full row so there's no half-empty
+            orphan. Restores 3-up at sm+ where there's room. */}
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <StatCard
             label="Profiles"
             value={stats.profiles.toLocaleString()}
@@ -186,6 +188,7 @@ export default async function AdminHome() {
             icon={CreditCard}
             href="/admin/users?filter=premium"
             tone="emerald"
+            className="col-span-2 sm:col-span-1"
             hint={
               stats.profiles > 0
                 ? `${Math.round((stats.premium / stats.profiles) * 100)}% of users`
