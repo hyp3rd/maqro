@@ -519,6 +519,13 @@ const MacroCalculator = () => {
   const search = useFoodSearch(foodSearch, customFoodsRev);
   const foodSuggestions = search.results;
 
+  // The inline "replace this food" search runs through the SAME multi-source
+  // search as adding a food (your foods + built-in + CIQUAL + Open Food Facts)
+  // — not the tiny built-in catalog it used to filter, which made replacing
+  // almost any real food turn up nothing. Idle (empty results, no network)
+  // until the user is replacing and has typed a query.
+  const replaceSearch = useFoodSearch(replacingFood.searchTerm, customFoodsRev);
+
   // State for portion size
   const [portionSize, setPortionSize] = useState(100); // Default 100g
 
@@ -1713,37 +1720,11 @@ const MacroCalculator = () => {
     });
   };
 
-  // Handle food search for replacement
+  // Handle food search for replacement. This only tracks the query string;
+  // the actual results come from the shared `replaceSearch` (useFoodSearch)
+  // and are merged into the `replacingFood` view passed to the meal rows.
   const handleReplacementSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const searchTerm = e.target.value;
-
-    setReplacingFood((prev) => ({
-      ...prev,
-      searchTerm,
-      showSuggestions: searchTerm.trim() !== "",
-    }));
-
-    if (searchTerm.trim() === "") {
-      setReplacingFood((prev) => ({
-        ...prev,
-        suggestions: [],
-        showSuggestions: false,
-      }));
-      return;
-    }
-
-    // Filter foods based on search term
-    const filteredFoods = foodDatabase
-      .filter((food) =>
-        food.name.toLowerCase().includes(searchTerm.toLowerCase()),
-      )
-      .slice(0, 5); // Limit to 5 suggestions
-
-    setReplacingFood((prev) => ({
-      ...prev,
-      suggestions: filteredFoods,
-      showSuggestions: true,
-    }));
+    setReplacingFood((prev) => ({ ...prev, searchTerm: e.target.value }));
   };
 
   // Replace a food with a new one
@@ -1772,6 +1753,10 @@ const MacroCalculator = () => {
       portionSize: replacingFood.portionSize,
       category: newFood.category,
       subCategory: newFood.subCategory,
+      // Scale the sub-macros (sugars / saturated fat / fiber …) to the portion,
+      // the same way the add path does — otherwise a replaced food keeps no
+      // sub-macro breakdown.
+      ...scaleSubMacros(newFood, ratio),
       pantrySource: newDrawDown ?? undefined,
       // Carry per-100g micronutrients onto the replacement (unscaled —
       // the aggregator scales). `newFood` here is the replacement Food.
@@ -2224,7 +2209,13 @@ const MacroCalculator = () => {
           mealPlanMessage={mealPlanMessage}
           coherenceIssues={coherenceIssues}
           editingFood={editingFood}
-          replacingFood={replacingFood}
+          replacingFood={{
+            ...replacingFood,
+            // Live results from the shared multi-source search; the row shows
+            // them when there's a query and at least one match.
+            suggestions: replaceSearch.results,
+            showSuggestions: replacingFood.searchTerm.trim() !== "",
+          }}
           suggestionsRef={suggestionsRef}
           replacementSuggestionsRef={replacementSuggestionsRef}
           setNewFood={setNewFood}
