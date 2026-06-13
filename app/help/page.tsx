@@ -294,22 +294,23 @@ export default function HelpPage() {
         <Section title="Account & security">
           <Topic
             icon={Fingerprint}
-            title="Passkeys — sign in without a password"
+            title="Passkeys — sign in with just your device"
           >
             A passkey lets your device unlock the app with Face ID, Touch ID,
-            Windows Hello, or a hardware key. No password, no code. Add one from
-            Settings → Passkeys; on devices that have it, the second- factor
-            prompt goes away too — the passkey itself is the second factor.
+            Windows Hello, or a hardware key — no code to type. Add one from
+            Settings → Passkeys; on devices that have it, the two-step
+            verification prompt goes away too — the passkey itself is the second
+            step.
           </Topic>
           <Topic
             icon={ShieldCheck}
-            title="Two-factor authentication"
+            title="Two-step verification"
           >
-            A leaked password alone isn&apos;t enough to get into your account.
-            Settings → Two-factor authentication walks you through adding an
-            authenticator app (1Password, Authy, Google Authenticator). On
-            trusted devices you can opt to skip the second prompt for 7 days at
-            a time.
+            With two-step verification on, access to your email alone isn&apos;t
+            enough to get into your account. Settings → Two-step verification
+            walks you through adding an authenticator app (1Password, Authy,
+            Google Authenticator). On trusted devices you can opt to skip the
+            extra step for 7 days at a time.
           </Topic>
           <Topic
             icon={LifeBuoy}

@@ -241,13 +241,13 @@ describe("assertAal2", () => {
       error: string;
       kind: string;
     };
+    // `kind` is the machine-stable signal clients key on to open the
+    // two-step prompt (vs. show "not allowed" for a role failure); pin THAT,
+    // not the user-facing copy, which is intentionally plain language.
     expect(body.kind).toBe("mfa-required");
-    // The error message must read as "complete MFA" not as
-    // "your role is wrong" — clients trigger different UI
-    // (open the MFA prompt vs. show "not allowed") based on
-    // this distinction. Pin the substring so a future copy
-    // edit can't accidentally swap them.
-    expect(body.error.toLowerCase()).toMatch(/mfa|second factor/);
+    // The copy should point at the authenticator, never leak the "MFA" acronym.
+    expect(body.error.toLowerCase()).toMatch(/authenticator/);
+    expect(body.error).not.toMatch(/\bMFA\b/);
   });
 
   it("uses the lenient path on Supabase outage (treats errors as no-upgrade)", async () => {

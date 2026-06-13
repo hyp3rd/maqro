@@ -14,8 +14,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { clientFetch } from "@/lib/auth/client-fetch";
 import { useEffect, useState } from "react";
-import { ShieldOff, Trash2 } from "lucide-react";
+import { MonitorSmartphone, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { useReportSecurityStatus } from "./security-status";
 
 /** Settings → Trusted devices.
  *
@@ -91,6 +92,23 @@ export function TrustedDevicesSection({ signedIn }: { signedIn: boolean }) {
     };
   }, [signedIn, reloadKey]);
 
+  // Publish the trusted-device count up to the Security overview card (neutral
+  // tone — trusted devices are a convenience, not a protection toggle).
+  const reportSecurity = useReportSecurityStatus();
+  const trustedCount = state.kind === "ok" ? state.rows.length : null;
+  useEffect(() => {
+    if (trustedCount === null) return;
+    reportSecurity("trustedDevices", {
+      value:
+        trustedCount === 0
+          ? "None"
+          : trustedCount === 1
+            ? "1 device"
+            : `${trustedCount} devices`,
+      tone: "muted",
+    });
+  }, [trustedCount, reportSecurity]);
+
   function refresh() {
     setReloadKey((k) => k + 1);
   }
@@ -138,12 +156,13 @@ export function TrustedDevicesSection({ signedIn }: { signedIn: boolean }) {
       <div className="flex items-center justify-between gap-3">
         <div>
           <h3 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
-            <ShieldOff className="h-4 w-4 text-muted-foreground" />
+            <MonitorSmartphone className="h-4 w-4 text-muted-foreground" />
             Trusted devices
           </h3>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Devices that skip the authenticator step until the trust expires.
-            Revoke any to force MFA on next sign-in.
+            Devices that skip the verification step until the trust expires.
+            Revoke any to require two-step verification again on its next
+            sign-in.
           </p>
         </div>
         {state.kind === "ok" && state.rows.length > 0 && (
@@ -212,10 +231,19 @@ export function TrustedDevicesSection({ signedIn }: { signedIn: boolean }) {
   }
 
   if (state.rows.length === 0) {
-    // Hide the section entirely - the feature is discoverable at the
-    // MFA verify step; we don't need to keep a "no trusted devices"
-    // shell in Settings.
-    return null;
+    // Empty state (not hidden) so the login promise "you can revoke from
+    // Settings" always lands on something, and the section reads consistently
+    // with the other Security cards.
+    return (
+      <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
+        {header}
+        <p className="px-5 py-4 text-xs text-muted-foreground">
+          No trusted devices yet. When you check “Trust this device for 7 days”
+          while signing in, it shows up here — revoke it any time to require
+          two-step verification on that device again.
+        </p>
+      </section>
+    );
   }
 
   return (

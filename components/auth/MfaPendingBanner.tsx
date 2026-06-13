@@ -33,14 +33,14 @@ export async function MfaPendingBanner() {
         />
         <p className="flex-1">
           <span className="font-semibold">Finish signing in.</span> You verified
-          your email, but your account requires a second factor before we treat
-          this device as authenticated.
+          your email, but your account uses two-step verification — one more
+          check and this device is signed in.
         </p>
         <Link
           href="/login?mfa=required"
           className="inline-flex shrink-0 items-center gap-1 rounded-md bg-amber-900 px-3 py-1 text-[11px] font-medium text-amber-50 transition-opacity hover:opacity-90 dark:bg-amber-200 dark:text-amber-900"
         >
-          Complete MFA
+          Finish verifying
         </Link>
       </div>
     </div>

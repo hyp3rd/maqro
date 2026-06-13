@@ -23,10 +23,11 @@ import { CheckCircle2, KeyRound, ShieldCheck, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { FeatureIntro } from "./FeatureIntro";
+import { useReportSecurityStatus } from "./security-status";
 
-/** Settings → Two-factor authentication.
+/** Settings → Two-step verification.
  *
- *  Covers TOTP only.
+ *  Covers TOTP (authenticator app) only.
  *
  *  Lifecycle:
  *
@@ -97,7 +98,7 @@ export function MfaSection({ signedIn }: { signedIn: boolean }) {
         icon={ShieldCheck}
         tint="amber"
         displayName={displayName}
-        blurb="a second factor at sign-in means a leaked password alone can't get into your account — once enrolled, sign-in also asks for a 6-digit code from an authenticator app on your phone. Set it up once; you'll only be asked again on new devices."
+        blurb="two-step verification means access to your email alone isn't enough to get into your account — once it's on, sign-in also asks for a 6-digit code from an authenticator app on your phone. Set it up once; you'll only be asked again on new devices."
       />
       <MfaSectionBody signedIn={signedIn} />
     </div>
@@ -116,6 +117,17 @@ function MfaSectionBody({ signedIn }: { signedIn: boolean }) {
   // the transition between `empty` / `enrolled` and `naming`
   // without remounting.
   const [nameInput, setNameInput] = React.useState("");
+
+  // Publish two-step status up to the Security overview card. Only the settled
+  // on/off states report; transient enroll/naming steps keep the prior pill.
+  const reportSecurity = useReportSecurityStatus();
+  React.useEffect(() => {
+    if (state.kind === "enrolled") {
+      reportSecurity("twoStep", { value: "On", tone: "good" });
+    } else if (state.kind === "empty") {
+      reportSecurity("twoStep", { value: "Off", tone: "muted" });
+    }
+  }, [state.kind, reportSecurity]);
 
   React.useEffect(() => {
     if (!signedIn) return;
@@ -278,7 +290,7 @@ function MfaSectionBody({ signedIn }: { signedIn: boolean }) {
         toast.error(error.message);
         return;
       }
-      toast.success("Two-factor authentication is now active.");
+      toast.success("Two-step verification is now on.");
       refresh();
     } finally {
       setBusy("idle");
@@ -331,11 +343,11 @@ function MfaSectionBody({ signedIn }: { signedIn: boolean }) {
     <header className="border-b border-border/60 px-5 py-3">
       <h3 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
         <ShieldCheck className="h-4 w-4 text-muted-foreground" />
-        Two-factor authentication
+        Two-step verification
       </h3>
       <p className="mt-0.5 text-xs text-muted-foreground">
-        A second factor at sign-in — a 6-digit code from an authenticator app
-        like 1Password, Authy, or Google Authenticator.
+        An extra step at sign-in — a 6-digit code from an authenticator app like
+        1Password, Authy, or Google Authenticator.
       </p>
     </header>
   );
@@ -368,8 +380,8 @@ function MfaSectionBody({ signedIn }: { signedIn: boolean }) {
       <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
         {header}
         <p className="px-5 py-4 text-xs text-muted-foreground">
-          Two-factor authentication isn&apos;t available on this instance.
-          Contact the administrator to enable it.
+          Two-step verification isn&apos;t available on this instance. Contact
+          the administrator to enable it.
         </p>
       </section>
     );
@@ -489,9 +501,9 @@ function MfaSectionBody({ signedIn }: { signedIn: boolean }) {
         {header}
         <div className="flex animate-in flex-col gap-3 px-5 py-4 fade-in duration-300 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-muted-foreground">
-            Not set up. Adding a second factor makes it materially harder for
-            anyone to take over your account, even if they intercept your
-            sign-in email.
+            Not set up. Turning on two-step verification makes it materially
+            harder for anyone to take over your account, even if they intercept
+            your sign-in email.
           </p>
           <Button
             type="button"
@@ -590,9 +602,6 @@ function MfaSectionBody({ signedIn }: { signedIn: boolean }) {
                 <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
                 <span className="font-medium">
                   {f.friendlyName ?? "Authenticator"}
-                </span>
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  {f.factorType}
                 </span>
               </p>
               <p className="mt-0.5 text-[11px] text-muted-foreground">

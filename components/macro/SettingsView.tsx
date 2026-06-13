@@ -78,8 +78,10 @@ import { ImportPreviewDialog } from "./ImportPreviewDialog";
 import { MfaSection } from "./MfaSection";
 import { PasskeysSection } from "./PasskeysSection";
 import { PassphraseDialog } from "./PassphraseDialog";
+import { SecurityOverview } from "./SecurityOverview";
 import { SignedInDevicesSection } from "./SignedInDevicesSection";
 import { TrustedDevicesSection } from "./TrustedDevicesSection";
+import { SecurityStatusProvider } from "./security-status";
 
 function formatDate(iso: string | undefined): string {
   if (!iso) return "-";
@@ -455,19 +457,22 @@ export function SettingsView({
 
       {user && <ChangeEmailSection currentEmail={user.email ?? null} />}
 
-      {user && <BackupEmailSection signedIn={Boolean(user)} />}
-
       {/* Security — everything here needs an account, so the whole group
-          (label included) is gated; a guest never sees an empty heading. */}
+          (label included) is gated; a guest never sees an empty heading.
+          Backup email lives INSIDE this group (it's account recovery), after
+          the two sign-in protections it backstops. The provider lets the
+          overview card summarize each section's status without re-fetching. */}
       {user && (
-        <>
+        <SecurityStatusProvider>
           <GroupLabel>Security</GroupLabel>
+          <SecurityOverview />
           <MfaSection signedIn={Boolean(user)} />
           <PasskeysSection signedIn={Boolean(user)} />
+          <BackupEmailSection signedIn={Boolean(user)} />
           <TrustedDevicesSection signedIn={Boolean(user)} />
           <ConnectedAccountsSection signedIn={Boolean(user)} />
           <SignedInDevicesSection signedIn={Boolean(user)} />
-        </>
+        </SecurityStatusProvider>
       )}
 
       <GroupLabel>App settings</GroupLabel>
