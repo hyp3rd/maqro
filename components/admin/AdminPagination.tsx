@@ -42,7 +42,7 @@ export function AdminPagination({
         type="button"
         variant="outline"
         size="sm"
-        className="h-7 w-7 p-0"
+        className="h-7 w-7 p-0 coarse:h-11 coarse:w-11"
         aria-label="Previous page"
         disabled={atFirst}
         onClick={() => onPageChange(Math.max(1, page - 1))}
@@ -56,7 +56,7 @@ export function AdminPagination({
         type="button"
         variant="outline"
         size="sm"
-        className="h-7 w-7 p-0"
+        className="h-7 w-7 p-0 coarse:h-11 coarse:w-11"
         aria-label="Next page"
         disabled={atLast}
         onClick={() => onPageChange(Math.min(totalPages, page + 1))}

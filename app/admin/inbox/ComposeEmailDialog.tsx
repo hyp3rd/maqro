@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { clientFetch } from "@/lib/auth/client-fetch";
+import { haptic } from "@/lib/haptics";
 import { useState } from "react";
 import { Calendar, Send } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -86,6 +87,7 @@ function ComposeBody({
 
   async function send() {
     if (!canSend || busy) return;
+    haptic("tap");
     setBusy(true);
     setError(null);
     try {

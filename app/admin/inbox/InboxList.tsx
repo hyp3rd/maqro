@@ -1,9 +1,11 @@
 "use client";
 
+import { EmptyState } from "@/components/admin/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { clientFetch } from "@/lib/auth/client-fetch";
 import type { ReceivedEmailSummary } from "@/lib/email/receiving";
+import { haptic } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
 import { useMemo, useState } from "react";
 import { Archive, Paperclip, PenSquare, Search } from "lucide-react";
@@ -36,6 +38,12 @@ export function InboxList({ emails }: { emails: ReceivedEmailSummary[] }) {
   }, [items, query]);
 
   const archive = async (id: string) => {
+    // Capture position so Undo can restore the row where it was. `items` is
+    // the full (unfiltered) list, so the index is stable to restore into.
+    const idx = items.findIndex((e) => e.id === id);
+    if (idx === -1) return;
+    const removed = items[idx];
+    haptic("warning");
     setItems((prev) => prev.filter((e) => e.id !== id));
     try {
       const res = await clientFetch(
@@ -43,9 +51,29 @@ export function InboxList({ emails }: { emails: ReceivedEmailSummary[] }) {
         { method: "POST" },
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      toast.success("Archived.");
+      toast.success("Archived.", {
+        action: { label: "Undo", onClick: () => void unarchive(removed, idx) },
+      });
     } catch {
+      // The dismiss didn't land — put the row back so the UI matches reality.
+      setItems((prev) => insertAt(prev, removed, idx));
       toast.error("Couldn't archive — it may reappear on reload.");
+    }
+  };
+
+  const unarchive = async (email: ReceivedEmailSummary, idx: number) => {
+    setItems((prev) => insertAt(prev, email, idx));
+    try {
+      const res = await clientFetch(
+        `/api/admin/inbox/${encodeURIComponent(email.id)}/dismiss`,
+        { method: "DELETE" },
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch {
+      // Couldn't un-dismiss server-side — pull the row back out so the list
+      // matches what a reload would show, rather than lying to the operator.
+      setItems((prev) => prev.filter((e) => e.id !== email.id));
+      toast.error("Couldn't undo the archive.");
     }
   };
 
@@ -106,9 +134,23 @@ export function InboxList({ emails }: { emails: ReceivedEmailSummary[] }) {
         onOpenChange={setComposeOpen}
       />
       {filtered.length === 0 ? (
-        <p className="rounded-md border border-border/60 bg-card px-4 py-6 text-center text-xs text-muted-foreground">
-          No messages match &quot;{query}&quot;.
-        </p>
+        <div className="rounded-lg border border-border/60 bg-card">
+          <EmptyState
+            icon={Search}
+            title="No matching messages"
+            description={`Nothing matches "${query.trim()}". Try a different sender, subject, or word.`}
+            action={
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setQuery("")}
+              >
+                Clear search
+              </Button>
+            }
+          />
+        </div>
       ) : (
         <ul className="divide-y divide-border/60 overflow-hidden rounded-lg border border-border/60 bg-card">
           {filtered.map((email) => (
@@ -178,12 +220,26 @@ function EmailRow({
         onClick={() => onArchive(email.id)}
         aria-label="Archive (hide from inbox)"
         title="Archive (hide from inbox)"
-        className="flex shrink-0 items-center px-3 text-muted-foreground transition-colors hover:bg-accent/40 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex shrink-0 items-center justify-center px-3 text-muted-foreground transition-colors hover:bg-accent/40 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:min-w-11"
       >
         <Archive className="h-4 w-4" />
       </button>
     </li>
   );
+}
+
+/** Re-insert `email` at `idx` (clamped), guarding against a double-insert if
+ *  Undo is somehow fired twice. Pure so both the failure-rollback and the Undo
+ *  path share one restore. */
+function insertAt(
+  list: ReceivedEmailSummary[],
+  email: ReceivedEmailSummary,
+  idx: number,
+): ReceivedEmailSummary[] {
+  if (list.some((e) => e.id === email.id)) return list;
+  const next = list.slice();
+  next.splice(Math.max(0, Math.min(idx, next.length)), 0, email);
+  return next;
 }
 
 /** Relative-time formatter sized for the row's tight metadata

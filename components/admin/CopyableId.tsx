@@ -56,7 +56,9 @@ export function CopyableId({
       onClick={copy}
       title={copied ? "Copied" : value}
       className={[
-        "group inline-flex max-w-full items-center gap-1 rounded px-1 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        // `coarse:min-h-11` gives the tap a 44px target on touch without
+        // enlarging the dense desktop rows.
+        "group inline-flex max-w-full items-center gap-1 rounded px-1 py-0.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:min-h-11",
         className,
       ]
         .filter(Boolean)
@@ -66,7 +68,9 @@ export function CopyableId({
       {copied ? (
         <Check className="h-3 w-3 shrink-0 text-emerald-600 dark:text-emerald-400" />
       ) : (
-        <Copy className="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
+        // Hover-reveal on mouse, but always semi-visible on touch — there's
+        // no hover on a phone, so opacity-0 made the affordance invisible.
+        <Copy className="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 coarse:opacity-60" />
       )}
     </button>
   );

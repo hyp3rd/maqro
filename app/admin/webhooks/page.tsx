@@ -8,7 +8,9 @@ import { JsonViewer } from "@/components/admin/JsonViewer";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { Pill } from "@/components/admin/Pill";
 import { Button } from "@/components/ui/button";
+import { DestructiveConfirmDialog } from "@/components/ui/destructive-confirm-dialog";
 import { clientFetch } from "@/lib/auth/client-fetch";
+import { haptic } from "@/lib/haptics";
 import * as React from "react";
 import {
   CheckCircle2,
@@ -100,6 +102,10 @@ export default function AdminWebhooksPage() {
     | { kind: "error"; message: string }
   >({ kind: "idle" });
   const [replayBusy, setReplayBusy] = React.useState(false);
+  // Event id pending a replay confirm. Replay re-runs the live handler
+  // (re-fires fulfillment / emails / audit writes), so it goes behind the
+  // shared destructive-confirm shell rather than a one-tap commit.
+  const [pendingReplay, setPendingReplay] = React.useState<string | null>(null);
 
   // Reset list / detail state to "loading" / "idle" *during render*
   // when their inputs change. This is the project's sanctioned
@@ -203,12 +209,17 @@ export default function AdminWebhooksPage() {
       if (!res.ok || body.status === "error") {
         toast.error(body.error ?? `Replay failed (${res.status}).`);
       } else {
+        haptic("success");
         toast.success("Replayed.");
       }
       // Re-fetch list and detail to reflect the new status.
       setTick((t) => t + 1);
       setSelectedId(id);
       setDetail({ kind: "loading" });
+    } catch (err) {
+      // A thrown fetch (network drop) skips the !res.ok branch above; without
+      // this the operator gets zero feedback and a silently-reset button.
+      toast.error(err instanceof Error ? err.message : "Replay failed.");
     } finally {
       setReplayBusy(false);
     }
@@ -382,11 +393,28 @@ export default function AdminWebhooksPage() {
             <DetailPanel
               row={detail.row}
               busy={replayBusy}
-              onReplay={() => replay(detail.row.id)}
+              onReplay={() => setPendingReplay(detail.row.id)}
             />
           )}
         </aside>
       </div>
+
+      <DestructiveConfirmDialog
+        open={pendingReplay !== null}
+        onOpenChange={(o) => {
+          if (!o) setPendingReplay(null);
+        }}
+        title="Replay this webhook event?"
+        description="Re-dispatches the stored payload through the live handler — it can re-fire fulfillment, customer emails, and audit writes. This can't be undone."
+        actionLabel="Replay"
+        onConfirm={() => {
+          if (pendingReplay) {
+            haptic("warning");
+            void replay(pendingReplay);
+          }
+          setPendingReplay(null);
+        }}
+      />
     </div>
   );
 }

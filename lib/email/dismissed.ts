@@ -31,3 +31,18 @@ export async function dismissEmail(
     .upsert({ email_id: emailId, dismissed_by: byUserId });
   return error ? { ok: false, error: error.message } : { ok: true };
 }
+
+/** Un-archive (restore) a previously-dismissed message — the symmetric
+ *  inverse of `dismissEmail`, backing the inbox's Undo affordance. Idempotent:
+ *  deleting a non-existent row is a no-op success. */
+export async function undismissEmail(
+  emailId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const admin = serviceClient();
+  if (!admin) return { ok: false, error: "Service-role key not configured." };
+  const { error } = await admin
+    .from("inbox_dismissed")
+    .delete()
+    .eq("email_id", emailId);
+  return error ? { ok: false, error: error.message } : { ok: true };
+}

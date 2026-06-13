@@ -1,11 +1,14 @@
 "use client";
 
+import { EmptyState } from "@/components/admin/EmptyState";
 import { Button } from "@/components/ui/button";
+import { DestructiveConfirmDialog } from "@/components/ui/destructive-confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { clientFetch } from "@/lib/auth/client-fetch";
+import { haptic } from "@/lib/haptics";
 import { useState } from "react";
-import { Trash2 } from "lucide-react";
+import { Link2, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -28,6 +31,10 @@ export function AllowlistManager({
   const [hostname, setHostname] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  // Hostname pending a removal confirm. Removing the last entry silently
+  // flips recipe-import back to OPEN mode, so the delete goes behind the
+  // shared confirm shell with a stronger warning on the final entry.
+  const [pendingRemove, setPendingRemove] = useState<string | null>(null);
 
   async function addEntry() {
     if (!hostname.trim()) return;
@@ -58,8 +65,11 @@ export function AllowlistManager({
       }
       setHostname("");
       setNote("");
+      haptic("success");
       toast.success(`Added ${hostname.trim().toLowerCase()}.`);
       router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't add entry.");
     } finally {
       setBusy(false);
     }
@@ -68,7 +78,7 @@ export function AllowlistManager({
   async function removeEntry(host: string) {
     setBusy(true);
     try {
-      const res = await fetch(
+      const res = await clientFetch(
         `/api/admin/recipe-import-allowlist?hostname=${encodeURIComponent(host)}`,
         { method: "DELETE" },
       );
@@ -80,6 +90,10 @@ export function AllowlistManager({
       setEntries((cur) => cur.filter((e) => e.hostname !== host));
       toast.success(`Removed ${host}.`);
       router.refresh();
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Couldn't remove entry.",
+      );
     } finally {
       setBusy(false);
     }
@@ -144,7 +158,9 @@ export function AllowlistManager({
         </p>
       </form>
 
-      <div className="overflow-hidden rounded-lg border border-border/60">
+      {/* `overflow-x-auto` (not `overflow-hidden`) so a long hostname/note
+          scrolls on a phone instead of being clipped off the right edge. */}
+      <div className="overflow-x-auto rounded-lg border border-border/60">
         <table className="w-full text-sm">
           <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
@@ -157,11 +173,12 @@ export function AllowlistManager({
           <tbody>
             {entries.length === 0 ? (
               <tr>
-                <td
-                  colSpan={4}
-                  className="px-3 py-6 text-center text-xs text-muted-foreground"
-                >
-                  No entries yet. The feature is in open mode.
+                <td colSpan={4}>
+                  <EmptyState
+                    icon={Link2}
+                    title="No hosts on the allowlist"
+                    description="Recipe import is in open mode — any host is allowed. Add a host above to switch to allowlist-only."
+                  />
                 </td>
               </tr>
             ) : (
@@ -184,10 +201,11 @@ export function AllowlistManager({
                       type="button"
                       variant="ghost"
                       size="sm"
-                      onClick={() => void removeEntry(e.hostname)}
+                      onClick={() => setPendingRemove(e.hostname)}
                       disabled={busy}
                       aria-label={`Remove ${e.hostname}`}
                       title="Remove"
+                      className="coarse:h-11 coarse:w-11"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
@@ -198,6 +216,27 @@ export function AllowlistManager({
           </tbody>
         </table>
       </div>
+
+      <DestructiveConfirmDialog
+        open={pendingRemove !== null}
+        onOpenChange={(o) => {
+          if (!o) setPendingRemove(null);
+        }}
+        title={`Remove ${pendingRemove ?? "this host"}?`}
+        description={
+          entries.length === 1
+            ? "This is the last allowed host. Removing it switches recipe import back to OPEN mode — any host becomes importable."
+            : "Recipe imports from this host will be blocked. You can re-add it later."
+        }
+        actionLabel="Remove"
+        onConfirm={() => {
+          if (pendingRemove) {
+            haptic("warning");
+            void removeEntry(pendingRemove);
+          }
+          setPendingRemove(null);
+        }}
+      />
     </div>
   );
 }

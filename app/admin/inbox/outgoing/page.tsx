@@ -88,7 +88,15 @@ export default async function AdminOutgoingPage() {
         }
       />
       <InboxTabs />
-      {rows.length === 0 ? null : (
+      {rows.length === 0 ? (
+        <div className="rounded-lg border border-border/60 bg-card">
+          <EmptyState
+            icon={Send}
+            title="No outbound mail yet"
+            description="Use Compose on the Inbox tab to send a message — it shows up here with live delivery status."
+          />
+        </div>
+      ) : (
         <ul className="divide-y divide-border/60 overflow-hidden rounded-lg border border-border/60 bg-card">
           {rows.map((row) => (
             <OutgoingRow

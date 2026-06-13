@@ -110,9 +110,11 @@ export default async function AdminOnboardingPage({
           title="Onboarding funnel"
           description="Aggregate drop-off across the first-run wizard."
         />
-        <div className="rounded-md border border-red-500/30 bg-red-500/5 px-4 py-3 text-xs text-red-600">
-          {error.message}
-        </div>
+        <EmptyState
+          icon={Activity}
+          title="Couldn't load the funnel"
+          description={error.message}
+        />
       </div>
     );
   }
@@ -153,7 +155,7 @@ function RangeSwitcher({ current }: { current: RangeKey }) {
         <a
           key={k}
           href={`?range=${k}`}
-          className={`rounded px-2 py-1 transition-colors ${
+          className={`rounded px-2 py-1 transition-colors coarse:px-3 coarse:py-2.5 ${
             current === k
               ? "bg-foreground text-background"
               : "text-muted-foreground hover:bg-accent hover:text-foreground"

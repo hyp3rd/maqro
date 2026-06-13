@@ -6,8 +6,10 @@ import { EmptyState } from "@/components/admin/EmptyState";
 import { PageHeader } from "@/components/admin/PageHeader";
 import { Pill } from "@/components/admin/Pill";
 import { Button } from "@/components/ui/button";
+import { DestructiveConfirmDialog } from "@/components/ui/destructive-confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { clientFetch } from "@/lib/auth/client-fetch";
+import { haptic } from "@/lib/haptics";
 import { useEffect, useState } from "react";
 import {
   Ban,
@@ -74,6 +76,17 @@ export default function AdminUsersPage() {
   // Bumping `tick` triggers a re-fetch — used after a successful
   // role / usage change to refresh the list.
   const [tick, setTick] = useState(0);
+  // Per-row in-flight lock so rapid clicks can't race a promote against a
+  // demote (or double-fire a usage reset). Holds the row id + which action.
+  const [busy, setBusy] = useState<{
+    id: string;
+    action: "role" | "usage";
+  } | null>(null);
+  // Promote is the one irreversible-feeling, security-sensitive action here
+  // (it grants full admin over everyone). Demote stays a direct click.
+  const [pendingPromote, setPendingPromote] = useState<AdminUserRow | null>(
+    null,
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -114,32 +127,48 @@ export default function AdminUsersPage() {
   const data = state.status === "ok" ? state.data : null;
 
   async function changeRole(userId: string, role: "user" | "admin") {
-    const res = await clientFetch(`/api/admin/users/${userId}/role`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ role }),
-    });
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    if (!res.ok) {
-      toast.error(body.error ?? "Couldn't change role.");
-      return;
+    setBusy({ id: userId, action: "role" });
+    try {
+      const res = await clientFetch(`/api/admin/users/${userId}/role`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        toast.error(body.error ?? "Couldn't change role.");
+        return;
+      }
+      haptic("success");
+      toast.success(`Role set to ${role}`);
+      setTick((t) => t + 1);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't change role.");
+    } finally {
+      setBusy(null);
     }
-    toast.success(`Role set to ${role}`);
-    setTick((t) => t + 1);
   }
 
   async function resetUsage(userId: string) {
-    const res = await clientFetch(`/api/admin/users/${userId}/usage`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ count: 0 }),
-    });
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    if (!res.ok) {
-      toast.error(body.error ?? "Couldn't reset usage.");
-      return;
+    setBusy({ id: userId, action: "usage" });
+    try {
+      const res = await clientFetch(`/api/admin/users/${userId}/usage`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ count: 0 }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        toast.error(body.error ?? "Couldn't reset usage.");
+        return;
+      }
+      haptic("success");
+      toast.success("AI usage reset for this month");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't reset usage.");
+    } finally {
+      setBusy(null);
     }
-    toast.success("AI usage reset for this month");
   }
 
   const totalPages = data ? Math.max(1, Math.ceil(data.total / data.per)) : 1;
@@ -403,23 +432,34 @@ export default function AdminUsersPage() {
                             type="button"
                             variant="ghost"
                             size="sm"
-                            className="h-7 px-2 text-[11px]"
-                            onClick={() =>
-                              changeRole(
-                                u.id,
-                                u.role === "admin" ? "user" : "admin",
-                              )
-                            }
+                            className="h-7 gap-1 px-2 text-[11px]"
+                            disabled={busy?.id === u.id}
+                            onClick={() => {
+                              // Demote is a direct click; promote opens a
+                              // confirm (it grants full admin).
+                              if (u.role === "admin") {
+                                void changeRole(u.id, "user");
+                              } else {
+                                setPendingPromote(u);
+                              }
+                            }}
                           >
+                            {busy?.id === u.id && busy.action === "role" && (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            )}
                             {u.role === "admin" ? "Demote" : "Promote"}
                           </Button>
                           <Button
                             type="button"
                             variant="ghost"
                             size="sm"
-                            className="h-7 px-2 text-[11px]"
-                            onClick={() => resetUsage(u.id)}
+                            className="h-7 gap-1 px-2 text-[11px]"
+                            disabled={busy?.id === u.id}
+                            onClick={() => void resetUsage(u.id)}
                           >
+                            {busy?.id === u.id && busy.action === "usage" && (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            )}
                             Reset AI
                           </Button>
                           <Link
@@ -448,6 +488,23 @@ export default function AdminUsersPage() {
           onPageChange={setPage}
         />
       )}
+
+      <DestructiveConfirmDialog
+        open={pendingPromote !== null}
+        onOpenChange={(o) => {
+          if (!o) setPendingPromote(null);
+        }}
+        title={`Promote ${pendingPromote?.email ?? "this user"} to admin?`}
+        description="Admins can ban, trace, delete accounts, and change billing for every user. Grant this only to trusted operators."
+        actionLabel="Promote"
+        onConfirm={() => {
+          if (pendingPromote) {
+            haptic("warning");
+            void changeRole(pendingPromote.id, "admin");
+          }
+          setPendingPromote(null);
+        }}
+      />
     </div>
   );
 }
