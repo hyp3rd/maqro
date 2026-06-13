@@ -310,7 +310,8 @@
       "forever": "forever",
       "month": "month",
       "yearlyBilledNote": "Billed €{yearly} yearly — {discount}% off the monthly rate.",
-      "monthlySaveNote": "Or €{yearly}/year — save {discount}%."
+      "monthlySaveNote": "Or €{yearly}/year — save {discount}%.",
+      "saveBadge": "Save €{amount}/yr"
     },
     "matrix": {
       "title": "Full feature comparison",

@@ -1,6 +1,7 @@
 "use client";
 
 import type { ResolvedPantryScan } from "@/app/api/identify-pantry/route";
+import { SwipeHint } from "@/components/gestures/SwipeHint";
 import { SwipeRow } from "@/components/gestures/SwipeRow";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -417,77 +418,86 @@ export function PantryView({ aiAvailable = false }: { aiAvailable?: boolean }) {
             </p>
           </div>
         ) : (
-          <ul className="divide-y divide-border/60">
-            {(paged ?? []).map((item) => (
-              <li key={item.id}>
-                <SwipeRow
-                  onSwipeLeft={() => setPendingDelete(item)}
-                  onSwipeRight={() => void sendToShoppingList(item)}
-                  leftReveal={{
-                    label: "Delete",
-                    intent: "danger",
-                    icon: <Trash2 className="h-3.5 w-3.5" />,
-                  }}
-                  rightReveal={{
-                    label: "To shopping list",
-                    intent: "info",
-                    icon: <ListPlus className="h-3.5 w-3.5" />,
-                  }}
-                  surfaceClassName="bg-card"
-                >
-                  {/* The whole row is a single tap target → opens the
+          <>
+            <SwipeHint
+              storageKey="maqro:hint:pantry-swipe"
+              className="mx-5 mb-1 mt-3"
+            >
+              Swipe a row left to delete, right to send it to your shopping
+              list.
+            </SwipeHint>
+            <ul className="divide-y divide-border/60">
+              {(paged ?? []).map((item) => (
+                <li key={item.id}>
+                  <SwipeRow
+                    onSwipeLeft={() => setPendingDelete(item)}
+                    onSwipeRight={() => void sendToShoppingList(item)}
+                    leftReveal={{
+                      label: "Delete",
+                      intent: "danger",
+                      icon: <Trash2 className="h-3.5 w-3.5" />,
+                    }}
+                    rightReveal={{
+                      label: "To shopping list",
+                      intent: "info",
+                      icon: <ListPlus className="h-3.5 w-3.5" />,
+                    }}
+                    surfaceClassName="bg-card"
+                  >
+                    {/* The whole row is a single tap target → opens the
                       action sheet. `truncate` lives on the block-level
                       <p> with a `min-w-0 flex-1` parent so long names clip
                       instead of overrunning the quantity. */}
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`${item.name} — open actions`}
-                    onClick={() => setSheetItemId(item.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        setSheetItemId(item.id);
-                      }
-                    }}
-                    className="flex cursor-pointer items-center gap-2 px-5 py-3 text-left transition-colors active:bg-muted/40"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">
-                        {item.name}
-                      </p>
-                      <div className="mt-0.5 flex flex-wrap items-center gap-1">
-                        {(() => {
-                          const aisle = effectiveCategory(item);
-                          const color = AISLE_COLORS[aisle];
-                          return (
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${item.name} — open actions`}
+                      onClick={() => setSheetItemId(item.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setSheetItemId(item.id);
+                        }
+                      }}
+                      className="flex cursor-pointer items-center gap-2 px-5 py-3 text-left transition-colors active:bg-muted/40"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">
+                          {item.name}
+                        </p>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                          {(() => {
+                            const aisle = effectiveCategory(item);
+                            const color = AISLE_COLORS[aisle];
+                            return (
+                              <Badge
+                                variant="secondary"
+                                className={`text-[10px] font-medium uppercase tracking-wide ${color.bg} ${color.text} hover:${color.bg}`}
+                              >
+                                {aisle}
+                              </Badge>
+                            );
+                          })()}
+                          {isLow(item) && (
                             <Badge
                               variant="secondary"
-                              className={`text-[10px] font-medium uppercase tracking-wide ${color.bg} ${color.text} hover:${color.bg}`}
+                              className="bg-amber-500/15 text-[10px] font-medium uppercase tracking-wide text-amber-700 hover:bg-amber-500/15 dark:text-amber-400"
                             >
-                              {aisle}
+                              Low
                             </Badge>
-                          );
-                        })()}
-                        {isLow(item) && (
-                          <Badge
-                            variant="secondary"
-                            className="bg-amber-500/15 text-[10px] font-medium uppercase tracking-wide text-amber-700 hover:bg-amber-500/15 dark:text-amber-400"
-                          >
-                            Low
-                          </Badge>
-                        )}
+                          )}
+                        </div>
                       </div>
+                      <span className="max-w-[40%] shrink-0 truncate font-mono text-xs tabular-nums text-muted-foreground">
+                        {item.quantity} {item.unit}
+                      </span>
+                      <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground/50" />
                     </div>
-                    <span className="max-w-[40%] shrink-0 truncate font-mono text-xs tabular-nums text-muted-foreground">
-                      {item.quantity} {item.unit}
-                    </span>
-                    <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground/50" />
-                  </div>
-                </SwipeRow>
-              </li>
-            ))}
-          </ul>
+                  </SwipeRow>
+                </li>
+              ))}
+            </ul>
+          </>
         )}
 
         {/* Pagination footer — hidden when everything fits on one page. */}

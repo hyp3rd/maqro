@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { useUser } from "@/hooks/use-user";
 import { useState } from "react";
-import { Check, Loader2, Plus, Printer } from "lucide-react";
+import { Check, Loader2, Plus, Printer, Share2 } from "lucide-react";
 import Link from "next/link";
 
 /** Top-right actions for a shared recipe page. Two affordances:
@@ -24,6 +24,34 @@ export function RecipePageActions({ slug }: { slug: string }) {
   const [importing, setImporting] = useState(false);
   const [imported, setImported] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  /** Share the page URL. Mobile → the OS share sheet (the natural way to
+   *  send a recipe to someone); everywhere else → copy to clipboard with a
+   *  brief "Copied" confirmation. The URL unfurls into the recipe's OG card
+   *  on the receiving end, so no text payload is needed. */
+  async function handleShare() {
+    const url = window.location.href;
+    if (
+      typeof navigator !== "undefined" &&
+      typeof navigator.share === "function"
+    ) {
+      try {
+        await navigator.share({ url, title: document.title });
+        return;
+      } catch (err) {
+        // User dismissed the sheet — not a failure; don't fall through to copy.
+        if (err instanceof Error && err.name === "AbortError") return;
+      }
+    }
+    try {
+      await navigator.clipboard?.writeText(url);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // No share + no clipboard (rare/locked-down) — nothing actionable.
+    }
+  }
 
   async function handleImport() {
     if (!user || importing) return;
@@ -48,6 +76,21 @@ export function RecipePageActions({ slug }: { slug: string }) {
 
   return (
     <div className="flex items-center gap-2">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={handleShare}
+        className="h-9 gap-1.5"
+        aria-label="Share this recipe"
+      >
+        {copied ? (
+          <Check className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
+        ) : (
+          <Share2 className="h-3.5 w-3.5" />
+        )}
+        {copied ? "Copied" : "Share"}
+      </Button>
       <Button
         type="button"
         variant="outline"

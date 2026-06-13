@@ -2,7 +2,7 @@
 
 import type { CoherenceIssue } from "@/lib/ai/plan-coherence";
 import type { MealSchedule } from "@/lib/db";
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   BookmarkPlus,
@@ -14,6 +14,7 @@ import {
   Sparkles,
   Trash2,
 } from "lucide-react";
+import { useReducedMotion } from "motion/react";
 import { useDroppable } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -67,6 +68,10 @@ interface MealItemProps {
   onApplyRecipe: (mealId: number) => void;
   /** Clear every food from this meal in one go (with an Undo toast). */
   onClearMeal: (mealId: number) => void;
+  /** Most-recent "food logged" pulse from the parent. A fresh object per
+   *  add (its identity, not value, retriggers the flash) — this card pulses
+   *  + scrolls into view only when `loggedSignal.mealId` matches its own. */
+  loggedSignal: { mealId: number } | null;
   /** A schedule due for this slot today (if any) — drives the one-tap
    *  "log it" offer shown on the empty slot. */
   scheduledForSlot?: MealSchedule;
@@ -114,6 +119,7 @@ const MealItem: React.FC<MealItemProps> = ({
   onAddFromTemplate,
   onApplyRecipe,
   onClearMeal,
+  loggedSignal,
   scheduledForSlot,
   onLogScheduled,
   onOpenDetail,
@@ -150,11 +156,41 @@ const MealItem: React.FC<MealItemProps> = ({
     data: { mealId: meal.id, type: "meal" },
   });
 
+  // "Food landed here" pulse. The parent hands every card the same
+  // loggedSignal object; a fresh identity each add lets each card tell
+  // whether the latest log targeted IT. We detect that during render (the
+  // sanctioned way to react to a changed prop — an effect here would trip
+  // the set-state-in-effect rule), tracking the last identity we acted on.
+  const reducedMotion = useReducedMotion();
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const [flash, setFlash] = useState(false);
+  const [seenSignal, setSeenSignal] = useState(loggedSignal);
+  if (loggedSignal !== seenSignal) {
+    setSeenSignal(loggedSignal);
+    if (loggedSignal && loggedSignal.mealId === meal.id) setFlash(true);
+  }
+  // Once the pulse is on, scroll the card into view and auto-clear it. The
+  // tint fades out via the wrapper's color transition; reduced-motion users
+  // still get the scroll, just without the smooth animation. setFlash lives
+  // in the timeout callback (not the effect body), so it's clear of the rule.
+  useEffect(() => {
+    if (!flash) return;
+    cardRef.current?.scrollIntoView({
+      block: "nearest",
+      behavior: reducedMotion ? "auto" : "smooth",
+    });
+    const timer = window.setTimeout(() => setFlash(false), 1100);
+    return () => window.clearTimeout(timer);
+  }, [flash, reducedMotion]);
+
   return (
     <div
-      ref={setNodeRef}
-      className={`px-3 py-3 transition-colors sm:px-5 sm:py-4 ${
-        isOver ? "bg-accent/40" : ""
+      ref={(node) => {
+        setNodeRef(node);
+        cardRef.current = node;
+      }}
+      className={`px-3 py-3 transition-colors duration-500 sm:px-5 sm:py-4 ${
+        flash ? "bg-primary/10" : isOver ? "bg-accent/40" : ""
       }`}
     >
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
@@ -190,7 +226,10 @@ const MealItem: React.FC<MealItemProps> = ({
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 text-muted-foreground sm:h-8 sm:w-8"
+                // 44px hit area on touch (coarse) per WCAG 2.5.5; mouse
+                // pointers keep the compact 36px. No `sm:` shrink so a
+                // coarse tablet at ≥640px isn't dropped to a 32px target.
+                className="h-9 w-9 text-muted-foreground coarse:h-11 coarse:w-11"
                 aria-label={`${meal.name} actions`}
               >
                 <MoreHorizontal className="h-4 w-4" />

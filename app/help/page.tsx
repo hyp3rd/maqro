@@ -1,3 +1,4 @@
+import { HelpSearch } from "@/components/marketing/HelpSearch";
 import { Footer } from "@/components/shell/Footer";
 import { GITHUB_REPO_URL } from "@/lib/links";
 import {
@@ -62,6 +63,8 @@ export default function HelpPage() {
             people actually ask. Tap a topic to expand.
           </p>
         </header>
+
+        <HelpSearch />
 
         <Section title="Getting started">
           <Topic
@@ -419,7 +422,10 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="mt-10">
+    <section
+      className="mt-10"
+      data-help-section
+    >
       <h2 className="font-display text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         {title}
       </h2>
@@ -443,7 +449,10 @@ function Topic({
   // friendly, no JS. The chevron rotates via the `group-open:`
   // variant when expanded.
   return (
-    <details className="group px-4 py-3 [&_summary::-webkit-details-marker]:hidden sm:px-5">
+    <details
+      data-help-topic
+      className="group px-4 py-3 [&_summary::-webkit-details-marker]:hidden sm:px-5"
+    >
       <summary className="flex cursor-pointer list-none items-center gap-3">
         <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground">
           <Icon className="h-3.5 w-3.5" />

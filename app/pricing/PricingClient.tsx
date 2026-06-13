@@ -8,6 +8,7 @@ import {
   type PlanData,
   PLANS,
   yearlyDiscountPct,
+  yearlySavingsEur,
 } from "@/lib/billing/plans";
 import { useState } from "react";
 import { Check, MessageSquare, Minus, Sparkles } from "lucide-react";
@@ -181,6 +182,7 @@ function PlanCard({ plan, cycle }: { plan: PlanData; cycle: Cycle }) {
   const tCard = useTranslations("pricingPage.card");
   const monthly = effectiveMonthly(plan, cycle);
   const discount = yearlyDiscountPct(plan);
+  const savings = yearlySavingsEur(plan);
   const isFree = plan.monthlyEur === 0;
   const href = isFree ? "/app" : `/app?upgrade=${plan.tier}`;
 
@@ -203,13 +205,18 @@ function PlanCard({ plan, cycle }: { plan: PlanData; cycle: Cycle }) {
       <p className="mt-1 min-h-[2.5rem] text-xs text-muted-foreground">
         {tPlan(plan.taglineKey)}
       </p>
-      <p className="mt-5 flex items-baseline gap-1">
+      <p className="mt-5 flex flex-wrap items-baseline gap-x-1.5 gap-y-1">
         <span className="font-display text-4xl font-semibold tracking-tight">
           €{formatPrice(monthly)}
         </span>
         <span className="text-xs text-muted-foreground">
           / {isFree ? tCard("forever") : tCard("month")}
         </span>
+        {!isFree && savings > 0 && (
+          <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+            {tCard("saveBadge", { amount: savings })}
+          </span>
+        )}
       </p>
       <p className="mt-1 min-h-[1.25rem] text-[11px] text-muted-foreground">
         {!isFree && cycle === "yearly" && discount > 0
