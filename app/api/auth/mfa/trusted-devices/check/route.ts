@@ -1,4 +1,5 @@
 import { parseBody } from "@/lib/api/parse-body";
+import { findTrustedDeviceRowId } from "@/lib/auth/trusted-device";
 import { getSupabaseSecretConfig } from "@/lib/supabase/env";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -48,26 +49,20 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ trusted: false });
   }
 
-  // Cookie-session client can SELECT via the
-  // `mfa_trusted_devices_self_read` RLS policy. Service-role only
-  // comes in below to bump `last_used_at` (no RLS UPDATE policy).
-  const nowIso = new Date().toISOString();
-  const { data: row, error } = await supabase
-    .from("mfa_trusted_devices")
-    .select("id")
-    .eq("user_id", user.id)
-    .eq("device_id", deviceId)
-    .gt("trusted_until", nowIso)
-    .maybeSingle();
-  if (error || !row) {
-    // RLS denial, DB error, or genuinely not trusted - all collapse
-    // to "not trusted". The user takes the MFA path.
+  // Cookie-session client SELECTs via the `mfa_trusted_devices` owner-read
+  // RLS policy. Shared with the proxy / API gate through
+  // `findTrustedDeviceRowId` so "what counts as trusted" stays one rule.
+  // RLS denial, DB error, or genuinely not trusted all collapse to null →
+  // the user takes the MFA path.
+  const rowId = await findTrustedDeviceRowId(supabase, user.id, deviceId);
+  if (!rowId) {
     return NextResponse.json({ trusted: false });
   }
 
   // Best-effort bump of `last_used_at`. Failure here doesn't change
   // the trust outcome - the user is still trusted; we just won't
   // refresh the row's "last used" stamp. Don't await/block on it.
+  // Service-role only (no RLS UPDATE policy on the table).
   const secret = getSupabaseSecretConfig();
   if (secret) {
     const admin = createClient(secret.url, secret.secretKey, {
@@ -75,8 +70,8 @@ export async function POST(req: Request): Promise<NextResponse> {
     });
     void admin
       .from("mfa_trusted_devices")
-      .update({ last_used_at: nowIso })
-      .eq("id", row.id)
+      .update({ last_used_at: new Date().toISOString() })
+      .eq("id", rowId)
       .then(() => {});
   }
 

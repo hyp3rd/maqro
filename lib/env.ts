@@ -66,6 +66,11 @@ type Env = {
   SHARE_BADGE_SECRET?: string;
   SOCIAL_TOKEN_SECRET?: string;
   RESEND_WEBHOOK_SECRET?: string;
+  // Optional: keys the encrypted refresh-token-coalescing cache in Redis (the
+  // proxy's deploy-signout fix). Unset = the refresh lock still serializes
+  // refreshes but can't hand the rotated tokens to losers, so losers fall open.
+  // AES-256 key via sha256(secret), like SOCIAL_TOKEN_SECRET.
+  AUTH_REFRESH_CACHE_SECRET?: string;
   // Optional shared cache for Open Food Facts lookups (Upstash Redis REST).
   // Unset = lookups fall through to a direct fetch (fail-open).
   UPSTASH_REDIS_REST_URL?: string;
@@ -119,6 +124,7 @@ function readEnv(source: NodeJS.ProcessEnv = process.env): Env {
     SHARE_BADGE_SECRET: trimmed(source.SHARE_BADGE_SECRET),
     SOCIAL_TOKEN_SECRET: trimmed(source.SOCIAL_TOKEN_SECRET),
     RESEND_WEBHOOK_SECRET: trimmed(source.RESEND_WEBHOOK_SECRET),
+    AUTH_REFRESH_CACHE_SECRET: trimmed(source.AUTH_REFRESH_CACHE_SECRET),
     UPSTASH_REDIS_REST_URL: trimmed(source.UPSTASH_REDIS_REST_URL),
     UPSTASH_REDIS_REST_TOKEN: trimmed(source.UPSTASH_REDIS_REST_TOKEN),
     VERCEL_URL: trimmed(source.VERCEL_URL),
@@ -191,6 +197,11 @@ export function validateEnvFor(e: Env): EnvIssue[] {
   if (e.SOCIAL_TOKEN_SECRET && e.SOCIAL_TOKEN_SECRET.length < 32) {
     err(
       "SOCIAL_TOKEN_SECRET must be at least 32 characters (it keys AES-256 for stored OAuth tokens).",
+    );
+  }
+  if (e.AUTH_REFRESH_CACHE_SECRET && e.AUTH_REFRESH_CACHE_SECRET.length < 32) {
+    err(
+      "AUTH_REFRESH_CACHE_SECRET must be at least 32 characters (it keys AES-256 for the encrypted refresh-token cache).",
     );
   }
   if (

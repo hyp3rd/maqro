@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useWebAuthnSupported } from "@/hooks/use-webauthn-supported";
 import { isLikelyEmail } from "@/lib/account/backup-email";
+import { getVerifiedTotpFactorId } from "@/lib/auth/mfa-factors";
 import { humanizePasskeyError } from "@/lib/auth/passkey-errors";
 import { getOrCreateDeviceId } from "@/lib/devices/identity";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
@@ -120,17 +121,13 @@ function LoginPageInner() {
     if (!supabase) return;
     let cancelled = false;
     void (async () => {
-      try {
-        const { data: factors } = await supabase.auth.mfa.listFactors();
-        const verifiedTotp = factors?.totp.find((f) => f.status === "verified");
-        if (cancelled) return;
-        if (verifiedTotp) {
-          setStage({ kind: "mfa", factorId: verifiedTotp.id });
-        }
-      } catch {
-        // listFactors needs a session. If it threw, the user
-        // signed out elsewhere — leave the page on its default
-        // request stage so they can sign in normally.
+      // getVerifiedTotpFactorId swallows a thrown listFactors (the user
+      // signed out elsewhere, Supabase outage) into `null`, so a missing
+      // factor just leaves the page on its default request stage.
+      const factorId = await getVerifiedTotpFactorId(supabase);
+      if (cancelled) return;
+      if (factorId) {
+        setStage({ kind: "mfa", factorId });
       }
     })();
     return () => {
@@ -338,11 +335,8 @@ function LoginPageInner() {
       // error so a Supabase outage on this endpoint doesn't lock
       // a non-MFA user out.
       try {
-        const factorsResp = await supabase.auth.mfa.listFactors();
-        const verifiedTotp = factorsResp.data?.totp.find(
-          (f) => f.status === "verified",
-        );
-        if (verifiedTotp) {
+        const verifiedTotpId = await getVerifiedTotpFactorId(supabase);
+        if (verifiedTotpId) {
           const aalResp =
             await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
           if (
@@ -382,7 +376,7 @@ function LoginPageInner() {
                 // factor than to silently skip it.
               }
             }
-            setStage({ kind: "mfa", factorId: verifiedTotp.id });
+            setStage({ kind: "mfa", factorId: verifiedTotpId });
             setCode("");
             setBusy(false);
             return;

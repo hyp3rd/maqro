@@ -132,6 +132,7 @@ words:
   - FOUT
   - Français
   - Francesco
+  - FRESHTOKEN
   - frob
   - Frobenius
   - Frühstück
@@ -232,6 +233,7 @@ words:
   - nonbinary
   - nonneg
   - nosniff
+  - notbase
   - notif
   - notificationclick
   - notificationclose

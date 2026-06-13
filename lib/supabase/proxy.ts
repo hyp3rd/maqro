@@ -7,6 +7,7 @@ import { isCurrentDeviceTrusted } from "@/lib/auth/trusted-device";
 import { type NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { SUPABASE_CONFIG } from "./env";
+import { coalescedGetUserForProxy } from "./refresh-lock";
 
 /** Refreshes the auth session cookie on every request so it stays valid.
  * Returns a `NextResponse` that has the latest cookies attached - the
@@ -45,9 +46,17 @@ export async function updateSession(
   // when the access token is near expiry. The returned user is also our
   // signal for the trace-capture below - knowing WHO the request belongs
   // to lets the admin-trace mechanism decide whether to log this hit.
+  //
+  // Wrapped in a cross-request refresh lock: a single reload fires many
+  // concurrent requests, each of which would otherwise refresh the SAME
+  // single-use refresh token. GoTrue rotates it, the losers get
+  // `refresh_token_already_used`, and the SDK clears their cookies -> the
+  // user is signed out (the "every deploy logs everyone out" symptom). The
+  // lock lets ONE request refresh and the rest reuse its rotated cookies.
+  // Fail-open: no Redis / not near expiry / any error -> plain getUser().
   const {
     data: { user },
-  } = await supabase.auth.getUser();
+  } = await coalescedGetUserForProxy(request, supabase, () => supabaseResponse);
 
   // MFA enforcement on protected page paths. Without this guard, a
   // user who completes the email OTP step but doesn't enter their

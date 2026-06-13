@@ -1,28 +1,37 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   _resetRedisClientForTests,
+  cacheConfigured,
+  cacheDelete,
   cacheGet,
+  cacheGetString,
   cacheSetFireAndForget,
+  cacheSetIfAbsent,
+  cacheSetString,
   pingCache,
 } from "./redis";
 
 // Mock the Upstash client as a real (constructable) class so no real connection
 // is attempted; `ctorSpy` records construction, `getMock`/`setMock` drive
 // behavior. `vi.hoisted` because the `vi.mock` factory runs before module init.
-const { getMock, setMock, pingMock, ctorSpy, afterMock } = vi.hoisted(() => ({
-  getMock: vi.fn(),
-  setMock: vi.fn(),
-  pingMock: vi.fn(),
-  ctorSpy: vi.fn(),
-  // `after(cb)` runs the callback synchronously here; in a real request it runs
-  // after the response is sent. Tests override per-case to simulate out-of-scope.
-  afterMock: vi.fn((cb: () => unknown) => cb()),
-}));
+const { getMock, setMock, pingMock, delMock, ctorSpy, afterMock } = vi.hoisted(
+  () => ({
+    getMock: vi.fn(),
+    setMock: vi.fn(),
+    pingMock: vi.fn(),
+    delMock: vi.fn(),
+    ctorSpy: vi.fn(),
+    // `after(cb)` runs the callback synchronously here; in a real request it runs
+    // after the response is sent. Tests override per-case to simulate out-of-scope.
+    afterMock: vi.fn((cb: () => unknown) => cb()),
+  }),
+);
 vi.mock("@upstash/redis", () => ({
   Redis: class {
     get = getMock;
     set = setMock;
     ping = pingMock;
+    del = delMock;
     constructor() {
       ctorSpy();
     }
@@ -37,6 +46,7 @@ describe("lib/cache/redis", () => {
     getMock.mockReset();
     setMock.mockReset();
     pingMock.mockReset();
+    delMock.mockReset();
     afterMock.mockReset();
     afterMock.mockImplementation((cb: () => unknown) => cb());
   });
@@ -166,6 +176,107 @@ describe("lib/cache/redis", () => {
       _resetRedisClientForTests();
       pingMock.mockRejectedValueOnce(new Error("redis down"));
       expect(await pingCache()).toBe("fail");
+    });
+  });
+
+  describe("lock primitives (refresh-lock)", () => {
+    describe("unconfigured", () => {
+      beforeEach(() => {
+        delete process.env.UPSTASH_REDIS_REST_URL;
+        delete process.env.UPSTASH_REDIS_REST_TOKEN;
+        _resetRedisClientForTests();
+      });
+
+      it("cacheConfigured is false and never constructs a client", () => {
+        expect(cacheConfigured()).toBe(false);
+        expect(ctorSpy).not.toHaveBeenCalled();
+      });
+
+      it("cacheSetIfAbsent fails open to false (never acquires)", async () => {
+        expect(await cacheSetIfAbsent("lock", "nonce", 5000)).toBe(false);
+        expect(setMock).not.toHaveBeenCalled();
+      });
+
+      it("cacheGetString / cacheSetString / cacheDelete are no-ops", async () => {
+        expect(await cacheGetString("k")).toBeNull();
+        await cacheSetString("k", "v", 1000);
+        await cacheDelete("k");
+        expect(setMock).not.toHaveBeenCalled();
+        expect(delMock).not.toHaveBeenCalled();
+      });
+    });
+
+    describe("configured", () => {
+      beforeEach(() => {
+        process.env.UPSTASH_REDIS_REST_URL = "https://x.upstash.io";
+        process.env.UPSTASH_REDIS_REST_TOKEN = "tok";
+        _resetRedisClientForTests();
+      });
+
+      it("cacheConfigured is true", () => {
+        expect(cacheConfigured()).toBe(true);
+      });
+
+      it("cacheSetIfAbsent uses SET NX PX and returns true only on OK", async () => {
+        setMock.mockResolvedValueOnce("OK");
+        expect(await cacheSetIfAbsent("lock", "nonce", 5000)).toBe(true);
+        expect(setMock).toHaveBeenCalledWith("lock", "nonce", {
+          nx: true,
+          px: 5000,
+        });
+      });
+
+      it("cacheSetIfAbsent returns false when the key already exists (null)", async () => {
+        setMock.mockResolvedValueOnce(null);
+        expect(await cacheSetIfAbsent("lock", "nonce", 5000)).toBe(false);
+      });
+
+      it("cacheSetIfAbsent fails open to false on a Redis error", async () => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        setMock.mockRejectedValueOnce(new Error("redis down"));
+        expect(await cacheSetIfAbsent("lock", "nonce", 5000)).toBe(false);
+        warn.mockRestore();
+      });
+
+      it("cacheSetString writes with a px TTL (awaited)", async () => {
+        setMock.mockResolvedValueOnce("OK");
+        await cacheSetString("k", "payload", 10000);
+        expect(setMock).toHaveBeenCalledWith("k", "payload", { px: 10000 });
+      });
+
+      it("cacheGetString returns the string on a hit, null on a non-string", async () => {
+        getMock.mockResolvedValueOnce("payload");
+        expect(await cacheGetString("k")).toBe("payload");
+        getMock.mockResolvedValueOnce({ not: "a string" });
+        expect(await cacheGetString("k")).toBeNull();
+      });
+
+      it("cacheDelete(key) deletes unconditionally", async () => {
+        delMock.mockResolvedValueOnce(1);
+        await cacheDelete("lock");
+        expect(delMock).toHaveBeenCalledWith("lock");
+        expect(getMock).not.toHaveBeenCalled();
+      });
+
+      it("cacheDelete(key, expected) compare-and-deletes only its own value", async () => {
+        getMock.mockResolvedValueOnce("mine");
+        delMock.mockResolvedValueOnce(1);
+        await cacheDelete("lock", "mine");
+        expect(delMock).toHaveBeenCalledWith("lock");
+      });
+
+      it("cacheDelete(key, expected) does NOT delete a successor's lock", async () => {
+        getMock.mockResolvedValueOnce("someone-else");
+        await cacheDelete("lock", "mine");
+        expect(delMock).not.toHaveBeenCalled();
+      });
+
+      it("cacheDelete swallows a Redis error (fail-open)", async () => {
+        const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+        delMock.mockRejectedValueOnce(new Error("redis down"));
+        await expect(cacheDelete("lock")).resolves.toBeUndefined();
+        warn.mockRestore();
+      });
     });
   });
 });

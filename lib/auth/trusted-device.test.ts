@@ -1,7 +1,11 @@
 import { DEVICE_ID_COOKIE } from "@/lib/devices/identity";
 import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isCurrentDeviceTrusted, type CookieSource } from "./trusted-device";
+import {
+  findTrustedDeviceRowId,
+  isCurrentDeviceTrusted,
+  type CookieSource,
+} from "./trusted-device";
 
 const VALID_UUID = "11111111-2222-3333-4444-555555555555";
 
@@ -137,5 +141,33 @@ describe("isCurrentDeviceTrusted", () => {
       cookieSource({ [DEVICE_ID_COOKIE]: VALID_UUID }),
     );
     expect(trusted).toBe(false);
+  });
+});
+
+describe("findTrustedDeviceRowId", () => {
+  it("returns the row id of an unexpired grant (for the /check last_used bump)", async () => {
+    const { client, fromSpy } = fakeSupabase({ row: { id: "row-9" } });
+    expect(await findTrustedDeviceRowId(client, "user-1", VALID_UUID)).toBe(
+      "row-9",
+    );
+    expect(fromSpy).toHaveBeenCalledWith("mfa_trusted_devices");
+  });
+
+  it("returns null when no row matches", async () => {
+    const { client } = fakeSupabase({ row: null });
+    expect(
+      await findTrustedDeviceRowId(client, "user-1", VALID_UUID),
+    ).toBeNull();
+  });
+
+  it("returns null on a DB error and on a thrown query (default-deny)", async () => {
+    const errored = fakeSupabase({ row: null, error: { message: "RLS" } });
+    expect(
+      await findTrustedDeviceRowId(errored.client, "user-1", VALID_UUID),
+    ).toBeNull();
+    const thrown = fakeSupabase({ throws: true });
+    expect(
+      await findTrustedDeviceRowId(thrown.client, "user-1", VALID_UUID),
+    ).toBeNull();
   });
 });
