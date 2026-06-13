@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { clientFetch } from "@/lib/auth/client-fetch";
+import { haptic } from "@/lib/haptics";
 import { useEffect, useState } from "react";
 import {
   ArrowLeft,
@@ -436,9 +437,12 @@ export default function AdminUserDetailPage() {
                   </span>
                 </div>
                 {a.payload && (
-                  <pre className="mt-1 overflow-x-auto rounded bg-muted/40 px-2 py-1 font-mono text-[10px] text-muted-foreground">
-                    {JSON.stringify(a.payload, null, 0)}
-                  </pre>
+                  <div className="mt-1.5">
+                    <JsonViewer
+                      value={a.payload}
+                      maxHeight={160}
+                    />
+                  </div>
                 )}
               </li>
             ))}
@@ -565,6 +569,7 @@ function ConfirmingActionButton({
           <AlertDialogAction
             onClick={(e) => {
               e.preventDefault();
+              haptic("warning");
               onConfirm();
             }}
             disabled={pending}
@@ -648,6 +653,7 @@ function BanDialog({
           <AlertDialogAction
             onClick={(e) => {
               e.preventDefault();
+              haptic("warning");
               onConfirm(duration);
             }}
             disabled={pending}
@@ -740,6 +746,7 @@ function DeleteUserDialog({
           <AlertDialogAction
             onClick={(e) => {
               e.preventDefault();
+              haptic("warning");
               void onConfirm();
             }}
             disabled={pending || !matches}

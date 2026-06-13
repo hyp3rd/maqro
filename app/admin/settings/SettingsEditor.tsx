@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { clientFetch } from "@/lib/auth/client-fetch";
+import { haptic } from "@/lib/haptics";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -47,6 +48,7 @@ function SettingCard({
   const dirty = value.trim() !== initialValue.trim();
 
   async function save() {
+    if (busy || !dirty) return;
     setBusy(true);
     try {
       const res = await clientFetch("/api/admin/settings", {
@@ -59,7 +61,14 @@ function SettingCard({
         toast.error(data.error ?? "Couldn't save.");
         return;
       }
+      haptic("success");
       toast.success("Saved. Propagates within ~60s.");
+    } catch (err) {
+      // A thrown fetch (network drop) skips the !res.ok branch above; without
+      // this the operator gets no feedback and a silently-reset button.
+      toast.error(
+        err instanceof Error ? err.message : "Couldn't save — network error.",
+      );
     } finally {
       setBusy(false);
     }
@@ -73,7 +82,15 @@ function SettingCard({
           {description}
         </p>
       </div>
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+      {/* A form so Enter (or the mobile keyboard "Go") submits the value
+          instead of only the Save button working. */}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void save();
+        }}
+        className="flex flex-col gap-2 sm:flex-row sm:items-end"
+      >
         <div className="flex-1 space-y-1.5">
           <Label
             htmlFor={`setting-${settingKey}`}
@@ -92,13 +109,12 @@ function SettingCard({
           />
         </div>
         <Button
-          type="button"
-          onClick={() => void save()}
+          type="submit"
           disabled={busy || !dirty}
         >
           {busy ? "Saving…" : "Save"}
         </Button>
-      </div>
+      </form>
     </section>
   );
 }

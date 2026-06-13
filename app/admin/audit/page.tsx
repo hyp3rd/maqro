@@ -639,7 +639,7 @@ function Pager({
           page: String(Math.max(1, page - 1)),
         })}
         aria-disabled={atFirst}
-        className={`inline-flex h-7 w-7 items-center justify-center rounded-md border border-input ${
+        className={`inline-flex h-7 w-7 items-center justify-center rounded-md border border-input coarse:h-11 coarse:w-11 ${
           atFirst
             ? "pointer-events-none opacity-40"
             : "hover:bg-accent hover:text-foreground"
@@ -659,7 +659,7 @@ function Pager({
           page: String(Math.min(totalPages, page + 1)),
         })}
         aria-disabled={atLast}
-        className={`inline-flex h-7 w-7 items-center justify-center rounded-md border border-input ${
+        className={`inline-flex h-7 w-7 items-center justify-center rounded-md border border-input coarse:h-11 coarse:w-11 ${
           atLast
             ? "pointer-events-none opacity-40"
             : "hover:bg-accent hover:text-foreground"

@@ -1,5 +1,6 @@
 "use client";
 
+import { EmptyState } from "@/components/admin/EmptyState";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,8 +15,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { clientFetch } from "@/lib/auth/client-fetch";
 import type { OutgoingEmailStatus } from "@/lib/email/sending";
+import { haptic } from "@/lib/haptics";
 import { useEffect, useState } from "react";
-import { Loader2, RefreshCw, XCircle } from "lucide-react";
+import { AlertTriangle, Loader2, RefreshCw, XCircle } from "lucide-react";
 import { toast } from "sonner";
 
 /** Outgoing email detail. Pulls two things:
@@ -65,6 +67,11 @@ export function OutgoingDetail({ id }: { id: string }) {
   >({ kind: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
   const [cancelling, setCancelling] = useState(false);
+  // In-flight signal for the Refresh button. `state` only flips to "loading"
+  // on first mount, so without this a refresh gave no feedback and a
+  // double-click re-fired. Cleared from the fetch's async callbacks (allowed —
+  // not a synchronous setState in the effect body).
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -91,16 +98,24 @@ export function OutgoingDetail({ id }: { id: string }) {
             message: err instanceof Error ? err.message : "Network error",
           });
         }
+      })
+      .finally(() => {
+        if (!cancelled) setRefreshing(false);
       });
     return () => {
       cancelled = true;
     };
   }, [id, reloadKey]);
 
+  function refresh() {
+    setRefreshing(true);
+    setReloadKey((k) => k + 1);
+  }
+
   async function doCancel() {
     setCancelling(true);
     try {
-      const res = await fetch(
+      const res = await clientFetch(
         `/api/admin/inbox/outgoing/${encodeURIComponent(id)}/cancel`,
         { method: "POST" },
       );
@@ -111,6 +126,8 @@ export function OutgoingDetail({ id }: { id: string }) {
       }
       toast.success("Scheduled send canceled.");
       setReloadKey((k) => k + 1);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Cancel failed.");
     } finally {
       setCancelling(false);
     }
@@ -126,12 +143,26 @@ export function OutgoingDetail({ id }: { id: string }) {
   }
   if (state.kind === "error") {
     return (
-      <p
-        role="alert"
-        className="rounded-md border border-red-500/30 bg-red-500/5 px-4 py-3 text-sm text-red-700 dark:text-red-300"
-      >
-        {state.message}
-      </p>
+      <div className="rounded-lg border border-border/60 bg-card">
+        <EmptyState
+          icon={AlertTriangle}
+          title="Couldn't load this message"
+          description={state.message}
+          action={
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={refresh}
+              disabled={refreshing}
+              className="gap-1.5"
+            >
+              {refreshing && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {refreshing ? "Retrying…" : "Retry"}
+            </Button>
+          }
+        />
+      </div>
     );
   }
 
@@ -160,11 +191,14 @@ export function OutgoingDetail({ id }: { id: string }) {
           </h1>
           <button
             type="button"
-            onClick={() => setReloadKey((k) => k + 1)}
-            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border/60 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
+            onClick={refresh}
+            disabled={refreshing}
+            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-border/60 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground disabled:opacity-60 coarse:h-11 coarse:px-3"
             title="Refresh live status"
           >
-            <RefreshCw className="h-3 w-3" />
+            <RefreshCw
+              className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`}
+            />
             Refresh
           </button>
         </div>
@@ -235,6 +269,7 @@ export function OutgoingDetail({ id }: { id: string }) {
                 <AlertDialogAction
                   onClick={(e) => {
                     e.preventDefault();
+                    haptic("warning");
                     void doCancel();
                   }}
                   disabled={cancelling}

@@ -9,6 +9,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { clientFetch } from "@/lib/auth/client-fetch";
+import { haptic } from "@/lib/haptics";
 import { useState, useSyncExternalStore } from "react";
 import { Activity, ChevronDown, LogOut, Menu } from "lucide-react";
 import Link from "next/link";
@@ -82,6 +83,7 @@ export function AdminNav({
     ITEMS.find((i) => isActive(i.href, i.exact === true)) ?? ITEMS[0];
 
   async function exitAdmin() {
+    haptic("tap");
     setExiting(true);
     try {
       const res = await clientFetch("/api/admin/session/end", {
@@ -110,7 +112,7 @@ export function AdminNav({
       <div className="flex items-center gap-1 lg:hidden">
         <DropdownMenu>
           <DropdownMenuTrigger
-            className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:min-h-11 coarse:px-3"
             aria-label="Admin navigation"
           >
             <Menu className="h-3.5 w-3.5" />

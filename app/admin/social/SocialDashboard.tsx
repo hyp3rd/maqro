@@ -1,8 +1,11 @@
 "use client";
 
+import { EmptyState } from "@/components/admin/EmptyState";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DestructiveConfirmDialog } from "@/components/ui/destructive-confirm-dialog";
 import { clientFetch } from "@/lib/auth/client-fetch";
+import { haptic } from "@/lib/haptics";
 import { lintTone } from "@/lib/social/tone";
 import {
   PLATFORM_LABEL,
@@ -127,10 +130,25 @@ export function SocialDashboard({
       <LinkedInPanelCard linkedin={linkedin} />
 
       {campaigns.length === 0 ? (
-        <p className="rounded-md border border-dashed border-border/60 px-4 py-10 text-center text-sm text-muted-foreground">
-          No campaigns yet. They appear automatically after a release adds a
-          changelog entry, or use Generate now.
-        </p>
+        <div className="rounded-lg border border-border/60 bg-card">
+          <EmptyState
+            icon={Sparkles}
+            title="No campaigns yet"
+            description="They appear automatically after a release adds a changelog entry — or draft one from the latest entry now."
+            action={
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void generate()}
+                disabled={generating}
+              >
+                {generating && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                Generate now
+              </Button>
+            }
+          />
+        </div>
       ) : (
         campaigns.map((c) => {
           const cposts = (byCampaign.get(c.id) ?? [])
@@ -258,6 +276,9 @@ function PostCard({
   );
   const [error, setError] = useState<string | null>(post.error);
   const [busy, setBusy] = useState(false);
+  // Live publish posts publicly + irreversibly, so it goes behind a confirm.
+  // The manual "Mark posted" path (no creds) stays a one-tap commit.
+  const [confirmPublish, setConfirmPublish] = useState(false);
 
   const lint = lintTone(body, { maxLength: max });
   const dirty = body !== savedBody;
@@ -313,6 +334,7 @@ function PostCard({
       if (data.status === "published") {
         setStatus("published");
         if (data.url) setPublishedUrl(data.url);
+        if (!data.manual) haptic("success");
         toast.success(data.manual ? "Marked as posted." : "Published.");
       } else {
         setStatus("failed");
@@ -448,13 +470,31 @@ function PostCard({
             type="button"
             variant={canPublish ? "default" : "ghost"}
             size="sm"
-            onClick={() => void publish()}
+            onClick={() => {
+              // Live publish (creds present) confirms first; manual
+              // mark-posted is harmless and stays one tap.
+              if (canPublish) setConfirmPublish(true);
+              else void publish();
+            }}
             disabled={busy}
           >
             {canPublish ? "Publish" : "Mark posted"}
           </Button>
         )}
       </div>
+
+      <DestructiveConfirmDialog
+        open={confirmPublish}
+        onOpenChange={setConfirmPublish}
+        title={`Publish to ${PLATFORM_LABEL[post.platform]} now?`}
+        description="This posts the copy live and publicly to the connected account. It can't be unpublished from here."
+        actionLabel="Publish"
+        onConfirm={() => {
+          haptic("warning");
+          void publish();
+          setConfirmPublish(false);
+        }}
+      />
     </div>
   );
 }

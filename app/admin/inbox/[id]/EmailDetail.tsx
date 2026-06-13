@@ -6,6 +6,7 @@ import type {
   ReceivedAttachment,
   ReceivedEmailDetail,
 } from "@/lib/email/receiving";
+import { haptic } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import {
@@ -139,8 +140,11 @@ export function EmailDetail({
         <Button
           type="button"
           size="sm"
-          onClick={() => setReplyOpen(true)}
-          className="h-8 gap-1.5"
+          onClick={() => {
+            haptic("tap");
+            setReplyOpen(true);
+          }}
+          className="h-8 gap-1.5 coarse:h-11"
         >
           <Reply className="h-3.5 w-3.5" />
           Reply

@@ -2,6 +2,7 @@
 
 import { AdminPagination } from "@/components/admin/AdminPagination";
 import { CodeBlock } from "@/components/admin/CodeBlock";
+import { CopyableId } from "@/components/admin/CopyableId";
 import { EmptyState } from "@/components/admin/EmptyState";
 import { JsonViewer } from "@/components/admin/JsonViewer";
 import { PageHeader } from "@/components/admin/PageHeader";
@@ -284,6 +285,26 @@ export default function AdminErrorsPage() {
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
               Loading…
             </p>
+          ) : error ? (
+            // A failed fetch leaves `data` null. Without this branch the
+            // zero-rows EmptyState below would render "No errors in this
+            // window" on top of the error banner — telling the operator the
+            // window is clean when the request actually failed.
+            <EmptyState
+              icon={AlertTriangle}
+              title="Couldn't load errors"
+              description="The request failed — see the message above. Retry when you're ready."
+              action={
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setTick((t) => t + 1)}
+                >
+                  Retry
+                </Button>
+              }
+            />
           ) : !data || data.rows.length === 0 ? (
             <EmptyState
               icon={AlertTriangle}
@@ -480,11 +501,24 @@ function DetailPanel({
           value={row.route ?? "-"}
           mono
         />
-        <DetailRow
-          label="Session"
-          value={row.session_token ?? "-"}
-          mono
-        />
+        <div>
+          <dt className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Session
+          </dt>
+          <dd className="mt-0.5">
+            {row.session_token ? (
+              // Copyable: operators correlate same-tab events by this
+              // rotated token, so the full value needs to reach the
+              // clipboard cleanly rather than be hand-selected.
+              <CopyableId
+                value={row.session_token}
+                className="-ml-1"
+              />
+            ) : (
+              <span className="font-mono text-[10px]">-</span>
+            )}
+          </dd>
+        </div>
       </dl>
 
       {row.user_agent && (
