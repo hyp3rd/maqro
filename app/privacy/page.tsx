@@ -1,5 +1,6 @@
 import { PageTopBar } from "@/components/shell/PageTopBar";
 import { GITHUB_REPO_URL } from "@/lib/links";
+import { isOfficialHost } from "@/lib/official-host";
 import type { Metadata } from "next";
 import { getTranslations } from "next-intl/server";
 import Link from "next/link";
@@ -23,6 +24,9 @@ export default async function PrivacyPage() {
   const tBar = await getTranslations("pageTopBar");
   const tLegal = await getTranslations("legalPage");
   const lastUpdated = "2026-05-19";
+  // The "maintainer's draft" notice is for forks / self-hosters / local dev —
+  // on the official site these ARE the terms, so it's hidden there.
+  const showDraftNotice = !(await isOfficialHost());
   return (
     <>
       <PageTopBar label={tBar("backToApp")} />
@@ -37,17 +41,19 @@ export default async function PrivacyPage() {
           Last updated: <time dateTime={lastUpdated}>{lastUpdated}</time>
         </p>
 
-        <aside className="mt-6 rounded-md border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
-          <p className="font-medium">This is the maintainer&apos;s draft.</p>
-          <p className="mt-1 text-xs leading-relaxed">
-            Written in good faith but <strong>not legal advice</strong> and not
-            reviewed by counsel. If you operate a deployment of Maqro for users
-            beyond yourself - especially with users in the EU/UK - have a lawyer
-            in your jurisdiction review and adapt this document. Source for this
-            page is in the Git repository - issue a pull request if something
-            needs fixing.
-          </p>
-        </aside>
+        {showDraftNotice && (
+          <aside className="mt-6 rounded-md border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
+            <p className="font-medium">This is the maintainer&apos;s draft.</p>
+            <p className="mt-1 text-xs leading-relaxed">
+              Written in good faith but <strong>not legal advice</strong> and
+              not reviewed by counsel. If you operate a deployment of Maqro for
+              users beyond yourself - especially with users in the EU/UK - have
+              a lawyer in your jurisdiction review and adapt this document.
+              Source for this page is in the Git repository - issue a pull
+              request if something needs fixing.
+            </p>
+          </aside>
+        )}
 
         <section className="mt-8 space-y-3">
           <h2 className="text-base font-semibold tracking-tight">1. Summary</h2>

@@ -92,7 +92,7 @@ export function ConnectedAccountsSection({ signedIn }: { signedIn: boolean }) {
   async function linkProvider(provider: ProviderKey) {
     const supabase = getSupabaseBrowser();
     if (!supabase) {
-      toast.error("Supabase isn't configured on this deployment.");
+      toast.error("Account sync isn't available on this instance.");
       return;
     }
     setBusy({ action: "linking", provider });

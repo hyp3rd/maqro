@@ -74,7 +74,7 @@ export function AiUsageSection() {
         {data.isPremium || cap === null ? (
           <p className="text-sm text-foreground">
             <span className="font-medium">Premium</span> - AI features are
-            unmetered on your account.
+            unlimited on your account.
           </p>
         ) : (
           <div className="space-y-3">
@@ -117,9 +117,9 @@ export function AiUsageSection() {
             </div>
             <p className="text-[11px] leading-relaxed text-muted-foreground">
               Resets the 1st of each month. When you hit the cap, the app falls
-              back to the deterministic planner for meal generation and disables
-              AI photo identification + recipe generation until the next cycle.
-              Manual entry, barcode-scan, and OFF search keep working.
+              back to basic meal planning and disables AI photo identification +
+              recipe generation until the next cycle. Manual entry,
+              barcode-scan, and OFF search keep working.
             </p>
           </div>
         )}

@@ -38,7 +38,7 @@
     "items": {
       "mealPlanning": {
         "title": "Smart meal planning",
-        "body": "Auto-fill a day to your macro targets with a deterministic solver — or let Claude draft a coherent plan. Regenerate one slot when it doesn't fit."
+        "body": "Auto-fill a day to your macro targets — or let Claude draft a meal plan. Regenerate one slot when it doesn't fit."
       },
       "logging": {
         "title": "Log by photo, barcode, or voice",
@@ -141,7 +141,7 @@
     "items": {
       "storage": {
         "q": "Where is my data stored?",
-        "a": "On your device, in IndexedDB. If you sign in, the same data syncs to a private Supabase project (RLS-scoped, only you can read it). Nothing leaves your device by default."
+        "a": "On your device, in your browser. If you sign in, the same data syncs to a private cloud project that only you can read. Nothing leaves your device by default."
       },
       "account": {
         "q": "Do I need an account to use it?",
@@ -153,7 +153,7 @@
       },
       "ai": {
         "q": "Is the AI required?",
-        "a": "Not at all. The deterministic meal-planner hits your macro targets without any AI. The AI Plus / Pro tiers exist for people who want AI auto-fill and photo identification."
+        "a": "Not at all. The meal-planner hits your macro targets without any AI. The AI Plus / Pro tiers exist for people who want AI auto-fill and photo identification."
       },
       "cancel": {
         "q": "Can I cancel any time?",
@@ -161,7 +161,7 @@
       },
       "offline": {
         "q": "Does it work offline?",
-        "a": "Yes. Once visited, the service worker caches the app shell so you can open and use it without a network. New AI generations and sync require connectivity."
+        "a": "Yes. The first time you use the app it's saved to your device, so you can open and use it without internet. New AI generations and sync require a connection."
       },
       "gdpr": {
         "q": "What about GDPR?",
@@ -334,13 +334,13 @@
       },
       "rows": {
         "macroCalculator": { "label": "Macro calculator + targets" },
-        "mealPlanner": { "label": "Meal planner (manual + solver)" },
+        "mealPlanner": { "label": "Meal planner (manual + auto-fill)" },
         "weightHistory": { "label": "Weight + daily-log history" },
         "recipeBuilder": { "label": "Recipe builder + computed macros" },
         "trends": { "label": "Trends + plateau detection" },
         "barcode": {
           "label": "Barcode scan (label lookup)",
-          "detail": "Live `BarcodeDetector` (or zxing fallback) → Open Food Facts. No AI usage."
+          "detail": "Barcode scanner with Open Food Facts lookup. No AI usage."
         },
         "photoMealId": {
           "label": "Photo meal identification",
@@ -369,11 +369,11 @@
         },
         "importRecipesUrl": {
           "label": "Import recipes from a URL",
-          "detail": "Server-side fetch + AI structuring. Plus + Pro only."
+          "detail": "Imports a recipe from a web page. Plus + Pro only."
         },
         "priorityQueue": { "label": "Priority API queue" },
-        "localStorage": { "label": "Local-first storage (IndexedDB)" },
-        "syncDevices": { "label": "Sync across devices (Supabase)" },
+        "localStorage": { "label": "Local-first storage (on your device)" },
+        "syncDevices": { "label": "Sync across devices (cloud-backed)" },
         "cloudBackup": { "label": "Cloud backups (JSON export)" },
         "encryptedBackup": {
           "label": "Encrypted cloud backups",
@@ -458,7 +458,7 @@
       },
       "dataStorage": {
         "q": "Where is my data stored?",
-        "a": "On your device, in your browser's IndexedDB. If you're on the Pro plan and signed in, the same rows are also synced to a Supabase project (you control the deployment; row-level security pins each row to your user id). The free and Plus tiers run entirely local-first. See the privacy policy at /privacy for the full picture."
+        "a": "On your device, in your browser. If you're on the Pro plan and signed in, the same data also syncs to a private cloud project that only you can read. The free and Plus tiers stay entirely on your device. See the privacy policy at /privacy for the full picture."
       },
       "refunds": {
         "q": "Do you offer refunds?",

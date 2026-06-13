@@ -93,13 +93,13 @@ export default function HelpPage() {
             icon={Sparkles}
             title="Or let the planner auto-fill the day"
           >
-            Auto-fill button on the Meal Plan view. Two paths: the deterministic
-            3×3 solver hits your macro targets within tolerance using a
-            protein-dominant + carb-dominant + fat-dominant triplet. If AI is
-            enabled, Claude Sonnet drafts a coherent day with breakfast-y
-            breakfasts (validated against a programmatic coherence checker so
-            you never get standalone-oil meals). The button always has a
-            fallback so it&apos;ll work even with no connectivity.
+            Auto-fill button on the Meal Plan view. Two paths: the calculator
+            hits your macro targets within tolerance using a protein-heavy +
+            carb-heavy + fat-heavy meal combination. If AI is enabled, Claude
+            Sonnet drafts a coherent day with breakfast-y breakfasts (checked so
+            you never get meals that don&apos;t make sense, like a side of oil
+            by itself). The button always has a fallback so it&apos;ll work even
+            offline.
           </Topic>
         </Section>
 
@@ -157,10 +157,10 @@ export default function HelpPage() {
             icon={ChefHat}
             title="Why my AI recipe looks different each time"
           >
-            The recipe generator is non-deterministic on purpose — same diet +
-            same hint can produce a Greek dinner one time and Korean the next.
-            If you want a specific result, narrow the hint ("light Greek dinner
-            with chicken, ~600 kcal").
+            The recipe generator varies by design — the same diet + same hint
+            can produce a Greek dinner one time and Korean the next. If you want
+            a specific result, narrow the hint ("light Greek dinner with
+            chicken, ~600 kcal").
           </Topic>
           <Topic
             icon={Camera}
@@ -246,10 +246,10 @@ export default function HelpPage() {
             title="Local-first means what, exactly"
           >
             Profile, daily logs, weight history, custom foods, templates, and
-            recipes all live in IndexedDB on this device by default. Clearing
+            recipes all live in your browser on this device by default. Clearing
             your browser&apos;s site data wipes them. Signing in mirrors the
-            same data to a Supabase project (RLS-scoped to your row) so multiple
-            devices stay in sync.
+            same data to a private cloud project (only you can read it) so
+            multiple devices stay in sync.
           </Topic>
           <Topic
             icon={Download}
@@ -353,9 +353,9 @@ export default function HelpPage() {
             icon={Database}
             title="The app feels stuck after an update"
           >
-            The service worker may have a stale chunk cached. The update banner
-            that pops up after a deploy should handle this — click "Refresh"
-            when you see it. If you didn&apos;t see one, hard-reload
+            An old version of the app may be cached on your device. The update
+            banner that pops up after an update should handle this — click
+            "Refresh" when you see it. If you didn&apos;t see one, hard-reload
             (Cmd-Shift-R / Ctrl-Shift-R) once.
           </Topic>
           <Topic

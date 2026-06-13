@@ -289,7 +289,7 @@ Coming in the next pass: pull-to-refresh and double-tap quick actions — the en
     body: `Three small fixes that smooth out the second-factor flow.
 
 - Push notifications: if you had push enabled and then turned the daily reminder off, the push toggle stayed grayed out — leaving you stuck on. The toggle now allows you to turn push off in that state; enabling it from scratch still requires the daily reminder.
-- Admin actions: when an admin endpoint asks you to re-verify your second factor, the in-page MFA prompt now appears instead of the page surfacing a "MFA required" banner. The admin layout was missing the prompt mount AND every admin call was bypassing the MFA-aware fetch wrapper — both fixed.
+- Admin actions: when a sensitive admin action asks you to re-verify your second factor, the verification prompt now appears right on the page instead of a "second factor required" banner. This fixes a bug where some admin actions weren't asking for your second factor when they should have.
 - Pasting a 6-digit code into an MFA / backup-email field now works even when the code was copied with surrounding whitespace — the input was truncating valid digits before the cleanup step ran. There's also a clipboard icon on each of those inputs so you can tap to paste instead of fighting the system context menu.`,
   },
   {
@@ -408,12 +408,12 @@ The shopping list PDF report now also picks up the same restock rows and edits, 
     date: "2026-05-28",
     version: "0.1.99",
     title:
-      "Security pass: callback redirect, cron-secret hardening, stricter MFA on sensitive ops",
+      "Security update: safer sign-in redirects, stronger protection for scheduled jobs, second factor required for account changes",
     body: `A targeted security audit ahead of launch closed four issues.
 
 - The post-login redirect now refuses to send you anywhere outside the app. A crafted magic-link with a foreign \`next=\` parameter is silently replaced with your dashboard instead of being followed.
 - Account deletion, recovery-email changes, and all admin actions now always prompt for your second factor, even on a "trusted" browser. The 7-day trust grant still skips the prompt for routine actions, but irreversible changes and privileged admin operations always ask — so a temporarily-borrowed device can't be used to lock you out or escalate access.
-- The cron endpoints that run our scheduled jobs now compare their authentication header in constant time, closing a theoretical timing-attack on the cron secret.
+- Our scheduled jobs now verify their authentication at a steady pace, so an attacker can't use response timing to guess the secret.
 - Starting a new authenticator-app setup now sweeps away any half-finished setup left over from an abandoned attempt, so stale entries don't accumulate in your account.`,
   },
   {
@@ -572,8 +572,8 @@ The shopping list PDF report now also picks up the same restock rows and edits, 
 
 Behind the scenes:
 
-- Every authenticated write route now validates its request body with a strict schema, returning a consistent error shape on bad input instead of a route-specific message. No change for valid requests.
-- A new internal lint rule flags any API route that authenticates a user without also enforcing the second-factor gate, so the MFA-bypass class of bug can't sneak back in via a stray edit.`,
+- When you submit a change to your account, the app now checks it consistently and returns clearer errors on bad input. No change for valid requests.
+- We added an automated safeguard so a future change can't accidentally skip the second-factor check on a protected action.`,
   },
   {
     id: "2026-05-26-personalization-coherence-mfa-prompt",
@@ -604,8 +604,8 @@ Behind the scenes:
 
 Security hardening:
 
-- Closed an MFA bypass where back-button from the TOTP screen left a valid first-factor session in the cookie. The proxy now blocks AAL1+TOTP-pending visits to /app or /admin, the login page resumes the MFA challenge without re-requesting the email OTP, and the marketing chrome treats half-authenticated sessions as effectively-anonymous (no email leak, no admin link) — with a banner pointing the user back to the challenge.
-- Every authenticated API route now asserts AAL2 — an attacker holding only the AAL1 cookie can no longer call /api/meal-plan, /api/delete-account, /api/billing/*, or any admin route directly. Failed assertions return 403 with kind: "mfa-required" so clients can prompt for completion.
+- Fixed a security gap where using the back button during two-factor sign-in could leave you partly signed in. A half-finished sign-in is now treated as signed-out everywhere — no email or account details shown — and a banner points you back to finish verifying.
+- Sensitive actions — AI meal planning, deleting your account, billing, and admin tools — now always require your second factor, even if someone got hold of a partial sign-in. The app prompts you to verify when one of these needs it.
 
 Mobile UX overhaul:
 
@@ -635,7 +635,7 @@ Mobile UX overhaul:
     version: "0.1.53",
     title:
       "Public status page, a real pricing comparison, and big mobile polish",
-    body: `New /status page shows live uptime for every dependency, probed every 5 minutes and kept for 90 days. With sparse data it reads "Status unknown — collecting data" rather than crying wolf on the first failed probe after deploy.
+    body: `New /status page shows live uptime for every service Maqro relies on, checked every 5 minutes and kept for 90 days. With little data it reads "Status unknown — collecting data" rather than raising a false alarm on the first failed check.
 
 - New /pricing page lays out Free / Plus / Pro side-by-side with the full feature matrix and a monthly / yearly toggle (yearly saves about 20%).
 - Cookie notice now appears (informational only — Maqro still has zero analytics, no tracking pixels, no third-party scripts; the notice exists so you know that, not because we set non-essential cookies).

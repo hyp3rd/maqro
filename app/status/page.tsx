@@ -20,7 +20,7 @@ import { createClient } from "@supabase/supabase-js";
 export const metadata: Metadata = {
   title: "Status - Maqro",
   description:
-    "Live status for Maqro's hosted dependencies. Probed every 5 minutes; 90 days of history.",
+    "Live status for Maqro's hosted services. Checked every 5 minutes; 90 days of history.",
   alternates: { canonical: "/status" },
 };
 
@@ -100,7 +100,7 @@ export default async function StatusPage() {
           </p>
           <HeadlineStatus status={headlineStatus} />
           <p className="text-xs text-muted-foreground">
-            Probed every 5 minutes from our infrastructure. Last 90 days of
+            Checked every 5 minutes from our infrastructure. Last 90 days of
             history are kept. For real-time delivery alerts on critical issues,
             follow{" "}
             <a
@@ -199,11 +199,10 @@ function NoDataNotice() {
   return (
     <div className="mt-8 rounded-lg border border-dashed border-border/60 bg-card px-5 py-8 text-center">
       <Circle className="mx-auto h-6 w-6 text-muted-foreground" />
-      <p className="mt-3 text-sm font-medium">No probes recorded yet</p>
+      <p className="mt-3 text-sm font-medium">No data recorded yet</p>
       <p className="mx-auto mt-1 max-w-md text-xs text-muted-foreground">
-        The status-probe cron hasn&apos;t run yet, or Supabase isn&apos;t
-        configured on this deployment. Probes are written every 5 minutes once
-        the cron is active.
+        Status checks haven&apos;t run yet, or sync isn&apos;t configured on
+        this instance. Checks run every 5 minutes once active.
       </p>
     </div>
   );
@@ -224,7 +223,7 @@ function LimitedDataNotice({ probesSoFar }: { probesSoFar: number }) {
       <p className="mt-2 inline-flex items-center gap-2 rounded-md border border-border/60 bg-card px-3 py-2 text-xs text-muted-foreground">
         <Circle className="h-3.5 w-3.5" />
         Collecting data - incident detection waits for at least{" "}
-        {MIN_CONFIDENT_PROBES} probes (~1 hour). {probesSoFar} so far;{" "}
+        {MIN_CONFIDENT_PROBES} readings (~1 hour). {probesSoFar} so far;{" "}
         {probesNeeded} to go.
       </p>
     </section>
