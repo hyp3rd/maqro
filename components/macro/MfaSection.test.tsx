@@ -111,7 +111,9 @@ describe("MfaSection - render branches", () => {
     // Wait for load to settle, then check the verified list is empty.
     await waitFor(() => {
       // The header always renders once load resolves.
-      expect(screen.queryByText(/Two-factor authentication/i)).not.toBeNull();
+      expect(
+        screen.getByRole("heading", { name: /two-step verification/i }),
+      ).not.toBeNull();
     });
     expect(screen.queryByText("Abandoned")).toBeNull();
   });

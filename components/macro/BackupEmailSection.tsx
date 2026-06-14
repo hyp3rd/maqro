@@ -23,6 +23,7 @@ import * as React from "react";
 import { CheckCircle2, LifeBuoy, Mail, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { FeatureIntro } from "./FeatureIntro";
+import { useReportSecurityStatus } from "./security-status";
 
 /** Settings → Backup email. Lifecycle UI for the lost-email
  *  recovery feature shipped in migration 0029.
@@ -123,6 +124,23 @@ function BackupEmailSectionBody({ signedIn }: { signedIn: boolean }) {
       cancelled = true;
     };
   }, [signedIn, tick]);
+
+  // Publish backup-email status up to the Security overview card (boolean
+  // primitives keep the effect from re-firing on unrelated re-renders).
+  const reportSecurity = useReportSecurityStatus();
+  const backupVerified = load.kind === "ok" ? Boolean(load.verifiedAt) : null;
+  const backupPending = load.kind === "ok" ? Boolean(load.pending) : null;
+  React.useEffect(() => {
+    if (backupVerified === null) return;
+    reportSecurity(
+      "backupEmail",
+      backupVerified
+        ? { value: "Set", tone: "good" }
+        : backupPending
+          ? { value: "Pending", tone: "muted" }
+          : { value: "Not set", tone: "muted" },
+    );
+  }, [backupVerified, backupPending, reportSecurity]);
 
   function refresh() {
     setTick((t) => t + 1);

@@ -84,7 +84,7 @@ describe("MfaChallengeDialog - bus dispatch", () => {
     requestMfaChallenge().catch(() => {});
 
     await waitFor(() => {
-      expect(screen.queryByText(/verify your second factor/i)).not.toBeNull();
+      expect(screen.queryByText(/two-step verification/i)).not.toBeNull();
     });
     expect(mockListFactors).toHaveBeenCalledTimes(1);
   });
@@ -98,7 +98,7 @@ describe("MfaChallengeDialog - bus dispatch", () => {
       /MFA challenge failed/i,
     );
     // Dialog never opens — the bus rejects before the UI is shown.
-    expect(screen.queryByText(/verify your second factor/i)).toBeNull();
+    expect(screen.queryByText(/two-step verification/i)).toBeNull();
   });
 
   it("rejects when no verified TOTP factor exists", async () => {
@@ -112,7 +112,7 @@ describe("MfaChallengeDialog - bus dispatch", () => {
     await expect(requestMfaChallenge()).rejects.toThrow(
       /MFA challenge failed/i,
     );
-    expect(screen.queryByText(/verify your second factor/i)).toBeNull();
+    expect(screen.queryByText(/two-step verification/i)).toBeNull();
   });
 
   it("rejects when listFactors itself throws", async () => {
@@ -146,7 +146,7 @@ describe("MfaChallengeDialog - verify flow", () => {
       code: "123456",
     });
     await waitFor(() => {
-      expect(screen.queryByText(/verify your second factor/i)).toBeNull();
+      expect(screen.queryByText(/two-step verification/i)).toBeNull();
     });
   });
 
@@ -188,10 +188,12 @@ describe("MfaChallengeDialog - verify flow", () => {
     expect(input.value).toBe("123456");
   });
 
-  it("surfaces the Supabase error message and leaves the dialog open", async () => {
+  it("humanizes the Supabase error and leaves the dialog open", async () => {
+    // The raw SDK string is "Invalid TOTP code entered"; the user should see
+    // plain copy, never the SDK jargon.
     mockChallengeAndVerify.mockResolvedValue({
       data: null,
-      error: new Error("Invalid code"),
+      error: new Error("Invalid TOTP code entered"),
     });
     const { MfaChallengeDialog } = await import("./MfaChallengeDialog");
     render(<MfaChallengeDialog />);
@@ -204,16 +206,18 @@ describe("MfaChallengeDialog - verify flow", () => {
     requestMfaChallenge().catch(() => {});
 
     const input = await screen.findByPlaceholderText("123456");
+    // 6 digits auto-submits (shared with /login); no explicit click needed.
     fireEvent.change(input, { target: { value: "000000" } });
-    fireEvent.click(screen.getByRole("button", { name: /^verify$/i }));
 
     await waitFor(() => {
       expect(screen.queryByRole("alert")).not.toBeNull();
     });
-    expect(screen.getByRole("alert").textContent).toMatch(/invalid code/i);
+    const alert = screen.getByRole("alert").textContent ?? "";
+    expect(alert).toMatch(/didn't match/i);
+    expect(alert).not.toMatch(/TOTP/); // no raw SDK jargon leaked
     // Dialog stays open so the user can retry without re-firing the
     // original request.
-    expect(screen.queryByText(/verify your second factor/i)).not.toBeNull();
+    expect(screen.queryByText(/two-step verification/i)).not.toBeNull();
   });
 });
 
@@ -228,7 +232,7 @@ describe("MfaChallengeDialog - cancel flow", () => {
 
     await expect(awaiter).rejects.toThrow(/MFA challenge cancelled/i);
     await waitFor(() => {
-      expect(screen.queryByText(/verify your second factor/i)).toBeNull();
+      expect(screen.queryByText(/two-step verification/i)).toBeNull();
     });
   });
 });

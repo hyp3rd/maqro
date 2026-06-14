@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { FeatureIntro } from "./FeatureIntro";
+import { useReportSecurityStatus } from "./security-status";
 
 /** Row shape returned by `supabase.auth.passkey.list()`. Kept local
  *  rather than imported from `@supabase/auth-js` so the component
@@ -140,6 +141,23 @@ export function PasskeysSection({ signedIn }: { signedIn: boolean }) {
           ? { kind: "unavailable", reason: fetchResult.reason }
           : { kind: "error", message: fetchResult.message };
 
+  // Publish passkey count up to the Security overview card (a number primitive
+  // keeps the effect from re-firing on every render).
+  const reportSecurity = useReportSecurityStatus();
+  const passkeyCount = state.kind === "ready" ? state.passkeys.length : null;
+  React.useEffect(() => {
+    if (passkeyCount === null) return;
+    reportSecurity(
+      "passkeys",
+      passkeyCount > 0
+        ? {
+            value: passkeyCount === 1 ? "1 added" : `${passkeyCount} added`,
+            tone: "good",
+          }
+        : { value: "None", tone: "muted" },
+    );
+  }, [passkeyCount, reportSecurity]);
+
   async function registerPasskey() {
     const supabase = getSupabaseBrowser();
     if (!supabase) return;
@@ -229,7 +247,7 @@ export function PasskeysSection({ signedIn }: { signedIn: boolean }) {
           icon={Fingerprint}
           tint="sky"
           displayName={displayName}
-          blurb="passkeys let your device unlock the app — Face ID, Touch ID, Windows Hello, or a hardware key — without typing a password or a code. Once added, they replace the second-factor prompt on the device that has them."
+          blurb="passkeys let your device unlock the app — Face ID, Touch ID, Windows Hello, or a hardware key — with no code to type. Once added, they replace the two-step verification prompt on the device that has them."
         />
         {section}
       </div>
@@ -244,8 +262,8 @@ export function PasskeysSection({ signedIn }: { signedIn: boolean }) {
       </h3>
       <p className="mt-0.5 text-xs text-muted-foreground">
         Sign in with Face ID, Touch ID, Windows Hello, or a hardware key — no
-        password, no code. Adding a passkey replaces the second-factor prompt on
-        devices that have it.
+        code to type. Adding a passkey replaces the two-step verification prompt
+        on devices that have it.
       </p>
     </header>
   );

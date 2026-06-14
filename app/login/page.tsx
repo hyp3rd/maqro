@@ -1,6 +1,6 @@
 "use client";
 
-import { PasteOtpButton } from "@/components/auth/PasteOtpButton";
+import { LoginMfaStage } from "@/components/auth/LoginMfaStage";
 import { AppleLogo } from "@/components/icons/AppleLogo";
 import { GoogleLogo } from "@/components/icons/GoogleLogo";
 import { Footer } from "@/components/shell/Footer";
@@ -14,7 +14,7 @@ import { humanizePasskeyError } from "@/lib/auth/passkey-errors";
 import { getOrCreateDeviceId } from "@/lib/devices/identity";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { ArrowLeft, ClipboardPaste, Fingerprint, Mail } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -101,7 +101,6 @@ function LoginPageInner() {
   const [googleBusy, setGoogleBusy] = useState(false);
   const [appleBusy, setAppleBusy] = useState(false);
   const [passkeyBusy, setPasskeyBusy] = useState(false);
-  const [trustDevice, setTrustDevice] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const configured = isSupabaseConfigured();
@@ -398,88 +397,6 @@ function LoginPageInner() {
     }
   }
 
-  /** Complete the second-factor challenge. Only callable from the
-   *  `mfa` stage - `verifyCode` set it after detecting a verified
-   *  TOTP factor and an AAL1→AAL2 gap on the current session.
-   *
-   *  Accepts the code as an optional argument so the auto-submit
-   *  effect can pass the just-typed value in the same render -
-   *  calling without args reads `code` for the manual-submit path. */
-  async function verifyMfa(explicit?: string) {
-    if (stage.kind !== "mfa") return;
-    setError(null);
-    const supabase = getSupabaseBrowser();
-    if (!supabase) {
-      setError("Supabase isn't configured.");
-      return;
-    }
-
-    const token = (explicit ?? code).trim();
-    if (!/^\d{6}$/.test(token)) {
-      setError("Enter the 6-digit code from your authenticator app.");
-      return;
-    }
-    setBusy(true);
-    try {
-      const { error: e } = await supabase.auth.mfa.challengeAndVerify({
-        factorId: stage.factorId,
-        code: token,
-      });
-      if (e) throw e;
-
-      // Session is now AAL2. If the user opted in, stash a sentinel
-      // in sessionStorage so `SyncManager` records the trust on the
-      // NEXT page after navigation. Doing the POST from here races
-      // the AAL2 cookie write - Supabase chunks long session cookies
-      // and the chunks haven't fully propagated to the browser cookie
-      // jar when an immediate same-origin fetch fires, so proxy.ts
-      // sees half-written chunks → "chunked cookie decoded to invalid
-      // JSON" warnings → 401. Deferring one navigation lets cookies
-      // settle. sessionStorage is per-tab and survives
-      // window.location.assign, so the intent rides along cleanly.
-      if (trustDevice) {
-        try {
-          window.sessionStorage.setItem("maqro:pending-trust", "1");
-        } catch {
-          // Restricted storage - the user just won't get the trust
-          // recorded this cycle. They can opt in again on next MFA.
-        }
-      }
-
-      window.location.assign(next);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to verify code.");
-      setBusy(false);
-    }
-  }
-
-  /** Auto-submit the MFA code the moment a 6th digit lands in the
-   *  field. Most authenticator apps copy a fully-formed code to the
-   *  clipboard so the user pastes - the manual "Sign in" click is
-   *  one extra interaction with no value-add. The submit button
-   *  stays visible as the fallback path. We track which exact code
-   *  was already auto-fired so a verify-failure → user-fixes-one-
-   *  digit-then-retypes loop doesn't spam `challengeAndVerify` with
-   *  the same wrong code. */
-  const autoSubmittedRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (stage.kind !== "mfa") return;
-    if (busy) return;
-    if (code.length !== 6) {
-      // Drop the guard the moment the field falls below 6 chars so
-      // the next completion fires fresh.
-      autoSubmittedRef.current = null;
-      return;
-    }
-    if (autoSubmittedRef.current === code) return;
-    autoSubmittedRef.current = code;
-    void verifyMfa(code);
-    // `verifyMfa` reads `stage` / `next` from this render's closure
-    // - listing it in deps would re-fire the effect on every render
-    // with no behavior change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [code, busy, stage.kind]);
-
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <main className="flex flex-1 items-center justify-center p-6">
@@ -514,117 +431,38 @@ function LoginPageInner() {
           )}
 
           {stage.kind === "mfa" ? (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                verifyMfa();
+            <LoginMfaStage
+              factorId={stage.factorId}
+              onVerified={({ trustDevice }) => {
+                // Session is now AAL2. If the user opted in, stash a sentinel in
+                // sessionStorage so `SyncManager` records the trust on the NEXT
+                // page after navigation. Doing the POST from here races the AAL2
+                // cookie write — Supabase chunks long session cookies and the
+                // chunks haven't fully propagated to the browser jar when an
+                // immediate same-origin fetch fires, so proxy.ts sees half-
+                // written chunks → "chunked cookie decoded to invalid JSON" → 401.
+                // Deferring one navigation lets cookies settle; sessionStorage is
+                // per-tab and survives window.location.assign.
+                if (trustDevice) {
+                  try {
+                    window.sessionStorage.setItem("maqro:pending-trust", "1");
+                  } catch {
+                    // Restricted storage — the user just won't get the trust
+                    // recorded this cycle. They can opt in again on next sign-in.
+                  }
+                }
+                window.location.assign(next);
               }}
-              className="space-y-4"
-            >
-              <div
-                role="status"
-                className="space-y-2 rounded-md border border-border/60 bg-card px-4 py-3"
-              >
-                <p className="text-sm font-medium">Two-factor sign-in</p>
-                <p className="text-xs text-muted-foreground">
-                  Open your authenticator app and enter the 6-digit code for
-                  this account.
-                </p>
-              </div>
-              <div className="space-y-1.5">
-                <Label
-                  htmlFor="mfa-totp"
-                  className="text-xs font-medium text-muted-foreground"
-                >
-                  Code
-                </Label>
-                <div className="relative">
-                  <Input
-                    id="mfa-totp"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    autoFocus
-                    autoComplete="one-time-code"
-                    maxLength={6}
-                    value={code}
-                    onChange={(e) =>
-                      setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
-                    }
-                    onPaste={(e) => {
-                      // Bypass maxLength truncation, which would eat
-                      // valid digits when the pasted string contains
-                      // leading/trailing whitespace. Strip non-digits
-                      // and slice to the code length ourselves.
-                      e.preventDefault();
-                      const pasted = e.clipboardData
-                        .getData("text")
-                        .replace(/\D/g, "")
-                        .slice(0, 6);
-                      if (pasted) setCode(pasted);
-                    }}
-                    placeholder="••••••"
-                    className="pr-10 font-mono tabular-nums text-center text-lg tracking-[0.3em]"
-                    disabled={busy}
-                  />
-                  <PasteOtpButton
-                    onPaste={setCode}
-                    disabled={busy}
-                  />
-                </div>
-              </div>
-              {error && (
-                <p
-                  role="alert"
-                  className="text-xs text-red-600"
-                >
-                  {error}
-                </p>
-              )}
-              <label className="flex cursor-pointer items-start gap-2 rounded-md border border-border/60 bg-card px-3 py-2.5 text-xs">
-                <input
-                  type="checkbox"
-                  checked={trustDevice}
-                  onChange={(e) => setTrustDevice(e.target.checked)}
-                  disabled={busy}
-                  className="mt-0.5 h-3.5 w-3.5 shrink-0 cursor-pointer accent-foreground"
-                />
-                <span className="space-y-0.5">
-                  <span className="block font-medium">
-                    Trust this device for 7 days
-                  </span>
-                  <span className="block text-muted-foreground">
-                    Skip the authenticator step on this browser until then. You
-                    can revoke from Settings.
-                  </span>
-                </span>
-              </label>
-              <div className="flex flex-col gap-2">
-                <Button
-                  type="submit"
-                  className="w-full"
-                  disabled={busy || code.length !== 6}
-                >
-                  {busy ? "Verifying…" : "Sign in"}
-                </Button>
-                <button
-                  type="button"
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                  disabled={busy}
-                  onClick={() => {
-                    // Bail back to email entry. The Supabase session
-                    // is still at AAL1 - calling signOut here would
-                    // be aggressive; leaving it lets the user retry
-                    // the second factor without re-receiving the
-                    // email code.
-                    setStage({ kind: "request" });
-                    setCode("");
-                    setError(null);
-                  }}
-                >
-                  Use a different email
-                </button>
-              </div>
-            </form>
+              onUseDifferentEmail={() => {
+                // Bail back to email entry. The Supabase session is still at
+                // AAL1 — calling signOut here would be aggressive; leaving it
+                // lets the user retry the second factor without re-receiving the
+                // email code.
+                setStage({ kind: "request" });
+                setCode("");
+                setError(null);
+              }}
+            />
           ) : stage.kind === "request" ? (
             <form
               onSubmit={(e) => {

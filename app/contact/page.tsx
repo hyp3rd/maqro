@@ -71,7 +71,8 @@ const CATEGORIES: Category[] = [
   {
     key: "account",
     label: "Account / sign-in",
-    description: "Can't sign in, lost email, account locked, MFA issues.",
+    description:
+      "Can't sign in, lost email, account locked, two-step verification issues.",
     icon: UserCog,
     subjectPrefix: "[Account]",
   },

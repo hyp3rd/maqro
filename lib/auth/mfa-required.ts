@@ -152,7 +152,7 @@ export async function assertAal2(
     ok: false,
     response: NextResponse.json(
       {
-        error: "MFA required. Complete your second factor and try again.",
+        error: "Confirm it's you with your authenticator app, then try again.",
         kind: "mfa-required",
       },
       { status: 403 },
