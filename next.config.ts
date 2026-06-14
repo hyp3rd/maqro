@@ -260,6 +260,11 @@ const nextConfig: NextConfig = {
         source: "/offline.html",
         headers: [{ key: "Cache-Control", value: "no-cache, must-revalidate" }],
       },
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "maqro-hyp3rd-projects.vercel.app" }],
+        headers: [{ key: "X-Robots-Tag", value: "noindex" }],
+      },
     ];
   },
 };

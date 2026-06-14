@@ -8,11 +8,11 @@ import { X, type LucideIcon } from "lucide-react";
  *  section to tell the user what the feature does — in plain
  *  language, before the controls.
  *
- *  Designed for the three security surfaces in Settings (Passkeys,
- *  MFA, Backup Email) where the section names alone don't convey
- *  what they actually buy you. Each instance is dismissible and
- *  the dismissal is sticky per-device via localStorage — once a
- *  user has read it on their primary device, it stops re-appearing.
+ *  Used by `SecurityIntro` (one consolidated intro at the top of the
+ *  Settings Security group, covering two-step verification, passkeys,
+ *  and backup email). Each instance is dismissible and the dismissal
+ *  is sticky per-device via localStorage — once a user has read it on
+ *  their primary device, it stops re-appearing.
  *
  *  Visual style: a faint tint over the card background, a circled
  *  icon on the left, an X-to-dismiss on the right. Deliberately
@@ -54,9 +54,8 @@ export type FeatureIntroProps = {
   /** Lucide icon for the left badge. Pass the *component*, not an
    *  instance — we render it with our own sizing. */
   icon: LucideIcon;
-  /** Background tint. Pick one that fits the feature's intent;
-   *  Passkeys = sky, MFA = amber (it's about a *second* factor —
-   *  warn-y by nature), Backup Email = emerald (recovery, calm). */
+  /** Background tint. Pick one that fits the intent — sky (informational),
+   *  amber (security/attention), or emerald (recovery, calm). */
   tint?: Tint;
   /** Optional user display name. When provided + non-empty, the
    *  intro opens with a personal greeting. */

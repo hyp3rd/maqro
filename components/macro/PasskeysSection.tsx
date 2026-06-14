@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { DestructiveConfirmDialog } from "@/components/ui/destructive-confirm-dialog";
 import { Input } from "@/components/ui/input";
 import { SkeletonSettingRows } from "@/components/ui/skeleton";
-import { useDisplayName } from "@/hooks/use-display-name";
 import { useWebAuthnSupported } from "@/hooks/use-webauthn-supported";
 import { humanizePasskeyError } from "@/lib/auth/passkey-errors";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
@@ -19,7 +18,6 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { FeatureIntro } from "./FeatureIntro";
 import { useReportSecurityStatus } from "./security-status";
 
 /** Row shape returned by `supabase.auth.passkey.list()`. Kept local
@@ -73,7 +71,6 @@ type LoadState =
  *  state instead of the broken "Add a passkey" button. */
 export function PasskeysSection({ signedIn }: { signedIn: boolean }) {
   const webauthnSupported = useWebAuthnSupported();
-  const displayName = useDisplayName();
   const [fetchResult, setFetchResult] = React.useState<FetchResult>({
     kind: "pending",
   });
@@ -235,25 +232,8 @@ export function PasskeysSection({ signedIn }: { signedIn: boolean }) {
 
   if (!signedIn) return null;
 
-  // Wraps the state-dependent section with the dismissable
-  // explainer. Keeping the wrap at the outermost boundary means
-  // every return below stays unchanged and the intro never
-  // duplicates across render branches.
-  function withIntro(section: React.ReactNode) {
-    return (
-      <div className="space-y-3">
-        <FeatureIntro
-          storageKey="passkeys"
-          icon={Fingerprint}
-          tint="sky"
-          displayName={displayName}
-          blurb="passkeys let your device unlock the app — Face ID, Touch ID, Windows Hello, or a hardware key — with no code to type. Once added, they replace the two-step verification prompt on the device that has them."
-        />
-        {section}
-      </div>
-    );
-  }
-
+  // The first-time explainer now lives once at the top of the Security group
+  // (`SecurityIntro`); each branch below just returns its section directly.
   const header = (
     <header className="border-b border-border/60 px-5 py-3">
       <h3 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
@@ -269,40 +249,40 @@ export function PasskeysSection({ signedIn }: { signedIn: boolean }) {
   );
 
   if (state.kind === "loading") {
-    return withIntro(
+    return (
       <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
         {header}
         <SkeletonSettingRows rows={2} />
-      </section>,
+      </section>
     );
   }
 
   if (state.kind === "unsupported") {
-    return withIntro(
+    return (
       <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
         {header}
         <p className="px-5 py-4 text-xs text-muted-foreground">
           This browser doesn&apos;t support WebAuthn. Open the app in a modern
           browser to add a passkey.
         </p>
-      </section>,
+      </section>
     );
   }
 
   if (state.kind === "unavailable") {
-    return withIntro(
+    return (
       <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
         {header}
         <p className="px-5 py-4 text-xs text-muted-foreground">
           Passkeys aren&apos;t available on this instance. Contact the
           administrator to enable them.
         </p>
-      </section>,
+      </section>
     );
   }
 
   if (state.kind === "error") {
-    return withIntro(
+    return (
       <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
         {header}
         <p
@@ -311,11 +291,11 @@ export function PasskeysSection({ signedIn }: { signedIn: boolean }) {
         >
           {state.message}
         </p>
-      </section>,
+      </section>
     );
   }
 
-  return withIntro(
+  return (
     <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
       {header}
       {state.passkeys.length === 0 ? (
@@ -479,7 +459,7 @@ export function PasskeysSection({ signedIn }: { signedIn: boolean }) {
           if (pendingRemove) void remove(pendingRemove.id);
         }}
       />
-    </section>,
+    </section>
   );
 }
 

@@ -235,4 +235,18 @@ describe("MfaChallengeDialog - cancel flow", () => {
       expect(screen.queryByText(/two-step verification/i)).toBeNull();
     });
   });
+
+  it("offers a lost-authenticator recovery link that cancels the challenge", async () => {
+    const { MfaChallengeDialog } = await import("./MfaChallengeDialog");
+    render(<MfaChallengeDialog />);
+
+    const awaiter = requestMfaChallenge();
+    await screen.findByPlaceholderText("123456");
+    const link = screen.getByRole("link", { name: /lost your authenticator/i });
+    expect(link.getAttribute("href")).toBe("/login/recovery");
+    // Navigating to recovery abandons the gated action — so it must settle the
+    // bus (cancel), not leave the caller's retry hanging.
+    fireEvent.click(link);
+    await expect(awaiter).rejects.toThrow(/MFA challenge cancelled/i);
+  });
 });

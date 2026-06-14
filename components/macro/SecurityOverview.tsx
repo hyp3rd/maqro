@@ -36,10 +36,6 @@ export function SecurityOverview() {
         <ShieldCheck className="h-4 w-4 text-muted-foreground" />
         Your account security
       </h3>
-      <p className="mt-0.5 text-xs text-muted-foreground">
-        A quick read on how your account is protected. Details are in the
-        sections below.
-      </p>
       <ul className="mt-3 flex flex-wrap gap-2">
         {present.map((o) => (
           <li key={o.key}>

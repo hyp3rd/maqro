@@ -50,6 +50,7 @@ export const metadata: Metadata = {
     // suffix gives every share preview a consistent brand tail.
     template: "%s - Maqro",
   },
+  alternates: { canonical: "https://maqro.app" },
   description:
     "Tune your macros, plan your meals, and track your progress. Local-first, no analytics, open source.",
   applicationName: "Maqro",

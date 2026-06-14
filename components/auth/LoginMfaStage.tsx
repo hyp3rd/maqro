@@ -34,13 +34,25 @@ export function LoginMfaStage({
   const [trustDevice, setTrustDevice] = useState(false);
   const [passkeyBusy, setPasskeyBusy] = useState(false);
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
-  const { code, setCode, busy, error, submit } = useTotpChallenge({
+  const { code, setCode, busy, error, setError, submit } = useTotpChallenge({
     factorId,
     onVerified: () => onVerified({ trustDevice }),
   });
 
+  // One error at a time: the TOTP path and the passkey path each clear the
+  // other's error when they take over, and a single slot renders whichever is
+  // set — so a failed passkey attempt can't leave a stale red line below a
+  // subsequent code entry, and the two never double-announce.
+  const displayError = passkeyError ?? error;
+
+  function onCodeChange(next: string) {
+    setCode(next); // also clears the hook's TOTP error
+    if (passkeyError) setPasskeyError(null);
+  }
+
   async function handlePasskey() {
     if (!onUsePasskey) return;
+    setError(null); // drop any stale TOTP error
     setPasskeyError(null);
     setPasskeyBusy(true);
     const err = await onUsePasskey();
@@ -79,17 +91,17 @@ export function LoginMfaStage({
       <TotpCodeInput
         id="mfa-totp"
         value={code}
-        onValueChange={setCode}
+        onValueChange={onCodeChange}
         disabled={anyBusy}
         autoFocus
       />
 
-      {error && (
+      {displayError && (
         <p
           role="alert"
           className="text-xs text-destructive"
         >
-          {error}
+          {displayError}
         </p>
       )}
 
@@ -132,14 +144,6 @@ export function LoginMfaStage({
             <Fingerprint className="h-4 w-4" />
             {passkeyBusy ? "Verifying…" : "Use a passkey instead"}
           </Button>
-        )}
-        {passkeyError && (
-          <p
-            role="alert"
-            className="text-xs text-destructive"
-          >
-            {passkeyError}
-          </p>
         )}
 
         <button
