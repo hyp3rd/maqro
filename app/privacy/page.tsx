@@ -23,7 +23,7 @@ export const metadata: Metadata = {
 export default async function PrivacyPage() {
   const tBar = await getTranslations("pageTopBar");
   const tLegal = await getTranslations("legalPage");
-  const lastUpdated = "2026-05-19";
+  const lastUpdated = "2026-06-14";
   // The "maintainer's draft" notice is for forks / self-hosters / local dev —
   // on the official site these ARE the terms, so it's hidden there.
   const showDraftNotice = !(await isOfficialHost());
@@ -60,10 +60,13 @@ export default async function PrivacyPage() {
           <p className="text-sm leading-relaxed text-muted-foreground">
             Maqro is built around the principle that your data stays yours. We
             do not run analytics, advertising, or third-party tracking on the
-            app. Most of your data lives in your browser&apos;s IndexedDB; if
-            you sign in, the same data syncs to a Supabase project so it&apos;s
-            available on other devices. That&apos;s the whole picture - the
-            sections below spell it out.
+            app. (A deployment can optionally turn on an anti-bot check on a few
+            forms, which shares limited request data with Cloudflare to block
+            bots — never for tracking; see sections 5 and 6.) Most of your data
+            lives in your browser&apos;s IndexedDB; if you sign in, the same
+            data syncs to a Supabase project so it&apos;s available on other
+            devices. That&apos;s the whole picture - the sections below spell it
+            out.
           </p>
         </section>
 
@@ -119,11 +122,20 @@ export default async function PrivacyPage() {
           <ul className="ml-5 list-disc space-y-1 text-sm leading-relaxed text-muted-foreground">
             <li>No analytics, telemetry, or usage tracking.</li>
             <li>
-              No advertising identifiers, no third-party marketing pixels, no
-              fingerprinting.
+              No advertising identifiers, no third-party marketing pixels, and
+              no fingerprinting by us to track or profile you. (The optional bot
+              check under &ldquo;Third-party services&rdquo; below, where a
+              deployment turns it on, reads a device signal purely to block bots
+              — never to identify you or follow you across sites.)
             </li>
             <li>No social media scripts.</li>
-            <li>No cross-site cookies.</li>
+            <li>
+              No cross-site cookies for tracking. (Where a deployment enables
+              the bot check, Cloudflare may set one short-lived cookie scoped to
+              its own challenge domain to run that check — see Cookies and
+              Third-party services below. It is never used to track you across
+              sites.)
+            </li>
           </ul>
         </section>
 
@@ -150,9 +162,14 @@ export default async function PrivacyPage() {
             Maqro uses only <strong>strictly necessary cookies</strong>: when
             you sign in, Supabase sets an HTTP-only session cookie so the server
             can recognize you on the next request. The cookie is deleted when
-            you sign out or when the session expires. We do not set any other
-            cookies, and we do not need a cookie banner because we do not use
-            non-essential cookies.
+            you sign out or when the session expires. When a deployment enables
+            the bot check (see &ldquo;Third-party services&rdquo; below),
+            Cloudflare may also set one short-lived cookie on its own challenge
+            domain — strictly necessary to run that check, scoped to Cloudflare,
+            and not used for tracking. We set no other cookies. The cookies the
+            app itself sets are all strictly necessary, so it shows no cookie
+            banner; the optional bot-check cookie is set by Cloudflare on its
+            own domain solely to run that check.
           </p>
         </section>
 
@@ -177,6 +194,31 @@ export default async function PrivacyPage() {
                 className="underline underline-offset-2 hover:text-foreground"
               >
                 supabase.com/privacy
+              </a>
+              .
+            </li>
+            <li>
+              <strong>Cloudflare Turnstile&nbsp;</strong> (bot check on the
+              sign-in, account-recovery, backup-email, and contact forms, active
+              only when the deployment turns it on) - when you submit one of
+              those forms, Cloudflare runs a background check to tell people
+              apart from bots. It receives your IP address, your browser&apos;s
+              user-agent, some low-level details of how your browser connected,
+              and the address of the page it ran on. Cloudflare uses these to
+              score that request and, per its own privacy policy, also to
+              improve its bot-detection systems generally. (For the first
+              purpose Cloudflare acts on the deployment&apos;s behalf; for the
+              second it decides the processing itself, as an independent data
+              controller.) Cloudflare states it cannot directly identify you
+              from these signals, and Turnstile is not an advertising or
+              cross-site-tracking product. See{" "}
+              <a
+                href="https://www.cloudflare.com/turnstile-privacy-policy/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline underline-offset-2 hover:text-foreground"
+              >
+                cloudflare.com/turnstile-privacy-policy
               </a>
               .
             </li>
