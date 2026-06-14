@@ -150,35 +150,45 @@ export async function POST(req: Request): Promise<NextResponse> {
     { status: 202 },
   );
 
-  // Look up by backup_email + verified. Profiles allow service-role
-  // reads - RLS doesn't apply here. We then cross-check the primary
-  // email via `auth.admin.getUserById`, since `profiles` doesn't
-  // store the primary as a column (it lives in `auth.users.email`).
+  // Look up by backup_email + verified. Profiles allow service-role reads - RLS
+  // doesn't apply here. A verified backup can legitimately be shared by more
+  // than one account (a couple / family — see migration 0029), so we do NOT use
+  // maybeSingle(): on >1 match PostgREST returns PGRST116 and we'd silently miss
+  // for everyone sharing the address. Fetch the candidates and pick the one
+  // whose primary (auth.users.email, which `profiles` doesn't store) matches.
   type ProfileRow = { user_id: string };
-  const { data: profile } = await admin
+  const { data: candidates } = await admin
     .from("profiles")
     .select("user_id")
     .eq("backup_email", backupEmail)
     .not("backup_email_verified_at", "is", null)
-    .maybeSingle<ProfileRow>();
-  if (!profile) return accepted;
+    .limit(10)
+    .returns<ProfileRow[]>();
+  if (!candidates || candidates.length === 0) return accepted;
 
-  const { data: userLookup, error: lookupErr } =
-    await admin.auth.admin.getUserById(profile.user_id);
-  if (lookupErr || !userLookup?.user) {
-    await reportServerError(lookupErr ?? new Error("user lookup empty"), {
-      route: "/api/auth/recovery",
-      context: { step: "user-lookup" },
-    });
-    return accepted;
+  let matchedUserId: string | null = null;
+  let matchedEmail: string | null = null;
+  for (const candidate of candidates) {
+    const { data: userLookup, error: lookupErr } =
+      await admin.auth.admin.getUserById(candidate.user_id);
+    if (lookupErr || !userLookup?.user) {
+      await reportServerError(lookupErr ?? new Error("user lookup empty"), {
+        route: "/api/auth/recovery",
+        context: { step: "user-lookup" },
+      });
+      continue;
+    }
+    if (
+      userLookup.user.email &&
+      userLookup.user.email.toLowerCase() === primaryEmail
+    ) {
+      matchedUserId = candidate.user_id;
+      matchedEmail = userLookup.user.email;
+      break;
+    }
   }
-  if (
-    !userLookup.user.email ||
-    userLookup.user.email.toLowerCase() !== primaryEmail
-  ) {
-    // Backup belonged to a different user - silent miss.
-    return accepted;
-  }
+  // No (primary, verified-backup) pair matched - silent miss.
+  if (!matchedUserId || !matchedEmail) return accepted;
 
   // Mint the magic-link token. We DON'T use the Supabase-hosted `action_link`;
   // instead we route the `hashed_token` through the app's own `/auth/confirm`
@@ -188,7 +198,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   const { data: linkData, error: linkErr } =
     await admin.auth.admin.generateLink({
       type: "magiclink",
-      email: userLookup.user.email,
+      email: matchedEmail,
       options: { redirectTo: `${appUrl}/recover` },
     });
   if (linkErr || !linkData?.properties?.hashed_token) {
@@ -204,7 +214,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   // Fail closed: if the grant didn't persist, don't email a dead link.
   const recoveryToken = await createRecoveryGrant(
     admin,
-    userLookup.user.id,
+    matchedUserId,
     Date.now(),
   );
   if (!recoveryToken) {
@@ -223,7 +233,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   const template = accountRecoveryEmail({
     appUrl,
     magicLink,
-    primaryEmailMasked: maskEmail(userLookup.user.email),
+    primaryEmailMasked: maskEmail(matchedEmail),
   });
   const sendResult = await sendEmail({
     to: backupEmail,

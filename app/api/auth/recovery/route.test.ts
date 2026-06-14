@@ -4,7 +4,7 @@ const {
   mockGetSupabaseSecretConfig,
   mockSendEmail,
   mockReportServerError,
-  mockProfileMaybeSingle,
+  mockProfileQuery,
   mockGetUserById,
   mockGenerateLink,
   mockGrantInsert,
@@ -15,7 +15,7 @@ const {
   })),
   mockSendEmail: vi.fn(async () => ({ ok: true, id: "msg-1" })),
   mockReportServerError: vi.fn(async () => {}),
-  mockProfileMaybeSingle: vi.fn(),
+  mockProfileQuery: vi.fn(),
   mockGetUserById: vi.fn(),
   mockGenerateLink: vi.fn(),
   // The recovery grant insert (createRecoveryGrant). Defaults to success.
@@ -38,9 +38,10 @@ vi.mock("@/lib/bot-protection", () => ({
 }));
 
 /** The route makes a chained call:
- *    .from("profiles").select(...).eq("backup_email", ...).not(...).maybeSingle()
- *  Build a chain that records nothing and returns whatever the test
- *  loaded into mockProfileMaybeSingle. */
+ *    .from("profiles").select(...).eq("backup_email", ...).not(...).limit(10).returns()
+ *  Build a chain that records nothing and returns whatever array the test loaded
+ *  into mockProfileQuery (an array of candidate profiles, since a verified
+ *  backup can be shared). */
 vi.mock("@supabase/supabase-js", () => ({
   createClient: vi.fn(() => ({
     auth: {
@@ -48,7 +49,9 @@ vi.mock("@supabase/supabase-js", () => ({
     },
     from: () => ({
       select: () => ({
-        eq: () => ({ not: () => ({ maybeSingle: mockProfileMaybeSingle }) }),
+        eq: () => ({
+          not: () => ({ limit: () => ({ returns: mockProfileQuery }) }),
+        }),
       }),
       insert: mockGrantInsert,
     }),
@@ -82,7 +85,7 @@ describe("POST /api/auth/recovery", () => {
   });
 
   it("returns 202 on a clean miss (no backup row found)", async () => {
-    mockProfileMaybeSingle.mockResolvedValue({ data: null, error: null });
+    mockProfileQuery.mockResolvedValue({ data: [], error: null });
     const { POST } = await loadRoute();
     const res = await POST(
       req({
@@ -98,8 +101,8 @@ describe("POST /api/auth/recovery", () => {
   });
 
   it("returns 202 silent miss when backup belongs to a different user", async () => {
-    mockProfileMaybeSingle.mockResolvedValue({
-      data: { user_id: "user-2" },
+    mockProfileQuery.mockResolvedValue({
+      data: [{ user_id: "user-2" }],
       error: null,
     });
     mockGetUserById.mockResolvedValueOnce({
@@ -119,8 +122,8 @@ describe("POST /api/auth/recovery", () => {
   });
 
   it("sends a magic-link to the backup on a full match", async () => {
-    mockProfileMaybeSingle.mockResolvedValue({
-      data: { user_id: "user-1" },
+    mockProfileQuery.mockResolvedValue({
+      data: [{ user_id: "user-1" }],
       error: null,
     });
     mockGetUserById.mockResolvedValueOnce({
@@ -169,8 +172,8 @@ describe("POST /api/auth/recovery", () => {
   });
 
   it("returns 202 (no link sent) when the recovery grant can't be persisted", async () => {
-    mockProfileMaybeSingle.mockResolvedValue({
-      data: { user_id: "user-1" },
+    mockProfileQuery.mockResolvedValue({
+      data: [{ user_id: "user-1" }],
       error: null,
     });
     mockGetUserById.mockResolvedValueOnce({
@@ -195,9 +198,47 @@ describe("POST /api/auth/recovery", () => {
     expect(mockReportServerError).toHaveBeenCalled();
   });
 
+  it("disambiguates a SHARED backup by primary email (picks the matching account)", async () => {
+    // A verified backup shared by two accounts (a couple). The query returns
+    // both; only the one whose primary matches gets the link.
+    mockProfileQuery.mockResolvedValue({
+      data: [{ user_id: "bob" }, { user_id: "alice" }],
+      error: null,
+    });
+    mockGetUserById.mockImplementation(async (id: string) =>
+      id === "alice"
+        ? {
+            data: { user: { id: "alice", email: "alice@example.com" } },
+            error: null,
+          }
+        : {
+            data: { user: { id: "bob", email: "bob@example.com" } },
+            error: null,
+          },
+    );
+    mockGenerateLink.mockResolvedValueOnce({
+      data: { properties: { hashed_token: "hashed-abc" } },
+      error: null,
+    });
+    const { POST } = await loadRoute();
+    const res = await POST(
+      req({
+        primaryEmail: "alice@example.com",
+        backupEmail: "shared-bkp@example.com",
+      }),
+    );
+    expect(res.status).toBe(202);
+    // The link was minted for ALICE's primary (not bob's), even though bob's
+    // row came first.
+    expect(mockGenerateLink).toHaveBeenCalledWith(
+      expect.objectContaining({ email: "alice@example.com" }),
+    );
+    expect(mockSendEmail).toHaveBeenCalledTimes(1);
+  });
+
   it("returns 202 even when generateLink fails (no leak via timing)", async () => {
-    mockProfileMaybeSingle.mockResolvedValue({
-      data: { user_id: "user-1" },
+    mockProfileQuery.mockResolvedValue({
+      data: [{ user_id: "user-1" }],
       error: null,
     });
     mockGetUserById.mockResolvedValueOnce({
