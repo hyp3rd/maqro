@@ -119,7 +119,7 @@ export function TurnstileWidget({
       />
       <div
         ref={containerRef}
-        className="min-h-[65px]"
+        className="hidden"
       />
       {loadFailed && (
         <p
