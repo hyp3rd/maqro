@@ -3,7 +3,6 @@ import { parseBody } from "@/lib/api/parse-body";
 import { getAppUrl } from "@/lib/app-url";
 import { createRecoveryGrant } from "@/lib/auth/recovery-grant";
 import { requireTurnstile } from "@/lib/auth/turnstile";
-import { requireHumanDeep } from "@/lib/bot-protection";
 import { sendEmail } from "@/lib/email/resend";
 import { accountRecoveryEmail } from "@/lib/email/templates";
 import { reportServerError } from "@/lib/error-reporter";
@@ -40,8 +39,14 @@ const BodySchema = z.object({
  *    5. Always return 202.
  *
  *  Security posture:
- *    - Deep-analysis BotID - recovery is exactly the surface a
- *      credential-stuffing bot would target.
+ *    - A Cloudflare Turnstile challenge (when configured) plus tight
+ *      per-IP / per-primary / per-backup rate limits gate abuse.
+ *      Deep-tier BotID is deliberately NOT used here: its passive
+ *      classifier false-flags Arc / installed-PWA sessions (see
+ *      `lib/bot-protection.ts`), and a false 403 on the one flow
+ *      meant to rescue a locked-out user is worse than the marginal
+ *      bot coverage it adds - especially since the payload only ever
+ *      reaches a pre-verified backup inbox the attacker can't read.
  *    - 202 for BOTH hit and miss, so the response BODY never reveals
  *      whether an account / verified backup exists. Response *timing*
  *      isn't fully constant (the hit path mints a link + grant + send),
@@ -55,16 +60,14 @@ const BodySchema = z.object({
  *      `reportServerError` audit entry so spikes show up in the
  *      admin error log. */
 export async function POST(req: Request): Promise<NextResponse> {
-  const bot = await requireHumanDeep();
-  if (!bot.ok) return bot.response;
-
   const parsed = await parseBody(req, BodySchema);
   if (!parsed.ok) return parsed.response;
 
-  // Managed bot challenge (no-op unless Turnstile is configured), on top of the
-  // BotID gate above. A bad/missing token rejects with a generic 403 — it never
-  // reveals whether an account exists, so it doesn't weaken the anti-enumeration
-  // posture (every probe without a solved challenge is rejected the same way).
+  // Managed bot challenge (no-op unless Turnstile is configured) — the primary
+  // bot gate for this route. A bad/missing token rejects with a generic 403 — it
+  // never reveals whether an account exists, so it doesn't weaken the
+  // anti-enumeration posture (every probe without a solved challenge is rejected
+  // the same way).
   const turnstile = await requireTurnstile(parsed.data.turnstileToken, req);
   if (!turnstile.ok) return turnstile.response;
 

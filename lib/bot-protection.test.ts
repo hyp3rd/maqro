@@ -64,6 +64,8 @@ describe("requireHumanDeep — enforce-mode in production", () => {
       // Body intentionally generic — see helper header comment.
       expect(body.error).toBe("Access denied.");
     }
+    // The block is logged so a false positive is visible, not a mystery 403.
+    expect(mockReportServerError).toHaveBeenCalled();
   });
 
   it("fails CLOSED when checkBotId throws — 403 + log", async () => {

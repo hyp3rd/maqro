@@ -56,12 +56,12 @@ describe("useTurnstile / TurnstileWidget — unconfigured", () => {
     delete process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
     const mod = await load();
     const Harness = makeHarness(mod);
-    const { container } = render(<Harness />);
+    render(<Harness />);
 
     // No site key → submit is never gated on a token…
     expect(screen.getByTestId("ready").textContent).toBe("true");
     // …and the widget mounts nothing (no challenge container).
-    expect(container.querySelector(".min-h-\\[65px\\]")).toBeNull();
+    expect(screen.queryByTestId("turnstile-widget")).toBeNull();
   });
 });
 
@@ -70,12 +70,12 @@ describe("useTurnstile / TurnstileWidget — configured", () => {
     process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = "1x00000000000000000000AA";
     const mod = await load();
     const Harness = makeHarness(mod);
-    const { container } = render(<Harness />);
+    render(<Harness />);
 
     // Configured but unsolved → not ready (the parent disables submit).
     expect(screen.getByTestId("ready").textContent).toBe("false");
     // The challenge container is mounted.
-    expect(container.querySelector(".min-h-\\[65px\\]")).not.toBeNull();
+    expect(screen.queryByTestId("turnstile-widget")).not.toBeNull();
 
     // A solved challenge hands back a token → ready.
     fireEvent.click(screen.getByText("solve"));
