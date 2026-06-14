@@ -44,6 +44,13 @@ const ALLOWLIST = [
   // Blocking AAL1 here would be hostile to users trying to ask
   // for help.
   "support/route.ts",
+  // Lost-authenticator step-down. By definition the caller CAN'T reach
+  // AAL2 (their authenticator is gone), so assertAal2 would make recovery
+  // impossible — the same chicken-and-egg as the trusted-devices check.
+  // Authorization here is the single-use recovery grant (`consumeRecoveryGrant`),
+  // which proves backup-inbox control; see the route's SECURITY note and
+  // migration 0067.
+  "account/mfa/recover-unenroll/route.ts",
 ];
 
 const GATE_FUNCTIONS = new Set([

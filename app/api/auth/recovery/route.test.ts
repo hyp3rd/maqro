@@ -7,6 +7,7 @@ const {
   mockProfileMaybeSingle,
   mockGetUserById,
   mockGenerateLink,
+  mockGrantInsert,
 } = vi.hoisted(() => ({
   mockGetSupabaseSecretConfig: vi.fn(() => ({
     url: "https://x.supabase.co",
@@ -17,6 +18,12 @@ const {
   mockProfileMaybeSingle: vi.fn(),
   mockGetUserById: vi.fn(),
   mockGenerateLink: vi.fn(),
+  // The recovery grant insert (createRecoveryGrant). Defaults to success.
+  mockGrantInsert: vi.fn(
+    async (): Promise<{ error: { message: string } | null }> => ({
+      error: null,
+    }),
+  ),
 }));
 
 vi.mock("@/lib/supabase/env", () => ({
@@ -43,6 +50,7 @@ vi.mock("@supabase/supabase-js", () => ({
       select: () => ({
         eq: () => ({ not: () => ({ maybeSingle: mockProfileMaybeSingle }) }),
       }),
+      insert: mockGrantInsert,
     }),
   })),
 }));
@@ -120,11 +128,7 @@ describe("POST /api/auth/recovery", () => {
       error: null,
     });
     mockGenerateLink.mockResolvedValueOnce({
-      data: {
-        properties: {
-          action_link: "https://maqro.app/auth/v1/verify?token=abc",
-        },
-      },
+      data: { properties: { hashed_token: "hashed-abc" } },
       error: null,
     });
     const { POST } = await loadRoute();
@@ -143,6 +147,8 @@ describe("POST /api/auth/recovery", () => {
         email: "alice@example.com",
       }),
     );
+    // A single-use recovery grant was minted for the user.
+    expect(mockGrantInsert).toHaveBeenCalledTimes(1);
     // The Resend send went to the BACKUP — not the primary.
     expect(mockSendEmail).toHaveBeenCalledTimes(1);
     // The mock isn't typed at the hoisted-declaration site, so
@@ -152,9 +158,41 @@ describe("POST /api/auth/recovery", () => {
       [{ to: string; html: string }]
     >;
     expect(calls[0]?.[0].to).toBe("alice-bkp@example.com");
-    expect(calls[0]?.[0].html).toContain(
-      "https://maqro.app/auth/v1/verify?token=abc",
+    // The link routes through the app's own /auth/confirm handler (reliable
+    // session) carrying the token_hash + a next pointing at the step-down.
+    const html = calls[0]?.[0].html ?? "";
+    expect(html).toContain("/auth/confirm?token_hash=hashed-abc");
+    expect(html).toContain("type=magiclink");
+    expect(html).toContain("next=");
+    // The Supabase-hosted verify URL is NOT used directly anymore.
+    expect(html).not.toContain("/auth/v1/verify");
+  });
+
+  it("returns 202 (no link sent) when the recovery grant can't be persisted", async () => {
+    mockProfileMaybeSingle.mockResolvedValue({
+      data: { user_id: "user-1" },
+      error: null,
+    });
+    mockGetUserById.mockResolvedValueOnce({
+      data: { user: { id: "user-1", email: "alice@example.com" } },
+      error: null,
+    });
+    mockGenerateLink.mockResolvedValueOnce({
+      data: { properties: { hashed_token: "hashed-abc" } },
+      error: null,
+    });
+    mockGrantInsert.mockResolvedValueOnce({ error: { message: "db down" } });
+    const { POST } = await loadRoute();
+    const res = await POST(
+      req({
+        primaryEmail: "alice@example.com",
+        backupEmail: "alice-bkp@example.com",
+      }),
     );
+    expect(res.status).toBe(202);
+    // Fail closed: no dead link emailed, and the failure is logged.
+    expect(mockSendEmail).not.toHaveBeenCalled();
+    expect(mockReportServerError).toHaveBeenCalled();
   });
 
   it("returns 202 even when generateLink fails (no leak via timing)", async () => {

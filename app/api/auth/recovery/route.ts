@@ -1,6 +1,7 @@
 import { isLikelyEmail, maskEmail } from "@/lib/account/backup-email";
 import { parseBody } from "@/lib/api/parse-body";
 import { getAppUrl } from "@/lib/app-url";
+import { createRecoveryGrant } from "@/lib/auth/recovery-grant";
 import { requireHumanDeep } from "@/lib/bot-protection";
 import { sendEmail } from "@/lib/email/resend";
 import { accountRecoveryEmail } from "@/lib/email/templates";
@@ -39,8 +40,11 @@ const BodySchema = z.object({
  *  Security posture:
  *    - Deep-analysis BotID - recovery is exactly the surface a
  *      credential-stuffing bot would target.
- *    - 202 + identical timing for hit/miss (no early returns that
- *      would skew response time).
+ *    - 202 for BOTH hit and miss, so the response BODY never reveals
+ *      whether an account / verified backup exists. Response *timing*
+ *      isn't fully constant (the hit path mints a link + grant + send),
+ *      so it's a weak side channel; the per-primary / per-backup / per-IP
+ *      rate limits below are the real throttle against probing.
  *    - The magic-link delivers to the BACKUP inbox, not to the
  *      attacker-controlled primary lookup. Even if an attacker
  *      guesses both addresses, the email still goes only to the
@@ -176,26 +180,49 @@ export async function POST(req: Request): Promise<NextResponse> {
     return accepted;
   }
 
-  // Mint the magic-link. `redirectTo` lands the user in the app
-  // shell after Supabase's `/auth/v1/verify` validates the token.
+  // Mint the magic-link token. We DON'T use the Supabase-hosted `action_link`;
+  // instead we route the `hashed_token` through the app's own `/auth/confirm`
+  // handler (which verifies it, sets the session cookies reliably, then
+  // redirects to `next`) so the user lands on the lost-authenticator step-down.
   const appUrl = getAppUrl();
   const { data: linkData, error: linkErr } =
     await admin.auth.admin.generateLink({
       type: "magiclink",
       email: userLookup.user.email,
-      options: { redirectTo: `${appUrl}/app` },
+      options: { redirectTo: `${appUrl}/recover` },
     });
-  if (linkErr || !linkData?.properties?.action_link) {
+  if (linkErr || !linkData?.properties?.hashed_token) {
     await reportServerError(
-      linkErr ?? new Error("generateLink returned no link"),
+      linkErr ?? new Error("generateLink returned no hashed_token"),
       { route: "/api/auth/recovery", context: { step: "generate-link" } },
     );
     return accepted;
   }
 
+  // Single-use grant proving the user reached the step-down via THIS link (sent
+  // to the backup inbox) — without it, a bare AAL1 session could strip 2FA.
+  // Fail closed: if the grant didn't persist, don't email a dead link.
+  const recoveryToken = await createRecoveryGrant(
+    admin,
+    userLookup.user.id,
+    Date.now(),
+  );
+  if (!recoveryToken) {
+    await reportServerError(new Error("recovery grant did not persist"), {
+      route: "/api/auth/recovery",
+      context: { step: "grant" },
+    });
+    return accepted;
+  }
+
+  const next = `/recover?rt=${recoveryToken}`;
+  const magicLink =
+    `${appUrl}/auth/confirm?token_hash=${encodeURIComponent(linkData.properties.hashed_token)}` +
+    `&type=magiclink&next=${encodeURIComponent(next)}`;
+
   const template = accountRecoveryEmail({
     appUrl,
-    magicLink: linkData.properties.action_link,
+    magicLink,
     primaryEmailMasked: maskEmail(userLookup.user.email),
   });
   const sendResult = await sendEmail({

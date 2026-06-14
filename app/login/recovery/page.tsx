@@ -84,8 +84,9 @@ export default function RecoveryPage() {
               Recover access
             </h1>
             <p className="text-sm text-muted-foreground">
-              Send a one-shot sign-in link to the backup email you previously
-              verified in Settings.
+              Lost your authenticator or your email? Send a one-shot sign-in
+              link to the backup email you verified in Settings — from there you
+              can finish signing in or reset two-step verification.
             </p>
           </div>
 
