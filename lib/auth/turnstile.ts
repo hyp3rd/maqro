@@ -1,3 +1,4 @@
+import { reportServerError } from "@/lib/error-reporter";
 import { ipFromRequest } from "@/lib/rate-limit";
 import { NextResponse } from "next/server";
 
@@ -24,7 +25,9 @@ export async function verifyTurnstile(
   token: string | null | undefined,
   remoteIp: string | null,
 ): Promise<VerifyResult> {
-  const secret = process.env.TURNSTILE_SECRET_KEY;
+  // Trim defensively: a secret pasted from the Cloudflare dashboard with a
+  // trailing space/newline would otherwise siteverify as `invalid-input-secret`.
+  const secret = process.env.TURNSTILE_SECRET_KEY?.trim();
   if (!secret) return { ok: true };
   if (!token) return { ok: false, reason: "missing-token" };
 
@@ -65,6 +68,21 @@ export async function requireTurnstile(
 ): Promise<{ ok: true } | { ok: false; response: NextResponse }> {
   const result = await verifyTurnstile(token, ipFromRequest(req));
   if (result.ok) return { ok: true };
+  // Observability: a fail-closed gate that logs nothing is undiagnosable in
+  // production (was this a misconfigured secret, an expired token, or a real
+  // bot?). The reason is a Cloudflare error-code — never the secret or the
+  // token — so it's safe to record. Skip the bare `missing-token` case: that's
+  // the expected shape of a script hitting the endpoint without solving the
+  // widget, and logging it would just flood the error log with bot noise.
+  if (result.reason !== "missing-token") {
+    await reportServerError(
+      new Error(`turnstile verification failed: ${result.reason}`),
+      {
+        route: pathOf(req),
+        context: { gate: "turnstile", reason: result.reason },
+      },
+    );
+  }
   return {
     ok: false,
     response: NextResponse.json(
@@ -74,4 +92,13 @@ export async function requireTurnstile(
       { status: 403 },
     ),
   };
+}
+
+/** Best-effort request path for log context (never throws on a malformed URL). */
+function pathOf(req: Request): string {
+  try {
+    return new URL(req.url).pathname;
+  } catch {
+    return "(unknown)";
+  }
 }

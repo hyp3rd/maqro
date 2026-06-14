@@ -119,6 +119,7 @@ export function TurnstileWidget({
       />
       <div
         ref={containerRef}
+        data-testid="turnstile-widget"
         className="hidden"
       />
       {loadFailed && (

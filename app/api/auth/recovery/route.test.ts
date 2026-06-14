@@ -33,9 +33,6 @@ vi.mock("@/lib/email/resend", () => ({ sendEmail: mockSendEmail }));
 vi.mock("@/lib/error-reporter", () => ({
   reportServerError: mockReportServerError,
 }));
-vi.mock("@/lib/bot-protection", () => ({
-  requireHumanDeep: vi.fn(async () => ({ ok: true })),
-}));
 
 /** The route makes a chained call:
  *    .from("profiles").select(...).eq("backup_email", ...).not(...).limit(10).returns()

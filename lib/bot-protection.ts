@@ -58,7 +58,17 @@ export async function requireHumanDeep(): Promise<RequireHumanResult> {
     const result = await checkBotId({
       advancedOptions: { checkLevel: "deepAnalysis" },
     });
-    return result.isBot ? FORBIDDEN : { ok: true };
+    if (result.isBot) {
+      // Log the block so a false positive (e.g. an Arc/PWA session, the reason
+      // we already dropped the basic tier) is visible instead of a mystery 403.
+      // Deep-tier routes are low-traffic, so this won't flood under real abuse.
+      await reportServerError(new Error("botid classified request as bot"), {
+        route: "(deep-tier route)",
+        context: { gate: "botid", mode: "enforce" },
+      });
+      return FORBIDDEN;
+    }
+    return { ok: true };
   } catch (err) {
     await reportServerError(err, {
       route: "(deep-tier route)",

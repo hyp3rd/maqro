@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { requireTurnstile, verifyTurnstile } from "./turnstile";
 
+const { mockReportServerError } = vi.hoisted(() => ({
+  mockReportServerError: vi.fn(async (_error?: unknown, _meta?: unknown) => {}),
+}));
+vi.mock("@/lib/error-reporter", () => ({
+  reportServerError: mockReportServerError,
+}));
+
 const SITEVERIFY = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
 function mockFetch(
@@ -12,6 +19,7 @@ function mockFetch(
 afterEach(() => {
   delete process.env.TURNSTILE_SECRET_KEY;
   vi.restoreAllMocks();
+  mockReportServerError.mockClear();
 });
 
 describe("verifyTurnstile — unconfigured", () => {
@@ -115,5 +123,22 @@ describe("requireTurnstile (route gate)", () => {
       const body = (await r.response.json()) as { error?: string };
       expect(body.error).toMatch(/human/i);
     }
+    // The Cloudflare error-code is logged so the 403 is diagnosable.
+    expect(mockReportServerError).toHaveBeenCalledTimes(1);
+    expect(String(mockReportServerError.mock.calls[0]?.[0])).toMatch(
+      /invalid-input-response/,
+    );
+  });
+
+  it("does NOT log the expected missing-token case (avoids bot-noise flooding)", async () => {
+    process.env.TURNSTILE_SECRET_KEY = "sk_test";
+    // A script hitting the endpoint without solving the widget is the expected
+    // shape of the gate working — it must reject (403) but stay silent.
+    const r = await requireTurnstile(
+      undefined,
+      new Request("http://x/api/auth/recovery"),
+    );
+    expect(r.ok).toBe(false);
+    expect(mockReportServerError).not.toHaveBeenCalled();
   });
 });
