@@ -883,13 +883,15 @@ export function accountRecoveryEmail(opts: {
       Recovery sign-in
     </h1>
     <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#3a3a40;">
-      This is a one-shot sign-in link for the Maqro account at
-      <strong>${opts.primaryEmailMasked}</strong>. Click below and you&rsquo;ll
-      land in the app already signed in.
+      This is a one-shot recovery link for the Maqro account at
+      <strong>${opts.primaryEmailMasked}</strong>. Open it to get back in. If
+      you still have your authenticator app, you&rsquo;ll enter a code; if
+      you&rsquo;ve lost it, you can remove two-step verification from the
+      recovery page and set it up again.
     </p>
     <p style="margin:0 0 20px;">
       <a href="${opts.magicLink}" style="display:inline-block;background:#0a0a0c;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-size:14px;font-weight:500;">
-        Sign in to Maqro
+        Continue to recovery
       </a>
     </p>
     <p style="margin:0 0 16px;font-size:13px;line-height:1.6;color:#6b6b76;">
@@ -898,16 +900,18 @@ export function accountRecoveryEmail(opts: {
       delivered to this backup address you previously confirmed.
     </p>
     <p style="margin:0;font-size:12px;line-height:1.5;color:#6b6b76;">
-      Once you&rsquo;re in, head to Settings &rarr; Email to update your
-      primary address if you no longer have access to the original.
+      If you&rsquo;ve also lost access to your primary email, you can update it
+      in Settings once you&rsquo;re back in.
     </p>
   `;
   const text = [
-    "Recovery sign-in for Maqro",
+    "Account recovery for Maqro",
     "",
     `Account: ${opts.primaryEmailMasked}`,
     "",
-    "Open this link to sign in (works once, expires in an hour):",
+    "Open this link to get back in (works once, expires in an hour). If you",
+    "still have your authenticator, you'll enter a code; if you lost it, you",
+    "can remove two-step verification and set it up again:",
     opts.magicLink,
     "",
     "If you didn't request recovery, ignore this email.",

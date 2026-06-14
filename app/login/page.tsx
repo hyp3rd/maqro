@@ -713,9 +713,9 @@ function LoginPageInner() {
               href="/login/recovery"
               className="underline underline-offset-2 hover:text-foreground"
             >
-              Lost access to your email?
+              Lost your authenticator or your email?
             </Link>{" "}
-            Use the backup address you verified in Settings to recover.
+            Recover with the backup address you verified in Settings.
           </p>
 
           <p className="text-[11px] leading-relaxed text-muted-foreground">

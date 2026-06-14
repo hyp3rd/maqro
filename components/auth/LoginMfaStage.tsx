@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useTotpChallenge } from "@/lib/auth/use-totp-challenge";
 import { useState } from "react";
 import { ShieldCheck } from "lucide-react";
+import Link from "next/link";
 
 /** The TOTP challenge stage of /login: shown after the email OTP step when the
  *  account has two-step verification on (or on a `?mfa=required` resume). Shares
@@ -101,6 +102,12 @@ export function LoginMfaStage({
         >
           Use a different email
         </button>
+        <Link
+          href="/login/recovery"
+          className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+        >
+          Lost your authenticator?
+        </Link>
       </div>
     </form>
   );
