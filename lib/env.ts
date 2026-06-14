@@ -47,6 +47,10 @@ type Env = {
   NEXT_PUBLIC_SUPABASE_ANON_KEY?: string; // legacy alias for publishable key
   NEXT_PUBLIC_VAPID_PUBLIC_KEY?: string;
   NEXT_PUBLIC_ERROR_LOG_DISABLED?: string;
+  // Cloudflare Turnstile site key (public). Pairs with TURNSTILE_SECRET_KEY;
+  // both-or-nothing. Unset = the bot challenge is skipped on the public
+  // email-sending forms (login code, recovery, contact, backup email).
+  NEXT_PUBLIC_TURNSTILE_SITE_KEY?: string;
 
   // Server-only secrets.
   SUPABASE_SECRET_KEY?: string;
@@ -66,6 +70,10 @@ type Env = {
   SHARE_BADGE_SECRET?: string;
   SOCIAL_TOKEN_SECRET?: string;
   RESEND_WEBHOOK_SECRET?: string;
+  // Cloudflare Turnstile secret (server). Pairs with the public site key; when
+  // both are set, the public email-sending forms verify a Turnstile token
+  // server-side (fail-closed) on top of the BotID gate.
+  TURNSTILE_SECRET_KEY?: string;
   // Optional: keys the encrypted refresh-token-coalescing cache in Redis (the
   // proxy's deploy-signout fix). Unset = the refresh lock still serializes
   // refreshes but can't hand the rotated tokens to losers, so losers fall open.
@@ -107,6 +115,9 @@ function readEnv(source: NodeJS.ProcessEnv = process.env): Env {
     NEXT_PUBLIC_ERROR_LOG_DISABLED: trimmed(
       source.NEXT_PUBLIC_ERROR_LOG_DISABLED,
     ),
+    NEXT_PUBLIC_TURNSTILE_SITE_KEY: trimmed(
+      source.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
+    ),
     SUPABASE_SECRET_KEY: trimmed(source.SUPABASE_SECRET_KEY),
     STRIPE_SECRET_KEY: trimmed(source.STRIPE_SECRET_KEY),
     STRIPE_WEBHOOK_SECRET: trimmed(source.STRIPE_WEBHOOK_SECRET),
@@ -124,6 +135,7 @@ function readEnv(source: NodeJS.ProcessEnv = process.env): Env {
     SHARE_BADGE_SECRET: trimmed(source.SHARE_BADGE_SECRET),
     SOCIAL_TOKEN_SECRET: trimmed(source.SOCIAL_TOKEN_SECRET),
     RESEND_WEBHOOK_SECRET: trimmed(source.RESEND_WEBHOOK_SECRET),
+    TURNSTILE_SECRET_KEY: trimmed(source.TURNSTILE_SECRET_KEY),
     AUTH_REFRESH_CACHE_SECRET: trimmed(source.AUTH_REFRESH_CACHE_SECRET),
     UPSTASH_REDIS_REST_URL: trimmed(source.UPSTASH_REDIS_REST_URL),
     UPSTASH_REDIS_REST_TOKEN: trimmed(source.UPSTASH_REDIS_REST_TOKEN),
@@ -265,6 +277,16 @@ export function validateEnvFor(e: Env): EnvIssue[] {
     // concurrent requests, so each races the single-use refresh token).
     warn(
       "Upstash is configured but AUTH_REFRESH_CACHE_SECRET is not - the proxy session refresh-lock can't hand rotated cookies to concurrent requests, so it falls back to per-request refresh (the deploy sign-out race). Set AUTH_REFRESH_CACHE_SECRET (>=32 chars) to activate the fix.",
+    );
+  }
+
+  const turnstileSet = [
+    e.NEXT_PUBLIC_TURNSTILE_SITE_KEY,
+    e.TURNSTILE_SECRET_KEY,
+  ].filter(Boolean).length;
+  if (turnstileSet === 1) {
+    err(
+      "Turnstile config is partial - set BOTH NEXT_PUBLIC_TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY, or neither. With only one, the widget can't both render and verify, so the bot challenge would either block every submit (no secret) or never render (no site key).",
     );
   }
 

@@ -1,6 +1,10 @@
 "use client";
 
 import { LoginMfaStage } from "@/components/auth/LoginMfaStage";
+import {
+  TurnstileWidget,
+  useTurnstile,
+} from "@/components/auth/TurnstileWidget";
 import { AppleLogo } from "@/components/icons/AppleLogo";
 import { GoogleLogo } from "@/components/icons/GoogleLogo";
 import { Footer } from "@/components/shell/Footer";
@@ -102,6 +106,8 @@ function LoginPageInner() {
   const [appleBusy, setAppleBusy] = useState(false);
   const [passkeyBusy, setPasskeyBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Managed bot challenge for the email-code path (no-op unless configured).
+  const turnstile = useTurnstile();
 
   const configured = isSupabaseConfigured();
   const webauthnSupported = useWebAuthnSupported();
@@ -157,7 +163,10 @@ function LoginPageInner() {
       const gateRes = await fetch("/api/auth/signup-check", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: trimmed }),
+        body: JSON.stringify({
+          email: trimmed,
+          turnstileToken: turnstile.token ?? undefined,
+        }),
       });
       if (!gateRes.ok) {
         const data = (await gateRes.json().catch(() => ({}))) as {
@@ -195,6 +204,9 @@ function LoginPageInner() {
     } finally {
       setBusy(false);
       setEmailBusy(false);
+      // The single-use Turnstile token is spent by the signup-check gate on
+      // every attempt — mint a fresh one so any retry isn't a guaranteed replay.
+      turnstile.reset();
     }
   }
 
@@ -510,10 +522,11 @@ function LoginPageInner() {
                   {error}
                 </p>
               )}
+              <TurnstileWidget {...turnstile.widgetProps} />
               <Button
                 type="submit"
                 className="w-full"
-                disabled={busy || !configured}
+                disabled={busy || !configured || !turnstile.ready}
               >
                 {emailBusy ? "Sending…" : "Email me a code"}
               </Button>

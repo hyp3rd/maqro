@@ -2,6 +2,7 @@ import { isLikelyEmail } from "@/lib/account/backup-email";
 import { parseBody } from "@/lib/api/parse-body";
 import { getSetting, SETTING_DEFAULTS, SETTING_KEYS } from "@/lib/app-settings";
 import { getAppUrl } from "@/lib/app-url";
+import { requireTurnstile } from "@/lib/auth/turnstile";
 import { sendEmail } from "@/lib/email/resend";
 import {
   supportRequestConfirmationEmail,
@@ -21,6 +22,7 @@ const BodySchema = z.object({
   subject: z.string(),
   body: z.string(),
   email: z.string().optional(),
+  turnstileToken: z.string().optional(),
 });
 
 /** Customer support contact form.
@@ -44,10 +46,12 @@ const BodySchema = z.object({
  *      Both layers needed: per-IP caps a single spammer hitting many
  *      addresses; per-email caps targeted harassment ("fill so-and-
  *      so's support queue with garbage from many IPs").
- *    - NO BotID - the rate limit is the cap, and BotID's basic-tier
- *      classifier misflagged enough real users in prod that the
- *      gate cost more than it caught. Worst-case bot scenario here:
- *      spam in our support inbox, capped at 20/hr from any one IP.
+ *    - Turnstile (managed bot challenge) when configured - a better
+ *      fit than BotID's basic-tier classifier, which misflagged
+ *      enough real users in prod that the gate cost more than it
+ *      caught. No-op when Turnstile is unconfigured; the rate limit
+ *      remains the floor (worst-case bot: support-inbox spam capped
+ *      at 20/hr from any one IP).
  *    - No referrer / hidden honeypot fields. Real spammers fill
  *      those; real users don't. The rate limit is the meaningful
  *      defense. */
@@ -59,6 +63,10 @@ export async function POST(req: Request): Promise<NextResponse> {
   const parsed = await parseBody(req, BodySchema);
   if (!parsed.ok) return parsed.response;
   const body = parsed.data;
+
+  // Managed bot challenge (no-op unless Turnstile is configured).
+  const turnstile = await requireTurnstile(body.turnstileToken, req);
+  if (!turnstile.ok) return turnstile.response;
 
   if (
     body.subject.trim().length === 0 ||

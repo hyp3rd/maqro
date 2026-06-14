@@ -8,6 +8,7 @@ import {
 import { parseBody } from "@/lib/api/parse-body";
 import { getAppUrl } from "@/lib/app-url";
 import { assertFreshAal2 } from "@/lib/auth/mfa-required";
+import { requireTurnstile } from "@/lib/auth/turnstile";
 import { sendEmail } from "@/lib/email/resend";
 import { backupEmailVerificationEmail } from "@/lib/email/templates";
 import { reportServerError } from "@/lib/error-reporter";
@@ -22,7 +23,10 @@ import { createClient } from "@supabase/supabase-js";
  *  `isLikelyEmail` check (which is the source of truth for what
  *  Maqro accepts) stays inline because it returns a friendlier
  *  message than Zod's regex. */
-const BodySchema = z.object({ email: z.string() });
+const BodySchema = z.object({
+  email: z.string(),
+  turnstileToken: z.string().optional(),
+});
 
 /** Start a backup-email registration.
  *
@@ -63,6 +67,13 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const parsed = await parseBody(req, BodySchema);
   if (!parsed.ok) return parsed.response;
+
+  // Managed bot challenge (no-op unless Turnstile is configured) — defense in
+  // depth on top of the AAL2 gate + rate limit, since this emails an OTP to an
+  // arbitrary candidate address.
+  const turnstile = await requireTurnstile(parsed.data.turnstileToken, req);
+  if (!turnstile.ok) return turnstile.response;
+
   if (!isLikelyEmail(parsed.data.email)) {
     return NextResponse.json(
       { error: "Provide a valid email address." },

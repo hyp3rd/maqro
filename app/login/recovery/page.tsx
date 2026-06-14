@@ -1,5 +1,9 @@
 "use client";
 
+import {
+  TurnstileWidget,
+  useTurnstile,
+} from "@/components/auth/TurnstileWidget";
 import { Footer } from "@/components/shell/Footer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +33,7 @@ export default function RecoveryPage() {
   const [busy, setBusy] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const turnstile = useTurnstile();
 
   async function submit() {
     setError(null);
@@ -48,14 +53,25 @@ export default function RecoveryPage() {
     }
     setBusy(true);
     try {
-      await fetch("/api/auth/recovery", {
+      const res = await fetch("/api/auth/recovery", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ primaryEmail: p, backupEmail: b }),
+        body: JSON.stringify({
+          primaryEmail: p,
+          backupEmail: b,
+          turnstileToken: turnstile.token ?? undefined,
+        }),
       });
-      // We never distinguish hit vs miss client-side either —
-      // always show the same confirmation, so an observer of the
-      // network tab can't infer existence.
+      // A 403 is the bot challenge (Turnstile / BotID) failing — surface it and
+      // re-challenge. It's orthogonal to account existence, so it leaks nothing.
+      if (res.status === 403) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(data.error ?? "Couldn't verify you're human. Try again.");
+        return;
+      }
+      // Otherwise we never distinguish hit vs miss client-side — always show the
+      // same confirmation, so an observer of the network tab can't infer
+      // existence.
       setSubmitted(true);
     } catch {
       // A network failure is fine to surface — it's about the
@@ -63,6 +79,9 @@ export default function RecoveryPage() {
       setError("Network error. Try again.");
     } finally {
       setBusy(false);
+      // The single-use token is spent on a delivered request; mint a fresh one
+      // for any retry. Harmless on the success path (the form is now read-only).
+      turnstile.reset();
     }
   }
 
@@ -166,10 +185,11 @@ export default function RecoveryPage() {
                   {error}
                 </p>
               )}
+              <TurnstileWidget {...turnstile.widgetProps} />
               <Button
                 type="submit"
                 className="w-full"
-                disabled={busy}
+                disabled={busy || !turnstile.ready}
               >
                 {busy ? "Sending…" : "Send recovery link"}
               </Button>

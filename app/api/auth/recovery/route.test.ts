@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   mockGetSupabaseSecretConfig,
@@ -73,6 +73,11 @@ function req(body: unknown): Request {
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+afterEach(() => {
+  delete process.env.TURNSTILE_SECRET_KEY;
+  vi.restoreAllMocks();
 });
 
 describe("POST /api/auth/recovery", () => {
@@ -234,6 +239,36 @@ describe("POST /api/auth/recovery", () => {
       expect.objectContaining({ email: "alice@example.com" }),
     );
     expect(mockSendEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it("403s on a failed Turnstile BEFORE any profile lookup (configured)", async () => {
+    // With Turnstile configured, a bad token must be rejected ahead of the
+    // backup lookup — so the 403 is account-independent and leaks nothing.
+    process.env.TURNSTILE_SECRET_KEY = "sk_test";
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            success: false,
+            "error-codes": ["invalid-input-response"],
+          }),
+          { status: 200 },
+        ),
+      );
+    const { POST } = await loadRoute();
+    const res = await POST(
+      req({
+        primaryEmail: "alice@example.com",
+        backupEmail: "alice-bkp@example.com",
+        turnstileToken: "bad",
+      }),
+    );
+    expect(res.status).toBe(403);
+    // siteverify was the ONLY network call; no Supabase lookup, no email.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(mockProfileQuery).not.toHaveBeenCalled();
+    expect(mockSendEmail).not.toHaveBeenCalled();
   });
 
   it("returns 202 even when generateLink fails (no leak via timing)", async () => {
