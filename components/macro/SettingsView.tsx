@@ -78,6 +78,7 @@ import { ImportPreviewDialog } from "./ImportPreviewDialog";
 import { MfaSection } from "./MfaSection";
 import { PasskeysSection } from "./PasskeysSection";
 import { PassphraseDialog } from "./PassphraseDialog";
+import { SecurityIntro } from "./SecurityIntro";
 import { SecurityOverview } from "./SecurityOverview";
 import { SignedInDevicesSection } from "./SignedInDevicesSection";
 import { TrustedDevicesSection } from "./TrustedDevicesSection";
@@ -465,6 +466,7 @@ export function SettingsView({
       {user && (
         <SecurityStatusProvider>
           <GroupLabel>Security</GroupLabel>
+          <SecurityIntro />
           <SecurityOverview />
           <MfaSection signedIn={Boolean(user)} />
           <PasskeysSection signedIn={Boolean(user)} />

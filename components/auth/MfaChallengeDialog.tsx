@@ -19,6 +19,7 @@ import { useTotpChallenge } from "@/lib/auth/use-totp-challenge";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { useEffect, useRef, useState } from "react";
 import { Loader2, ShieldCheck } from "lucide-react";
+import Link from "next/link";
 
 /** Global two-step-verification dialog. Mounted ONCE per app session in
  *  [components/shell/AppShell.tsx](../shell/AppShell.tsx) and the admin layout —
@@ -114,7 +115,14 @@ export function MfaChallengeDialog() {
 
 /** The code-entry body. Split out so `useTotpChallenge` mounts/unmounts with
  *  the open dialog (fresh code each time it opens) and so it only runs once a
- *  `factorId` exists. */
+ *  `factorId` exists.
+ *
+ *  Lost-authenticator escape is a recovery LINK, not an in-dialog passkey
+ *  sign-in: `signInWithPasskey` is a fresh sign-in that REPLACES the session and
+ *  (with discoverable credentials) can resolve to a different account — fine on
+ *  /login, but mid-action here it would silently change which user the gated
+ *  request runs as, with no clean way to constrain it. The recovery link sends
+ *  the user to the proper flow instead. */
 function MfaChallengeBody({
   factorId,
   onVerified,
@@ -147,6 +155,26 @@ function MfaChallengeBody({
             {error}
           </p>
         )}
+        <Link
+          href="/login/recovery"
+          aria-disabled={busy}
+          onClick={(e) => {
+            // Don't navigate away (cancelling the bus) while a verify is in
+            // flight — it could cancel a challenge that's about to succeed.
+            if (busy) {
+              e.preventDefault();
+              return;
+            }
+            onCancel();
+          }}
+          className={
+            busy
+              ? "pointer-events-none block text-xs text-muted-foreground/50 underline underline-offset-2"
+              : "block text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          }
+        >
+          Lost your authenticator?
+        </Link>
       </div>
 
       <DialogFooter className="gap-2 sm:gap-2">

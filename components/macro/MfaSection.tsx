@@ -16,13 +16,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SkeletonSettingRows } from "@/components/ui/skeleton";
-import { useDisplayName } from "@/hooks/use-display-name";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import * as React from "react";
 import { CheckCircle2, KeyRound, ShieldCheck, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { FeatureIntro } from "./FeatureIntro";
 import { useReportSecurityStatus } from "./security-status";
 
 /** Settings → Two-step verification.
@@ -83,26 +81,12 @@ type LoadState =
   | { kind: "unavailable"; reason: string }
   | { kind: "error"; message: string };
 
-/** Thin wrapper that owns the dismissable explainer + the
- *  `signedIn` gate. The actual TOTP plumbing — all six render
- *  branches plus enrollment ceremony — lives in `MfaSectionBody`
- *  unchanged. Wrapping at this boundary avoids threading
- *  `withIntro(...)` through every return inside the body. */
+/** Thin `signedIn` gate around `MfaSectionBody` (which holds all six render
+ *  branches + the enrollment ceremony). The first-time explainer now lives once
+ *  at the top of the Security group (`SecurityIntro`) instead of per section. */
 export function MfaSection({ signedIn }: { signedIn: boolean }) {
-  const displayName = useDisplayName();
   if (!signedIn) return null;
-  return (
-    <div className="space-y-3">
-      <FeatureIntro
-        storageKey="mfa"
-        icon={ShieldCheck}
-        tint="amber"
-        displayName={displayName}
-        blurb="two-step verification means access to your email alone isn't enough to get into your account — once it's on, sign-in also asks for a 6-digit code from an authenticator app on your phone. Set it up once; you'll only be asked again on new devices."
-      />
-      <MfaSectionBody signedIn={signedIn} />
-    </div>
-  );
+  return <MfaSectionBody signedIn={signedIn} />;
 }
 
 function MfaSectionBody({ signedIn }: { signedIn: boolean }) {

@@ -80,5 +80,7 @@ export function useTotpChallenge({
     void submitRef.current(code);
   }, [code, busy]);
 
-  return { code, setCode, busy, error, submit };
+  // `setError` is exposed so a sibling control (e.g. the login passkey escape)
+  // can clear a stale TOTP error when it takes over.
+  return { code, setCode, busy, error, setError, submit };
 }

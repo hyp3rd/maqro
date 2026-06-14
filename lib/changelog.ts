@@ -43,7 +43,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     date: "2026-06-13",
     version: "0.8.15",
     title: "Stay signed in across updates",
-    body: `Reloading right as we ship a new version could occasionally bounce you back to the sign-in screen. We fixed the race behind that, so your session holds steady across updates — your authenticator (two-factor) sign-in works exactly as before, just more reliably.`,
+    body: `Reloading right as we ship a new version could occasionally bounce you back to the sign-in screen. We fixed the race behind that, so your session holds steady across updates — two-step verification works exactly as before, just more reliably.`,
   },
   {
     id: "2026-06-13-faster-mobile-logging",

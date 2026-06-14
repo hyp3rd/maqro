@@ -16,13 +16,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SkeletonSettingRows } from "@/components/ui/skeleton";
-import { useDisplayName } from "@/hooks/use-display-name";
 import { clientFetch } from "@/lib/auth/client-fetch";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import * as React from "react";
 import { CheckCircle2, LifeBuoy, Mail, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { FeatureIntro } from "./FeatureIntro";
 import { useReportSecurityStatus } from "./security-status";
 
 /** Settings → Backup email. Lifecycle UI for the lost-email
@@ -52,25 +50,12 @@ type LoadState =
     }
   | { kind: "error"; message: string };
 
-/** Thin wrapper: owns the dismissable explainer + `signedIn` gate.
- *  The recovery-flow plumbing lives in `BackupEmailSectionBody`
- *  unchanged. Wrapping at this boundary avoids threading the intro
- *  through every return inside the body. */
+/** Thin `signedIn` gate around `BackupEmailSectionBody`. The first-time
+ *  explainer now lives once at the top of the Security group (`SecurityIntro`)
+ *  instead of per section. */
 export function BackupEmailSection({ signedIn }: { signedIn: boolean }) {
-  const displayName = useDisplayName();
   if (!signedIn) return null;
-  return (
-    <div className="space-y-3">
-      <FeatureIntro
-        storageKey="backup-email"
-        icon={LifeBuoy}
-        tint="emerald"
-        displayName={displayName}
-        blurb="a backup email is your safety net if you lose access to your primary one — you can verify recovery from this address even when the primary inbox is gone. Recommended if your main email is tied to a single device."
-      />
-      <BackupEmailSectionBody signedIn={signedIn} />
-    </div>
-  );
+  return <BackupEmailSectionBody signedIn={signedIn} />;
 }
 
 function BackupEmailSectionBody({ signedIn }: { signedIn: boolean }) {
