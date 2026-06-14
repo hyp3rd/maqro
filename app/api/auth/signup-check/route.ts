@@ -1,5 +1,6 @@
 import { parseBody } from "@/lib/api/parse-body";
 import { checkSignupEmail } from "@/lib/auth/signup-guard";
+import { requireTurnstile } from "@/lib/auth/turnstile";
 import { checkAuthRateLimit, ipFromRequest } from "@/lib/rate-limit";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -10,7 +11,10 @@ import { z } from "zod";
  *  with Zod's stricter `z.string().email()` would collapse the two
  *  reasons into a single field-error envelope and break the existing
  *  client copy. */
-const BodySchema = z.object({ email: z.unknown().optional() });
+const BodySchema = z.object({
+  email: z.unknown().optional(),
+  turnstileToken: z.string().optional(),
+});
 
 /** Pre-flight gate the email-OTP signup runs through BEFORE calling
  *  Supabase's signInWithOtp. Composes two checks:
@@ -36,6 +40,11 @@ const BodySchema = z.object({ email: z.unknown().optional() });
 export async function POST(req: Request): Promise<NextResponse> {
   const parsed = await parseBody(req, BodySchema);
   if (!parsed.ok) return parsed.response;
+
+  // Managed bot challenge (no-op unless Turnstile is configured). Checked first
+  // so an unsolved challenge is rejected before any email/throttle work.
+  const turnstile = await requireTurnstile(parsed.data.turnstileToken, req);
+  if (!turnstile.ok) return turnstile.response;
 
   const result = checkSignupEmail(parsed.data.email);
   if (!result.allowed) {

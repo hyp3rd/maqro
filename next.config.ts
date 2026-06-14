@@ -82,8 +82,16 @@ const CSP_DIRECTIVES = [
   // longer runs in the browser — and nothing else compiles WASM or
   // calls `eval`. `'unsafe-eval'` is added in dev only (React 19's
   // stack-reconstruction path + Turbopack HMR need it); prod blocks it.
-  `script-src 'self' 'unsafe-inline'${IS_DEV ? " 'unsafe-eval'" : ""}`,
+  // `https://challenges.cloudflare.com` is the Cloudflare Turnstile host: the
+  // bot challenge on the public email-sending forms loads its widget script
+  // from here, renders a challenge iframe from here (see `frame-src`), and XHRs
+  // back to it (see `connect-src`). Allowlisting it unconditionally is harmless
+  // when Turnstile is unconfigured — the script + widget never load.
+  `script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com${IS_DEV ? " 'unsafe-eval'" : ""}`,
   "style-src 'self' 'unsafe-inline'",
+  // Turnstile renders its challenge in a cross-origin iframe; without a
+  // `frame-src` it would fall back to `default-src 'self'` and be blocked.
+  "frame-src 'self' https://challenges.cloudflare.com",
   // `https://*.maqro.app` covers Maqro-owned subdomains (preview
   // deploys, staging, any future CDN host) so images served from
   // those origins clear CSP. Wildcard matches a single label, so
@@ -100,7 +108,7 @@ const CSP_DIRECTIVES = [
   // runs on a custom subdomain (`wss://s.maqro.app/realtime/v1/...`)
   // and would otherwise be blocked because CSP treats `wss://` as
   // a distinct scheme from `https://`.
-  `connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.maqro.app wss://*.maqro.app${IS_DEV ? " ws:" : ""}`,
+  `connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.maqro.app wss://*.maqro.app https://challenges.cloudflare.com${IS_DEV ? " ws:" : ""}`,
   "worker-src 'self' blob:",
   "manifest-src 'self'",
   "media-src 'self' blob:",

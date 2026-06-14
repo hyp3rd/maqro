@@ -2,6 +2,7 @@ import { isLikelyEmail, maskEmail } from "@/lib/account/backup-email";
 import { parseBody } from "@/lib/api/parse-body";
 import { getAppUrl } from "@/lib/app-url";
 import { createRecoveryGrant } from "@/lib/auth/recovery-grant";
+import { requireTurnstile } from "@/lib/auth/turnstile";
 import { requireHumanDeep } from "@/lib/bot-protection";
 import { sendEmail } from "@/lib/email/resend";
 import { accountRecoveryEmail } from "@/lib/email/templates";
@@ -15,6 +16,7 @@ import { createClient } from "@supabase/supabase-js";
 const BodySchema = z.object({
   primaryEmail: z.string(),
   backupEmail: z.string(),
+  turnstileToken: z.string().optional(),
 });
 
 /** Lost-email recovery dispatch.
@@ -58,6 +60,14 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const parsed = await parseBody(req, BodySchema);
   if (!parsed.ok) return parsed.response;
+
+  // Managed bot challenge (no-op unless Turnstile is configured), on top of the
+  // BotID gate above. A bad/missing token rejects with a generic 403 — it never
+  // reveals whether an account exists, so it doesn't weaken the anti-enumeration
+  // posture (every probe without a solved challenge is rejected the same way).
+  const turnstile = await requireTurnstile(parsed.data.turnstileToken, req);
+  if (!turnstile.ok) return turnstile.response;
+
   if (
     !isLikelyEmail(parsed.data.primaryEmail) ||
     !isLikelyEmail(parsed.data.backupEmail)

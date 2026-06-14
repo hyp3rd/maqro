@@ -2,6 +2,10 @@
 
 import { PasteOtpButton } from "@/components/auth/PasteOtpButton";
 import {
+  TurnstileWidget,
+  useTurnstile,
+} from "@/components/auth/TurnstileWidget";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -66,6 +70,7 @@ function BackupEmailSectionBody({ signedIn }: { signedIn: boolean }) {
     "idle" | "sending" | "verifying" | "removing"
   >("idle");
   const [tick, setTick] = React.useState(0);
+  const turnstile = useTurnstile();
 
   React.useEffect(() => {
     if (!signedIn) return;
@@ -137,7 +142,10 @@ function BackupEmailSectionBody({ signedIn }: { signedIn: boolean }) {
       const res = await clientFetch("/api/account/backup-email/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: emailInput.trim() }),
+        body: JSON.stringify({
+          email: emailInput.trim(),
+          turnstileToken: turnstile.token ?? undefined,
+        }),
       });
       const body = (await res.json().catch(() => ({}))) as {
         error?: string;
@@ -153,6 +161,9 @@ function BackupEmailSectionBody({ signedIn }: { signedIn: boolean }) {
       refresh();
     } finally {
       setBusy("idle");
+      // The single-use Turnstile token is spent on every send — mint a fresh
+      // one so a Resend (in the pending branch) isn't a guaranteed replay.
+      turnstile.reset();
     }
   }
 
@@ -373,7 +384,7 @@ function BackupEmailSectionBody({ signedIn }: { signedIn: boolean }) {
                 setCodeInput("");
                 void sendCode();
               }}
-              disabled={busy !== "idle"}
+              disabled={busy !== "idle" || !turnstile.ready}
             >
               Resend the code
             </button>
@@ -393,6 +404,8 @@ function BackupEmailSectionBody({ signedIn }: { signedIn: boolean }) {
               Cancel and use a different email
             </button>
           </div>
+          {/* Resending sends another email, so it needs a fresh challenge. */}
+          <TurnstileWidget {...turnstile.widgetProps} />
         </div>
       </section>
     );
@@ -424,12 +437,13 @@ function BackupEmailSectionBody({ signedIn }: { signedIn: boolean }) {
           <Button
             type="button"
             onClick={() => void sendCode()}
-            disabled={!emailInput.trim() || busy !== "idle"}
+            disabled={!emailInput.trim() || busy !== "idle" || !turnstile.ready}
             className="h-9 shrink-0"
           >
             {busy === "sending" ? "Sending…" : "Send code"}
           </Button>
         </div>
+        <TurnstileWidget {...turnstile.widgetProps} />
         <p className="text-[11px] text-muted-foreground">
           We&apos;ll send a 6-digit code there. The address only gets used for
           recovery sign-in links - never for marketing or product email.

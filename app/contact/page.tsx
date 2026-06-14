@@ -1,5 +1,9 @@
 "use client";
 
+import {
+  TurnstileWidget,
+  useTurnstile,
+} from "@/components/auth/TurnstileWidget";
 import { Footer } from "@/components/shell/Footer";
 import { PageTopBar } from "@/components/shell/PageTopBar";
 import { Button } from "@/components/ui/button";
@@ -149,6 +153,7 @@ export default function ContactPage() {
   const [busy, setBusy] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const turnstile = useTurnstile();
 
   const selected = CATEGORIES.find((c) => c.key === category) ?? null;
   const messageLen = message.length;
@@ -191,20 +196,24 @@ export default function ContactPage() {
           subject: subject.trim(),
           body: message.trim(),
           email: email.trim() || undefined,
+          turnstileToken: turnstile.token ?? undefined,
         }),
       });
       if (res.status === 429) {
         setError("You've sent a lot of messages already. Try again later.");
+        turnstile.reset();
         return;
       }
       const data = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
         setError(data.error ?? "Something went wrong. Please try again.");
+        turnstile.reset();
         return;
       }
       setSubmitted(true);
     } catch {
       setError("Network error. Try again.");
+      turnstile.reset();
     } finally {
       setBusy(false);
     }
@@ -347,10 +356,13 @@ export default function ContactPage() {
                     {error}
                   </p>
                 )}
+                <TurnstileWidget {...turnstile.widgetProps} />
                 <Button
                   type="submit"
                   className="w-full"
-                  disabled={busy || !subjectOk || !messageOk}
+                  disabled={
+                    busy || !subjectOk || !messageOk || !turnstile.ready
+                  }
                 >
                   {busy ? "Sending…" : "Send message"}
                 </Button>

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mockGetSupabaseSecretConfig, mockRpc } = vi.hoisted(() => ({
   mockGetSupabaseSecretConfig: vi.fn(() => ({
@@ -87,6 +87,32 @@ describe("POST /api/auth/signup-check - rate limiting", () => {
     expect(res.headers.get("Retry-After")).toBe("3600");
     const body = (await res.json()) as { reason: string };
     expect(body.reason).toBe("rate-limited");
+  });
+});
+
+describe("POST /api/auth/signup-check - Turnstile gate", () => {
+  afterEach(() => {
+    delete process.env.TURNSTILE_SECRET_KEY;
+    vi.restoreAllMocks();
+  });
+
+  it("403s on an invalid Turnstile token (configured), before any email/throttle work", async () => {
+    process.env.TURNSTILE_SECRET_KEY = "sk_test";
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          success: false,
+          "error-codes": ["invalid-input-response"],
+        }),
+        { status: 200 },
+      ),
+    );
+    const { POST } = await loadRoute();
+    const res = await POST(
+      req({ email: "alice@example.com", turnstileToken: "bad" }),
+    );
+    expect(res.status).toBe(403);
+    expect(mockRpc).not.toHaveBeenCalled();
   });
 });
 

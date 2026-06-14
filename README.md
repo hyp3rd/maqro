@@ -332,6 +332,8 @@ feature it backs - the app stays runnable on a bare-minimum config.
 | `UPSTASH_REDIS_REST_URL`           | Cross-instance Open Food Facts cache (REST URL)                                      | OFF lookups fetch directly (no cross-instance cache)              |
 | `UPSTASH_REDIS_REST_TOKEN`         | Cross-instance Open Food Facts cache (REST token)                                    | Same                                                              |
 | `AUTH_REFRESH_CACHE_SECRET`        | Encrypts the proxy session refresh-lock (needs `UPSTASH_*`) — stops deploy sign-outs | Lock inert; each request refreshes on its own (the sign-out race) |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY`   | Cloudflare Turnstile widget on the public email-sending forms (needs the secret)     | No bot challenge (BotID + rate limits still apply)                |
+| `TURNSTILE_SECRET_KEY`             | Server-side Turnstile token verification (fail-closed; needs the site key)           | Same                                                              |
 
 > The OFF cache is optional and **fail-open** — set both `UPSTASH_REDIS_REST_*`
 > (Vercel Marketplace → Upstash Redis, same region as the deploy) to make a cold
