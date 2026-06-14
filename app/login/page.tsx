@@ -256,23 +256,33 @@ function LoginPageInner() {
    *  expired). We map a few common cases to friendlier copy; anything
    *  else falls through to the raw message rather than silently
    *  swallowing it. */
-  async function signInWithPasskey() {
-    setError(null);
+  /** Core passkey sign-in: runs the WebAuthn ceremony, hard-navigates on
+   *  success (so the proxy sees the fresh AAL2 session), and returns a
+   *  humanized error string on failure (or null when it navigated away).
+   *  Shared by the request stage and the two-step stage (where it's the
+   *  lost-authenticator escape — a passkey is AAL2, so it skips TOTP). */
+  async function runPasskeySignIn(): Promise<string | null> {
     const supabase = getSupabaseBrowser();
     if (!supabase) {
-      setError("Supabase isn't configured. See README → Supabase setup.");
-      return;
+      return "Supabase isn't configured. See README → Supabase setup.";
     }
-    setBusy(true);
-    setPasskeyBusy(true);
     try {
       const { error: e } = await supabase.auth.signInWithPasskey();
       if (e) throw e;
-      // Hard navigation so the proxy sees the new session on the very
-      // next request. Same pattern as the email-code success path.
       window.location.assign(next);
+      return null;
     } catch (e) {
-      setError(humanizePasskeyError(e));
+      return humanizePasskeyError(e);
+    }
+  }
+
+  async function signInWithPasskey() {
+    setError(null);
+    setBusy(true);
+    setPasskeyBusy(true);
+    const err = await runPasskeySignIn();
+    if (err) {
+      setError(err);
       setBusy(false);
       setPasskeyBusy(false);
     }
@@ -462,6 +472,8 @@ function LoginPageInner() {
                 setCode("");
                 setError(null);
               }}
+              passkeySupported={webauthnSupported}
+              onUsePasskey={runPasskeySignIn}
             />
           ) : stage.kind === "request" ? (
             <form

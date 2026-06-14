@@ -4,29 +4,55 @@ import { TotpCodeInput } from "@/components/auth/TotpCodeInput";
 import { Button } from "@/components/ui/button";
 import { useTotpChallenge } from "@/lib/auth/use-totp-challenge";
 import { useState } from "react";
-import { ShieldCheck } from "lucide-react";
+import { Fingerprint, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 
 /** The TOTP challenge stage of /login: shown after the email OTP step when the
  *  account has two-step verification on (or on a `?mfa=required` resume). Shares
  *  the verify logic + code input with the in-app step-up dialog via
  *  `useTotpChallenge` / `TotpCodeInput`; what stays here is the login-specific
- *  chrome — the "trust this device" opt-in and the bail-out link. */
+ *  chrome — the "trust this device" opt-in, the passkey escape, and the
+ *  recovery links. The passkey button is the key lost-authenticator escape on
+ *  the `?mfa=required` resume path, which never shows the request stage. */
 export function LoginMfaStage({
   factorId,
   onVerified,
   onUseDifferentEmail,
+  passkeySupported = false,
+  onUsePasskey,
 }: {
   factorId: string;
   /** Runs once the session reaches AAL2; receives whether to trust the device. */
   onVerified: (opts: { trustDevice: boolean }) => void;
   onUseDifferentEmail: () => void;
+  passkeySupported?: boolean;
+  /** Runs the passkey ceremony; navigates on success, returns a humanized error
+   *  string on failure (null when it navigated away). A passkey is AAL2, so it
+   *  satisfies the gate without the authenticator code. */
+  onUsePasskey?: () => Promise<string | null>;
 }) {
   const [trustDevice, setTrustDevice] = useState(false);
+  const [passkeyBusy, setPasskeyBusy] = useState(false);
+  const [passkeyError, setPasskeyError] = useState<string | null>(null);
   const { code, setCode, busy, error, submit } = useTotpChallenge({
     factorId,
     onVerified: () => onVerified({ trustDevice }),
   });
+
+  async function handlePasskey() {
+    if (!onUsePasskey) return;
+    setPasskeyError(null);
+    setPasskeyBusy(true);
+    const err = await onUsePasskey();
+    if (err) {
+      setPasskeyError(err);
+      setPasskeyBusy(false);
+    }
+    // On success onUsePasskey navigates away; leave passkeyBusy true so the
+    // controls stay disabled until the page unloads.
+  }
+
+  const anyBusy = busy || passkeyBusy;
 
   return (
     <form
@@ -54,7 +80,7 @@ export function LoginMfaStage({
         id="mfa-totp"
         value={code}
         onValueChange={setCode}
-        disabled={busy}
+        disabled={anyBusy}
         autoFocus
       />
 
@@ -72,7 +98,7 @@ export function LoginMfaStage({
           type="checkbox"
           checked={trustDevice}
           onChange={(e) => setTrustDevice(e.target.checked)}
-          disabled={busy}
+          disabled={anyBusy}
           className="mt-0.5 h-3.5 w-3.5 shrink-0 cursor-pointer accent-foreground"
         />
         <span className="space-y-0.5">
@@ -90,14 +116,36 @@ export function LoginMfaStage({
         <Button
           type="submit"
           className="w-full"
-          disabled={busy || code.length !== 6}
+          disabled={anyBusy || code.length !== 6}
         >
           {busy ? "Verifying…" : "Sign in"}
         </Button>
+
+        {passkeySupported && onUsePasskey && (
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full gap-2"
+            disabled={anyBusy}
+            onClick={() => void handlePasskey()}
+          >
+            <Fingerprint className="h-4 w-4" />
+            {passkeyBusy ? "Verifying…" : "Use a passkey instead"}
+          </Button>
+        )}
+        {passkeyError && (
+          <p
+            role="alert"
+            className="text-xs text-destructive"
+          >
+            {passkeyError}
+          </p>
+        )}
+
         <button
           type="button"
           className="text-xs text-muted-foreground hover:text-foreground"
-          disabled={busy}
+          disabled={anyBusy}
           onClick={onUseDifferentEmail}
         >
           Use a different email
