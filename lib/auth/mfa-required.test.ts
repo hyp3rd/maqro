@@ -14,6 +14,8 @@ function fakeSupabase(opts: {
   aalLevel?: "aal1" | "aal2" | "unknown" | null;
   nextLevel?: "aal1" | "aal2" | "unknown" | null;
   totp?: Array<{ status: "verified" | "unverified" }>;
+  /** The session's authentication methods (JWT `amr`). */
+  amr?: Array<{ method: string }>;
   aalThrows?: boolean;
   factorsThrows?: boolean;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -28,6 +30,7 @@ function fakeSupabase(opts: {
             : {
                 currentLevel: opts.aalLevel ?? "aal1",
                 nextLevel: opts.nextLevel ?? "aal1",
+                currentAuthenticationMethods: opts.amr ?? [],
               },
         error: null,
       };
@@ -86,6 +89,33 @@ describe("requiresMfaUpgrade", () => {
     await expect(requiresMfaUpgrade(supabase)).resolves.toEqual({
       needsUpgrade: true,
       reason: "aal1-with-totp",
+    });
+  });
+
+  it("does NOT demand TOTP when the session was authenticated with a passkey (even with TOTP enrolled)", async () => {
+    // A passkey sign-in is AAL1 in Supabase but satisfies our MFA bar. Without
+    // the amr check this same input would return needsUpgrade:true (see the
+    // test above) and bounce a passkey user to the TOTP prompt.
+    const supabase = fakeSupabase({
+      aalLevel: "aal1",
+      nextLevel: "aal2",
+      totp: [{ status: "verified" }],
+      amr: [{ method: "webauthn" }],
+    });
+    await expect(requiresMfaUpgrade(supabase)).resolves.toEqual({
+      needsUpgrade: false,
+    });
+  });
+
+  it("recognizes the passkey method regardless of the exact amr string / casing", async () => {
+    const supabase = fakeSupabase({
+      aalLevel: "aal1",
+      nextLevel: "aal2",
+      totp: [{ status: "verified" }],
+      amr: [{ method: "otp" }, { method: "Passkey" }],
+    });
+    await expect(requiresMfaUpgrade(supabase)).resolves.toEqual({
+      needsUpgrade: false,
     });
   });
 
