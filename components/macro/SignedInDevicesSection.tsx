@@ -165,7 +165,9 @@ export function SignedInDevicesSection({ signedIn }: { signedIn: boolean }) {
         graceHoursRemaining?: number;
       };
       if (!res.ok) {
-        toast.error(body.error ?? `Disconnect failed (${res.status}).`);
+        toast.error(
+          body.error ?? "Couldn't disconnect that device. Please try again.",
+        );
         return;
       }
       toast.success("Device disconnected. The other device will sign out.");

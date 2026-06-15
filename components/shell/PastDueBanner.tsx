@@ -95,7 +95,7 @@ export function PastDueBanner() {
       };
       if (!res.ok || !body.url) {
         toast.error(
-          body.error ?? `Couldn't open the billing portal (${res.status}).`,
+          body.error ?? "Couldn't open the billing portal. Please try again.",
         );
         return;
       }

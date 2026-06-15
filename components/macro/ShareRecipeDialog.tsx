@@ -147,7 +147,9 @@ function ShareBody({
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error ?? `Mint failed (HTTP ${res.status})`);
+        throw new Error(
+          data.error ?? "Couldn't create the share link. Please try again.",
+        );
       }
       const data = (await res.json()) as {
         slug: string;
@@ -171,7 +173,11 @@ function ShareBody({
       onChanged?.();
       toast.success("Share link created");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Mint failed.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Couldn't create the share link. Please try again.",
+      );
     } finally {
       setWorking(null);
     }
@@ -192,7 +198,9 @@ function ShareBody({
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error ?? `Update failed (HTTP ${res.status})`);
+        throw new Error(
+          data.error ?? "Couldn't update the share link. Please try again.",
+        );
       }
       await upsertRecipe({ ...recipe, shareVisibility: next });
       bumpPending();
@@ -207,7 +215,11 @@ function ShareBody({
     } catch (err) {
       // Revert the optimistic update on failure so the UI matches reality.
       setVisibility(previous);
-      setError(err instanceof Error ? err.message : "Update failed.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Couldn't update the share link. Please try again.",
+      );
     } finally {
       setWorking(null);
     }
@@ -223,7 +235,9 @@ function ShareBody({
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error ?? `Revoke failed (HTTP ${res.status})`);
+        throw new Error(
+          data.error ?? "Couldn't remove the share link. Please try again.",
+        );
       }
       // Strip shareSlug + shareVisibility locally so the row reflects
       // the revoked state. Same dirty-row argument as mint - the local
@@ -238,7 +252,11 @@ function ShareBody({
       onChanged?.();
       toast.success("Share link revoked");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Revoke failed.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Couldn't remove the share link. Please try again.",
+      );
     } finally {
       setWorking(null);
     }

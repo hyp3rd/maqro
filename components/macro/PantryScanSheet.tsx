@@ -85,7 +85,10 @@ function PantryScanBody({
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error ?? `Scan failed (HTTP ${res.status})`);
+        throw new Error(
+          data.error ??
+            "Couldn't scan that photo. Try again with better lighting.",
+        );
       }
       const result = (await res.json()) as ResolvedPantryScan;
       if (result.items.length === 0) {

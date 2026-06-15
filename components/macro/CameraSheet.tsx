@@ -192,7 +192,9 @@ function CameraSheetBody({
       const res = await fetch(`/api/off-barcode/${encodeURIComponent(code)}`);
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error ?? `Lookup failed (HTTP ${res.status})`);
+        throw new Error(
+          data.error ?? "Couldn't look up that barcode. Please try again.",
+        );
       }
       const data = (await res.json()) as { food?: Food };
       if (!data.food) throw new Error("OFF returned no food.");
@@ -251,7 +253,8 @@ function CameraSheetBody({
           return;
         }
         throw new Error(
-          data.error ?? `Identification failed (HTTP ${res.status})`,
+          data.error ??
+            "We couldn't read that photo. Try again with better lighting.",
         );
       }
       const result = (await res.json()) as ResolvedMealPhoto;

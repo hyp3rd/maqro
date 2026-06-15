@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { requireTurnstile, verifyTurnstile } from "./turnstile";
 
 const { mockReportServerError } = vi.hoisted(() => ({
-  mockReportServerError: vi.fn(async (_error?: unknown, _meta?: unknown) => {}),
+  mockReportServerError: vi.fn(async () => {}),
 }));
 vi.mock("@/lib/error-reporter", () => ({
   reportServerError: mockReportServerError,
@@ -125,9 +125,10 @@ describe("requireTurnstile (route gate)", () => {
     }
     // The Cloudflare error-code is logged so the 403 is diagnosable.
     expect(mockReportServerError).toHaveBeenCalledTimes(1);
-    expect(String(mockReportServerError.mock.calls[0]?.[0])).toMatch(
-      /invalid-input-response/,
-    );
+    const firstCall = mockReportServerError.mock.calls[0] as
+      | unknown[]
+      | undefined;
+    expect(String(firstCall?.[0])).toMatch(/invalid-input-response/);
   });
 
   it("does NOT log the expected missing-token case (avoids bot-noise flooding)", async () => {

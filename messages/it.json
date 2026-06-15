@@ -11,11 +11,11 @@
     "tag": "Ora con digiuno, fasi dell'obiettivo e monitoraggio dei micronutrienti",
     "headlineLine1": "Calibra i tuoi macro.",
     "headlineLine2": "Pianifica i pasti. Misura i progressi.",
-    "subtitle": "Un'app nutrizionale personale che rispetta il tuo tempo e i tuoi dati. Imposta gli obiettivi, registra i pasti, monitora il digiuno e la tua salute — senza un solo pixel di tracciamento.",
+    "subtitle": "Un'app nutrizionale personale che rispetta il tuo tempo e la tua privacy. Imposta gli obiettivi, registra i pasti in un tocco e segui i tuoi progressi — niente pubblicità, niente tracciamento, niente confusione.",
     "ctaPrimary": "Apri l'app",
     "ctaSecondary": "Scopri le funzionalità →",
     "ctaSample": "O prova con dati di esempio →",
-    "ctaFootnote": "Gratis, open-source, funziona offline. Niente carta, niente registrazione per provarla."
+    "ctaFootnote": "Gratis da usare, funziona offline e niente da registrare per provarla. Nessuna carta richiesta."
   },
   "macroCard": {
     "aria": "Esempio di scheda macro giornaliera",
@@ -26,9 +26,9 @@
     "fat": "Grassi"
   },
   "trust": {
-    "localFirst": "Local-first",
+    "localFirst": "Privato di default",
     "offline": "Funziona offline",
-    "noAnalytics": "Nessun analytics",
+    "noAnalytics": "Nessun tracciamento",
     "noAds": "Nessuna pubblicità",
     "openSource": "Open source"
   },
@@ -42,7 +42,7 @@
       },
       "logging": {
         "title": "Registra con foto, barcode o voce",
-        "body": "Inquadra un'etichetta o un piatto, scansiona un codice a barre su Open Food Facts, oppure di' semplicemente cosa hai mangiato — ognuno diventa macro strutturati in un tocco."
+        "body": "Inquadra un'etichetta o un piatto, scansiona un codice a barre, oppure di' semplicemente cosa hai mangiato — ognuno diventa calorie e macro in un tocco."
       },
       "recipes": {
         "title": "Ricette che calcolano",
@@ -62,15 +62,15 @@
       },
       "micronutrients": {
         "title": "Micronutrienti, non solo macro",
-        "body": "Monitora dieci vitamine e minerali rispetto ai valori RDA per età e sesso, arricchiti da Open Food Facts mentre registri. (Pro)"
+        "body": "Monitora dieci vitamine e minerali rispetto alle quantità giornaliere consigliate per la tua età e il tuo sesso, compilate in automatico mentre registri. (Pro)"
       },
       "trends": {
-        "title": "Trend + TDEE adattivo",
-        "body": "Media mobile del peso con rilevamento dei plateau e un TDEE che si ricalibra quando il cambiamento reale diverge dalla formula."
+        "title": "Trend che imparano da te",
+        "body": "Un trend del peso livellato che individua i plateau e un obiettivo calorico giornaliero che si ricalibra quando i tuoi progressi reali si discostano dalla stima."
       },
       "ownership": {
         "title": "I tuoi dati, sul tuo dispositivo",
-        "body": "Local-first di default, con export JSON in un tocco e nessun lock-in né pixel di tracciamento. Pro aggiunge sincronizzazione cifrata tra dispositivi, backup cloud e un report salute in PDF vettoriale."
+        "body": "Tutto resta sul tuo dispositivo di default, con esportazione in un tocco e nessun vincolo né tracciamento. Pro aggiunge sincronizzazione cifrata tra i tuoi dispositivi, backup cloud e un report salute in PDF curato."
       }
     }
   },
@@ -79,15 +79,15 @@
     "steps": {
       "set": {
         "title": "Imposta gli obiettivi",
-        "body": "BMR Mifflin-St Jeor, TDEE pesato sull'attività, obiettivo calorico ancorato a un tasso settimanale di variazione del peso."
+        "body": "Indicaci la tua età, altezza, peso, attività e obiettivo. Calcoliamo quante calorie — e quante proteine, carboidrati e grassi — ti servono ogni giorno."
       },
       "log": {
         "title": "Registra quel che mangi",
-        "body": "Catalogo integrato, i tuoi alimenti, o ricerca live su Open Food Facts - tre fonti, una sola casella."
+        "body": "Cerca tra milioni di alimenti, scansiona un codice a barre, scatta una foto o salva i tuoi — tutto finisce in un unico posto."
       },
       "see": {
         "title": "Osserva i trend",
-        "body": "Aderenza ai macro, streak e grafico del peso calibrato che corregge il TDEE quando la realtà diverge dalla formula."
+        "body": "Segui il trend del tuo peso, le streak e quanto resti vicino al target — l'app affina il tuo obiettivo calorico man mano che impara dai tuoi risultati reali."
       }
     }
   },
@@ -118,7 +118,7 @@
           "500 generazioni AI / mese",
           "Importa ricette da un URL",
           "Promemoria giornalieri + riepilogo settimanale",
-          "Coda AI prioritaria"
+          "AI più veloce nei momenti di punta"
         ],
         "cta": "Inizia la prova gratuita"
       },
@@ -130,7 +130,7 @@
           "Generazioni AI illimitate",
           "Micronutrienti + fasi dell'obiettivo",
           "Sincronizzazione tra dispositivi + backup cifrati",
-          "Report salute in PDF vettoriale"
+          "Report salute in PDF"
         ],
         "cta": "Inizia la prova gratuita"
       }
@@ -141,7 +141,7 @@
     "items": {
       "storage": {
         "q": "Dove vengono salvati i miei dati?",
-        "a": "Sul tuo dispositivo, nel browser. Se accedi, gli stessi dati si sincronizzano su un progetto cloud privato che solo tu puoi leggere. Per default nulla esce dal tuo dispositivo."
+        "a": "Sul tuo dispositivo. Se accedi, gli stessi dati si sincronizzano su uno spazio cloud privato che solo tu puoi leggere. Per default nulla esce dal tuo dispositivo."
       },
       "account": {
         "q": "Serve un account per usarla?",
@@ -169,13 +169,13 @@
       },
       "source": {
         "q": "Il codice sorgente è pubblico?",
-        "a": "Sì - Attribution-NonCommercial-NoDerivatives 4.0 International su GitHub. Puoi auto-ospitare o ispezionare ogni riga."
+        "a": "Sì — è tutto su GitHub, così chiunque può verificare cosa fa l'app con i tuoi dati. (Licenza CC BY-NC-ND 4.0.)"
       }
     }
   },
   "finalCta": {
     "title": "Cinque minuti. Niente carta. Niente fregature.",
-    "body": "Apri l'app, imposta gli obiettivi e registra il prossimo pasto. Se non ti piace, i tuoi dati sono locali - svuota il browser e hai chiuso.",
+    "body": "Apri l'app, imposta gli obiettivi e registra il prossimo pasto. Se non ti piace, i tuoi dati restano sul tuo dispositivo — cancellali e hai chiuso.",
     "primary": "Apri l'app",
     "secondary": "O accedi per sincronizzare →"
   },
@@ -229,7 +229,7 @@
   },
   "aboutPage": {
     "title": "Chi è Maqro",
-    "tagline": "Un calcolatore di macro e pianificatore pasti personale che rispetta il tuo tempo e i tuoi dati. Open source, niente analytics, local-first.",
+    "tagline": "Un calcolatore di macro e pianificatore pasti personale che rispetta il tuo tempo e la tua privacy. Open source, niente tracciamento, e i tuoi dati restano sul tuo dispositivo.",
     "buildLabel": "Build",
     "sections": {
       "service": "Servizio",
@@ -273,7 +273,7 @@
       },
       "github": {
         "label": "Codice sorgente su GitHub",
-        "detail": "Licenza Attribution-NonCommercial-NoDerivatives 4.0 International, ispezionabile"
+        "detail": "Codice pubblico — vedi cosa fa con i tuoi dati (CC BY-NC-ND 4.0)"
       },
       "twitter": {
         "label": "Segui {handle} su X",
@@ -284,8 +284,8 @@
         "detail": "Francesco Cosentino — la persona dietro Maqro"
       },
       "manifest": {
-        "label": "Manifest PWA",
-        "detail": "Installa sulla schermata home su iOS / Android"
+        "label": "Installa Maqro",
+        "detail": "Aggiungila alla schermata home su iOS o Android"
       }
     },
     "thanks": {
@@ -315,7 +315,7 @@
     },
     "matrix": {
       "title": "Confronto completo delle funzionalità",
-      "subtitle": "Ogni funzionalità a pagamento, elencata una volta. Le righe booleane sono sì/no; le righe numeriche sono il limite per piano.",
+      "subtitle": "Ogni funzionalità a pagamento, elencata una volta — cosa è sì/no e il limite su ogni piano.",
       "headers": {
         "feature": "Funzionalità",
         "free": "Free",
@@ -371,19 +371,19 @@
           "label": "Importa ricette da un URL",
           "detail": "Importa una ricetta da una pagina web. Solo Plus + Pro."
         },
-        "priorityQueue": { "label": "Coda API prioritaria" },
-        "localStorage": { "label": "Storage locale (sul tuo dispositivo)" },
-        "syncDevices": {
-          "label": "Sincronizzazione tra dispositivi (nel cloud)"
+        "priorityQueue": {
+          "label": "AI più veloce quando i server sono occupati"
         },
-        "cloudBackup": { "label": "Backup cloud (export JSON)" },
+        "localStorage": { "label": "I tuoi dati salvati sul tuo dispositivo" },
+        "syncDevices": { "label": "Sincronizzazione tra dispositivi" },
+        "cloudBackup": { "label": "Backup cloud" },
         "encryptedBackup": {
           "label": "Backup cloud cifrati",
           "detail": "Zero-knowledge, protetti da passphrase — con ripristino con anteprima prima dell'applicazione."
         },
         "healthReportPdf": {
           "label": "Report salute in PDF",
-          "detail": "PDF vettoriale: nutrizione, peso, corpo, pressione arteriosa, idratazione, digiuno, micronutrienti."
+          "detail": "Un PDF curato: nutrizione, peso, corpo, pressione arteriosa, idratazione, digiuno, micronutrienti."
         },
         "manualJsonExport": {
           "label": "Export + import JSON manuali",
@@ -398,7 +398,7 @@
         "contactForm": { "label": "Modulo di contatto + supporto email" },
         "sourceGithub": {
           "label": "Codice sorgente su GitHub",
-          "detail": "Maqro è open source — forkalo, eseguilo, ispezionalo."
+          "detail": "Il codice è pubblico — vedi esattamente cosa fa con i tuoi dati."
         }
       }
     },
@@ -423,7 +423,7 @@
           "aiGenerations500": "500 generazioni AI al mese",
           "importRecipesUrl": "Importa ricette da URL",
           "reminders": "Promemoria giornalieri + riepilogo settimanale",
-          "priorityQueue": "Coda API prioritaria"
+          "priorityQueue": "AI più veloce quando i server sono occupati"
         }
       },
       "pro": {
@@ -436,7 +436,7 @@
           "micronutrientsGoalPhases": "Micronutrienti + fasi dell'obiettivo",
           "syncDevices": "Sincronizzazione su tutti i tuoi dispositivi",
           "encryptedBackup": "Backup cloud cifrati",
-          "healthReportPdf": "Report salute in PDF vettoriale"
+          "healthReportPdf": "Report salute in PDF"
         }
       }
     },
@@ -460,7 +460,7 @@
       },
       "dataStorage": {
         "q": "Dove vengono salvati i miei dati?",
-        "a": "Sul tuo dispositivo, nel browser. Se sei sul piano Pro e hai effettuato l'accesso, gli stessi dati si sincronizzano su un progetto cloud privato che solo tu puoi leggere. I piani Free e Plus restano interamente sul tuo dispositivo. Vedi la privacy policy su /privacy per il quadro completo."
+        "a": "Sul tuo dispositivo. Se sei sul piano Pro e hai effettuato l'accesso, gli stessi dati si sincronizzano su uno spazio cloud privato che solo tu puoi leggere. I piani Free e Plus restano interamente sul tuo dispositivo. Vedi la privacy policy su /privacy per il quadro completo."
       },
       "refunds": {
         "q": "Offrite rimborsi?",

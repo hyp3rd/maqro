@@ -35,7 +35,7 @@ export const metadata: Metadata = {
   // own marketing surface. `absolute` overrides the template.
   title: { absolute: "Maqro - macros, meal planning, and progress tracking" },
   description:
-    "A personal macro calculator, meal planner, and weight-tracking journal. Local-first, offline-ready, open source. No analytics, no tracking, no ads.",
+    "A personal macro calculator, meal planner, and weight journal. Private by default, works offline, no ads or tracking. Open source — see exactly what it does with your data.",
 };
 
 /** The marketing landing. Server-rendered, minimal JavaScript,

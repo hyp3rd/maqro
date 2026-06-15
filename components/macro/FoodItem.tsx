@@ -120,12 +120,14 @@ const FoodItem: React.FC<FoodItemProps> = ({
                 <div className="absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md border border-border/60 bg-popover shadow-lg">
                   <ul className="py-1">
                     {replacingFood.suggestions.map((suggestion, index) => (
-                      <li
-                        key={index}
-                        className="cursor-pointer px-3 py-1.5 text-sm transition-colors hover:bg-accent"
-                        onClick={() => replaceFood(suggestion)}
-                      >
-                        {suggestion.name}
+                      <li key={index}>
+                        <button
+                          type="button"
+                          onClick={() => replaceFood(suggestion)}
+                          className="block w-full cursor-pointer px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent"
+                        >
+                          {suggestion.name}
+                        </button>
                       </li>
                     ))}
                   </ul>

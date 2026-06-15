@@ -152,7 +152,7 @@ function BackupEmailSectionBody({ signedIn }: { signedIn: boolean }) {
         masked?: string;
       };
       if (!res.ok) {
-        toast.error(body.error ?? `Couldn't send code (${res.status}).`);
+        toast.error(body.error ?? "Couldn't send the code. Please try again.");
         return;
       }
       toast.success(`Code sent to ${body.masked ?? "your backup inbox"}.`);
@@ -180,7 +180,9 @@ function BackupEmailSectionBody({ signedIn }: { signedIn: boolean }) {
         backupEmail?: string;
       };
       if (!res.ok) {
-        toast.error(body.error ?? `Couldn't verify (${res.status}).`);
+        toast.error(
+          body.error ?? "That code didn't work. Check it and try again.",
+        );
         return;
       }
       toast.success("Backup email verified.");
@@ -199,7 +201,9 @@ function BackupEmailSectionBody({ signedIn }: { signedIn: boolean }) {
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
-        toast.error(body.error ?? `Couldn't remove (${res.status}).`);
+        toast.error(
+          body.error ?? "Couldn't remove the backup email. Please try again.",
+        );
         return;
       }
       toast.success("Backup email removed.");

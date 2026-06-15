@@ -175,7 +175,9 @@ export function BillingDetails() {
           };
           setSubState({
             kind: "error",
-            message: body.error ?? `Couldn't load subscription (${res.status})`,
+            message:
+              body.error ??
+              "Couldn't load your subscription. Please try again.",
           });
           return;
         }
@@ -210,7 +212,8 @@ export function BillingDetails() {
           };
           setInvState({
             kind: "error",
-            message: body.error ?? `Couldn't load invoices (${res.status})`,
+            message:
+              body.error ?? "Couldn't load your invoices. Please try again.",
           });
           return;
         }
