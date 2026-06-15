@@ -9,6 +9,9 @@ export type MfaUpgradeDecision =
 /** Determines whether the caller's session must be promoted to AAL2
  *  before a protected page renders. The Supabase pattern is:
  *
+ *    - Session authenticated with a passkey (recognized from the
+ *      JWT `amr`) => already meets our MFA bar; never asked for TOTP,
+ *      even though Supabase reports the passkey sign-in as AAL1.
  *    - AAL1 ("password / OTP only") + has a verified TOTP factor =>
  *      the second factor is still owed; we must redirect to the MFA
  *      challenge before letting them past page chrome.
@@ -43,6 +46,30 @@ export interface MfaUpgradeOptions {
   isTrustedDevice?: () => Promise<boolean>;
 }
 
+/** True when the session was established with a passkey / WebAuthn method.
+ *  A passkey is phishing-resistant and multi-factor by construction
+ *  (possession of the authenticator + the user-verification gesture), so it
+ *  meets our second-factor bar on its own. Supabase issues a passkey sign-in
+ *  as an AAL1 session — passkeys are a primary login method, NOT a Supabase
+ *  second factor (only TOTP / phone count toward aal2) — so we recognize it
+ *  here from the session's authentication methods (amr) instead of demanding a
+ *  TOTP code it already makes redundant. The exact `amr` method string is set
+ *  server-side by GoTrue and isn't contractually documented, so we match
+ *  defensively on the family name rather than a single literal. */
+function authenticatedWithPasskey(
+  // auth-js types `currentAuthenticationMethods` as `string[] | AMREntry[]`,
+  // so an entry may be a bare method name OR an `{ method }` object.
+  methods:
+    | ReadonlyArray<string | { method?: string | null }>
+    | null
+    | undefined,
+): boolean {
+  return (methods ?? []).some((m) => {
+    const name = (typeof m === "string" ? m : (m?.method ?? "")).toLowerCase();
+    return name.includes("webauthn") || name.includes("passkey");
+  });
+}
+
 export async function requiresMfaUpgrade(
   // SupabaseClient<any> because we don't depend on the generated
   // Database type — only the auth namespace, which is the same
@@ -56,8 +83,13 @@ export async function requiresMfaUpgrade(
   // `getAuthenticatorAssuranceLevel` reads the JWT claims locally;
   // no network call. So we can run this on every request without
   // adding a round-trip.
-  let aal: { currentLevel?: string | null; nextLevel?: string | null } | null =
-    null;
+  let aal: {
+    currentLevel?: string | null;
+    nextLevel?: string | null;
+    currentAuthenticationMethods?: ReadonlyArray<
+      string | { method?: string | null }
+    > | null;
+  } | null = null;
   try {
     const resp = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
     aal = resp.data ?? null;
@@ -66,6 +98,15 @@ export async function requiresMfaUpgrade(
     return { needsUpgrade: false };
   }
   if (!aal) return { needsUpgrade: false };
+
+  // A passkey sign-in already satisfies our MFA policy (see
+  // `authenticatedWithPasskey`). Supabase reports it as AAL1, so this MUST be
+  // checked before the aal1/TOTP path below — otherwise a user who has BOTH a
+  // passkey and a TOTP factor would be bounced to the TOTP prompt right after
+  // signing in with their passkey.
+  if (authenticatedWithPasskey(aal.currentAuthenticationMethods)) {
+    return { needsUpgrade: false };
+  }
 
   // Already at AAL2 → done.
   if (aal.currentLevel === "aal2") return { needsUpgrade: false };

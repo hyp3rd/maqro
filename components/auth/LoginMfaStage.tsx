@@ -27,8 +27,9 @@ export function LoginMfaStage({
   onUseDifferentEmail: () => void;
   passkeySupported?: boolean;
   /** Runs the passkey ceremony; navigates on success, returns a humanized error
-   *  string on failure (null when it navigated away). A passkey is AAL2, so it
-   *  satisfies the gate without the authenticator code. */
+   *  string on failure (null when it navigated away). A passkey login satisfies
+   *  our MFA gate (recognized from the session's auth methods), so it works as
+   *  an alternative to the authenticator code. */
   onUsePasskey?: () => Promise<string | null>;
 }) {
   const [trustDevice, setTrustDevice] = useState(false);

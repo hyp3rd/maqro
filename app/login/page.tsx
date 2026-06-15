@@ -259,9 +259,11 @@ function LoginPageInner() {
    *  WebAuthn ceremony itself (`navigator.credentials.get`) using
    *  discoverable credentials — no email needed up-front, the
    *  authenticator resolves the user. On success the browser SDK
-   *  has already planted the session; passkeys are AAL2 by default,
-   *  so the MFA promotion dance the email-OTP path runs is
-   *  unnecessary here.
+   *  has already planted the session. Supabase issues a passkey
+   *  sign-in as AAL1 (passkeys aren't a Supabase second factor), but
+   *  our MFA gate (`requiresMfaUpgrade`) recognizes the passkey from
+   *  the session's auth methods and treats it as satisfying MFA — so
+   *  the TOTP step the email-OTP path runs is unnecessary here.
    *
    *  Error surface: the SDK throws a `WebAuthnError` for ceremony
    *  failures (user cancelled, no credential registered, challenge
@@ -269,10 +271,11 @@ function LoginPageInner() {
    *  else falls through to the raw message rather than silently
    *  swallowing it. */
   /** Core passkey sign-in: runs the WebAuthn ceremony, hard-navigates on
-   *  success (so the proxy sees the fresh AAL2 session), and returns a
-   *  humanized error string on failure (or null when it navigated away).
-   *  Shared by the request stage and the two-step stage (where it's the
-   *  lost-authenticator escape — a passkey is AAL2, so it skips TOTP). */
+   *  success (so the proxy re-evaluates the fresh passkey session), and
+   *  returns a humanized error string on failure (or null when it navigated
+   *  away). Shared by the request stage and the two-step stage (where it's the
+   *  lost-authenticator escape — a passkey login satisfies our MFA gate, so it
+   *  skips the TOTP code). */
   async function runPasskeySignIn(): Promise<string | null> {
     const supabase = getSupabaseBrowser();
     if (!supabase) {
