@@ -31,7 +31,7 @@ export function AiUsageSection() {
         size="sm"
         onClick={refresh}
         className="h-8 shrink-0 text-xs text-muted-foreground"
-        title="Re-fetch the current counter from the server"
+        title="Refresh your usage count"
       >
         Refresh
       </Button>
@@ -84,7 +84,7 @@ export function AiUsageSection() {
                   {data.used} / {cap}
                 </span>{" "}
                 <span className="text-muted-foreground">
-                  AI calls this month
+                  AI uses this month
                 </span>
               </p>
               <p
@@ -97,7 +97,7 @@ export function AiUsageSection() {
                 }`}
               >
                 {atCap
-                  ? "Cap reached"
+                  ? "Limit reached"
                   : nearCap
                     ? `${cap - data.used} left`
                     : `${pct}%`}
@@ -116,10 +116,10 @@ export function AiUsageSection() {
               />
             </div>
             <p className="text-[11px] leading-relaxed text-muted-foreground">
-              Resets the 1st of each month. When you hit the cap, the app falls
-              back to basic meal planning and disables AI photo identification +
-              recipe generation until the next cycle. Manual entry,
-              barcode-scan, and OFF search keep working.
+              Resets the 1st of each month. When you reach the limit, the app
+              falls back to basic meal planning and turns off AI photo
+              identification + recipe generation until the next cycle. Manual
+              entry, barcode scan, and Open Food Facts search keep working.
             </p>
           </div>
         )}

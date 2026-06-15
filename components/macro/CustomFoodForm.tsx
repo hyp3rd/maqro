@@ -430,7 +430,7 @@ function Form({
       {error && (
         <p
           role="alert"
-          className="text-sm text-red-600"
+          className="text-sm text-destructive"
         >
           {error}
         </p>

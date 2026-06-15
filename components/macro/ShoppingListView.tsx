@@ -205,6 +205,10 @@ export function ShoppingListView({ onGoToPlan }: Props = {}) {
       .catch((err) => {
         if (cancelled) return;
         reportStorageError(err);
+        // Surface the failure — without this, an empty result and a read
+        // error both render "Nothing planned", so a real error reads as
+        // data loss. Sibling views (Progress, Pantry, …) toast here too.
+        toast.error("Couldn't load your shopping list. Try refreshing.");
         setLogs([]);
       });
     return () => {

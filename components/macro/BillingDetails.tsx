@@ -316,7 +316,7 @@ export function BillingDetails() {
       ) : subState.kind === "error" ? (
         <p
           role="alert"
-          className="text-xs text-red-600"
+          className="text-xs text-destructive"
         >
           {subState.message}
         </p>
@@ -435,7 +435,7 @@ function SubscriptionPanel({
                     onCancel();
                   }}
                   disabled={cancelBusy}
-                  className="bg-red-600 text-white hover:bg-red-700"
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                 >
                   {cancelBusy ? "Canceling…" : "Cancel at period end"}
                 </AlertDialogAction>

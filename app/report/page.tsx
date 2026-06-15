@@ -340,7 +340,7 @@ function ReportBody({
           sub:
             targetCalories > 0 && recap.daysLogged > 0
               ? `${adherencePct}% within ±10%`
-              : "no target context",
+              : "No target set yet",
         },
         {
           label: "Avg per logged day",
@@ -381,7 +381,7 @@ function ReportBody({
               {
                 label: "Weight",
                 value: "—",
-                sub: "no weigh-ins in this window",
+                sub: "No weigh-ins in this range",
               },
             ],
       chart:
@@ -432,7 +432,7 @@ function ReportBody({
           notes: mLast.notes ?? null,
         }
       : {
-          stats: [{ label: "Body", value: "—", sub: "no measurements" }],
+          stats: [{ label: "Body", value: "—", sub: "No measurements yet" }],
           notes: null,
         };
 
@@ -465,7 +465,9 @@ function ReportBody({
             })),
         }
       : {
-          stats: [{ label: "Blood pressure", value: "—", sub: "no readings" }],
+          stats: [
+            { label: "Blood pressure", value: "—", sub: "No readings yet" },
+          ],
           rows: [],
         };
 
@@ -498,7 +500,7 @@ function ReportBody({
                   ]
                 : []),
             ]
-          : [{ label: "Hydration", value: "—", sub: "no water logged" }],
+          : [{ label: "Hydration", value: "—", sub: "No water logged" }],
       chart:
         waterWindow.length > 0
           ? {
@@ -524,7 +526,7 @@ function ReportBody({
               },
               { label: "Days logged", value: String(logsWindow.length) },
             ]
-          : [{ label: "Calories", value: "—", sub: "no daily logs" }],
+          : [{ label: "Calories", value: "—", sub: "No meals logged" }],
       chart:
         logsWindow.length > 0
           ? {
@@ -1048,7 +1050,7 @@ function SummarySection({
           sub={
             targetCalories > 0 && recap.daysLogged > 0
               ? `${adherencePct}% within ±10%`
-              : "no target context"
+              : "No target set yet"
           }
         />
         <Stat
@@ -1067,7 +1069,7 @@ function SummarySection({
       </dl>
       {recap.weightDeltaKg !== null && (
         <p className="mt-3 text-xs text-muted-foreground">
-          Week-on-week weight delta:{" "}
+          Week-on-week weight change:{" "}
           <span className="font-mono">
             {recap.weightDeltaKg > 0 ? "+" : ""}
             {kgToDisplay(recap.weightDeltaKg, units).toFixed(1)} {unitLabel}

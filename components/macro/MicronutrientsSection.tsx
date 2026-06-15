@@ -161,7 +161,7 @@ export function MicronutrientsSection({
             ? "the recommended intake for your age and sex"
             : "the FDA Daily Value"}
           . Tap a nutrient to see its day-by-day trend. Vitamins &amp; minerals
-          are filled in from Open Food Facts as your foods are enriched.
+          are filled in from Open Food Facts as we look up your foods.
         </p>
       </header>
 
@@ -198,8 +198,8 @@ export function MicronutrientsSection({
             {trackedNames === 0
               ? "Log some meals to start tracking micronutrients."
               : enrichedNames === 0
-                ? "Enrichment is in progress — your logged foods are being looked up on Open Food Facts. Check back shortly."
-                : "None of your logged foods have micronutrient data on Open Food Facts yet. Branded / barcode-scanned foods enrich best."}
+                ? "We're looking up your logged foods on Open Food Facts. Check back shortly."
+                : "None of your logged foods have micronutrient data on Open Food Facts yet. Branded and barcode-scanned foods have the most nutrient data."}
           </div>
         )}
       </div>

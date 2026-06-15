@@ -1,7 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { animate, useMotionValue, useTransform } from "motion/react";
+import {
+  animate,
+  useMotionValue,
+  useReducedMotion,
+  useTransform,
+} from "motion/react";
 import { motion } from "motion/react";
 
 type Props = {
@@ -28,18 +33,25 @@ export function NumberTicker({
   className,
 }: Props) {
   const mv = useMotionValue(value);
+  const reduceMotion = useReducedMotion();
   const rounded = useTransform(mv, (v) => {
     const n = decimals > 0 ? v.toFixed(decimals) : Math.round(v).toString();
     return `${prefix}${n}${suffix}`;
   });
 
   React.useEffect(() => {
+    // Respect prefers-reduced-motion: snap to the value instead of counting up.
+    // Motion's animate() doesn't honor the preference on its own.
+    if (reduceMotion) {
+      mv.set(value);
+      return;
+    }
     const controls = animate(mv, value, {
       duration,
       ease: [0.16, 1, 0.3, 1], // ease-out-expo-ish
     });
     return () => controls.stop();
-  }, [value, duration, mv]);
+  }, [value, duration, mv, reduceMotion]);
 
   return <motion.span className={className}>{rounded}</motion.span>;
 }

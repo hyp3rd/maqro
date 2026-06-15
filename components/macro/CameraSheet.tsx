@@ -197,12 +197,18 @@ function CameraSheetBody({
         );
       }
       const data = (await res.json()) as { food?: Food };
-      if (!data.food) throw new Error("OFF returned no food.");
+      if (!data.food)
+        throw new Error(
+          "We couldn't find that barcode in Open Food Facts. Try entering the food by hand.",
+        );
       onPicked(data.food);
     } catch (err) {
       setPhase({
         kind: "error",
-        message: err instanceof Error ? err.message : "Lookup failed.",
+        message:
+          err instanceof Error
+            ? err.message
+            : "Couldn't look up that barcode. Please try again.",
       });
     }
   }

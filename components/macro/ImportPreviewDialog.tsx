@@ -191,7 +191,7 @@ function ImportPreviewBody({
       <DialogHeader>
         <DialogTitle>Review changes</DialogTitle>
         <DialogDescription>
-          From {source}. {changes} row{changes === 1 ? "" : "s"} will change
+          From {source}. {changes} item{changes === 1 ? "" : "s"} will change
           {skipped > 0 ? `, ${skipped} skipped` : ""}.
         </DialogDescription>
       </DialogHeader>
@@ -226,7 +226,8 @@ function ImportPreviewBody({
 
         {noop && !busy && (
           <p className="px-1 pt-2 text-center text-xs text-muted-foreground">
-            Nothing to change — every row in the bundle already matches local.
+            Nothing to import — this backup already matches what&apos;s on this
+            device.
           </p>
         )}
 
@@ -236,7 +237,7 @@ function ImportPreviewBody({
             <span className="font-mono">
               {progress.phase === "done"
                 ? "Finishing…"
-                : `Applying ${PHASE_LABELS[progress.phase as PhaseLabel]} — ${progress.rows}/${progress.total}`}
+                : `Importing ${PHASE_LABELS[progress.phase as PhaseLabel]} — ${progress.rows} of ${progress.total}`}
             </span>
           </div>
         )}

@@ -110,6 +110,19 @@ export function dailyReminderEmail(opts: {
   };
 }
 
+/** Format a date-only ISO window bound ("2026-05-12") as a human label
+ *  ("May 12"). Parsed and formatted in UTC so a date-only string never
+ *  shifts a day in the server's local zone. Emails are English-only. */
+function formatWindowDate(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 /** Monday-morning weekly digest. The recap object is the same one
  *  the Progress view renders — emails inherit the same definitions
  *  of "logged day", "adherence", and "weight delta" so the numbers
@@ -142,7 +155,7 @@ export function weeklyRecapEmail(opts: {
       Your week in macros
     </h1>
     <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#3a3a40;">
-      ${recap.windowStart} → ${recap.windowEnd}
+      ${formatWindowDate(recap.windowStart)} – ${formatWindowDate(recap.windowEnd)}
     </p>
 
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 20px;">
@@ -161,7 +174,7 @@ export function weeklyRecapEmail(opts: {
         recap.daysLogged > 0
           ? statRow(
               "Avg macros",
-              `P${recap.avg.protein.toFixed(0)} · C${recap.avg.carbs.toFixed(0)} · F${recap.avg.fat.toFixed(0)}`,
+              `P${recap.avg.protein.toFixed(0)}g · C${recap.avg.carbs.toFixed(0)}g · F${recap.avg.fat.toFixed(0)}g`,
             )
           : ""
       }
@@ -184,14 +197,14 @@ export function weeklyRecapEmail(opts: {
   `;
 
   const text = [
-    `Your week: ${recap.windowStart} → ${recap.windowEnd}`,
+    `Your week: ${formatWindowDate(recap.windowStart)} – ${formatWindowDate(recap.windowEnd)}`,
     "",
     `Days logged: ${recap.daysLogged} / 7`,
     targetCalories === 0
       ? "On-target days: —"
       : `On-target days: ${recap.adherenceDays} (${adherencePct}%)`,
     recap.daysLogged > 0
-      ? `Avg per logged day: ${Math.round(recap.avg.calories)} kcal · P${recap.avg.protein.toFixed(0)} · C${recap.avg.carbs.toFixed(0)} · F${recap.avg.fat.toFixed(0)}`
+      ? `Avg per logged day: ${Math.round(recap.avg.calories)} kcal · P${recap.avg.protein.toFixed(0)}g · C${recap.avg.carbs.toFixed(0)}g · F${recap.avg.fat.toFixed(0)}g`
       : "Avg per logged day: —",
     `Weight change: ${weightLine}`,
     "",
@@ -827,7 +840,7 @@ export function backupEmailVerificationEmail(opts: {
     </h1>
     <p style="margin:0 0 12px;font-size:14px;line-height:1.6;color:#3a3a40;">
       Someone signed in to Maqro as
-      <strong>${opts.primaryEmailMasked}</strong> just asked us to use this
+      <strong>${opts.primaryEmailMasked}</strong> and asked us to use this
       address as a backup. If that&rsquo;s you, paste the code below into
       Settings &rarr; Backup email to confirm.
     </p>
@@ -847,8 +860,8 @@ export function backupEmailVerificationEmail(opts: {
   const text = [
     `Maqro backup-email code: ${opts.code}`,
     "",
-    `Someone signed in as ${opts.primaryEmailMasked} asked us to use this`,
-    "address as their backup. Paste the code into Settings → Backup email.",
+    `Someone signed in to Maqro as ${opts.primaryEmailMasked} and asked us to`,
+    "use this address as a backup. Paste the code into Settings → Backup email.",
     "",
     "Code expires in 10 minutes. If this wasn't you, ignore the email.",
   ].join("\n");
