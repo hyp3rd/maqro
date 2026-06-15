@@ -1,6 +1,6 @@
 {
   "name": "maqro",
-  "version": "0.8.23",
+  "version": "0.8.24",
   "private": true,
   "license": "Attribution-NonCommercial-NoDerivatives 4.0 International",
   "workspaces": [
@@ -49,7 +49,7 @@
     "@radix-ui/react-tooltip": "^1.2.9",
     "@react-pdf/renderer": "^4.5.1",
     "@supabase/ssr": "^0.12.0",
-    "@supabase/supabase-js": "^2.108.1",
+    "@supabase/supabase-js": "^2.108.2",
     "@types/web-push": "^3.6.4",
     "@upstash/redis": "^1.38.0",
     "@zxing/browser": "^0.2.0",
