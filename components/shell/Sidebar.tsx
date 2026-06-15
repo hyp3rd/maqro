@@ -4,7 +4,7 @@ import { useIsAdmin } from "@/hooks/use-user-role";
 import { cn } from "@/lib/utils";
 import * as React from "react";
 import {
-  Activity,
+  Apple,
   Calculator,
   ChefHat,
   ChevronLeft,
@@ -51,7 +51,7 @@ const NAV: NavItem[] = [
   { key: "plan", label: "Meal Plan", icon: Utensils },
   { key: "progress", label: "Progress", icon: LineChart },
   { key: "fasting", label: "Fasting", icon: Hourglass },
-  { key: "foods", label: "My Foods", icon: Activity },
+  { key: "foods", label: "My Foods", icon: Apple },
   { key: "recipes", label: "Recipes", icon: ChefHat },
   { key: "templates", label: "Templates", icon: LayoutGrid },
   { key: "shopping", label: "Shopping", icon: ShoppingCart },

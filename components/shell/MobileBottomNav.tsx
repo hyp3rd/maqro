@@ -3,7 +3,7 @@
 import { cn } from "@/lib/utils";
 import * as React from "react";
 import {
-  Activity,
+  Apple,
   Calculator,
   ChefHat,
   LineChart,
@@ -29,7 +29,7 @@ const NAV: NavItem[] = [
   { key: "calculator", label: "Calc", icon: Calculator },
   { key: "plan", label: "Plan", icon: Utensils },
   { key: "progress", label: "Progress", icon: LineChart },
-  { key: "foods", label: "Foods", icon: Activity },
+  { key: "foods", label: "Foods", icon: Apple },
   { key: "recipes", label: "Recipes", icon: ChefHat },
   { key: "shopping", label: "Shop", icon: ShoppingCart },
 ];
