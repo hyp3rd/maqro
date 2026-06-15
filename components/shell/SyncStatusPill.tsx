@@ -100,10 +100,10 @@ export function SyncStatusPill() {
             type="button"
             onClick={onClick}
             className={cn(styles, "text-amber-700 dark:text-amber-400")}
-            title={`${n} change${n === 1 ? "" : "s"} from this device weren't saved — another device edited the same row${n === 1 ? "" : "s"} first. Click to retry.`}
+            title={`${n} change${n === 1 ? "" : "s"} couldn't be saved because another device changed the same thing first. Tap to try again.`}
           >
             <AlertTriangle className="h-3 w-3" />
-            Conflict ({n})
+            Needs review ({n})
           </button>
           <DiscardButton onClick={() => setDiscardConfirmOpen(true)} />
         </div>
@@ -163,7 +163,7 @@ export function SyncStatusPill() {
           title="Sync now"
         >
           <Cloud className="h-3 w-3" />
-          Ready
+          Up to date
         </button>
       );
     case "synced":
@@ -238,7 +238,7 @@ function DiscardConfirmDialog({
           <AlertDialogDescription>
             {context === "conflict"
               ? `These ${noun} couldn't be saved because another device edited the same data first. Discarding accepts the other device's version and throws away your local edit${count === 1 ? "" : "s"}.`
-              : `Throws away every unsaved edit on this device and re-pulls the latest data from the server. The other devices are unaffected. This can't be undone.`}
+              : `Throws away every unsaved change on this device and loads the latest version from your other devices. Those devices are unaffected. This can't be undone.`}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

@@ -145,7 +145,13 @@ const DailyTotals: React.FC<DailyTotalsProps> = ({
         </div>
       </div>
       {showRemaining && (
-        <p className="mb-3 text-sm">
+        // Announce the running total to screen readers as food is logged — this
+        // is the headline number on the most-used screen.
+        <p
+          className="mb-3 text-sm"
+          role="status"
+          aria-live="polite"
+        >
           {remainingCalories > 0 ? (
             <>
               <span className="font-semibold tabular-nums text-foreground">
@@ -200,7 +206,14 @@ const DailyTotals: React.FC<DailyTotalsProps> = ({
                   suffix={row.unit}
                 />
               </p>
-              <div className="h-0.5 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-0.5 w-full overflow-hidden rounded-full bg-muted"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={row.target}
+                aria-valuenow={current}
+                aria-label={`${row.label} ${current} of ${row.target}${row.unit}`}
+              >
                 <div
                   className="h-full rounded-full transition-[width] duration-500 ease-out"
                   style={{
@@ -292,7 +305,7 @@ function ShareTodayButton({
         { cache: "no-store" },
       );
       if (!prepareRes.ok) {
-        throw new Error(`Couldn't prepare the card (${prepareRes.status}).`);
+        throw new Error("Couldn't prepare your share card. Please try again.");
       }
       const { imageUrl, pageUrl } = (await prepareRes.json()) as {
         imageUrl: string;
@@ -301,7 +314,7 @@ function ShareTodayButton({
 
       const imageRes = await fetch(imageUrl);
       if (!imageRes.ok) {
-        throw new Error(`Couldn't build the card (${imageRes.status}).`);
+        throw new Error("Couldn't build your share card. Please try again.");
       }
       const blob = await imageRes.blob();
       const file = new File([blob], "maqro-today.png", { type: "image/png" });

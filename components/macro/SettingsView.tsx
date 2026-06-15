@@ -421,8 +421,8 @@ export function SettingsView({
               />
               <div className="flex items-center justify-between border-t border-border/60 pt-4">
                 <div className="text-xs text-muted-foreground">
-                  Sign out clears the session on this device. Your data stays in
-                  IndexedDB and re-syncs when you sign back in.
+                  Sign out clears the session on this device. Your data stays
+                  saved on this device and re-syncs when you sign back in.
                 </div>
                 <Button
                   type="button"
@@ -1116,7 +1116,9 @@ function DeleteAccountSection({
       const res = await clientFetch("/api/delete-account", { method: "POST" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}) as { error?: string });
-        throw new Error(body.error ?? `Request failed (${res.status})`);
+        throw new Error(
+          body.error ?? "Couldn't delete your account. Please try again.",
+        );
       }
       // Wipe the local cache so a future sign-in on this device starts
       // empty rather than re-uploading the deleted user's data.
@@ -1368,21 +1370,21 @@ const SYNC_MODE_OPTIONS: {
 }[] = [
   {
     value: "local-first",
-    label: "Local-first",
+    label: "Save manually",
     description:
-      "Keep edits on this device and save manually. We'll gently remind you if you forget. Most private; nothing leaves until you say so.",
+      "Keep changes on this device and save when you choose. We'll gently remind you if you forget. Most private — nothing leaves until you say so.",
   },
   {
     value: "auto-save",
     label: "Auto-save",
     description:
-      "Push automatically on a timer while you have unsaved changes — set the interval below.",
+      "Save automatically on a timer while you have unsaved changes — set the interval below.",
   },
   {
     value: "remote-only",
-    label: "Always sync",
+    label: "Always in sync",
     description:
-      "Push shortly after every change so your account stays current on all your devices. Simplest — you never think about saving.",
+      "Save shortly after every change so all your devices stay current. Simplest — you never think about saving.",
   },
 ];
 

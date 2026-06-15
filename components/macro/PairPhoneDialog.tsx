@@ -85,7 +85,7 @@ function PairBody({
             error?: string;
           };
           throw new Error(
-            data.error ?? `Pair init failed (HTTP ${initRes.status})`,
+            data.error ?? "Couldn't start pairing. Please try again.",
           );
         }
         const init = (await initRes.json()) as CaptureInitResponse;

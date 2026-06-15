@@ -164,8 +164,8 @@ function WizardBody({
           Welcome to Maqro
         </DialogTitle>
         <DialogDescription>
-          Step {step + 1} of {TOTAL_STEPS} - takes about a minute. You can edit
-          any of this later from the Calculator tab.
+          Step {step + 1} of {TOTAL_STEPS} - takes about a minute. You can
+          change any of this later.
         </DialogDescription>
       </DialogHeader>
 
@@ -270,9 +270,9 @@ function StepWelcome() {
       <p className="text-sm leading-relaxed text-foreground">
         In four quick steps we&apos;ll set up your profile so the daily targets
         and the AI meal planner know who they&apos;re planning for. Nothing here
-        is irreversible - every value lives on the{" "}
-        <span className="font-medium">Calculator</span> tab and is editable any
-        time.
+        is irreversible - you can change every value any time, from your{" "}
+        <span className="font-medium">Profile</span> and the{" "}
+        <span className="font-medium">Calculator</span>.
       </p>
       <ul className="space-y-1 text-sm text-muted-foreground">
         <li>• Basics - age, sex, weight, height</li>
@@ -293,9 +293,9 @@ function StepBasics({
   return (
     <div className="space-y-4">
       <p className="text-xs text-muted-foreground">
-        These feed the Mifflin–St Jeor BMR formula. Estimates run 10–20% off for
-        any individual - you can calibrate against measured TDEE on the
-        Calculator tab once you have a few weeks of data.
+        We use these to estimate the calories your body needs each day.
+        It&apos;s a starting point - the app fine-tunes it automatically as you
+        log your weight over the next few weeks.
       </p>
 
       {/* Unit toggle. Auto-seeded from `navigator.language` by
@@ -310,7 +310,7 @@ function StepBasics({
 
       <div className="grid grid-cols-2 gap-3">
         <div className="col-span-2 space-y-1.5">
-          <Label htmlFor="ob-gender">Sex (for BMR formula)</Label>
+          <Label htmlFor="ob-gender">Sex</Label>
           <Select
             value={draft.gender}
             onValueChange={(v) => patch("gender", v as Gender)}

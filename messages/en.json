@@ -11,11 +11,11 @@
     "tag": "Now with fasting, goal phases & micronutrient tracking",
     "headlineLine1": "Tune your macros.",
     "headlineLine2": "Plan your meals. See your progress.",
-    "subtitle": "A personal nutrition app that respects your time and your data. Set targets, log meals, track fasting and your health — without a single tracking pixel.",
+    "subtitle": "A personal nutrition app that respects your time and your privacy. Set your targets, log meals in a tap, and watch your progress — no ads, no tracking, no clutter.",
     "ctaPrimary": "Open the app",
     "ctaSecondary": "See features →",
     "ctaSample": "Or try with sample data →",
-    "ctaFootnote": "Free, open-source, runs offline. No card, no sign-up required to try."
+    "ctaFootnote": "Free to use, works offline, and nothing to sign up for to try it. No card required."
   },
   "macroCard": {
     "aria": "Sample daily macros card",
@@ -26,9 +26,9 @@
     "fat": "Fat"
   },
   "trust": {
-    "localFirst": "Local-first",
+    "localFirst": "Private by default",
     "offline": "Works offline",
-    "noAnalytics": "No analytics",
+    "noAnalytics": "No tracking",
     "noAds": "No ads",
     "openSource": "Open source"
   },
@@ -42,7 +42,7 @@
       },
       "logging": {
         "title": "Log by photo, barcode, or voice",
-        "body": "Point your camera at a label or meal, scan a barcode against Open Food Facts, or just say what you ate — each becomes structured macros in a tap."
+        "body": "Point your camera at a label or meal, scan a barcode, or just say what you ate — each turns into calories and macros in a tap."
       },
       "recipes": {
         "title": "Recipes that compute",
@@ -62,15 +62,15 @@
       },
       "micronutrients": {
         "title": "Micronutrients, not just macros",
-        "body": "Track ten vitamins and minerals against age- and sex-aware RDA targets, enriched from Open Food Facts as you log. (Pro)"
+        "body": "Track ten vitamins and minerals against the daily amounts recommended for your age and sex, filled in automatically as you log. (Pro)"
       },
       "trends": {
-        "title": "Trends + adaptive TDEE",
-        "body": "Moving-average weight with plateau detection, and a TDEE that recalibrates itself when your real-world change diverges from the formula."
+        "title": "Trends that learn from you",
+        "body": "A smoothed weight trend that spots plateaus, and a daily calorie goal that recalibrates itself when your real progress drifts from the estimate."
       },
       "ownership": {
         "title": "Your data, your device",
-        "body": "Local-first by default, with one-tap JSON export and no lock-in or tracking pixel. Pro adds encrypted cross-device sync, cloud backups, and a vector-PDF health report."
+        "body": "Everything stays on your device by default, with one-tap export and no lock-in or tracking. Pro adds encrypted sync across your devices, cloud backups, and a polished PDF health report."
       }
     }
   },
@@ -79,15 +79,15 @@
     "steps": {
       "set": {
         "title": "Set your targets",
-        "body": "Mifflin–St Jeor BMR, activity-weighted TDEE, calorie goal anchored to a weekly weight-change rate."
+        "body": "Tell us your age, height, weight, activity, and goal. We work out how many calories — and how much protein, carbs, and fat — you need each day."
       },
       "log": {
         "title": "Log what you eat",
-        "body": "Built-in catalog, your own foods, or live Open Food Facts search - three sources, one box."
+        "body": "Search millions of foods, scan a barcode, snap a photo, or save your own — it all lands in one place."
       },
       "see": {
         "title": "See your trends",
-        "body": "Macro adherence, streaks, and a calibrated weight chart that adjusts your TDEE when reality diverges from formula."
+        "body": "Watch your weight trend, your streaks, and how close you stay to target — the app fine-tunes your calorie goal as it learns from your real results."
       }
     }
   },
@@ -118,7 +118,7 @@
           "500 AI generations / month",
           "Import recipes from a URL",
           "Daily reminders + weekly recap",
-          "Priority AI queue"
+          "Faster AI at busy times"
         ],
         "cta": "Start free trial"
       },
@@ -130,7 +130,7 @@
           "Unlimited AI generations",
           "Micronutrients + goal phases",
           "Cross-device sync + encrypted backups",
-          "Vector-PDF health report"
+          "PDF health report"
         ],
         "cta": "Start free trial"
       }
@@ -141,7 +141,7 @@
     "items": {
       "storage": {
         "q": "Where is my data stored?",
-        "a": "On your device, in your browser. If you sign in, the same data syncs to a private cloud project that only you can read. Nothing leaves your device by default."
+        "a": "On your device. If you sign in, the same data syncs to private cloud storage only you can read. Nothing leaves your device by default."
       },
       "account": {
         "q": "Do I need an account to use it?",
@@ -169,13 +169,13 @@
       },
       "source": {
         "q": "Is the source code public?",
-        "a": "Yes - Attribution-NonCommercial-NoDerivatives 4.0 International on GitHub. You can self-host or audit any line."
+        "a": "Yes — it's all on GitHub, so anyone can check exactly what the app does with your data. (Licensed CC BY-NC-ND 4.0.)"
       }
     }
   },
   "finalCta": {
     "title": "Five minutes. No card. No catch.",
-    "body": "Open the app, set your targets, and log your next meal. If you don't like it, your data is local - clear your browser and you're done.",
+    "body": "Open the app, set your targets, and log your next meal. If you don't like it, your data stays on your device — clear it and you're done.",
     "primary": "Open the app",
     "secondary": "Or sign in to sync →"
   },
@@ -226,7 +226,7 @@
   },
   "aboutPage": {
     "title": "About Maqro",
-    "tagline": "A personal macro calculator + meal planner that respects your time and your data. Open source, no analytics, local-first.",
+    "tagline": "A personal macro calculator + meal planner that respects your time and your privacy. Open source, no tracking, and your data stays on your device.",
     "buildLabel": "Build",
     "sections": {
       "service": "Service",
@@ -273,7 +273,7 @@
       },
       "github": {
         "label": "Source code on GitHub",
-        "detail": "Attribution-NonCommercial-NoDerivatives 4.0 International licensed, audit-friendly"
+        "detail": "Public code — see exactly what it does with your data (CC BY-NC-ND 4.0)"
       },
       "twitter": {
         "label": "Follow {handle} on X",
@@ -284,8 +284,8 @@
         "detail": "Francesco Cosentino — the human behind Maqro"
       },
       "manifest": {
-        "label": "PWA manifest",
-        "detail": "Install to home screen on iOS / Android"
+        "label": "Install Maqro",
+        "detail": "Add it to your home screen on iOS or Android"
       }
     },
     "thanks": {
@@ -315,7 +315,7 @@
     },
     "matrix": {
       "title": "Full feature comparison",
-      "subtitle": "Every gated feature, listed once. Boolean rows are yes/no; numeric rows are the per-tier cap.",
+      "subtitle": "Every paid feature, listed once — what's a yes/no, and the limit on each plan.",
       "headers": {
         "feature": "Feature",
         "free": "Free",
@@ -371,17 +371,17 @@
           "label": "Import recipes from a URL",
           "detail": "Imports a recipe from a web page. Plus + Pro only."
         },
-        "priorityQueue": { "label": "Priority API queue" },
-        "localStorage": { "label": "Local-first storage (on your device)" },
-        "syncDevices": { "label": "Sync across devices (cloud-backed)" },
-        "cloudBackup": { "label": "Cloud backups (JSON export)" },
+        "priorityQueue": { "label": "Faster AI when servers are busy" },
+        "localStorage": { "label": "Your data stored on your device" },
+        "syncDevices": { "label": "Sync across devices" },
+        "cloudBackup": { "label": "Cloud backups" },
         "encryptedBackup": {
           "label": "Encrypted cloud backups",
           "detail": "Zero-knowledge, passphrase-locked — with a preview-before-apply restore."
         },
         "healthReportPdf": {
           "label": "Health report PDF",
-          "detail": "Vector PDF: nutrition, weight, body, blood pressure, hydration, fasting, micronutrients."
+          "detail": "A polished PDF: nutrition, weight, body, blood pressure, hydration, fasting, micronutrients."
         },
         "manualJsonExport": {
           "label": "Manual JSON export + import",
@@ -396,7 +396,7 @@
         "contactForm": { "label": "Contact form + email support" },
         "sourceGithub": {
           "label": "Source code on GitHub",
-          "detail": "Maqro is open source — fork it, run it, audit it."
+          "detail": "The code is public — check exactly what it does with your data."
         }
       }
     },
@@ -421,7 +421,7 @@
           "aiGenerations500": "500 AI generations per month",
           "importRecipesUrl": "Import recipes from URL",
           "reminders": "Daily reminders + weekly recap",
-          "priorityQueue": "Priority API queue"
+          "priorityQueue": "Faster AI when servers are busy"
         }
       },
       "pro": {
@@ -434,7 +434,7 @@
           "micronutrientsGoalPhases": "Micronutrients + goal phases",
           "syncDevices": "Sync across all your devices",
           "encryptedBackup": "Encrypted cloud backups",
-          "healthReportPdf": "Vector-PDF health report"
+          "healthReportPdf": "PDF health report"
         }
       }
     },
@@ -458,7 +458,7 @@
       },
       "dataStorage": {
         "q": "Where is my data stored?",
-        "a": "On your device, in your browser. If you're on the Pro plan and signed in, the same data also syncs to a private cloud project that only you can read. The free and Plus tiers stay entirely on your device. See the privacy policy at /privacy for the full picture."
+        "a": "On your device. If you're on the Pro plan and signed in, the same data also syncs to private cloud storage only you can read. The Free and Plus tiers stay entirely on your device. See the privacy policy at /privacy for the full picture."
       },
       "refunds": {
         "q": "Do you offer refunds?",

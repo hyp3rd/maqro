@@ -2582,6 +2582,10 @@ const MacroCalculator = () => {
         onFinish={({ profile, skipped }) => {
           if (profile && !skipped) {
             setPersonalInfo(profile);
+            // First run done: land them on the meal planner — their fresh
+            // targets plus the log-a-meal action — instead of the default
+            // calculator view (a wall of the inputs they just filled in).
+            setView("plan");
           }
           markOnboardingDone();
           setOnboardingOpen(false);

@@ -36,7 +36,7 @@ export function CapturePhoneClient({ sessionId, uploadUrl, expiresAt }: Props) {
       );
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error ?? `Server rejected (HTTP ${res.status}).`);
+        throw new Error(data.error ?? "Couldn't send that. Please try again.");
       }
       setPhase({ kind: "done", what: "photo" });
     } catch (err) {
@@ -60,7 +60,7 @@ export function CapturePhoneClient({ sessionId, uploadUrl, expiresAt }: Props) {
       );
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error ?? `Server rejected (HTTP ${res.status}).`);
+        throw new Error(data.error ?? "Couldn't send that. Please try again.");
       }
       setPhase({ kind: "done", what: "barcode" });
     } catch (err) {

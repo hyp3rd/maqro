@@ -20,6 +20,7 @@ import { useEffect, useState } from "react";
 import {
   Bell,
   Home,
+  Hourglass,
   LayoutGrid,
   LogIn,
   LogOut,
@@ -219,6 +220,16 @@ export function UserMenu({
                 <Package className="h-3.5 w-3.5 text-muted-foreground" />
                 Pantry
               </DropdownMenuItem>
+              {/* Fasting has no bottom-tab entry and its Topbar chip is
+                desktop-only and only appears once a fast is running — so this
+                is the only way to reach (and first enable) it on a phone. */}
+              <DropdownMenuItem
+                onSelect={() => onSelectView("fasting")}
+                className="gap-2"
+              >
+                <Hourglass className="h-3.5 w-3.5 text-muted-foreground" />
+                Fasting
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
             </>
           )}
@@ -375,6 +386,13 @@ function SignedOutMenu({
           >
             <LayoutGrid className="h-3.5 w-3.5 text-muted-foreground" />
             Templates
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={() => onSelectView("fasting")}
+            className="gap-2"
+          >
+            <Hourglass className="h-3.5 w-3.5 text-muted-foreground" />
+            Fasting
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem

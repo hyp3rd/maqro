@@ -157,7 +157,7 @@ function FoodSearchBody({
             Add to {mealName}
           </p>
           <p className="text-xs text-muted-foreground">
-            Your foods, the built-in database, CIQUAL, and Open Food Facts.
+            Your foods plus millions of branded and generic items.
           </p>
         </div>
         <MarketSwitcher />
@@ -183,7 +183,7 @@ function FoodSearchBody({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-3 py-3">
+      <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-3 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
         {search.results.map((food) => {
           const open = openKey === foodKey(food);
           return (

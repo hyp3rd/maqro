@@ -314,7 +314,9 @@ function VoiceLogBody({
           });
           return;
         }
-        throw new Error(data.error ?? `Parsing failed (HTTP ${res.status})`);
+        throw new Error(
+          data.error ?? "Couldn't make sense of that. Please try again.",
+        );
       }
       const result = (await res.json()) as ResolvedMealPhoto;
       if (result.foods.length === 0) {

@@ -55,7 +55,9 @@ export function InfoExplainer({
         <button
           type="button"
           aria-label={ariaLabel ?? `More information about ${title}`}
-          className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted-foreground/60 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          // 16px glyph, but on touch devices extend the hit area to ~44px via a
+          // ::before overlay so the layout next to the BMR/TDEE labels is unchanged.
+          className="relative inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted-foreground/60 transition-colors before:content-[''] coarse:before:absolute coarse:before:-inset-[14px] hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <Info className="h-3 w-3" />
         </button>

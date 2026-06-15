@@ -64,7 +64,9 @@ export function RecipePageActions({ slug }: { slug: string }) {
       );
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error ?? `Import failed (HTTP ${res.status})`);
+        throw new Error(
+          data.error ?? "Couldn't import that recipe. Please try again.",
+        );
       }
       setImported(true);
     } catch (err) {

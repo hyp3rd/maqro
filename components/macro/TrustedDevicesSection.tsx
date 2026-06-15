@@ -73,7 +73,9 @@ export function TrustedDevicesSection({ signedIn }: { signedIn: boolean }) {
           };
           setState({
             kind: "error",
-            message: body.error ?? `Couldn't load (${res.status})`,
+            message:
+              body.error ??
+              "Couldn't load your trusted devices. Please try again.",
           });
           return;
         }

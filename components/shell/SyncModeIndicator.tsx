@@ -9,20 +9,20 @@ import type { ViewKey } from "./Sidebar";
 const META = {
   "local-first": {
     icon: HardDrive,
-    short: "Local",
+    short: "Manual",
     title:
-      "Sync: Local-first — edits stay on this device until you save. Tap to change.",
+      "Sync: Save manually — your changes stay on this device until you save. Tap to change.",
   },
   "auto-save": {
     icon: Timer,
     short: "Auto",
-    title: "Sync: Auto-save — pushes on a timer while pending. Tap to change.",
+    title: "Sync: Auto-save — saves automatically on a timer. Tap to change.",
   },
   "remote-only": {
     icon: RefreshCw,
     short: "Live",
     title:
-      "Sync: Always sync — pushes shortly after every change. Tap to change.",
+      "Sync: Always in sync — saves shortly after every change. Tap to change.",
   },
 } as const;
 
