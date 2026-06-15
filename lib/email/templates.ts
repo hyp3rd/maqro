@@ -140,7 +140,7 @@ export function weeklyRecapEmail(opts: {
   const weightLine =
     recap.weightDeltaKg !== null
       ? `${recap.weightDeltaKg > 0 ? "+" : ""}${recap.weightDeltaKg.toFixed(1)} kg`
-      : "—";
+      : "No weigh-in";
 
   const subject = `Your week: ${recap.daysLogged}/7 logged${
     recap.daysLogged > 0 ? `, ${Math.round(recap.avg.calories)} kcal avg` : ""
@@ -163,12 +163,14 @@ export function weeklyRecapEmail(opts: {
       ${statRow(
         "On-target days",
         targetCalories === 0
-          ? "—"
+          ? "No target set"
           : `${recap.adherenceDays} (${adherencePct}%)`,
       )}
       ${statRow(
         "Avg per logged day",
-        recap.daysLogged > 0 ? `${Math.round(recap.avg.calories)} kcal` : "—",
+        recap.daysLogged > 0
+          ? `${Math.round(recap.avg.calories)} kcal`
+          : "Nothing logged",
       )}
       ${
         recap.daysLogged > 0
@@ -201,11 +203,11 @@ export function weeklyRecapEmail(opts: {
     "",
     `Days logged: ${recap.daysLogged} / 7`,
     targetCalories === 0
-      ? "On-target days: —"
+      ? "On-target days: No target set"
       : `On-target days: ${recap.adherenceDays} (${adherencePct}%)`,
     recap.daysLogged > 0
       ? `Avg per logged day: ${Math.round(recap.avg.calories)} kcal · P${recap.avg.protein.toFixed(0)}g · C${recap.avg.carbs.toFixed(0)}g · F${recap.avg.fat.toFixed(0)}g`
-      : "Avg per logged day: —",
+      : "Avg per logged day: Nothing logged",
     `Weight change: ${weightLine}`,
     "",
     `Open progress: ${opts.appUrl}/app?view=progress`,
