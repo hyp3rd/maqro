@@ -1003,10 +1003,10 @@ function ReportBody({
 
       <footer className="mt-8 border-t border-border/60 pt-3 text-[10px] text-muted-foreground">
         <p>
-          This report reflects locally-stored data on the device that generated
-          it. Macro / TDEE estimates are textbook approximations (Mifflin-St
-          Jeor) that can diverge 10–20% per individual — see maqro.app/about for
-          the formulas and limitations.
+          This report is a snapshot of your Maqro data at the time it was
+          generated. Macro / TDEE estimates are textbook approximations
+          (Mifflin-St Jeor) that can diverge 10–20% per individual — see
+          maqro.app/about for the formulas and limitations.
         </p>
       </footer>
     </main>
@@ -1362,7 +1362,7 @@ function BloodPressureReportSection({ entries }: { entries: BloodPressure[] }) {
         <thead>
           <tr className="border-b border-border/60 text-[10px] uppercase tracking-wider text-muted-foreground print:text-black">
             <th className="py-1 font-medium">Date</th>
-            <th className="py-1 font-medium">mmHg</th>
+            <th className="py-1 font-medium">Reading</th>
             <th className="py-1 font-medium">Pulse</th>
             <th className="py-1 font-medium">Category</th>
           </tr>

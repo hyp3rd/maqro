@@ -485,7 +485,9 @@ function ReportDocument({ model }: { model: ReportPdfModel }) {
               <View style={{ marginTop: 6 }}>
                 <View style={styles.th}>
                   <Text style={[styles.thText, styles.colDate]}>DATE</Text>
-                  <Text style={[styles.thText, styles.colReading]}>mmHg</Text>
+                  <Text style={[styles.thText, styles.colReading]}>
+                    READING (mmHg)
+                  </Text>
                   <Text style={[styles.thText, styles.colPulse]}>PULSE</Text>
                   <Text style={[styles.thText, styles.colCat]}>CATEGORY</Text>
                 </View>
@@ -585,9 +587,9 @@ function ReportDocument({ model }: { model: ReportPdfModel }) {
           style={styles.footer}
           fixed
         >
-          This report reflects locally-stored data on the device that generated
-          it. Macro / TDEE estimates are textbook approximations (Mifflin-St
-          Jeor) that can diverge 10–20% per individual.
+          This report is a snapshot of your Maqro data at the time it was
+          generated. Macro / TDEE estimates are textbook approximations
+          (Mifflin-St Jeor) that can diverge 10–20% per individual.
         </Text>
         <Text
           style={styles.pageNum}
