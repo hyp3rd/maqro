@@ -435,3 +435,25 @@
     color: #1f1f23 !important;
   }
 }
+
+/* Respect the OS "reduce motion" preference. We near-instant every
+ * animation and transition (count-up tickers, progress-bar fills, the
+ * view-transition slide, pulses) for users who opted out — EXCEPT
+ * loading spinners, which carry meaning ("work in progress"); those keep
+ * turning, just on a calmer 1.2s cycle. `animate()`-driven JS motion
+ * (e.g. NumberTicker) reads the same preference via useReducedMotion(). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .animate-spin {
+    animation-duration: 1.2s !important;
+    animation-iteration-count: infinite !important;
+  }
+}

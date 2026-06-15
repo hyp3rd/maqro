@@ -432,7 +432,7 @@ function ReportDocument({ model }: { model: ReportPdfModel }) {
             <StatGrid stats={model.summary.stats} />
             {model.summary.weightDelta ? (
               <Text style={styles.para}>
-                Week-on-week weight delta: {model.summary.weightDelta}
+                Week-on-week weight change: {model.summary.weightDelta}
               </Text>
             ) : null}
           </Section>

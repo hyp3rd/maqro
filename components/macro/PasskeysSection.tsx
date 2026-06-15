@@ -287,7 +287,7 @@ export function PasskeysSection({ signedIn }: { signedIn: boolean }) {
         {header}
         <p
           role="alert"
-          className="px-5 py-4 text-xs text-red-600"
+          className="px-5 py-4 text-xs text-destructive"
         >
           {state.message}
         </p>

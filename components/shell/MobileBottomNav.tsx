@@ -84,7 +84,7 @@ export function MobileBottomNav({ current, onSelect }: Props) {
               "relative flex flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors",
               "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
               "active:bg-foreground/5",
-              isActive ? "text-foreground" : "text-muted-foreground",
+              isActive ? "text-brand" : "text-muted-foreground",
             )}
             aria-current={isActive ? "page" : undefined}
           >
@@ -99,7 +99,7 @@ export function MobileBottomNav({ current, onSelect }: Props) {
                 // plain `top-0` the indicator landed at the top
                 // of the button, which after the pt-3 sat 12 px
                 // below the nav border and read as floating.
-                className="absolute inset-x-3 -top-3 h-0.5 rounded-b bg-foreground"
+                className="absolute inset-x-3 -top-3 h-0.5 rounded-b bg-brand"
                 transition={{ type: "spring", stiffness: 380, damping: 30 }}
               />
             )}

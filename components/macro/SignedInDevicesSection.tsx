@@ -217,8 +217,8 @@ export function SignedInDevicesSection({ signedIn }: { signedIn: boolean }) {
       if (failures === 0) {
         toast.success(
           targets.length === 1
-            ? "1 other session disconnected."
-            : `${targets.length} other sessions disconnected.`,
+            ? "1 other device disconnected."
+            : `${targets.length} other devices disconnected.`,
         );
       } else if (failures < targets.length) {
         toast.warning(
@@ -287,14 +287,13 @@ export function SignedInDevicesSection({ signedIn }: { signedIn: boolean }) {
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>
-                  Disconnect all other sessions?
+                  Disconnect all other devices?
                 </AlertDialogTitle>
                 <AlertDialogDescription>
                   This signs out {otherDevices.length}{" "}
-                  {otherDevices.length === 1 ? "session" : "sessions"} on other
-                  browsers / devices. Your current device stays signed in. The
-                  other sessions will sign out within a few seconds via the
-                  realtime channel.
+                  {otherDevices.length === 1 ? "other device" : "other devices"}
+                  . Your current device stays signed in. The others sign out
+                  within a few seconds.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>

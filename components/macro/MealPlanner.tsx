@@ -62,6 +62,11 @@ interface MealPlannerProps {
    *  display layer hides rows for unknown values. */
   macroBreakdown: MacroBreakdown;
   meals: Meal[];
+  /** Whether the selected day's log has finished loading from local storage.
+   *  Until it has, `meals` is the empty default — so the "No meals logged"
+   *  empty state must stay hidden to avoid flashing false data-loss on a day
+   *  that actually has meals. */
+  dayHydrated: boolean;
   selectedDate: string;
   today: string;
   /** Effective daily water goal (ml) for the water counter. */
@@ -185,6 +190,7 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
   totalMacros,
   macroBreakdown,
   meals,
+  dayHydrated,
   selectedDate,
   today,
   waterGoalMl,
@@ -528,7 +534,7 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
           </div>
         )}
 
-        {dayIsEmpty && (
+        {dayHydrated && dayIsEmpty && (
           <div className="border-b border-border/60 bg-muted/20 px-3 py-3 text-xs text-muted-foreground sm:px-5">
             <span className="font-medium text-foreground">
               No meals logged for this day.

@@ -167,6 +167,11 @@ export function ProgressView({
     null,
   );
   const [water, setWater] = useState<WaterIntake[] | null>(null);
+  // A load failure must NOT silently fall through to the per-section "no
+  // data yet" copy (that reads as data loss to a user with months of
+  // history). A persistent banner with Retry sits above the sections; the
+  // ephemeral toast alone auto-dismisses before the user can act.
+  const [loadFailed, setLoadFailed] = useState(false);
   const [rev, setRev] = useState(0);
   // Refresh when a peer device writes a weight entry or a daily log
   // (both of which feed the charts here). Each bus has its own rev
@@ -186,6 +191,7 @@ export function ProgressView({
     ])
       .then(([w, l, m, water]) => {
         if (cancelled) return;
+        setLoadFailed(false);
         setMeasurements(m);
         setWeights(w);
         setLogs(l);
@@ -197,6 +203,7 @@ export function ProgressView({
         // Without this, the per-section copy ("No weigh-ins yet", "No logs
         // yet") would tell a user with months of history they have no data.
         toast.error("Couldn't load your progress data. Try refreshing.");
+        setLoadFailed(true);
         setWeights([]);
         setLogs([]);
         setMeasurements([]);
@@ -253,6 +260,26 @@ export function ProgressView({
 
   return (
     <div className="space-y-6">
+      {loadFailed && (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm"
+        >
+          <span className="text-destructive">
+            Couldn&apos;t load your progress data. Your history is safe — this
+            is just a read error.
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={refresh}
+            className="h-8 shrink-0"
+          >
+            Retry
+          </Button>
+        </div>
+      )}
       {/* Export entry point. Opens a pre-flight dialog → routes
        *  to /report (a dedicated print-optimised page) on confirm.
        *  The live ProgressView is no longer the print target, so
@@ -1290,7 +1317,7 @@ function WeighInForm({
       {error && (
         <p
           role="alert"
-          className="mt-2 text-xs text-red-600"
+          className="mt-2 text-xs text-destructive"
         >
           {error}
         </p>
@@ -1717,7 +1744,7 @@ function BodyMeasurementForm({
       {error && (
         <p
           role="alert"
-          className="mt-3 text-xs text-red-600"
+          className="mt-3 text-xs text-destructive"
         >
           {error}
         </p>

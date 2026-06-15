@@ -180,7 +180,7 @@ export default function RecoveryPage() {
               {error && (
                 <p
                   role="alert"
-                  className="text-xs text-red-600"
+                  className="text-xs text-destructive"
                 >
                   {error}
                 </p>

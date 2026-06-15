@@ -511,7 +511,7 @@ export function SettingsView({
               {exportError && (
                 <p
                   role="alert"
-                  className="text-red-600"
+                  className="text-destructive"
                 >
                   {exportError}
                 </p>
@@ -580,7 +580,7 @@ export function SettingsView({
               {importError && (
                 <p
                   role="alert"
-                  className="text-red-600"
+                  className="text-destructive"
                 >
                   {importError}
                 </p>
@@ -707,7 +707,8 @@ function ResetDeviceSection({ signedIn }: { signedIn: boolean }) {
           Reset this device
         </h3>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Wipes local data only. Your Supabase account stays intact.
+          Clears this device only. Your account and everything synced to it stay
+          intact.
         </p>
       </header>
       <div className="flex items-center justify-between gap-4 px-5 py-4">
@@ -739,15 +740,15 @@ function ResetDeviceSection({ signedIn }: { signedIn: boolean }) {
             <AlertDialogHeader>
               <AlertDialogTitle>Reset this device?</AlertDialogTitle>
               <AlertDialogDescription>
-                Local data on this device will be wiped (IndexedDB +
-                preferences). Your Supabase account and synced data stay where
+                The app&apos;s saved data and preferences on this device will be
+                cleared. Your account and everything synced to it stay where
                 they are - signing back in restores everything.
               </AlertDialogDescription>
             </AlertDialogHeader>
             {error && (
               <p
                 role="alert"
-                className="pt-2 text-xs text-red-600"
+                className="pt-2 text-xs text-destructive"
               >
                 {error}
               </p>
@@ -960,7 +961,7 @@ function ChangeEmailSection({ currentEmail }: { currentEmail: string | null }) {
             {error && (
               <p
                 role="alert"
-                className="text-xs text-red-600"
+                className="text-xs text-destructive"
               >
                 {error}
               </p>
@@ -1032,7 +1033,7 @@ function ChangeEmailSection({ currentEmail }: { currentEmail: string | null }) {
             {error && (
               <p
                 role="alert"
-                className="text-xs text-red-600"
+                className="text-xs text-destructive"
               >
                 {error}
               </p>
@@ -1151,8 +1152,8 @@ function DeleteAccountSection({
       <div className="flex items-center justify-between gap-4 px-5 py-4">
         <p className="text-xs text-muted-foreground">
           We&apos;ll delete your profile, daily logs, weight history, custom
-          foods, and meal templates from Supabase, plus everything saved on this
-          device.
+          foods, and meal templates from your account, plus everything saved on
+          this device.
         </p>
         <AlertDialog
           open={open}
@@ -1173,9 +1174,9 @@ function DeleteAccountSection({
             <AlertDialogHeader>
               <AlertDialogTitle>Delete this account?</AlertDialogTitle>
               <AlertDialogDescription>
-                This is permanent. Your Supabase account and all synced data
-                will be deleted; your local data on this device will also be
-                wiped.
+                This is permanent. Your account and all synced data will be
+                deleted, and the app&apos;s saved data on this device will be
+                cleared too.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <div className="space-y-1.5 pt-2">
@@ -1207,7 +1208,7 @@ function DeleteAccountSection({
               {error && (
                 <p
                   role="alert"
-                  className="text-xs text-red-600"
+                  className="text-xs text-destructive"
                 >
                   {error}
                 </p>
@@ -1221,7 +1222,7 @@ function DeleteAccountSection({
                   confirm();
                 }}
                 disabled={!matches || busy}
-                className="bg-red-600 text-white hover:bg-red-700"
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               >
                 {busy ? "Deleting…" : "Delete account"}
               </AlertDialogAction>

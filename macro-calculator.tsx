@@ -2186,6 +2186,7 @@ const MacroCalculator = () => {
           totalMacros={totalMacros}
           macroBreakdown={macroBreakdown}
           meals={meals}
+          dayHydrated={dayHydrated}
           selectedDate={selectedDate}
           today={today}
           mealSchedules={mealSchedules}
