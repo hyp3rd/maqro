@@ -10,15 +10,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useWebAuthnSupported } from "@/hooks/use-webauthn-supported";
 import {
   type MfaChallengeResolver,
   subscribeMfaChallenge,
 } from "@/lib/auth/mfa-challenge-bus";
 import { getVerifiedTotpFactorId } from "@/lib/auth/mfa-factors";
+import { signOutAndClearLocal } from "@/lib/auth/sign-out";
+import { usePasskeyChallenge } from "@/lib/auth/use-passkey-challenge";
 import { useTotpChallenge } from "@/lib/auth/use-totp-challenge";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { useEffect, useRef, useState } from "react";
-import { Loader2, ShieldCheck } from "lucide-react";
+import { Fingerprint, Loader2, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 
 /** Global two-step-verification dialog. Mounted ONCE per app session in
@@ -44,6 +47,10 @@ export function MfaChallengeDialog() {
   const [open, setOpen] = useState(false);
   const resolverRef = useRef<MfaChallengeResolver | null>(null);
   const [factorId, setFactorId] = useState<string | null>(null);
+  // Whether the current user ALSO has a passkey — drives the "use a passkey
+  // instead" button. The dialog still requires a verified TOTP factor to open
+  // (that's who the gate fires for); the passkey is an extra one-tap option.
+  const [hasPasskey, setHasPasskey] = useState(false);
 
   useEffect(() => {
     return subscribeMfaChallenge(async (resolver) => {
@@ -61,8 +68,16 @@ export function MfaChallengeDialog() {
         resolver.reject("failed");
         return;
       }
+      // Best-effort: does this user have a passkey to offer as an alternative?
+      // Any failure (outage, feature off) just hides the button — TOTP works.
+      let passkey = false;
+      if (typeof window !== "undefined" && "PublicKeyCredential" in window) {
+        const res = await supabase.auth.passkey.list().catch(() => null);
+        passkey = Array.isArray(res?.data) && res.data.length > 0;
+      }
       resolverRef.current = resolver;
       setFactorId(verifiedId);
+      setHasPasskey(passkey);
       setOpen(true);
     });
   }, []);
@@ -79,6 +94,19 @@ export function MfaChallengeDialog() {
     resolverRef.current?.resolve();
     resolverRef.current = null;
     setOpen(false);
+  }
+
+  async function onBail() {
+    // A passkey resolved to a DIFFERENT account: `signInWithPasskey` already
+    // replaced the session with the wrong identity. Never let the gated action
+    // retry as that user — REJECT the bus (the caller returns its original 403,
+    // no replay), discard the wrong session, and bounce to a clean /login.
+    resolverRef.current?.reject("failed");
+    resolverRef.current = null;
+    setOpen(false);
+    const supabase = getSupabaseBrowser();
+    if (supabase) await signOutAndClearLocal(supabase);
+    window.location.assign("/login");
   }
 
   return (
@@ -104,7 +132,9 @@ export function MfaChallengeDialog() {
         {factorId && (
           <MfaChallengeBody
             factorId={factorId}
+            hasPasskey={hasPasskey}
             onVerified={onVerified}
+            onBail={onBail}
             onCancel={cancel}
           />
         )}
@@ -117,25 +147,50 @@ export function MfaChallengeDialog() {
  *  the open dialog (fresh code each time it opens) and so it only runs once a
  *  `factorId` exists.
  *
- *  Lost-authenticator escape is a recovery LINK, not an in-dialog passkey
- *  sign-in: `signInWithPasskey` is a fresh sign-in that REPLACES the session and
- *  (with discoverable credentials) can resolve to a different account — fine on
- *  /login, but mid-action here it would silently change which user the gated
- *  request runs as, with no clean way to constrain it. The recovery link sends
- *  the user to the proper flow instead. */
+ *  Passkey alternative: a user with a passkey can step up by tapping "use a
+ *  passkey instead" rather than typing the code. The risk that originally
+ *  deferred this — `signInWithPasskey` REPLACES the session and (discoverable)
+ *  could resolve to a DIFFERENT account, silently changing which user the gated
+ *  request runs as — is handled in `usePasskeyChallenge`: it compares the user
+ *  id before/after and, on a mismatch, takes the `onBail` path (reject the bus
+ *  so the action never runs, then sign out to a clean /login) instead of
+ *  resolving. The "Lost your authenticator?" recovery link stays for users with
+ *  no passkey. */
 function MfaChallengeBody({
   factorId,
+  hasPasskey,
   onVerified,
+  onBail,
   onCancel,
 }: {
   factorId: string;
+  hasPasskey: boolean;
   onVerified: () => void;
+  onBail: () => void | Promise<void>;
   onCancel: () => void;
 }) {
-  const { code, busy, error, setCode, submit } = useTotpChallenge({
+  const { code, busy, error, setCode, setError, submit } = useTotpChallenge({
     factorId,
     onVerified,
   });
+  const passkeySupported = useWebAuthnSupported();
+  const passkey = usePasskeyChallenge({ onVerified, onBail });
+
+  // One error slot, like the login stage: whichever path is active owns the
+  // message and clears the other's so a stale line never lingers.
+  const anyBusy = busy || passkey.busy;
+  const displayError = passkey.error ?? error;
+
+  function onCodeChange(next: string) {
+    setCode(next); // also clears the TOTP error
+    if (passkey.error) passkey.setError(null);
+  }
+
+  async function handlePasskey() {
+    setError(null); // drop any stale TOTP error before the passkey takes over
+    passkey.setError(null);
+    await passkey.run();
+  }
 
   return (
     <>
@@ -143,32 +198,44 @@ function MfaChallengeBody({
         <TotpCodeInput
           id="mfa-challenge-code"
           value={code}
-          onValueChange={setCode}
-          disabled={busy}
+          onValueChange={onCodeChange}
+          disabled={anyBusy}
           autoFocus
         />
-        {error && (
+        {displayError && (
           <p
             role="alert"
             className="text-xs text-destructive"
           >
-            {error}
+            {displayError}
           </p>
+        )}
+        {passkeySupported && hasPasskey && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void handlePasskey()}
+            disabled={anyBusy}
+            className="w-full gap-2"
+          >
+            <Fingerprint className="h-4 w-4" />
+            {passkey.busy ? "Verifying…" : "Use a passkey instead"}
+          </Button>
         )}
         <Link
           href="/login/recovery"
-          aria-disabled={busy}
+          aria-disabled={anyBusy}
           onClick={(e) => {
             // Don't navigate away (cancelling the bus) while a verify is in
             // flight — it could cancel a challenge that's about to succeed.
-            if (busy) {
+            if (anyBusy) {
               e.preventDefault();
               return;
             }
             onCancel();
           }}
           className={
-            busy
+            anyBusy
               ? "pointer-events-none block text-xs text-muted-foreground/50 underline underline-offset-2"
               : "block text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
           }
@@ -182,14 +249,14 @@ function MfaChallengeBody({
           type="button"
           variant="ghost"
           onClick={onCancel}
-          disabled={busy}
+          disabled={anyBusy}
         >
           Cancel
         </Button>
         <Button
           type="button"
           onClick={() => void submit()}
-          disabled={busy || code.length !== 6}
+          disabled={anyBusy || code.length !== 6}
           className="gap-1.5"
         >
           {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}

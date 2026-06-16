@@ -37,9 +37,16 @@ const VERIFIED_FACTOR_ID = "factor-verified";
 const mockListFactors = vi.hoisted(() => vi.fn());
 const mockChallengeAndVerify = vi.hoisted(() => vi.fn());
 const mockGetSupabaseBrowser = vi.hoisted(() => vi.fn());
+const mockPasskeyList = vi.hoisted(() => vi.fn());
+const mockGetUser = vi.hoisted(() => vi.fn());
+const mockSignInWithPasskey = vi.hoisted(() => vi.fn());
+const mockSignOutAndClearLocal = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/supabase/client", () => ({
   getSupabaseBrowser: mockGetSupabaseBrowser,
+}));
+vi.mock("@/lib/auth/sign-out", () => ({
+  signOutAndClearLocal: mockSignOutAndClearLocal,
 }));
 
 function fakeSupabase() {
@@ -49,6 +56,9 @@ function fakeSupabase() {
         listFactors: mockListFactors,
         challengeAndVerify: mockChallengeAndVerify,
       },
+      passkey: { list: mockPasskeyList },
+      getUser: mockGetUser,
+      signInWithPasskey: mockSignInWithPasskey,
     },
   };
 }
@@ -60,6 +70,11 @@ beforeEach(() => {
     data: { totp: [{ id: VERIFIED_FACTOR_ID, status: "verified" }], all: [] },
     error: null,
   });
+  // Defaults: no passkey (button hidden) + a clean sign-out. The passkey
+  // suite overrides these. jsdom has no WebAuthn, so the dialog's passkey
+  // lookup is skipped entirely in the TOTP-only suites above.
+  mockPasskeyList.mockResolvedValue({ data: [], error: null });
+  mockSignOutAndClearLocal.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -248,5 +263,75 @@ describe("MfaChallengeDialog - cancel flow", () => {
     // bus (cancel), not leave the caller's retry hanging.
     fireEvent.click(link);
     await expect(awaiter).rejects.toThrow(/MFA challenge cancelled/i);
+  });
+});
+
+describe("MfaChallengeDialog - passkey escape", () => {
+  beforeEach(() => {
+    // jsdom has no WebAuthn; fake the feature flag so useWebAuthnSupported is
+    // true and the dialog's passkey.list lookup runs.
+    (
+      window as unknown as { PublicKeyCredential: unknown }
+    ).PublicKeyCredential = function () {};
+  });
+  afterEach(() => {
+    delete (window as unknown as { PublicKeyCredential?: unknown })
+      .PublicKeyCredential;
+  });
+
+  it("offers the passkey button when the user has a passkey", async () => {
+    mockPasskeyList.mockResolvedValue({ data: [{ id: "pk1" }], error: null });
+    const { MfaChallengeDialog } = await import("./MfaChallengeDialog");
+    render(<MfaChallengeDialog />);
+    requestMfaChallenge().catch(() => {});
+    expect(
+      await screen.findByRole("button", { name: /use a passkey/i }),
+    ).not.toBeNull();
+  });
+
+  it("hides the passkey button when the user has no passkey", async () => {
+    mockPasskeyList.mockResolvedValue({ data: [], error: null });
+    const { MfaChallengeDialog } = await import("./MfaChallengeDialog");
+    render(<MfaChallengeDialog />);
+    requestMfaChallenge().catch(() => {});
+    await screen.findByText(/two-step verification/i);
+    expect(screen.queryByRole("button", { name: /use a passkey/i })).toBeNull();
+  });
+
+  it("resolves the awaiter when the passkey is the SAME user", async () => {
+    mockPasskeyList.mockResolvedValue({ data: [{ id: "pk1" }], error: null });
+    mockGetUser
+      .mockResolvedValueOnce({ data: { user: { id: "alice" } } }) // before
+      .mockResolvedValueOnce({ data: { user: { id: "alice" } } }); // after
+    mockSignInWithPasskey.mockResolvedValue({ error: null });
+    const { MfaChallengeDialog } = await import("./MfaChallengeDialog");
+    render(<MfaChallengeDialog />);
+    const awaiter = requestMfaChallenge();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /use a passkey/i }),
+    );
+    await expect(awaiter).resolves.toBeUndefined();
+    expect(mockSignInWithPasskey).toHaveBeenCalledTimes(1);
+    expect(mockSignOutAndClearLocal).not.toHaveBeenCalled();
+  });
+
+  it("rejects the awaiter and signs out when the passkey is a DIFFERENT user", async () => {
+    mockPasskeyList.mockResolvedValue({ data: [{ id: "pk1" }], error: null });
+    mockGetUser
+      .mockResolvedValueOnce({ data: { user: { id: "alice" } } }) // before
+      .mockResolvedValueOnce({ data: { user: { id: "bob" } } }); // after — wrong!
+    mockSignInWithPasskey.mockResolvedValue({ error: null });
+    const { MfaChallengeDialog } = await import("./MfaChallengeDialog");
+    render(<MfaChallengeDialog />);
+    const awaiter = requestMfaChallenge();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /use a passkey/i }),
+    );
+    // The gated action must NOT run as the wrong user → the awaiter is rejected
+    // (no replay) and the wrong session is discarded (sign out). onBail also
+    // navigates to /login; jsdom no-ops that, which is fine — the security-
+    // critical parts are the reject + the sign-out.
+    await expect(awaiter).rejects.toThrow(/MFA challenge failed/i);
+    expect(mockSignOutAndClearLocal).toHaveBeenCalledTimes(1);
   });
 });
