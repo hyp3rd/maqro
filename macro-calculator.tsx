@@ -17,7 +17,10 @@ import { FoodSearchSheet } from "./components/macro/FoodSearchSheet";
 import { GoalPhasesPlanner } from "./components/macro/GoalPhasesPlanner";
 import { LogMealSheet, type LogMethod } from "./components/macro/LogMealSheet";
 import MacroResults from "./components/macro/MacroResults";
-import { MealHubSheet } from "./components/macro/MealHubSheet";
+import {
+  MealHubSheet,
+  type MealHubIntent,
+} from "./components/macro/MealHubSheet";
 import { MealPhotoReviewDialog } from "./components/macro/MealPhotoReviewDialog";
 import MealPlanner from "./components/macro/MealPlanner";
 import { MyFoodsView } from "./components/macro/MyFoodsView";
@@ -56,6 +59,7 @@ import { useIsMobile } from "./hooks/use-mobile";
 import { useProfile } from "./hooks/use-profile";
 import { useToday } from "./hooks/use-today";
 import { useUser } from "./hooks/use-user";
+import { addedFoodMessage } from "./lib/add-food-constants";
 import { requestAiMealPlan } from "./lib/ai-plan";
 import type { CoherenceIssue } from "./lib/ai/plan-coherence";
 import { clientFetch } from "./lib/auth/client-fetch";
@@ -79,6 +83,7 @@ import {
 import { dietBreakNudge, effectiveGoal } from "./lib/goal-phases";
 import { haptic } from "./lib/haptics";
 import { waterGoalMl } from "./lib/hydration";
+import { addFoodBasis, scaleFoodToItem } from "./lib/log-food";
 import { computeMacros, rescaleFoodMacros, scaleSubMacros } from "./lib/macros";
 import { getMarket, setHomeMarket } from "./lib/market";
 import { planDay, summarisePlan } from "./lib/meal-planner";
@@ -487,8 +492,11 @@ const MacroCalculator = () => {
   // reopens the launcher at the method step. Meal-menu entries leave it
   // null (those tools just close).
   const [logFlowMealId, setLogFlowMealId] = useState<number | null>(null);
-  // Meal-detail sheet: which meal slot's breakdown is open (by id).
+  // Meal hub: which meal slot's hub is open (by id), and why it was opened —
+  // "add" leads with the "Log this again" strip, "insights" leads with the
+  // read-only insights body (see MealHubSheet's entry-dependent ordering).
   const [mealDetailId, setMealDetailId] = useState<number | null>(null);
+  const [mealHubIntent, setMealHubIntent] = useState<MealHubIntent>("add");
   // Pulse signal for the most-recently-logged meal slot. A fresh object
   // each log (identity, not value, drives the consumer's effect) so the
   // target MealItem flashes + scrolls into view even when the same meal
@@ -1180,53 +1188,66 @@ const MacroCalculator = () => {
     }
   };
 
-  // Add a new food to a meal
-  const addFood = () => {
-    // Use foodSearch instead of newFood.name for checking
-    if (foodSearch.trim() === "") return;
-
+  // Append a food to a meal at an explicit portion — the SINGLE add path.
+  // Search picks, quick-add, the desktop inline form, photo/voice/barcode all
+  // funnel here. The per-100g → portion scaling (incl. sub-macros, unscaled
+  // micros, offCode provenance, and the raw-per-100g `originalValues` snapshot)
+  // lives in the pure `scaleFoodToItem`; this wrapper adds the stateful bits
+  // (id, pantry draw-down, today-only `loggedAt`) and commits the write.
+  const logFoodToMeal = (food: Food, mealId: number, grams: number) => {
+    if (grams <= 0) return;
     // Draw the pantry down if this food matches an item on hand. Computed
-    // before the meal write so the link (`pantrySource`) is stamped on
-    // the FoodItem and a portion edit / removal can adjust / restore it.
-    const drawDown = planFoodDrawDown(foodSearch, portionSize);
-
-    const updatedMeals = meals.map((meal) => {
-      if (
-        meal.id === Number.parseInt(newFood.selectedMealId?.toString() || "0")
-      ) {
-        return {
-          ...meal,
-          foods: [
-            ...meal.foods,
-            {
-              ...newFood,
-              name: foodSearch,
-              id: Date.now(),
-              portionSize: portionSize,
-              pantrySource: drawDown ?? undefined,
-              originalValues: {
-                proteinPer100g: newFood.protein / (portionSize / 100),
-                carbsPer100g: newFood.carbs / (portionSize / 100),
-                fatPer100g: newFood.fat / (portionSize / 100),
-                caloriesPer100g: newFood.calories / (portionSize / 100),
-              },
-              // Real eating event → stamp the time, but only when logging to
-              // today (back-filling a past day would record a wrong hour).
-              loggedAt: selectedDate === today ? Date.now() : undefined,
-            },
-          ],
-        };
-      }
-      return meal;
-    });
-
-    setMeals(updatedMeals);
-    if (drawDown) applyPantryDelta(drawDown.itemId, drawDown.consumedQty);
-    signalMealLogged(
-      Number.parseInt(newFood.selectedMealId?.toString() || "0"),
+    // before the meal write so the link (`pantrySource`) is stamped on the
+    // FoodItem and a portion edit / removal can adjust / restore it.
+    const drawDown = planFoodDrawDown(food.name, grams);
+    const item: FoodItem = {
+      id: Date.now(),
+      ...scaleFoodToItem(food, grams),
+      pantrySource: drawDown ?? undefined,
+      // Real eating event → stamp the time, but only when logging to today
+      // (back-filling a past day would record a wrong hour).
+      loggedAt: selectedDate === today ? Date.now() : undefined,
+    };
+    setMeals(
+      meals.map((meal) =>
+        meal.id === mealId ? { ...meal, foods: [...meal.foods, item] } : meal,
+      ),
     );
+    if (drawDown) applyPantryDelta(drawDown.itemId, drawDown.consumedQty);
+    signalMealLogged(mealId);
+  };
 
-    // Reset the new food form
+  // One-tap quick-log from the guided launcher's recents list. Logs, then
+  // confirms with the canonical toast. The toast lives HERE (not in
+  // `logFoodToMeal`) on purpose: the barcode/photo path toasts on its own, so
+  // a toast inside the shared helper would double-fire there. The full-screen
+  // search sheet likewise owns its own toast — this wrapper is only for the
+  // launcher's recents tap, the one add surface that had NO feedback.
+  const quickLogFood = (food: Food, mealId: number, grams: number) => {
+    logFoodToMeal(food, mealId, grams);
+    const dest = meals.find((m) => m.id === mealId);
+    if (!dest) return;
+    const kcal = Math.round((food.calories * grams) / 100);
+    toast.success(addedFoodMessage(food.name, grams, kcal, dest.name));
+  };
+
+  // Add the desktop inline form's current food to its target meal. Resolves the
+  // per-100g basis from the form state (`addFoodBasis` keeps a picked food
+  // verbatim — full precision + provenance — and only folds back to per-100g on
+  // a genuine manual override) and delegates to the one `logFoodToMeal` path, so
+  // a desktop add is identical to a mobile/search add.
+  // Returns whether a food was actually logged, so the inline form only
+  // confirms with a toast on a real write — a blank name or a zero/blank
+  // portion is a silent no-op, not a phantom "Added (0 g)" toast.
+  const addFood = (): boolean => {
+    const name = foodSearch.trim();
+    if (name === "") return false;
+    if (portionSize <= 0) return false;
+    const mealId = Number.parseInt(newFood.selectedMealId?.toString() || "0");
+    const basis = addFoodBasis(selectedFood, newFood, name, portionSize);
+    logFoodToMeal(basis, mealId, portionSize);
+
+    // Reset the inline form for the next add.
     setNewFood({
       id: 0,
       name: "",
@@ -1239,45 +1260,8 @@ const MacroCalculator = () => {
     });
     setFoodSearch("");
     setPortionSize(100);
-  };
-
-  // Append a search-result food to a meal at an explicit portion — the
-  // guided "Log meal" sheet's add path. Mirrors addFood's per-100g →
-  // per-portion scaling and pantry draw-down, but takes food + meal +
-  // grams as arguments instead of reading the shared inline-form state.
-  const logFoodToMeal = (food: Food, mealId: number, grams: number) => {
-    if (grams <= 0) return;
-    const ratio = grams / 100;
-    const drawDown = planFoodDrawDown(food.name, grams);
-    const item: FoodItem = {
-      id: Date.now(),
-      name: food.name,
-      protein: Number.parseFloat((food.protein * ratio).toFixed(1)),
-      carbs: Number.parseFloat((food.carbs * ratio).toFixed(1)),
-      fat: Number.parseFloat((food.fat * ratio).toFixed(1)),
-      calories: Math.round(food.calories * ratio),
-      portionSize: grams,
-      ...scaleSubMacros(food, ratio),
-      micronutrients: food.micronutrients,
-      offCode: offCodeFromFoodId(food.id),
-      pantrySource: drawDown ?? undefined,
-      originalValues: {
-        proteinPer100g: food.protein,
-        carbsPer100g: food.carbs,
-        fatPer100g: food.fat,
-        caloriesPer100g: food.calories,
-      },
-      // Real eating event (search / quick-add / photo·voice·barcode all
-      // funnel here) → stamp the time when logging to today.
-      loggedAt: selectedDate === today ? Date.now() : undefined,
-    };
-    setMeals(
-      meals.map((meal) =>
-        meal.id === mealId ? { ...meal, foods: [...meal.foods, item] } : meal,
-      ),
-    );
-    if (drawDown) applyPantryDelta(drawDown.itemId, drawDown.consumedQty);
-    signalMealLogged(mealId);
+    setSelectedFood(null);
+    return true;
   };
 
   /** Copy a previous day's meal slot into `targetMealId` — append all its
@@ -2275,7 +2259,10 @@ const MacroCalculator = () => {
           }}
           onClearMeal={clearMeal}
           loggedMealSignal={loggedMealSignal}
-          onOpenMealDetail={(mealId) => setMealDetailId(mealId)}
+          onOpenMealDetail={(mealId, intent) => {
+            setMealDetailId(mealId);
+            setMealHubIntent(intent ?? "add");
+          }}
           onOpenLogMeal={() => {
             // Fresh entry from the FAB / "Log meal" button always starts
             // at the meal step, never a stale method step.
@@ -2362,7 +2349,15 @@ const MacroCalculator = () => {
           if (logTargetMealId !== null) {
             const dest = meals.find((m) => m.id === logTargetMealId);
             logFoodToMeal(food, logTargetMealId, 100);
-            if (dest) toast.success(`Added ${food.name} to ${dest.name}`);
+            if (dest)
+              toast.success(
+                addedFoodMessage(
+                  food.name,
+                  100,
+                  Math.round(food.calories),
+                  dest.name,
+                ),
+              );
           } else {
             handleFoodSelect(food);
           }
@@ -2514,6 +2509,8 @@ const MacroCalculator = () => {
         }}
         customFoodsRev={customFoodsRev}
         onLogFood={logFoodToMeal}
+        onQuickLog={quickLogFood}
+        intent={mealHubIntent}
         onRemoveFood={removeFood}
         onCopyMeal={copyMealItems}
         onAddFromTemplate={(mealId) => {
@@ -2543,7 +2540,7 @@ const MacroCalculator = () => {
         aiAvailable={!!user}
         initialMealId={logFlowMealId}
         onMethod={handleLogMethod}
-        onQuickLog={logFoodToMeal}
+        onQuickLog={quickLogFood}
       />
 
       <FoodSearchSheet

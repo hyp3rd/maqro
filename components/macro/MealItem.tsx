@@ -35,6 +35,7 @@ import {
 } from "../ui/dropdown-menu";
 import FoodItem from "./FoodItem";
 import FoodMobileCard from "./FoodMobileCard";
+import type { MealHubIntent } from "./MealHubSheet";
 
 interface MealItemProps {
   meal: MealType;
@@ -77,8 +78,10 @@ interface MealItemProps {
   scheduledForSlot?: MealSchedule;
   /** Log the scheduled recipe into this slot. */
   onLogScheduled: (schedule: MealSchedule, mealId: number) => void;
-  /** Open the meal-detail sheet (macro/micro breakdown + insights). */
-  onOpenDetail: (mealId: number) => void;
+  /** Open the per-meal hub. `intent` picks what it leads with: "add" (the
+   *  "Log this again" strip — the default for the add affordances) vs
+   *  "insights" (the breakdown body — the Insights badge). */
+  onOpenDetail: (mealId: number, intent?: MealHubIntent) => void;
   /** AI-regenerate ONLY this meal slot. The parent calls the
    *  meal-plan route with `targetMealName` set and replaces just this
    *  meal's foods on success. */
@@ -201,7 +204,7 @@ const MealItem: React.FC<MealItemProps> = ({
           {meal.foods.length > 0 && !regeneratingThisMeal && (
             <button
               type="button"
-              onClick={() => onOpenDetail(meal.id)}
+              onClick={() => onOpenDetail(meal.id, "insights")}
               aria-label={`${meal.name} insights`}
               className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 transition-colors hover:bg-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-amber-300"
             >
@@ -315,7 +318,7 @@ const MealItem: React.FC<MealItemProps> = ({
             type="button"
             onClick={() => onRegenerate(meal.id)}
             disabled={regenerating}
-            className="inline-flex h-7 items-center gap-1.5 rounded-full border border-amber-600/40 bg-background px-2.5 text-[11px] font-medium text-amber-900 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-amber-100 dark:hover:bg-amber-900/30"
+            className="inline-flex h-7 items-center gap-1.5 rounded-full border border-amber-600/40 bg-background px-2.5 text-[11px] font-medium text-amber-900 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50 coarse:h-10 dark:text-amber-100 dark:hover:bg-amber-900/30"
           >
             {regeneratingThisMeal ? (
               <>
@@ -351,46 +354,20 @@ const MealItem: React.FC<MealItemProps> = ({
           <p className="text-xs text-muted-foreground">
             {isOver ? "Drop here" : "No foods added yet"}
           </p>
-          {/* Quick-start chips. Surfaced instead of just "No foods
-              added yet" because the dropdown menu above is two taps
-              away on mobile; these are one-tap. The chip set mirrors
-              the three actions in the meal-row menu, so users learn
-              the same vocabulary by seeing it twice. */}
+          {/* One add affordance. Tapping it opens the per-meal hub, which leads
+              with "Log this again" (slot recents, one tap) and carries the
+              search + template / recipe / AI-generate actions — so the empty
+              slot no longer duplicates that whole menu inline (it used to mirror
+              the row's ⋮ menu, which is one tap away anyway). */}
           {!isOver && (
-            <div className="mt-3 flex flex-wrap items-center justify-center gap-1.5">
-              {/* Quick add steps into the per-meal hub (recents + search +
-                  insights/advice) — same surface the Insights badge opens. */}
+            <div className="mt-3 flex justify-center">
               <button
                 type="button"
-                onClick={() => onOpenDetail(meal.id)}
-                className="inline-flex h-7 items-center gap-1 rounded-full border border-foreground/30 bg-background px-2.5 text-[11px] font-medium text-foreground transition-colors hover:bg-accent/40"
+                onClick={() => onOpenDetail(meal.id, "add")}
+                className="inline-flex h-9 items-center gap-1.5 rounded-full border border-foreground/30 bg-background px-4 text-xs font-medium text-foreground transition-colors hover:bg-accent/40 coarse:h-11"
               >
-                <Plus className="h-3 w-3" />
-                Quick add
-              </button>
-              <button
-                type="button"
-                onClick={() => onAddFromTemplate(meal.id)}
-                className="inline-flex h-7 items-center rounded-full border border-border/60 bg-background px-2.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-              >
-                Use template
-              </button>
-              <button
-                type="button"
-                onClick={() => onApplyRecipe(meal.id)}
-                className="inline-flex h-7 items-center rounded-full border border-border/60 bg-background px-2.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
-              >
-                Apply recipe
-              </button>
-              <button
-                type="button"
-                onClick={() => onRegenerate(meal.id)}
-                disabled={regenerating}
-                className="inline-flex h-7 items-center rounded-full border border-border/60 bg-background px-2.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {regeneratingThisMeal
-                  ? `${aiVerbProgressive}…`
-                  : `AI ${aiVerb.toLowerCase()}`}
+                <Plus className="h-4 w-4" />
+                Add food
               </button>
             </div>
           )}

@@ -1,7 +1,11 @@
 import type { FoodItem } from "@/components/macro/types";
 import type { DailyLog } from "@/lib/db";
 import { describe, expect, it } from "vitest";
-import { pastMealsForSlot, recentLoggedFoods } from "./recent-foods";
+import {
+  pastMealsForSlot,
+  recentLoggedFoods,
+  recentLoggedFoodsForSlot,
+} from "./recent-foods";
 
 function fi(name: string, overrides: Partial<FoodItem> = {}): FoodItem {
   return {
@@ -222,5 +226,100 @@ describe("pastMealsForSlot", () => {
     const r = pastMealsForSlot(logs, "Dinner", { todayKey: today, limit: 3 });
     expect(r).toHaveLength(3);
     expect(r[0].date).toBe("2026-05-29");
+  });
+});
+
+describe("recentLoggedFoodsForSlot", () => {
+  const today = "2026-06-02";
+
+  it("returns only foods logged to the matching slot, recency-primary", () => {
+    const logs = [
+      mealLog("2026-05-20", [{ name: "Breakfast", foods: [fi("Oats")] }]),
+      mealLog("2026-06-01", [
+        { name: "Breakfast", foods: [fi("Eggs")] },
+        { name: "Dinner", foods: [fi("Steak")] },
+      ]),
+    ];
+    // backfillBelow: 0 disables the cold-start top-up so this isolates the
+    // slot scoping itself.
+    const r = recentLoggedFoodsForSlot(logs, "Breakfast", {
+      todayKey: today,
+      backfillBelow: 0,
+    });
+    // Steak (Dinner) excluded; Eggs (newer) before Oats.
+    expect(r.map((x) => x.name)).toEqual(["Eggs", "Oats"]);
+    expect(r.every((x) => !x.fromOtherSlot)).toBe(true);
+  });
+
+  it("matches the slot name case-insensitively (id churn safe)", () => {
+    const logs = [
+      mealLog("2026-06-01", [{ name: "breakfast", foods: [fi("Yogurt")] }]),
+    ];
+    const r = recentLoggedFoodsForSlot(logs, "Breakfast", { todayKey: today });
+    expect(r.map((x) => x.name)).toEqual(["Yogurt"]);
+  });
+
+  it("breaks recency ties by frequency (the slot staple leads)", () => {
+    const logs = [
+      // Both last logged 2026-06-01, but Eggs appears 3× vs Toast 1×.
+      mealLog("2026-05-28", [{ name: "Breakfast", foods: [fi("Eggs")] }]),
+      mealLog("2026-05-30", [{ name: "Breakfast", foods: [fi("Eggs")] }]),
+      mealLog("2026-06-01", [
+        { name: "Breakfast", foods: [fi("Eggs"), fi("Toast")] },
+      ]),
+    ];
+    const r = recentLoggedFoodsForSlot(logs, "Breakfast", { todayKey: today });
+    expect(r[0].name).toBe("Eggs");
+    expect(r[0].count).toBe(3);
+  });
+
+  it("backfills from global recents when the slot is sparse, flagging the extras", () => {
+    const logs = [
+      // Breakfast has 1 native recent (< default backfillBelow of 3).
+      mealLog("2026-06-01", [
+        { name: "Breakfast", foods: [fi("Eggs")] },
+        { name: "Dinner", foods: [fi("Steak"), fi("Potato")] },
+      ]),
+    ];
+    const r = recentLoggedFoodsForSlot(logs, "Breakfast", { todayKey: today });
+    const eggs = r.find((x) => x.name === "Eggs");
+    const steak = r.find((x) => x.name === "Steak");
+    expect(eggs?.fromOtherSlot).toBeFalsy(); // native slot row
+    expect(steak?.fromOtherSlot).toBe(true); // backfilled from another slot
+    // The native row is never duplicated by the backfill.
+    expect(r.filter((x) => x.name === "Eggs")).toHaveLength(1);
+  });
+
+  it("does NOT backfill once the slot has enough of its own recents", () => {
+    const logs = [
+      mealLog("2026-06-01", [
+        {
+          name: "Breakfast",
+          foods: [fi("Eggs"), fi("Toast"), fi("Banana")], // 3 ≥ backfillBelow
+        },
+        { name: "Dinner", foods: [fi("Steak")] },
+      ]),
+    ];
+    const r = recentLoggedFoodsForSlot(logs, "Breakfast", { todayKey: today });
+    expect(r.map((x) => x.name).sort()).toEqual(["Banana", "Eggs", "Toast"]);
+    expect(r.some((x) => x.name === "Steak")).toBe(false);
+  });
+
+  it("honors the limit across native + backfilled rows", () => {
+    const logs = [
+      mealLog("2026-06-01", [
+        { name: "Breakfast", foods: [fi("Eggs")] },
+        {
+          name: "Dinner",
+          foods: Array.from({ length: 10 }, (_, i) => fi(`D${i}`)),
+        },
+      ]),
+    ];
+    const r = recentLoggedFoodsForSlot(logs, "Breakfast", {
+      todayKey: today,
+      limit: 4,
+    });
+    expect(r).toHaveLength(4);
+    expect(r[0].name).toBe("Eggs"); // native row leads
   });
 });

@@ -141,9 +141,12 @@ test.describe("maqro happy path", () => {
     await page.goto("/app");
     await page.getByRole("button", { name: "Meal Plan" }).click();
 
-    // Step into a meal's hub, then into the full-screen manual search.
-    await page.getByRole("button", { name: "Quick add" }).first().click();
-    await page.getByRole("button", { name: "Search" }).click();
+    // Empty slot → the single "Add food" affordance steps into the per-meal
+    // hub; the hub's own "Add food" button opens the full-screen manual search.
+    await page.getByRole("button", { name: "Add food" }).first().click();
+    const hub = page.getByRole("dialog");
+    await expect(hub).toBeVisible();
+    await hub.getByRole("button", { name: "Add food" }).click();
 
     const searchSheet = page.getByRole("dialog", { name: /Add food to/ });
     await expect(searchSheet).toBeVisible();

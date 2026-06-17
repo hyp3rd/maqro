@@ -9,7 +9,6 @@ import {
   AlertTriangle,
   GripVertical,
   Loader2,
-  Plus,
   RefreshCw,
   Sparkles,
 } from "lucide-react";
@@ -41,6 +40,7 @@ import { ActivePhaseBanner } from "./ActivePhaseBanner";
 import AddFoodForm from "./AddFoodForm";
 import DailyTotals from "./DailyTotals";
 import { FastingCard } from "./FastingCard";
+import type { MealHubIntent } from "./MealHubSheet";
 import MealItem from "./MealItem";
 import {
   PreDiabeticDisclaimerDialog,
@@ -124,7 +124,9 @@ interface MealPlannerProps {
   handleFoodSelect: (food: Food) => void;
   handlePortionChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   handleFoodChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  addFood: () => void;
+  /** Logs the inline form's food; returns whether a write happened (so the
+   *  form only toasts on a real add). */
+  addFood: () => boolean;
   removeFood: (mealId: number, foodId: number) => void;
   duplicateFood: (mealId: number, foodId: number) => void;
   moveFood: (
@@ -177,8 +179,9 @@ interface MealPlannerProps {
   onLogScheduled: (schedule: MealSchedule, mealId: number) => void;
   /** Open the AI "what to eat today?" day-suggester. */
   onOpenSuggestDay: () => void;
-  /** Open the meal-detail sheet for a slot (macro/micro breakdown). */
-  onOpenMealDetail: (mealId: number) => void;
+  /** Open the per-meal hub for a slot. `intent` decides what the hub leads
+   *  with: "add" (the recents strip) vs "insights" (the breakdown body). */
+  onOpenMealDetail: (mealId: number, intent?: MealHubIntent) => void;
   /** Open the guided "Log meal" sheet — the mobile add-food entry
    *  point. The dense inline AddFoodForm is desktop-only; on mobile
    *  this drives a step-by-step bottom-sheet instead. */
@@ -411,18 +414,11 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
         </Button>
       )}
 
-      {/* Mobile add-food entry point: one prominent button that opens
-          the guided "Log meal" bottom-sheet. The dense inline form is
-          desktop-only — beta testers found it confusing on a phone. */}
-      <Button
-        type="button"
-        onClick={onOpenLogMeal}
-        className="h-12 w-full gap-1.5 text-base md:hidden"
-      >
-        <Plus className="h-5 w-5" />
-        Log meal
-      </Button>
-
+      {/* Mobile's add-food entry point is the thumb-zone QuickAddFab (rendered
+          at the end of this view) — it floats over the whole list, so a second
+          inline "Log meal" button here was redundant (identical onOpenLogMeal)
+          and doubled up on short days. The dense inline form below is
+          desktop-only. */}
       <div className="hidden md:block">
         <AddFoodForm
           meals={meals}
