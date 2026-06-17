@@ -2,6 +2,12 @@
 
 import { useFoodSearch } from "@/hooks/use-food-search";
 import { useModalOverlay } from "@/hooks/use-modal-overlay";
+import {
+  DEFAULT_GRAMS,
+  PORTION_PRESETS,
+  SOURCE_LABEL,
+  addedFoodMessage,
+} from "@/lib/add-food-constants";
 import { cn } from "@/lib/utils";
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -26,16 +32,6 @@ type Props = {
    *  rather than closing outright. */
   onBack: () => void;
 };
-
-const SOURCE_LABEL: Record<NonNullable<Food["source"]>, string> = {
-  builtin: "Built-in",
-  custom: "My food",
-  off: "Open Food Facts",
-  ciqual: "CIQUAL",
-};
-
-const DEFAULT_GRAMS = 100;
-const PRESETS = [50, 100, 150, 200];
 
 function clampGrams(n: number): number {
   if (Number.isNaN(n)) return 0;
@@ -124,9 +120,7 @@ function FoodSearchBody({
     const wasInlineAdd = openKey === foodKey(food);
     onLogFood(food, mealId, portion);
     const kcal = Math.round((food.calories * portion) / 100);
-    toast.success(
-      `Added ${food.name} (${portion} g, ${kcal} kcal) to ${mealName}`,
-    );
+    toast.success(addedFoodMessage(food.name, portion, kcal, mealName));
     setOpenKey(null);
     if (wasInlineAdd) searchInputRef.current?.focus();
   }
@@ -313,7 +307,7 @@ function ResultRow({
           </p>
 
           <div className="flex flex-wrap gap-1.5">
-            {PRESETS.map((g) => (
+            {PORTION_PRESETS.map((g) => (
               <button
                 key={g}
                 type="button"

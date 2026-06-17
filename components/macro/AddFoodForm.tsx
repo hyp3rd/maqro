@@ -1,5 +1,6 @@
 "use client";
 
+import { SOURCE_LABEL, addedFoodMessage } from "@/lib/add-food-constants";
 import type { PantryItem } from "@/lib/db";
 import { mealIcon } from "@/lib/meal-icon";
 import { matchPantryItem } from "@/lib/pantry/consume";
@@ -35,7 +36,9 @@ interface AddFoodFormProps {
   handleFoodSelect: (food: Food) => void;
   handlePortionChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   handleFoodChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  addFood: () => void;
+  /** Logs the form's current food; returns whether a write happened (false
+   *  for a blank name / zero portion) so the toast only fires on a real add. */
+  addFood: () => boolean;
   onSaveOffToCustom: (food: Food) => void;
   onOpenCustomFoodForm: () => void;
   onOpenCamera: () => void;
@@ -46,13 +49,6 @@ interface AddFoodFormProps {
    *  voice doesn't fit (e.g. /foods catalog browsing). */
   onOpenVoice?: () => void;
 }
-
-const SOURCE_LABEL: Record<NonNullable<Food["source"]>, string> = {
-  builtin: "Built-in",
-  custom: "My food",
-  off: "Open Food Facts",
-  ciqual: "CIQUAL",
-};
 
 const SOURCE_CLASS: Record<NonNullable<Food["source"]>, string> = {
   builtin: "bg-muted text-muted-foreground hover:bg-muted",
@@ -96,19 +92,18 @@ const AddFoodForm: React.FC<AddFoodFormProps> = ({
    *  message stays specific. */
   function handleAddFood() {
     const trimmed = foodSearch.trim();
-    if (!trimmed) {
-      addFood();
-      return;
-    }
     const destMealId = Number.parseInt(
       newFood.selectedMealId?.toString() ?? "0",
       10,
     );
     const dest = meals.find((m) => m.id === destMealId);
-    addFood();
-    if (dest) {
+    // Toast ONLY when a write actually happened — addFood no-ops (returns
+    // false) on a blank name or zero portion, so we never surface a phantom
+    // "Added (0 g)" confirmation for a non-write.
+    const logged = addFood();
+    if (logged && dest) {
       toast.success(
-        `Added ${trimmed} (${portionSize} g, ${newFood.calories} kcal) to ${dest.name}`,
+        addedFoodMessage(trimmed, portionSize, newFood.calories, dest.name),
       );
     }
   }

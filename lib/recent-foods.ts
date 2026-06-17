@@ -21,10 +21,19 @@ export type RecentFood = {
   lastDate: string;
   /** How many times it appears in the window (for a "×N" hint). */
   count: number;
+  /** Set by `recentLoggedFoodsForSlot` on rows that came from the GLOBAL
+   *  recents backfill rather than this slot's own history — so the UI can
+   *  mark them ("from your day" vs "you usually have this here"). Absent on
+   *  slot-native rows and on the global `recentLoggedFoods` list. */
+  fromOtherSlot?: boolean;
 };
 
 const DEFAULT_WINDOW_DAYS = 30;
 const DEFAULT_LIMIT = 12;
+/** Below this many slot-native recents, `recentLoggedFoodsForSlot` backfills
+ *  from the global list (a brand-new user, or a renamed slot whose history is
+ *  orphaned, would otherwise show an empty / near-empty strip). */
+const DEFAULT_SLOT_BACKFILL_BELOW = 3;
 
 /** Round to ≤1 decimal — the precision the rest of the macro math uses. */
 function round1(v: number): number {
@@ -76,12 +85,16 @@ export function recentLoggedFoods(
     windowDays?: number;
     limit?: number;
     sort?: RecentSort;
+    /** When set, only count foods logged to a meal slot whose name matches
+     *  (case-insensitive) — the basis for `recentLoggedFoodsForSlot`. */
+    slot?: string;
   },
 ): RecentFood[] {
   const windowDays = opts.windowDays ?? DEFAULT_WINDOW_DAYS;
   const limit = opts.limit ?? DEFAULT_LIMIT;
   const sort = opts.sort ?? "recent";
   const cutoff = addDays(opts.todayKey, -windowDays);
+  const slot = opts.slot?.trim().toLowerCase();
 
   type Acc = { name: string; item: FoodItem; lastDate: string; count: number };
   const byName = new Map<string, Acc>();
@@ -94,6 +107,8 @@ export function recentLoggedFoods(
     if (!Array.isArray(log.meals)) continue;
     for (const meal of log.meals) {
       if (!meal || !Array.isArray(meal.foods)) continue;
+      // Slot scoping: skip meals whose name doesn't match the target slot.
+      if (slot && (meal.name ?? "").trim().toLowerCase() !== slot) continue;
       for (const food of meal.foods) {
         if (!food || typeof food.name !== "string") continue;
         if (!(food.calories > 0)) continue; // skip blanks / placeholders
@@ -138,6 +153,46 @@ export function recentLoggedFoods(
       lastDate: e.lastDate,
       count: e.count,
     }));
+}
+
+/** The "Log this again" list for ONE meal slot: the foods most recently logged
+ *  to that slot (recency-primary, frequency as tiebreak), ready for one-tap
+ *  re-adding at their last portion — the dominant "I eat the same thing for
+ *  breakfast" path, in two taps without opening search.
+ *
+ *  Scoped by meal-slot NAME (the stable handle, like `pastMealsForSlot` and the
+ *  schedule matcher), so it survives slot-id churn from template edits. When a
+ *  slot has fewer than `backfillBelow` of its own recents (a new user, or a
+ *  renamed slot whose history is orphaned), it backfills from the GLOBAL recents
+ *  — those rows are flagged `fromOtherSlot` so the UI can label them and the
+ *  strip is never awkwardly empty. Pure + defensive, like `recentLoggedFoods`. */
+export function recentLoggedFoodsForSlot(
+  logs: DailyLog[],
+  slotName: string,
+  opts: {
+    todayKey: string;
+    windowDays?: number;
+    limit?: number;
+    backfillBelow?: number;
+  },
+): RecentFood[] {
+  const slot = slotName.trim().toLowerCase();
+  const limit = opts.limit ?? DEFAULT_LIMIT;
+  const backfillBelow = opts.backfillBelow ?? DEFAULT_SLOT_BACKFILL_BELOW;
+  const base = { todayKey: opts.todayKey, windowDays: opts.windowDays, limit };
+  // Recency-primary by design (no `sort` passed → `recentLoggedFoods` default).
+  const native = slot
+    ? recentLoggedFoods(logs, { ...base, slot })
+    : recentLoggedFoods(logs, base);
+  if (!slot || native.length >= backfillBelow) return native;
+
+  // Sparse slot → top up from the global list, excluding names already shown,
+  // marking the additions so the UI can distinguish "from your day" rows.
+  const seen = new Set(native.map((r) => r.name.toLowerCase()));
+  const backfill = recentLoggedFoods(logs, base)
+    .filter((r) => !seen.has(r.name.toLowerCase()))
+    .map((r) => ({ ...r, fromOtherSlot: true }));
+  return [...native, ...backfill].slice(0, limit);
 }
 
 /** A previous day's instance of a meal slot — for "copy a previous Dinner". */

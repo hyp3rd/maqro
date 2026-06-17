@@ -13,7 +13,14 @@ import {
 } from "../ui/dialog";
 import { FoodSearchSheet } from "./FoodSearchSheet";
 import { MealDetail, type DailyGoal } from "./MealDetailSheet";
+import { QuickAddFoods } from "./QuickAddFoods";
 import type { Food, FoodItem, Meal } from "./types";
+
+/** How the hub was opened — drives whether a populated meal leads with the
+ *  "Log this again" strip (the user came to ADD) or with the insights body (the
+ *  user tapped the Insights badge to READ). Empty meals always lead with the
+ *  strip; there's nothing to read yet. */
+export type MealHubIntent = "add" | "insights";
 
 /** "Mon, Jun 1" from a YYYY-MM-DD key (parsed as a local calendar date). */
 function dayLabel(date: string): string {
@@ -34,6 +41,13 @@ type Props = {
   /** Same add path a search pick uses — scales, draws down the pantry, persists,
    *  toasts. */
   onLogFood: (food: Food, mealId: number, grams: number) => void;
+  /** One-tap re-add from the "Log this again" strip: logs AND confirms with a
+   *  toast (the strip is the only in-hub add that isn't the search sheet, which
+   *  toasts itself). */
+  onQuickLog: (food: Food, mealId: number, grams: number) => void;
+  /** Whether this open should lead with the recents strip (add) or the insights
+   *  body (insights). Only affects a populated meal. */
+  intent: MealHubIntent;
   onRemoveFood: (mealId: number, foodId: number) => void;
   /** Append a previous day's meal-slot foods into this meal. */
   onCopyMeal: (mealId: number, items: FoodItem[]) => void;
@@ -55,6 +69,8 @@ export function MealHubSheet({
   goal,
   customFoodsRev,
   onLogFood,
+  onQuickLog,
+  intent,
   onRemoveFood,
   onCopyMeal,
   onAddFromTemplate,
@@ -96,6 +112,8 @@ export function MealHubSheet({
               key={meal.id}
               meal={meal}
               goal={goal}
+              intent={intent}
+              onQuickLog={onQuickLog}
               onRemoveFood={onRemoveFood}
               onCopyMeal={onCopyMeal}
               onAddFromTemplate={onAddFromTemplate}
@@ -128,6 +146,8 @@ export function MealHubSheet({
 function MealHubBody({
   meal,
   goal,
+  intent,
+  onQuickLog,
   onRemoveFood,
   onCopyMeal,
   onAddFromTemplate,
@@ -140,6 +160,8 @@ function MealHubBody({
 }: {
   meal: Meal;
   goal?: DailyGoal;
+  intent: MealHubIntent;
+  onQuickLog: (food: Food, mealId: number, grams: number) => void;
   onRemoveFood: (mealId: number, foodId: number) => void;
   onCopyMeal: (mealId: number, items: FoodItem[]) => void;
   onAddFromTemplate: (mealId: number) => void;
@@ -168,6 +190,17 @@ function MealHubBody({
     </Button>
   );
 
+  // The dominant path: re-log a staple into THIS slot in one tap. Scoped to the
+  // slot's own history (topped up from global recents when sparse), renders
+  // nothing when the user has no recents at all. Logs + toasts + keeps the hub
+  // open for repeat adds.
+  const logAgainStrip = (
+    <QuickAddFoods
+      slotName={meal.name}
+      onAdd={(food, portion) => onQuickLog(food, meal.id, portion)}
+    />
+  );
+
   return (
     <>
       <DialogHeader>
@@ -178,12 +211,15 @@ function MealHubBody({
         </DialogDescription>
       </DialogHeader>
 
-      {/* Empty meal: nothing to read yet, so the add action + the empty-state
-          shortcuts (template / recipe / AI / copy) lead. AI generate runs
-          inline (the hub updates live); template / recipe open their own
-          pickers, so close the hub first to avoid stacked modals. */}
+      {/* Empty meal: nothing to read yet. Lead with "Log this again" (the
+          fastest re-log path), then the add action + the empty-state shortcuts
+          (template / recipe / AI / copy). AI generate runs inline (the hub
+          updates live); template / recipe open their own pickers, so close the
+          hub first to avoid stacked modals. */}
       {!hasFoods && (
         <>
+          {logAgainStrip}
+
           {addFoodButton}
 
           <div className="grid grid-cols-3 gap-2">
@@ -261,10 +297,14 @@ function MealHubBody({
         </>
       )}
 
-      {/* Populated meal: lead with the contents + insights — the sheet's
-          purpose — and trail with the single Add-food action. */}
+      {/* Populated meal. Ordering follows the entry intent: opened to ADD →
+          lead with "Log this again" (thumb zone), then contents + insights;
+          opened via the Insights badge to READ → lead with contents + insights
+          and trail the strip. Either way the Add-food action closes the body. */}
       {hasFoods && (
         <>
+          {intent === "add" && logAgainStrip}
+
           <section className="space-y-1.5">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               In this meal
@@ -302,6 +342,8 @@ function MealHubBody({
             meal={meal}
             goal={goal}
           />
+
+          {intent === "insights" && logAgainStrip}
 
           {addFoodButton}
         </>

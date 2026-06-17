@@ -1,28 +1,97 @@
 "use client";
 
 import { useFavoriteFoods } from "@/hooks/use-favorite-foods";
-import { useRecentFoods } from "@/hooks/use-recent-foods";
-import type { RecentSort } from "@/lib/recent-foods";
+import {
+  useRecentFoods,
+  useRecentFoodsForSlot,
+} from "@/hooks/use-recent-foods";
 import { cn } from "@/lib/utils";
 import { useState, type ReactNode } from "react";
 import { Plus, Star } from "lucide-react";
 import type { Food } from "./types";
 
-/** The three sources the quick-add card switches between. `recent` and
- *  `frequent` are the same logged foods under a different sort; `favorites`
- *  is the explicitly-pinned list. */
-type QuickAddTab = "recent" | "frequent" | "favorites";
+type Props = {
+  onAdd: (food: Food, portion: number) => void;
+  emptyFallback?: ReactNode;
+  /** When set, the card switches to slot-scoped "Log this again" mode: the
+   *  foods most often logged to THIS meal slot, no source tabs. Absent → the
+   *  tabbed Recent · Favorites card (used by the search empty state + the
+   *  guided launcher's method step). */
+  slotName?: string;
+};
 
-const TABS: QuickAddTab[] = ["recent", "frequent", "favorites"];
+/** A bounded one-tap re-add card. Two modes:
+ *    - slot mode (`slotName` set) → a "Log this again" list scoped to that meal
+ *      slot, the dominant "I eat the same breakfast" path in two taps;
+ *    - tabbed mode → Recent · Favorites (Frequent was dropped: it read the same
+ *      recents source re-sorted, a distinction without a usable difference).
+ *  Each row re-adds at its last portion via `onAdd`, with a synced ☆ to pin. */
+export function QuickAddFoods({ onAdd, emptyFallback, slotName }: Props) {
+  return slotName && slotName.trim() ? (
+    <SlotQuickAdd
+      slotName={slotName}
+      onAdd={onAdd}
+      emptyFallback={emptyFallback}
+    />
+  ) : (
+    <TabbedQuickAdd
+      onAdd={onAdd}
+      emptyFallback={emptyFallback}
+    />
+  );
+}
 
-/** A single bounded "Quick add" card shared by the food-search empty state
- *  and the Log-meal method step. One segmented control switches the source
- *  (Recent · Frequent · Favorites); the active list scrolls inside a fixed
- *  height so the card never grows into a wall. Each row one-tap re-adds at
- *  its last portion via `onAdd`, with a star to pin/unpin (synced). Renders
- *  nothing until loaded; when there's nothing to surface, `emptyFallback`
- *  shows instead. */
-export function QuickAddFoods({
+type Row = {
+  key: string;
+  food: Food;
+  portion: number;
+  count?: number;
+  fromOtherSlot?: boolean;
+};
+
+/** Slot-scoped "Log this again" — the foods most recently logged to this slot,
+ *  topped up from global recents when the slot's own history is sparse. */
+function SlotQuickAdd({
+  slotName,
+  onAdd,
+  emptyFallback,
+}: {
+  slotName: string;
+  onAdd: (food: Food, portion: number) => void;
+  emptyFallback?: ReactNode;
+}) {
+  const { recents, loaded } = useRecentFoodsForSlot(slotName, { limit: 12 });
+  const { isFavorite, toggle } = useFavoriteFoods();
+
+  if (!loaded) return null;
+  if (recents.length === 0) return <>{emptyFallback ?? null}</>;
+
+  const rows: Row[] = recents.map((r) => ({
+    key: r.name,
+    food: r.food,
+    portion: r.lastPortion,
+    count: r.count,
+    fromOtherSlot: r.fromOtherSlot,
+  }));
+
+  return (
+    <Card>
+      <p className="text-xs font-semibold text-foreground">Log this again</p>
+      <RowsGrid
+        rows={rows}
+        onAdd={onAdd}
+        isFavorite={isFavorite}
+        onToggleFavorite={toggle}
+      />
+    </Card>
+  );
+}
+
+const TABS = ["recent", "favorites"] as const;
+type QuickAddTab = (typeof TABS)[number];
+
+/** The tabbed Recent · Favorites card for the search empty state + launcher. */
+function TabbedQuickAdd({
   onAdd,
   emptyFallback,
 }: {
@@ -30,9 +99,7 @@ export function QuickAddFoods({
   emptyFallback?: ReactNode;
 }) {
   const [tab, setTab] = useState<QuickAddTab>("recent");
-  // `favorites` doesn't re-sort the recents read; keep it on "recent".
-  const recentSort: RecentSort = tab === "frequent" ? "frequent" : "recent";
-  const { recents, loaded } = useRecentFoods({ limit: 12, sort: recentSort });
+  const { recents, loaded } = useRecentFoods({ limit: 12 });
   const { favorites, isFavorite, toggle } = useFavoriteFoods();
 
   if (!loaded) return null;
@@ -44,13 +111,8 @@ export function QuickAddFoods({
   }
 
   const isFav = tab === "favorites";
-  const rows = isFav
-    ? favorites.map((f) => ({
-        key: f.id,
-        food: f.food,
-        portion: f.portion,
-        count: undefined as number | undefined,
-      }))
+  const rows: Row[] = isFav
+    ? favorites.map((f) => ({ key: f.id, food: f.food, portion: f.portion }))
     : recents.map((r) => ({
         key: r.name,
         food: r.food,
@@ -59,7 +121,7 @@ export function QuickAddFoods({
       }));
 
   return (
-    <section className="space-y-2.5 rounded-xl border border-border/60 bg-card/40 p-3">
+    <Card>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div
           role="tablist"
@@ -87,22 +149,12 @@ export function QuickAddFoods({
       </div>
 
       {rows.length > 0 ? (
-        <div className="max-h-64 overflow-y-auto">
-          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-            {rows.map((row) => (
-              <FoodRow
-                key={row.key}
-                name={row.food.name}
-                kcal={Math.round((row.food.calories * row.portion) / 100)}
-                portion={row.portion}
-                count={row.count}
-                favorited={isFavorite(row.food.name)}
-                onAdd={() => onAdd(row.food, row.portion)}
-                onToggleFavorite={() => void toggle(row.food, row.portion)}
-              />
-            ))}
-          </div>
-        </div>
+        <RowsGrid
+          rows={rows}
+          onAdd={onAdd}
+          isFavorite={isFavorite}
+          onToggleFavorite={toggle}
+        />
       ) : (
         <p className="px-1 py-5 text-center text-xs text-muted-foreground">
           {isFav
@@ -110,7 +162,51 @@ export function QuickAddFoods({
             : "No recent foods yet — they'll show up here as you log."}
         </p>
       )}
+    </Card>
+  );
+}
+
+/** The bounded card shell shared by both modes. */
+function Card({ children }: { children: ReactNode }) {
+  return (
+    <section className="space-y-2.5 rounded-xl border border-border/60 bg-card/40 p-3">
+      {children}
     </section>
+  );
+}
+
+/** The scrolling grid of one-tap rows, shared by both modes. */
+function RowsGrid({
+  rows,
+  onAdd,
+  isFavorite,
+  onToggleFavorite,
+}: {
+  rows: Row[];
+  onAdd: (food: Food, portion: number) => void;
+  isFavorite: (name: string) => boolean;
+  onToggleFavorite: (food: Food, portion: number) => void | Promise<void>;
+}) {
+  return (
+    <div className="max-h-64 overflow-y-auto">
+      <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+        {rows.map((row) => (
+          <FoodRow
+            key={row.key}
+            name={row.food.name}
+            kcal={Math.round((row.food.calories * row.portion) / 100)}
+            portion={row.portion}
+            count={row.count}
+            fromOtherSlot={row.fromOtherSlot}
+            favorited={isFavorite(row.food.name)}
+            onAdd={() => onAdd(row.food, row.portion)}
+            onToggleFavorite={() =>
+              void onToggleFavorite(row.food, row.portion)
+            }
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -121,6 +217,7 @@ function FoodRow({
   kcal,
   portion,
   count,
+  fromOtherSlot,
   favorited,
   onAdd,
   onToggleFavorite,
@@ -129,6 +226,7 @@ function FoodRow({
   kcal: number;
   portion: number;
   count?: number;
+  fromOtherSlot?: boolean;
   favorited: boolean;
   onAdd: () => void;
   onToggleFavorite: () => void;
@@ -146,8 +244,15 @@ function FoodRow({
           </span>
           <span className="block font-mono text-[11px] tabular-nums text-muted-foreground">
             {kcal} kcal · {portion} g
-            {count !== undefined && count > 1 && (
+            {/* The "×N" count is slot-scoped, so it's only meaningful on a
+                slot-native row. A backfilled row carries its GLOBAL count, which
+                would mislabel a cross-slot staple as frequent HERE — show the
+                "· recent" marker instead so it doesn't read as a slot staple. */}
+            {count !== undefined && count > 1 && !fromOtherSlot && (
               <span className="ml-1 text-muted-foreground/60">· ×{count}</span>
+            )}
+            {fromOtherSlot && (
+              <span className="ml-1 text-muted-foreground/60">· recent</span>
             )}
           </span>
         </span>
@@ -158,7 +263,7 @@ function FoodRow({
         onClick={onToggleFavorite}
         aria-label={favorited ? `Unfavorite ${name}` : `Favorite ${name}`}
         aria-pressed={favorited}
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground coarse:h-11 coarse:w-11"
       >
         <Star
           className={cn(
