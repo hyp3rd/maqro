@@ -4,6 +4,7 @@ import { trustedDeviceOption } from "@/lib/auth/trusted-device";
 import { FEATURES } from "@/lib/billing/tiers";
 import { loadUserTier } from "@/lib/billing/usage";
 import { reportServerError } from "@/lib/error-reporter";
+import { foodNameKey } from "@/lib/micronutrients/aggregate";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -73,10 +74,12 @@ export async function POST(req: Request): Promise<NextResponse> {
   const parsed = await parseBody(req, BodySchema);
   if (!parsed.ok) return parsed.response;
 
-  // Dedupe + re-normalize the incoming names.
+  // Dedupe + re-normalize the incoming names through the SAME `foodNameKey`
+  // the reader + cron + CIQUAL tables use — a single definition, so a Unicode
+  // (NFC) change can't drift between client-sent and server-stored keys.
   const byKey = new Map<string, { nameKey: string; offCode?: string }>();
   for (const item of parsed.data.items) {
-    const nameKey = item.nameKey.toLowerCase().trim();
+    const nameKey = foodNameKey(item.nameKey);
     if (!nameKey) continue;
     // First-seen wins for the offCode — a barcode-sourced occurrence is
     // strictly more useful to the cron than a bare name, so prefer it.

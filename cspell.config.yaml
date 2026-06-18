@@ -70,10 +70,12 @@ words:
   - Ciqual
   - Clickjacking
   - cmdk
+  - codepoint
   - colour
   - colours
   - conname
   - Consolas
+  - cooldown
   - Cosentino
   - Couldn
   - cposts
@@ -217,11 +219,13 @@ words:
   - Mifflin
   - millilitre
   - millilitres
+  - millis
   - miscategorized
   - misconfig
   - misdetected
   - misflagged
   - misimport
+  - misparsed
   - monkeypatch
   - mple
   - msthash
