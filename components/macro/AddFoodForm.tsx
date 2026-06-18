@@ -14,6 +14,7 @@ import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
 import { OffSavePreviewDialog } from "./OffSavePreviewDialog";
+import { QuickAddFoods } from "./QuickAddFoods";
 
 interface AddFoodFormProps {
   meals: Meal[];
@@ -39,6 +40,9 @@ interface AddFoodFormProps {
   /** Logs the form's current food; returns whether a write happened (false
    *  for a blank name / zero portion) so the toast only fires on a real add. */
   addFood: () => boolean;
+  /** One-tap re-add from the "Log this again" strip — logs to the chosen meal
+   *  and toasts (same wrapper the mobile hub strip uses). */
+  onQuickLog: (food: Food, mealId: number, grams: number) => void;
   onSaveOffToCustom: (food: Food) => void;
   onOpenCustomFoodForm: () => void;
   onOpenCamera: () => void;
@@ -74,11 +78,16 @@ const AddFoodForm: React.FC<AddFoodFormProps> = ({
   handlePortionChange,
   handleFoodChange,
   addFood,
+  onQuickLog,
   onSaveOffToCustom,
   onOpenCustomFoodForm,
   onOpenCamera,
   onOpenVoice,
 }) => {
+  // The meal the form is currently targeting (the selected tile; defaults to
+  // the first slot). Scopes the "Log this again" strip and its one-tap re-add.
+  const selectedMealId = newFood.selectedMealId ?? meals[0]?.id ?? 0;
+  const selectedMealName = meals.find((m) => m.id === selectedMealId)?.name;
   // Preview-and-save flow for OFF results - instead of one-click
   // saving with just the search-result macros, the dialog fetches
   // the full breakdown via `/api/off-barcode` and lets the user
@@ -170,6 +179,16 @@ const AddFoodForm: React.FC<AddFoodFormProps> = ({
       </header>
 
       <div className="space-y-4 px-3 py-3 sm:px-5 sm:py-4">
+        {/* "Log this again" — one-tap re-add of the foods most logged to the
+            selected meal (desktop had no recents until now). Scoped to the
+            current meal tile; renders nothing when there are no recents. */}
+        {selectedMealName && (
+          <QuickAddFoods
+            slotName={selectedMealName}
+            onAdd={(food, portion) => onQuickLog(food, selectedMealId, portion)}
+          />
+        )}
+
         {/* Search */}
         <div
           ref={suggestionsRef}

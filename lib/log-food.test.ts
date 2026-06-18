@@ -112,6 +112,26 @@ describe("addFoodBasis", () => {
     expect(item.saturatedFat).toBeUndefined(); // sub-macros dropped with the pick
   });
 
+  it("logs a re-based (provenance-stripped) pick with NO offCode", () => {
+    // After a manual macro edit, handleFoodChange re-bases selectedFood to a
+    // bare per-100g food (no id/source/micros). Its grid values match it, so
+    // addFoodBasis takes the untouched branch and returns it verbatim — and the
+    // logged item must carry no catalog provenance.
+    const rebased: Food = {
+      name: "Nutella (edited)",
+      protein: 12,
+      carbs: 57.5,
+      fat: 30.9,
+      calories: 563,
+    };
+    const basis = addFoodBasis(rebased, gridFor(rebased, 30), rebased.name, 30);
+    expect(basis).toEqual(rebased); // untouched → verbatim
+    const item = scaleFoodToItem(basis, 30);
+    expect(item.offCode).toBeUndefined();
+    expect(item.micronutrients).toBeUndefined();
+    expect(item.protein).toBe(3.6); // 12 * 0.3
+  });
+
   it("builds a bare per-100g food for a fully-manual entry (no pick)", () => {
     const basis = addFoodBasis(
       null,

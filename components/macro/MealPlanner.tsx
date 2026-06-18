@@ -127,6 +127,8 @@ interface MealPlannerProps {
   /** Logs the inline form's food; returns whether a write happened (so the
    *  form only toasts on a real add). */
   addFood: () => boolean;
+  /** One-tap re-add from the desktop form's "Log this again" strip. */
+  onQuickLog: (food: Food, mealId: number, grams: number) => void;
   removeFood: (mealId: number, foodId: number) => void;
   duplicateFood: (mealId: number, foodId: number) => void;
   moveFood: (
@@ -225,6 +227,7 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
   handlePortionChange,
   handleFoodChange,
   addFood,
+  onQuickLog,
   removeFood,
   duplicateFood,
   moveFood,
@@ -436,6 +439,7 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
           handlePortionChange={handlePortionChange}
           handleFoodChange={handleFoodChange}
           addFood={addFood}
+          onQuickLog={onQuickLog}
           setFoodSearch={setFoodSearch}
           setShowSuggestions={() => {}}
           setPortionSize={setPortionSize}
