@@ -77,8 +77,8 @@ function LoginShell({ configured }: { configured: boolean }) {
           </div>
           {!configured && (
             <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
-              Supabase isn&apos;t configured for this build. See README →
-              Supabase setup to add the env vars.
+              Supabase isn&apos;t configured for this build. See
+              docs/configuration.md → Supabase setup to add the env vars.
             </div>
           )}
         </div>
@@ -149,7 +149,9 @@ function LoginPageInner() {
     }
     const supabase = getSupabaseBrowser();
     if (!supabase) {
-      setError("Supabase isn't configured. See README → Supabase setup.");
+      setError(
+        "Supabase isn't configured. See docs/configuration.md → Supabase setup.",
+      );
       return;
     }
     setBusy(true);
@@ -230,7 +232,9 @@ function LoginPageInner() {
     setError(null);
     const supabase = getSupabaseBrowser();
     if (!supabase) {
-      setError("Supabase isn't configured. See README → Supabase setup.");
+      setError(
+        "Supabase isn't configured. See docs/configuration.md → Supabase setup.",
+      );
       return;
     }
     setBusy(true);
@@ -279,7 +283,7 @@ function LoginPageInner() {
   async function runPasskeySignIn(): Promise<string | null> {
     const supabase = getSupabaseBrowser();
     if (!supabase) {
-      return "Supabase isn't configured. See README → Supabase setup.";
+      return "Supabase isn't configured. See docs/configuration.md → Supabase setup.";
     }
     try {
       const { error: e } = await supabase.auth.signInWithPasskey();
@@ -450,8 +454,8 @@ function LoginPageInner() {
 
           {!configured && (
             <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
-              Supabase isn&apos;t configured for this build. See README →
-              Supabase setup to add the env vars.
+              Supabase isn&apos;t configured for this build. See
+              docs/configuration.md → Supabase setup to add the env vars.
             </div>
           )}
 

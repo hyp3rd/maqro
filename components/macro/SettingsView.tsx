@@ -403,8 +403,8 @@ export function SettingsView({
               <p className="text-xs leading-relaxed">
                 Sign-in and multi-device sync are disabled. The app is running
                 in <span className="font-medium">guest mode</span> - everything
-                is stored in IndexedDB on this device. See README → Supabase
-                setup to enable accounts.
+                is stored in IndexedDB on this device. See docs/configuration.md
+                → Supabase setup to enable accounts.
               </p>
             </div>
           ) : user ? (

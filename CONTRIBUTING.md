@@ -88,7 +88,7 @@ npm run dev        # http://localhost:3000
 ```
 
 Without `.env.local` the app runs in **guest mode** with everything
-in IndexedDB. See [README.md → Configuration](README.md#configuration)
+in IndexedDB. See [Configuration](docs/configuration.md)
 for every env var. The vast majority are optional — unset → the
 feature disables gracefully.
 
@@ -110,7 +110,7 @@ feature disables gracefully.
 
 ## 4. Repository layout
 
-A high-level map. See [README.md → Architecture](README.md#architecture)
+A high-level map. See [Architecture](docs/architecture.md)
 for the comprehensive file tree.
 
 | Path                    | What lives here                                                |
@@ -424,8 +424,8 @@ is fine; rudeness is not.
 
 ## 16. Areas where help is welcome
 
-The README's **Roadmap → Possibly next** section is the easiest
-place to find well-scoped work. Beyond that:
+The [roadmap](docs/ROADMAP.md) is the easiest place to find
+well-scoped work. Beyond that:
 
 - **Accessibility audits.** The app uses semantic markup and Radix
   primitives, but it hasn't had a screen-reader pass against a real
