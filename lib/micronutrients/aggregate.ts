@@ -12,6 +12,24 @@ export function foodNameKey(name: string): string {
   return name.toLowerCase().trim();
 }
 
+/** Per-nutrient precision flag that travels ALONGSIDE the totals (the totals
+ *  themselves are a flat number map with nowhere to hang a tag — exactly why
+ *  `daysWith` is a parallel map too). `true` means the value is an
+ *  APPROXIMATION: at least one food/day that contributed to it came from a
+ *  similar-food estimate, an AI guess, the macro-side fiber fallback, or a
+ *  product whose exact barcode wasn't captured. Absent ⇒ every contributor was
+ *  an exact, barcode-matched product (or a curated lab reference). */
+export type MicronutrientProvenance = Partial<
+  Record<MicronutrientKey, boolean>
+>;
+
+/** A profile is "exact" only when its values came from a single barcode-matched
+ *  product or a curated lab reference (CIQUAL). Name-search medians and AI
+ *  guesses are approximations; a `miss` carries no values at all. */
+function profileSourceIsExact(source: MicronutrientProfile["source"]): boolean {
+  return source === "barcode" || source === "ciqual";
+}
+
 /** Sum micronutrient totals across a set of meals, scaling each food's
  *  per-100g values by its portion.
  *
@@ -46,13 +64,47 @@ export function aggregateMicronutrients(
   meals: Meal[],
   profiles: Map<string, MicronutrientProfile>,
 ): MicronutrientTotals {
+  return aggregateMicronutrientsDetailed(meals, profiles).totals;
+}
+
+/** `aggregateMicronutrients` plus the per-nutrient precision flag the UI needs
+ *  to mark an "≈ estimated" value honestly. The numbers are IDENTICAL to the
+ *  plain variant — this only also records, per nutrient, whether any
+ *  contributing food was an approximation.
+ *
+ *  Worst-case (conservative) reduction: a total is exact ONLY if EVERY food
+ *  that fed it was exact. Any approximate contributor flips the whole summed
+ *  value to approximate. On a precision-sensitive nutrition panel a false
+ *  "≈ estimated" is harmless; a false "exact" is the error to avoid.
+ *
+ *  Per-contributor exactness (the offCode-gated rule):
+ *    - the food's OWN per-100g micros are exact only when the food carries an
+ *      `offCode` (a barcode-matched product the user actually logged); a
+ *      builtin / generic / AI-derived catalog value has none → approximate;
+ *    - a name-keyed profile value is exact only when its source is a barcode
+ *      or curated lab reference (`profileSourceIsExact`);
+ *    - the macro-side fiber fallback is always an approximation. */
+export function aggregateMicronutrientsDetailed(
+  meals: Meal[],
+  profiles: Map<string, MicronutrientProfile>,
+): { totals: MicronutrientTotals; approx: MicronutrientProvenance } {
   const totals = {} as Record<MicronutrientKey, number>;
   const seen = {} as Record<MicronutrientKey, boolean>;
+  const approx = {} as Record<MicronutrientKey, boolean>;
 
   for (const meal of meals) {
     for (const food of meal.foods) {
       const own = food.micronutrients;
-      const profile = profiles.get(foodNameKey(food.name))?.valuesPer100g;
+      const profileRow = profiles.get(foodNameKey(food.name));
+      const profile = profileRow?.valuesPer100g;
+      // The food's own micros are trustworthy-as-exact only when we captured
+      // the exact product (a barcode). Otherwise the value is some catalog
+      // food's per-100g, which can itself be a generic / search / AI figure.
+      const ownIsExact =
+        typeof food.offCode === "string" && food.offCode.trim().length > 0;
+      const profileIsExact = profileRow
+        ? profileSourceIsExact(profileRow.source)
+        : false;
       // portionSize is grams; values are per-100g.
       const ratio = food.portionSize / 100;
       if (!Number.isFinite(ratio) || ratio <= 0) continue;
@@ -60,13 +112,12 @@ export function aggregateMicronutrients(
         // Per-nutrient merge: the product's own value wins; the profile
         // fills the nutrients the product didn't list.
         const ownV = own?.[key];
-        const per100 =
-          typeof ownV === "number" && Number.isFinite(ownV)
-            ? ownV
-            : profile?.[key];
+        const usingOwn = typeof ownV === "number" && Number.isFinite(ownV);
+        const per100 = usingOwn ? ownV : profile?.[key];
         if (typeof per100 === "number" && Number.isFinite(per100)) {
           totals[key] = (totals[key] ?? 0) + per100 * ratio;
           seen[key] = true;
+          if (!(usingOwn ? ownIsExact : profileIsExact)) approx[key] = true;
         } else if (
           key === "fiber" &&
           typeof food.fiber === "number" &&
@@ -75,20 +126,23 @@ export function aggregateMicronutrients(
           // Macro-side fiber is already scaled to the portion — add as-is.
           totals[key] = (totals[key] ?? 0) + food.fiber;
           seen[key] = true;
+          approx[key] = true; // macro-side fallback is an approximation
         }
       }
     }
   }
 
   const out: MicronutrientTotals = {};
+  const outApprox: MicronutrientProvenance = {};
   for (const key of MICRONUTRIENT_KEYS) {
     if (seen[key]) {
       // Round to 1 decimal — matches the macro aggregator's precision
       // and keeps µg vitamins from rendering 14-digit float tails.
       out[key] = Math.round(totals[key] * 10) / 10;
+      if (approx[key]) outApprox[key] = true;
     }
   }
-  return out;
+  return { totals: out, approx: outApprox };
 }
 
 /** The meal's best-known fiber, resolved per food with the SAME priority
@@ -219,8 +273,13 @@ export function aggregateBreakdownWithProfiles(
   return out;
 }
 
-/** A single day's micronutrient totals, tagged with its date. */
-export type MicronutrientDay = { date: string; totals: MicronutrientTotals };
+/** A single day's micronutrient totals, tagged with its date + the
+ *  per-nutrient precision flag (see `MicronutrientProvenance`). */
+export type MicronutrientDay = {
+  date: string;
+  totals: MicronutrientTotals;
+  approx: MicronutrientProvenance;
+};
 
 /** Build a per-day micronutrient series over the last `days` days,
  *  for the trend charts. Mirrors `computeWeeklyRecap`'s windowing:
@@ -239,27 +298,17 @@ export function computeMicronutrientWindow(
   const out: MicronutrientDay[] = [];
   for (const log of logs) {
     if (log.date > today) continue;
-    const totals = aggregateMicronutrients(log.meals, profiles);
+    const { totals, approx } = aggregateMicronutrientsDetailed(
+      log.meals,
+      profiles,
+    );
     // Skip days where no food was enriched — an empty totals object
     // carries no signal and would just be a gap in every chart.
     if (Object.keys(totals).length === 0) continue;
-    out.push({ date: log.date, totals });
+    out.push({ date: log.date, totals, approx });
   }
   out.sort((a, b) => (a.date < b.date ? -1 : 1));
   return days > 0 ? out.slice(-days) : out;
-}
-
-/** Average per-nutrient intake across the days in a window — the
- *  "habitual intake" figure a medical reader cares about, smoothing
- *  out day-to-day noise. Each nutrient is averaged ONLY over the days
- *  that actually carried it (not the whole window), matching the
- *  omit-unseen contract: a nutrient present on 3 of 10 logged days
- *  reports the mean of those 3, not a window-diluted figure. Returns
- *  an empty object for an empty window. */
-export function averageMicronutrients(
-  days: MicronutrientDay[],
-): MicronutrientTotals {
-  return averageMicronutrientsDetailed(days).totals;
 }
 
 export type MicronutrientAverages = {
@@ -271,33 +320,47 @@ export type MicronutrientAverages = {
    *  built on 18 of 20 — the UI surfaces this so the average can't read
    *  as more habitual than the data supports. */
   daysWith: Partial<Record<MicronutrientKey, number>>;
+  /** Per-nutrient precision over the window: `true` when ANY contributing day
+   *  was an approximation (the conservative reduction — see
+   *  `aggregateMicronutrientsDetailed`). Drives the "≈ estimated" marker. */
+  approx: MicronutrientProvenance;
   /** Tracked days in the window (days with at least one enriched food). */
   dayCount: number;
 };
 
-/** `averageMicronutrients` plus the per-nutrient coverage needed to display
- *  the average honestly ("12 mg · on 8 of 20 tracked days"). */
+/** Average per-nutrient intake across the days in a window — the "habitual
+ *  intake" figure a medical reader cares about, smoothing out day-to-day noise.
+ *  Each nutrient is averaged ONLY over the days that actually carried it (not
+ *  the whole window), matching the omit-unseen contract: a nutrient present on
+ *  3 of 10 logged days reports the mean of those 3, not a window-diluted figure.
+ *  Plus the per-nutrient coverage + precision needed to display the average
+ *  honestly ("≈ 12 mg · on 8 of 20 tracked days"). Empty for an empty window. */
 export function averageMicronutrientsDetailed(
   days: MicronutrientDay[],
 ): MicronutrientAverages {
   const sums = {} as Record<MicronutrientKey, number>;
   const counts = {} as Record<MicronutrientKey, number>;
+  const approxAny = {} as Record<MicronutrientKey, boolean>;
   for (const day of days) {
     for (const key of MICRONUTRIENT_KEYS) {
       const v = day.totals[key];
       if (typeof v === "number" && Number.isFinite(v)) {
         sums[key] = (sums[key] ?? 0) + v;
         counts[key] = (counts[key] ?? 0) + 1;
+        // A window average is exact only if EVERY contributing day was exact.
+        if (day.approx[key]) approxAny[key] = true;
       }
     }
   }
   const totals: MicronutrientTotals = {};
   const daysWith: Partial<Record<MicronutrientKey, number>> = {};
+  const approx: MicronutrientProvenance = {};
   for (const key of MICRONUTRIENT_KEYS) {
     if (counts[key] > 0) {
       totals[key] = Math.round((sums[key] / counts[key]) * 10) / 10;
       daysWith[key] = counts[key];
+      if (approxAny[key]) approx[key] = true;
     }
   }
-  return { totals, daysWith, dayCount: days.length };
+  return { totals, daysWith, approx, dayCount: days.length };
 }

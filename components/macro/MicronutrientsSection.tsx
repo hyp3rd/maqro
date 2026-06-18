@@ -116,11 +116,12 @@ export function MicronutrientsSection({
   // a time). Null = all collapsed.
   const [expanded, setExpanded] = useState<MicronutrientKey | null>(null);
 
-  const { averages, daysWith, daysCovered, window } = useMemo(() => {
+  const { averages, daysWith, approx, daysCovered, window } = useMemo(() => {
     if (!logs || !profiles)
       return {
         averages: {},
         daysWith: {},
+        approx: {} as Partial<Record<MicronutrientKey, boolean>>,
         daysCovered: 0,
         window: [] as MicronutrientDay[],
       };
@@ -130,6 +131,7 @@ export function MicronutrientsSection({
     return {
       averages: detailed.totals,
       daysWith: detailed.daysWith,
+      approx: detailed.approx,
       daysCovered: w.length,
       window: w,
     };
@@ -176,23 +178,37 @@ export function MicronutrientsSection({
             ))}
           </div>
         ) : anyData ? (
-          <ul className="space-y-3">
-            {MICRONUTRIENT_KEYS.map((key) => (
-              <NutrientBar
-                key={key}
-                nutrient={key}
-                value={averages[key]}
-                daysSeen={daysWith[key]}
-                dayCount={daysCovered}
-                target={targets[key]}
-                trend={trendPoints(window, key)}
-                expanded={expanded === key}
-                onToggle={() =>
-                  setExpanded((cur) => (cur === key ? null : key))
-                }
-              />
-            ))}
-          </ul>
+          <>
+            <ul className="space-y-3">
+              {MICRONUTRIENT_KEYS.map((key) => (
+                <NutrientBar
+                  key={key}
+                  nutrient={key}
+                  value={averages[key]}
+                  daysSeen={daysWith[key]}
+                  dayCount={daysCovered}
+                  approx={approx[key]}
+                  target={targets[key]}
+                  trend={trendPoints(window, key)}
+                  expanded={expanded === key}
+                  onToggle={() =>
+                    setExpanded((cur) => (cur === key ? null : key))
+                  }
+                />
+              ))}
+            </ul>
+            {/* Legend — only when at least one value is an estimate, so it
+                doesn't add noise on a fully exact panel. */}
+            {MICRONUTRIENT_KEYS.some(
+              (k) => typeof averages[k] === "number" && approx[k],
+            ) && (
+              <p className="mt-3 border-t border-border/60 pt-3 text-[11px] text-muted-foreground">
+                <span aria-hidden>≈</span> means estimated — based on similar
+                foods, not the exact product you logged. Scan a barcode for an
+                exact match.
+              </p>
+            )}
+          </>
         ) : (
           <div className="rounded-md border border-border/60 bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
             {trackedNames === 0
@@ -223,6 +239,7 @@ function NutrientBar({
   value,
   daysSeen,
   dayCount,
+  approx,
   target,
   trend,
   expanded,
@@ -235,6 +252,9 @@ function NutrientBar({
    *  visible or a 2-of-20-days nutrient reads like a daily habit. */
   daysSeen: number | undefined;
   dayCount: number;
+  /** `true` when the value isn't an exact-product figure (similar-food /
+   *  AI estimate / no captured barcode). Renders an "≈" precision marker. */
+  approx: boolean | undefined;
   target: number;
   trend: LinePoint[];
   expanded: boolean;
@@ -263,6 +283,20 @@ function NutrientBar({
         </span>
         {hasValue ? (
           <span className="font-mono tabular-nums text-muted-foreground">
+            {/* Precision marker: "≈" when the figure isn't an exact-product
+                value. The glyph is aria-hidden with a spelled-out "estimated"
+                for screen readers (title alone isn't reliably announced). */}
+            {approx && (
+              <span className="mr-0.5 text-muted-foreground/70">
+                <span className="sr-only">estimated, </span>
+                <span
+                  aria-hidden
+                  title="Estimated — based on similar foods, not the exact product"
+                >
+                  ≈
+                </span>
+              </span>
+            )}
             {formatValue(value)} {meta.unit}
             <span className="ml-1.5 text-muted-foreground/70">
               {Math.round((value / target) * 100)}% target
