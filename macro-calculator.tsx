@@ -776,6 +776,13 @@ const MacroCalculator = () => {
   const handleFoodSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFoodSearch(e.target.value);
     setShowSuggestions(e.target.value.trim() !== "");
+    // The user is searching anew, so the previously-picked food is stale: drop
+    // it so a retyped name can't inherit the old pick's macros/micros/offCode
+    // (`addFoodBasis` then rebuilds a bare per-100g food from the grid values).
+    // Safe because this fires ONLY on real typing — `handleFoodSelect` sets the
+    // box value programmatically, which doesn't trigger this onChange, and a
+    // portion-only change never routes through here.
+    setSelectedFood(null);
   };
 
   // Handle food selection from suggestions
@@ -1179,8 +1186,28 @@ const MacroCalculator = () => {
       const updatedFood = { ...newFood, [name]: Number.parseFloat(value) || 0 };
       const calories =
         updatedFood.protein * 4 + updatedFood.carbs * 4 + updatedFood.fat * 9;
+      const roundedCalories = Math.round(calories);
 
-      setNewFood({ ...updatedFood, calories: Math.round(calories) });
+      setNewFood({ ...updatedFood, calories: roundedCalories });
+
+      // Re-base the picked food on a manual macro edit: keep `selectedFood` as
+      // the authoritative per-100g basis (so a later portion change re-scales
+      // the override instead of discarding it, recomputing from the now-stale
+      // original) but STRIP catalog provenance — the numbers no longer match the
+      // picked product, so the logged item must not carry its id/offCode/micros/
+      // sub-macros. Scoped to an existing pick: a pure hand-typed entry keeps
+      // `selectedFood` null, so its absolute values stay unscaled on re-portion
+      // (today's behavior). Skip on a zero portion (no derivable per-100g).
+      if (selectedFood && portionSize > 0) {
+        const inv = 100 / portionSize;
+        setSelectedFood({
+          name: foodSearch.trim() || updatedFood.name,
+          protein: updatedFood.protein * inv,
+          carbs: updatedFood.carbs * inv,
+          fat: updatedFood.fat * inv,
+          calories: roundedCalories * inv,
+        });
+      }
     } else if (name === "calories") {
       setNewFood({ ...newFood, calories: Number.parseFloat(value) || 0 });
     } else {
@@ -2211,6 +2238,7 @@ const MacroCalculator = () => {
           handlePortionChange={handlePortionChange}
           handleFoodChange={handleFoodChange}
           addFood={addFood}
+          onQuickLog={quickLogFood}
           removeFood={removeFood}
           duplicateFood={duplicateFood}
           moveFood={moveFood}

@@ -53,7 +53,17 @@ export function useRecentFoods(opts?: { limit?: number; sort?: RecentSort }): {
 /** The slot-scoped "Log this again" list (`recentLoggedFoodsForSlot`) for the
  *  meal hub + desktop inline form. Unlike `useRecentFoods`, this re-reads on any
  *  daily-log change (`useDataRev("dailyLogs")`): the desktop strip is
- *  always-mounted, so a food just logged must appear without a reload. */
+ *  always-mounted, so a food just logged must appear without a reload.
+ *
+ *  Known + accepted limitation: this reads recents from IDB, which lags the
+ *  in-memory `meals` by the daily-log write debounce (~500ms, `saveDailyLog` →
+ *  `notifyDataChanged("dailyLogs")`). So for ~500ms after a one-tap re-add the
+ *  strip's secondary `×N` count / last-portion can trail the just-logged food
+ *  (the food itself lands in the meal instantly via `setMeals`). This is a
+ *  cosmetic, self-correcting blip; we deliberately do NOT paper over it with an
+ *  optimistic in-memory merge — bumping the rev earlier would just re-read the
+ *  not-yet-written IDB, and a true merge isn't worth the complexity for a count
+ *  that catches up within one debounce window. */
 export function useRecentFoodsForSlot(
   slotName: string,
   opts?: { limit?: number; backfillBelow?: number },
