@@ -1610,7 +1610,10 @@ async function pullMicronutrientProfiles(
       supabase
         .from("micronutrient_profiles")
         .select(
-          "user_id, name_key, values, source, source_code, enriched_at, updated_at",
+          // `breakdown` (migration 0065) MUST be selected — the mapper
+          // (`micronutrientProfileFromRow`) reads it, so omitting it silently
+          // dropped the macro-breakdown backfill on every synced profile.
+          "user_id, name_key, values, source, source_code, breakdown, enriched_at, updated_at",
         )
         .eq("user_id", userId)
         .abortSignal(signal),

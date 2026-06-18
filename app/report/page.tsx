@@ -39,7 +39,7 @@ import {
 import { waterGoalMl } from "@/lib/hydration";
 import { computeMacros } from "@/lib/macros";
 import {
-  averageMicronutrients,
+  averageMicronutrientsDetailed,
   computeMicronutrientWindow,
 } from "@/lib/micronutrients/aggregate";
 import type { MicronutrientProfile } from "@/lib/micronutrients/types";
@@ -256,10 +256,13 @@ function ReportBody({
   // name-keyed profiles. Empty for non-Pro users (no profiles) — the
   // section renders nothing in that case.
   const micronutrientAverages = useMemo(() => {
-    if (micronutrientProfiles.length === 0) return {};
+    if (micronutrientProfiles.length === 0)
+      return { totals: {}, approx: {} } as ReturnType<
+        typeof averageMicronutrientsDetailed
+      >;
     const map = new Map(micronutrientProfiles.map((p) => [p.nameKey, p]));
     const window = computeMicronutrientWindow(logsWindow, map, today, days);
-    return averageMicronutrients(window);
+    return averageMicronutrientsDetailed(window);
   }, [micronutrientProfiles, logsWindow, today, days]);
 
   // Derived stats. Skipped when there's no profile yet — guest-
@@ -645,10 +648,10 @@ function ReportBody({
 
     // Micronutrients vs recommended intake (only when there's enriched data).
     const micronutrients =
-      Object.keys(micronutrientAverages).length > 0
+      Object.keys(micronutrientAverages.totals).length > 0
         ? {
             caption:
-              "Average daily intake vs the recommended intake (NIH DRI / FDA DV), from foods enriched via Open Food Facts. Approximate — foods with no data are excluded.",
+              "Average daily intake vs the recommended intake (NIH DRI / FDA DV), from foods looked up in Open Food Facts. ≈ marks an estimate — based on similar foods, not the exact product; foods with no data are excluded.",
             rows: MICRONUTRIENT_KEYS.map((key) => {
               const meta = MICRONUTRIENTS[key];
               const target = getMicronutrientTargets(
@@ -657,7 +660,7 @@ function ReportBody({
                   : "unspecified",
                 profile ? effectiveAge(profile) : 30,
               )[key];
-              const value = micronutrientAverages[key];
+              const value = micronutrientAverages.totals[key];
               const hasValue = typeof value === "number";
               const pct = hasValue ? Math.round((value / target) * 100) : 0;
               const display = hasValue
@@ -665,9 +668,15 @@ function ReportBody({
                   ? Math.round(value)
                   : Math.round(value * 10) / 10
                 : 0;
+              // "≈" prefix when the figure isn't an exact-product value, matched
+              // to the in-app panel + explained in the caption above.
+              const prefix =
+                hasValue && micronutrientAverages.approx[key] ? "≈ " : "";
               return {
                 label: meta.label,
-                value: hasValue ? `${display} ${meta.unit} · ${pct}%` : "",
+                value: hasValue
+                  ? `${prefix}${display} ${meta.unit} · ${pct}%`
+                  : "",
                 pct,
                 hasValue,
               };
@@ -985,9 +994,10 @@ function ReportBody({
         )}
 
         {enabled.has("micronutrients") &&
-          Object.keys(micronutrientAverages).length > 0 && (
+          Object.keys(micronutrientAverages.totals).length > 0 && (
             <MicronutrientReportSection
-              averages={micronutrientAverages}
+              averages={micronutrientAverages.totals}
+              approx={micronutrientAverages.approx}
               targets={getMicronutrientTargets(
                 profile?.gender === "male" || profile?.gender === "female"
                   ? profile.gender
@@ -1536,10 +1546,12 @@ function ReportSection({
  *  so a clinician reading the PDF sees coverage honestly. */
 function MicronutrientReportSection({
   averages,
+  approx,
   targets,
   personalized,
 }: {
   averages: Partial<Record<MicronutrientKey, number>>;
+  approx: Partial<Record<MicronutrientKey, boolean>>;
   targets: Record<MicronutrientKey, number>;
   personalized: boolean;
 }) {
@@ -1553,10 +1565,9 @@ function MicronutrientReportSection({
         {personalized
           ? "the recommended intake for this person's age and sex (NIH DRI)"
           : "the FDA Daily Value"}
-        , from foods enriched via Open Food Facts. Approximate — branded /
-        barcode foods are most accurate; values for foods Open Food Facts
-        doesn&apos;t list are AI-estimated; foods with no data either way are
-        excluded.
+        , from foods looked up in Open Food Facts. <span aria-hidden>≈</span>{" "}
+        marks an estimate — based on similar foods, not the exact product (a
+        barcode match is most accurate). Foods with no data are excluded.
       </p>
       <ul className="space-y-2.5">
         {MICRONUTRIENT_KEYS.map((key) => {
@@ -1573,6 +1584,17 @@ function MicronutrientReportSection({
                 <span className="font-medium">{meta.label}</span>
                 {hasValue ? (
                   <span className="font-mono tabular-nums text-muted-foreground print:text-black">
+                    {approx[key] && (
+                      <span className="mr-0.5 text-muted-foreground/70">
+                        <span className="sr-only">estimated, </span>
+                        <span
+                          aria-hidden
+                          title="Estimated — based on similar foods, not the exact product"
+                        >
+                          ≈
+                        </span>
+                      </span>
+                    )}
                     {value >= 10
                       ? Math.round(value)
                       : Math.round(value * 10) / 10}{" "}

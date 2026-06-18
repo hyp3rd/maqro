@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   aggregateBreakdownWithProfiles,
   aggregateMicronutrients,
+  aggregateMicronutrientsDetailed,
   averageMicronutrientsDetailed,
   computeMicronutrientWindow,
   foodNameKey,
@@ -214,12 +215,111 @@ describe("aggregateBreakdownWithProfiles", () => {
   });
 });
 
+describe("aggregateMicronutrientsDetailed (provenance)", () => {
+  function withSource(
+    p: MicronutrientProfile,
+    source: MicronutrientProfile["source"],
+  ): MicronutrientProfile {
+    return { ...p, source };
+  }
+
+  it("own micros are EXACT only when the food carries an offCode", () => {
+    const exact: FoodItem = {
+      ...food("Nutella", 100),
+      offCode: "3017620422003",
+      micronutrients: { iron: 2 },
+    };
+    const approx: FoodItem = {
+      ...food("Generic spread", 100),
+      micronutrients: { iron: 2 }, // own micros but NO barcode
+    };
+    expect(
+      aggregateMicronutrientsDetailed([meal([exact])], profileMap([])).approx
+        .iron,
+    ).toBeUndefined();
+    expect(
+      aggregateMicronutrientsDetailed([meal([approx])], profileMap([])).approx
+        .iron,
+    ).toBe(true);
+  });
+
+  it("treats a blank/whitespace offCode as NOT exact (never a false 'exact')", () => {
+    const blank: FoodItem = {
+      ...food("Suspect", 100),
+      offCode: "   ",
+      micronutrients: { iron: 2 },
+    };
+    expect(
+      aggregateMicronutrientsDetailed([meal([blank])], profileMap([])).approx
+        .iron,
+    ).toBe(true);
+  });
+
+  it("profile values are exact for barcode/ciqual, approximate for search/ai", () => {
+    const f = food("Spinach", 100);
+    const detail = (src: MicronutrientProfile["source"]) =>
+      aggregateMicronutrientsDetailed(
+        [meal([f])],
+        profileMap([withSource(profile("Spinach", { iron: 3 }), src)]),
+      ).approx.iron;
+    expect(detail("barcode")).toBeUndefined();
+    expect(detail("ciqual")).toBeUndefined();
+    expect(detail("search")).toBe(true);
+    expect(detail("ai")).toBe(true);
+  });
+
+  it("macro-side fiber fallback is always approximate", () => {
+    const f = food("Bran", 50);
+    f.fiber = 7.5; // only the macro-side value
+    const { totals, approx } = aggregateMicronutrientsDetailed(
+      [meal([f])],
+      profileMap([]),
+    );
+    expect(totals.fiber).toBeCloseTo(7.5);
+    expect(approx.fiber).toBe(true);
+  });
+
+  it("worst-case: one approximate contributor flips the whole nutrient", () => {
+    const exact: FoodItem = {
+      ...food("Branded oats", 100),
+      offCode: "1234567890123",
+      micronutrients: { iron: 4 },
+    };
+    const approx: FoodItem = {
+      ...food("Loose oats", 100),
+      micronutrients: { iron: 4 }, // no barcode
+    };
+    const out = aggregateMicronutrientsDetailed(
+      [meal([exact, approx])],
+      profileMap([]),
+    );
+    expect(out.totals.iron).toBeCloseTo(8);
+    expect(out.approx.iron).toBe(true); // mixed → approximate
+  });
+
+  it("all-exact contributors leave the nutrient unflagged", () => {
+    const a: FoodItem = {
+      ...food("A", 100),
+      offCode: "1111111111111",
+      micronutrients: { iron: 2 },
+    };
+    const b: FoodItem = {
+      ...food("B", 100),
+      offCode: "2222222222222",
+      micronutrients: { iron: 3 },
+    };
+    const out = aggregateMicronutrientsDetailed([meal([a, b])], profileMap([]));
+    expect(out.totals.iron).toBeCloseTo(5);
+    expect(out.approx.iron).toBeUndefined();
+  });
+});
+
 describe("averageMicronutrientsDetailed", () => {
   it("reports per-nutrient day coverage alongside the averages", () => {
     const out = averageMicronutrientsDetailed([
-      { date: "2026-06-01", totals: { iron: 4, fiber: 10 } },
-      { date: "2026-06-02", totals: { iron: 6 } },
-      { date: "2026-06-03", totals: { iron: 8 } },
+      { date: "2026-06-01", totals: { iron: 4, fiber: 10 }, approx: {} },
+      { date: "2026-06-02", totals: { iron: 6 }, approx: {} },
+      { date: "2026-06-03", totals: { iron: 8 }, approx: {} },
     ]);
     expect(out.dayCount).toBe(3);
     expect(out.totals.iron).toBeCloseTo(6);
@@ -228,6 +328,21 @@ describe("averageMicronutrientsDetailed", () => {
     // coverage count makes that visible to the UI.
     expect(out.totals.fiber).toBeCloseTo(10);
     expect(out.daysWith.fiber).toBe(1);
+  });
+
+  it("flags a nutrient approximate if ANY contributing day was approximate", () => {
+    const out = averageMicronutrientsDetailed([
+      {
+        date: "2026-06-01",
+        totals: { iron: 4, zinc: 5 },
+        approx: { iron: true },
+      },
+      { date: "2026-06-02", totals: { iron: 6, zinc: 5 }, approx: {} },
+    ]);
+    // iron was approximate on day 1 → the window average is approximate.
+    expect(out.approx.iron).toBe(true);
+    // zinc was exact on every day it appeared → no marker.
+    expect(out.approx.zinc).toBeUndefined();
   });
 });
 
