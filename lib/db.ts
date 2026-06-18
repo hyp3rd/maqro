@@ -4,6 +4,7 @@ import type {
   PersonalInfo,
   Recipe,
 } from "@/components/macro/types";
+import { pickWinnerProfile } from "@/lib/micronutrients/merge";
 import type { MicronutrientProfile } from "@/lib/micronutrients/types";
 import type { ShoppingAisle } from "@/lib/shopping/categorize";
 import { notifyDataChanged } from "@/lib/sync/data-bus";
@@ -24,7 +25,7 @@ import type {
 } from "@maqro/core/records";
 
 const DB_NAME = "maqro";
-const DB_VERSION = 19;
+const DB_VERSION = 20;
 
 const STORE_CUSTOM_FOODS = "customFoods";
 const STORE_PROFILE = "profile";
@@ -520,6 +521,41 @@ function getDB(): Promise<IDBPDatabase<MacroDB>> {
       // on each matching day, never written ahead.
       if (oldVersion < 19) {
         db.createObjectStore(STORE_MEAL_SCHEDULES, { keyPath: "id" });
+      }
+      if (oldVersion < 20) {
+        // v19 → v20: NFC-normalize the micronutrientProfiles keys so the local
+        // store matches the new `foodNameKey` reader (which now Unicode-NFC-
+        // normalizes the name). Re-key IN PLACE — never clear — so free/guest
+        // users, whose profiles exist ONLY locally with no server row to re-pull
+        // (the enrichment cron is Pro-gated), keep their micros. Two encoding
+        // forms of one name collapse onto one key; keep the best profile.
+        //
+        // A keyPath store can't re-key via `cursor.update` (the key is derived
+        // from `nameKey`), so read all, then delete-old + put-new under the new
+        // key. Only IDB ops are awaited between requests, so the versionchange
+        // transaction stays open through the rekey.
+        void (async () => {
+          const store = transaction.objectStore(STORE_MICRONUTRIENT_PROFILES);
+          const rows = (await store.getAll()) as MicronutrientProfile[];
+          const byNewKey = new Map<string, MicronutrientProfile[]>();
+          for (const row of rows) {
+            // The stored key is already lowercased+trimmed, so applying NFC
+            // reproduces the reader's lower→NFC→trim and the server migration's
+            // `normalize(name_key, NFC)`.
+            const newKey = row.nameKey.normalize("NFC");
+            const group = byNewKey.get(newKey);
+            if (group) group.push(row);
+            else byNewKey.set(newKey, [row]);
+          }
+          for (const [newKey, group] of byNewKey) {
+            const winner = pickWinnerProfile(group);
+            if (group.length === 1 && winner.nameKey === newKey) continue;
+            for (const row of group) {
+              if (row.nameKey !== newKey) await store.delete(row.nameKey);
+            }
+            await store.put({ ...winner, nameKey: newKey });
+          }
+        })();
       }
     },
   });

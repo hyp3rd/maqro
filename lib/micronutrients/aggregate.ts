@@ -4,12 +4,25 @@ import { MICRONUTRIENT_KEYS, type MicronutrientKey } from "@/lib/rda";
 import { SUB_MACRO_KEYS } from "@maqro/core/macros";
 import type { MicronutrientProfile, MicronutrientTotals } from "./types";
 
-/** Lowercased + trimmed food name — the join key between a logged
- *  food and its micronutrient profile. Kept local (a one-liner) so the
- *  micronutrient layer doesn't import from the shopping-list module;
- *  the normalization is intentionally identical to `nameKey` there. */
+/** The join key between a logged food and its micronutrient profile:
+ *  lowercased, Unicode-NFC-normalized, trimmed.
+ *
+ *  The NFC step canonicalizes the encoding form so the SAME visual name keys
+ *  identically no matter how it was typed/imported — "café" as a single
+ *  codepoint (U+00E9) vs "café" (e + combining acute) now collapse to one
+ *  key instead of two profiles for one food. Accents stay meaningful ("café" ≠
+ *  "cafe"); this only fixes encoding drift, not diacritics.
+ *
+ *  Order matters: lower THEN NFC. The stored `name_key` values were written by
+ *  the pre-NFC key (already lowercased), so the one-off re-key migration is just
+ *  `normalize(name_key, NFC)` — applying NFC to the same already-lowercased
+ *  string this reader does, which Postgres `normalize()` and JS reproduce
+ *  byte-for-byte. (Re-lowercasing in SQL would risk case-fold drift; we don't.)
+ *
+ *  Kept local (a one-liner) so the micronutrient layer doesn't import from the
+ *  shopping-list module; that module's `nameKey` is a separate namespace. */
 export function foodNameKey(name: string): string {
-  return name.toLowerCase().trim();
+  return name.toLowerCase().normalize("NFC").trim();
 }
 
 /** Per-nutrient precision flag that travels ALONGSIDE the totals (the totals
