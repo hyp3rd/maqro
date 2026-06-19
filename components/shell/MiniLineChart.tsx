@@ -13,6 +13,15 @@ export type LinePoint = {
   tooltipLabel?: string;
 };
 
+/** A vertical annotation drawn across the plot — e.g. a goal-phase boundary. */
+export type ChartMarker = {
+  /** Position in the same x-space as the data points (unix-day index / epoch).
+   *  Markers outside the data's x-range are skipped. */
+  x: number;
+  /** Short label drawn at the top of the line (e.g. "Cut", "Diet break"). */
+  label?: string;
+};
+
 type Props = {
   data: LinePoint[];
   /** Total width / height of the SVG (CSS pixels). */
@@ -32,6 +41,9 @@ type Props = {
   /** When true, smooth the line via Catmull–Rom interpolation. Off
    *  reverts to the straight-segment polyline. Default on. */
   smooth?: boolean;
+  /** Optional vertical markers (e.g. goal-phase boundaries) drawn as thin
+   *  dashed lines with a short top label, under the data line. */
+  markers?: ChartMarker[];
 };
 
 /** Lightweight line chart in pure SVG. No charting library - Catmull–Rom
@@ -49,6 +61,7 @@ export function MiniLineChart({
   targetY,
   targetLabel,
   smooth = true,
+  markers = [],
 }: Props) {
   const gradientId = useId();
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
@@ -304,6 +317,43 @@ export function MiniLineChart({
           )}
         </g>
       )}
+
+      {/* Vertical markers (e.g. goal-phase boundaries). Clipped to the
+          visible x-range; drawn under the data line as context. */}
+      {markers
+        .filter((m) => m.x >= xMin && m.x <= xMin + xSpan)
+        .map((m, i) => {
+          const mx = xScale(m.x);
+          const anchor =
+            mx <= padding.left + innerW * 0.15
+              ? "start"
+              : mx >= padding.left + innerW * 0.85
+                ? "end"
+                : "middle";
+          return (
+            <g key={`marker-${i}`}>
+              <line
+                x1={mx}
+                x2={mx}
+                y1={padding.top}
+                y2={padding.top + innerH}
+                className="stroke-foreground/25"
+                strokeWidth={1}
+                strokeDasharray="2 3"
+              />
+              {m.label && (
+                <text
+                  x={mx}
+                  y={padding.top + 8}
+                  textAnchor={anchor}
+                  className="fill-muted-foreground text-[9px]"
+                >
+                  {m.label}
+                </text>
+              )}
+            </g>
+          );
+        })}
 
       {/* Area under the line */}
       <path

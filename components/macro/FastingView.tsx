@@ -17,6 +17,11 @@ import {
   streakPhaseMinutes,
   type PhaseAccent,
 } from "@/lib/fasting-phases";
+import {
+  computeDailyTiming,
+  computeDailyTimingInsights,
+  type TimingInsightTone,
+} from "@/lib/timing-insights";
 import { cn } from "@/lib/utils";
 import {
   ChevronRight,
@@ -63,6 +68,13 @@ const ACCENT: Record<PhaseAccent, { bar: string; dot: string; text: string }> =
       text: "text-indigo-600 dark:text-indigo-400",
     },
   };
+
+/** Dot colour per timing-insight tone. */
+const TONE_DOT: Record<TimingInsightTone, string> = {
+  warn: "bg-amber-500",
+  info: "bg-muted-foreground",
+  good: "bg-emerald-500",
+};
 
 const PROTOCOL_META: Record<
   FastingProtocol,
@@ -261,6 +273,86 @@ export function FastingView({
           )}
         </div>
       </section>
+
+      {/* Today's eating window — first/last meal, length, + timing insights.
+          Renders only once a meal has been logged with a time today. */}
+      {(() => {
+        const todayLog = logs.find((l) => l.date === todayKey());
+        if (!todayLog) return null;
+        const timing = computeDailyTiming(todayLog.meals);
+        if (!timing) return null;
+        const insights = computeDailyTimingInsights({
+          meals: todayLog.meals,
+          // Only score against a window target when the user actually fasts.
+          eatingHoursTarget: enabled ? eatHrs : undefined,
+        });
+        return (
+          <section className="overflow-hidden rounded-xl border border-border/60 bg-card">
+            <header className="border-b border-border/60 px-5 py-3">
+              <h2 className="text-sm font-semibold tracking-tight">
+                Today&apos;s eating window
+              </h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                When you actually ate, from your logged meal times.
+              </p>
+            </header>
+            <div className="space-y-3 px-5 py-4">
+              <div className="flex flex-wrap gap-x-8 gap-y-3">
+                <div>
+                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                    First meal
+                  </p>
+                  <p className="font-mono text-base tabular-nums">
+                    {clock(timing.window.firstAt)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                    Last meal
+                  </p>
+                  <p className="font-mono text-base tabular-nums">
+                    {clock(timing.window.lastAt)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                    Window
+                  </p>
+                  <p className="font-mono text-base tabular-nums">
+                    {formatDuration(timing.window.lengthMin)}
+                  </p>
+                </div>
+              </div>
+              {insights.length > 0 && (
+                <ul className="space-y-1.5 border-t border-border/60 pt-3">
+                  {insights.map((ins) => (
+                    <li
+                      key={ins.title}
+                      className="flex items-start gap-2 text-sm"
+                    >
+                      <span
+                        className={cn(
+                          "mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full",
+                          TONE_DOT[ins.tone],
+                        )}
+                      />
+                      <span>
+                        <span className="font-medium text-foreground">
+                          {ins.title}
+                        </span>
+                        {" — "}
+                        <span className="text-muted-foreground">
+                          {ins.detail}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
+        );
+      })()}
 
       {/* Protocol comparison */}
       <section className="space-y-3">

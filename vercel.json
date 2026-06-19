@@ -11,6 +11,7 @@
       "path": "/api/cron/refresh-stale-micronutrients",
       "schedule": "0 3 * * *"
     },
-    { "path": "/api/cron/release-social-drafts", "schedule": "0 * * * *" }
+    { "path": "/api/cron/release-social-drafts", "schedule": "0 * * * *" },
+    { "path": "/api/cron/auto-adapt-tdee", "schedule": "0 6 * * 1" }
   ]
 }

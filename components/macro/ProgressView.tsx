@@ -1,17 +1,20 @@
 "use client";
 
 import { MicronutrientsSection } from "@/components/macro/MicronutrientsSection";
-import type { PersonalInfo } from "@/components/macro/types";
+import type { GoalPhase, PersonalInfo } from "@/components/macro/types";
 import { ChartZoomDialog } from "@/components/shell/ChartZoomDialog";
 import {
-  MiniLineChart,
+  type ChartMarker,
   type LinePoint,
+  MiniLineChart,
 } from "@/components/shell/MiniLineChart";
 import { NumberTicker } from "@/components/shell/NumberTicker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useAiUsage } from "@/hooks/use-ai-usage";
 import { useToday } from "@/hooks/use-today";
+import { FEATURES } from "@/lib/billing/tiers";
 import { bodyFatCategory, estimateBodyFat } from "@/lib/body-fat";
 import {
   listBodyMeasurements,
@@ -34,18 +37,28 @@ import {
   lateCaloriePct,
   LATE_CUTOFF_HOUR,
 } from "@/lib/fasting";
+import {
+  activePhase,
+  inferAdaptiveTdeePerPhase,
+  PHASE_LABELS,
+  type PhaseTdee,
+  sortPhases,
+} from "@/lib/goal-phases";
 import { reportStorageError, reportStorageOk } from "@/lib/storage-status";
 import { computeStreak, type StreakState } from "@/lib/streaks";
 import { bumpPending } from "@/lib/sync-status";
 import { useDataRev } from "@/lib/sync/data-bus";
+import { computeWeeklyTimingInsights } from "@/lib/timing-insights";
 import {
   ADAPTIVE_DELTA_THRESHOLD,
+  computeTdeeHistory,
   confidenceLabel,
   detectPlateau,
   inferAdaptiveTdee,
   recalibrateTdee,
   type AdaptiveTdee,
   type PlateauState,
+  type TdeePoint,
   type TdeeRecalibration,
 } from "@/lib/trends";
 import {
@@ -128,6 +141,15 @@ type Props = {
    *  streak). `undefined`/disabled still renders the window analytics, just
    *  without an on-protocol streak. */
   fasting: PersonalInfo["fasting"];
+  /** The user's goal-phase plan (Pro). Drives the phase-boundary markers on
+   *  the weight/calorie charts + the per-phase maintenance reads. Empty/absent
+   *  (or non-Pro) → no phase overlays. */
+  goalPhases?: GoalPhase[];
+  /** The latest weekly auto-adapt outcome to surface in Trends — an "applied"
+   *  heads-up or a "pending" one-tap confirm — or null/absent for none. */
+  autoAdaptSuggestion?: PersonalInfo["autoAdaptSuggestion"];
+  /** Clear the surfaced auto-adapt outcome (after applying or dismissing it). */
+  onDismissAutoAdapt?: () => void;
 };
 
 function parseLocalDate(d: string): Date {
@@ -146,6 +168,18 @@ function shortLabel(d: string): string {
   });
 }
 
+/** Render minutes-since-local-midnight as a locale-aware clock ("8:15 AM").
+ *  The calendar date is arbitrary — only the time-of-day is shown. */
+function clockFromMinOfDay(min: number): string {
+  return new Date(
+    2000,
+    0,
+    1,
+    Math.floor(min / 60),
+    min % 60,
+  ).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
 export function ProgressView({
   targetCalories,
   formulaTdee,
@@ -160,6 +194,9 @@ export function ProgressView({
   waterGoalOverride,
   onSetWaterGoal,
   fasting,
+  goalPhases,
+  autoAdaptSuggestion,
+  onDismissAutoAdapt,
 }: Props) {
   const [weights, setWeights] = useState<WeightEntry[] | null>(null);
   const [logs, setLogs] = useState<DailyLog[] | null>(null);
@@ -242,21 +279,81 @@ export function ProgressView({
     () => recalibrateTdee({ weights: weights ?? [], formulaTdee, dailyDelta }),
     [weights, formulaTdee, dailyDelta],
   );
+  // Per-day logged intake (calories), up to today — the shared input for
+  // every adaptive-TDEE read here (the live estimate, the over-time chart,
+  // and the per-phase breakdown), so they all agree.
+  const intakeSeries = useMemo(
+    () =>
+      (logs ?? [])
+        .filter((l) => l.date <= today)
+        .map((l) => ({
+          date: l.date,
+          calories: l.meals.reduce(
+            (s, m) => s + m.foods.reduce((ms, f) => ms + f.calories, 0),
+            0,
+          ),
+        })),
+    [logs, today],
+  );
+
   // Adaptive (dynamic) TDEE — maintenance inferred from logged intake vs.
   // the weight trend. Primary over `tdeeReco`; that one stays as the
   // fallback for users who weigh in but don't log food (no intake series).
-  const adaptive = useMemo<AdaptiveTdee>(() => {
-    const intake = (logs ?? [])
-      .filter((l) => l.date <= today)
-      .map((l) => ({
-        date: l.date,
-        calories: l.meals.reduce(
-          (s, m) => s + m.foods.reduce((ms, f) => ms + f.calories, 0),
-          0,
-        ),
-      }));
-    return inferAdaptiveTdee({ weights: weights ?? [], intake });
-  }, [weights, logs, today]);
+  const adaptive = useMemo<AdaptiveTdee>(
+    () => inferAdaptiveTdee({ weights: weights ?? [], intake: intakeSeries }),
+    [weights, intakeSeries],
+  );
+
+  // Advanced adaptive-TDEE analytics are Pro: the maintenance-over-time chart
+  // and the per-phase maintenance reads. Self-gated here (mirrors how
+  // MicronutrientsSection gates) so the markers + the Pro section all read one
+  // tier decision.
+  const { state: usageState } = useAiUsage();
+  const isProTrends =
+    usageState.status === "ok" &&
+    FEATURES.canViewTdeeHistory(usageState.data.tier);
+
+  const tdeeHistory = useMemo<TdeePoint[]>(
+    () =>
+      isProTrends
+        ? computeTdeeHistory({ weights: weights ?? [], intake: intakeSeries })
+        : [],
+    [isProTrends, weights, intakeSeries],
+  );
+
+  const perPhaseTdee = useMemo<PhaseTdee[]>(
+    () =>
+      isProTrends && goalPhases && goalPhases.length > 0
+        ? inferAdaptiveTdeePerPhase({
+            weights: weights ?? [],
+            intake: intakeSeries,
+            phases: goalPhases,
+            today,
+          })
+        : [],
+    [isProTrends, weights, intakeSeries, goalPhases, today],
+  );
+
+  // Phase-boundary markers for the weight/calorie charts — one per phase
+  // start. MiniLineChart clips them to each chart's visible x-range, so
+  // passing every phase is fine. Pro + has-phases only.
+  const phaseMarkers = useMemo<ChartMarker[]>(
+    () =>
+      isProTrends && goalPhases && goalPhases.length > 0
+        ? sortPhases(goalPhases).map((p) => ({
+            x: dayIndex(p.startDate),
+            label: PHASE_LABELS[p.kind],
+          }))
+        : [],
+    [isProTrends, goalPhases],
+  );
+
+  // The active phase, if any — its observed maintenance is the one the user
+  // can apply as their TDEE (the "use this" affordance pins the active phase).
+  const activePhaseId = useMemo(
+    () => activePhase(goalPhases, today)?.id ?? null,
+    [goalPhases, today],
+  );
 
   return (
     <div className="space-y-6">
@@ -304,11 +401,22 @@ export function ProgressView({
         onApplyTdee={onApplyTdee}
         loading={weights === null}
         units={units}
+        autoAdaptSuggestion={autoAdaptSuggestion}
+        onDismissAutoAdapt={onDismissAutoAdapt}
+      />
+      <AdaptiveTdeeProSection
+        history={tdeeHistory}
+        perPhase={perPhaseTdee}
+        activePhaseId={activePhaseId}
+        currentTdee={formulaTdee}
+        onApplyTdee={onApplyTdee}
+        loading={weights === null}
       />
       <WeightSection
         entries={weights}
         targetWindow={WINDOW_DAYS}
         units={units}
+        markers={phaseMarkers}
       />
       <WeighInForm
         onSaved={refresh}
@@ -327,6 +435,7 @@ export function ProgressView({
         logs={logs}
         targetCalories={targetCalories}
         targetWindow={WINDOW_DAYS}
+        markers={phaseMarkers}
       />
       <HydrationSection
         entries={water}
@@ -400,6 +509,8 @@ function TrendsSection({
   onApplyTdee,
   loading,
   units,
+  autoAdaptSuggestion,
+  onDismissAutoAdapt,
 }: {
   plateau: PlateauState;
   adaptive: AdaptiveTdee;
@@ -411,6 +522,8 @@ function TrendsSection({
   onApplyTdee: (tdee: number) => void;
   loading: boolean;
   units: "metric" | "imperial";
+  autoAdaptSuggestion?: PersonalInfo["autoAdaptSuggestion"];
+  onDismissAutoAdapt?: () => void;
 }) {
   if (loading) return null;
 
@@ -424,15 +537,84 @@ function TrendsSection({
     Math.abs(observed - currentTdee) >= ADAPTIVE_DELTA_THRESHOLD;
   const showRecalibration = !showAdaptive && Boolean(tdeeReco.advisory);
 
+  const suggestion = autoAdaptSuggestion ?? null;
+
   // Nothing actionable anywhere → don't render. The EngagementSection
   // above already shows "you logged X of 7"; an empty Trends card here
   // would just be visual debt.
-  if (!plateau.advisory && !showAdaptive && !showRecalibration) return null;
+  if (!suggestion && !plateau.advisory && !showAdaptive && !showRecalibration)
+    return null;
 
   const unitLabel = units === "imperial" ? "lb" : "kg";
 
   return (
     <section className="space-y-3">
+      {suggestion && (
+        <div className="rounded-lg border border-brand/30 bg-brand/5 px-5 py-4">
+          <header className="mb-1.5 flex items-center gap-2">
+            {suggestion.deltaKcal > 0 ? (
+              <TrendingUp className="h-3.5 w-3.5 text-brand" />
+            ) : (
+              <TrendingDown className="h-3.5 w-3.5 text-brand" />
+            )}
+            <h3 className="text-xs font-medium uppercase tracking-wider text-brand">
+              {suggestion.kind === "applied"
+                ? "Maintenance auto-adjusted"
+                : "New maintenance estimate"}
+            </h3>
+          </header>
+          <p className="text-sm leading-relaxed text-foreground">
+            {suggestion.kind === "applied" ? (
+              <>
+                Auto-adapt updated your maintenance to{" "}
+                <span className="font-semibold tabular-nums">
+                  {suggestion.tdee} kcal
+                </span>
+                /day ({suggestion.deltaKcal > 0 ? "+" : ""}
+                {suggestion.deltaKcal}) from your recent intake and weight
+                trend. Your targets already reflect it — edit it anytime under
+                Advanced.
+              </>
+            ) : (
+              <>
+                Your recent logging puts maintenance near{" "}
+                <span className="font-semibold tabular-nums">
+                  {suggestion.tdee} kcal
+                </span>
+                /day — {Math.abs(suggestion.deltaKcal)} kcal{" "}
+                {suggestion.deltaKcal > 0 ? "higher" : "lower"} than your
+                targets use now. Apply it?
+              </>
+            )}
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {suggestion.kind === "pending" && (
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => {
+                  onApplyTdee(suggestion.tdee);
+                  onDismissAutoAdapt?.();
+                }}
+                className="h-8 gap-1.5"
+              >
+                <Check className="h-3.5 w-3.5" />
+                Apply {suggestion.tdee} kcal
+              </Button>
+            )}
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => onDismissAutoAdapt?.()}
+              className="h-8"
+            >
+              {suggestion.kind === "applied" ? "Got it" : "Dismiss"}
+            </Button>
+          </div>
+        </div>
+      )}
+
       {plateau.advisory && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-5 py-4">
           <header className="mb-1.5 flex items-center gap-2">
@@ -526,6 +708,120 @@ function TrendsSection({
             · log your meals to get a measured estimate you can apply in one
             tap.
           </p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Pro adaptive-TDEE analytics, below the free TrendsSection advisory: the
+ *  maintenance-over-time chart + per-goal-phase maintenance reads. Renders
+ *  nothing until there's enough data (an empty section ghost is worse than no
+ *  section). The active phase's observed maintenance can be applied as the
+ *  manual TDEE in one tap. */
+function AdaptiveTdeeProSection({
+  history,
+  perPhase,
+  activePhaseId,
+  currentTdee,
+  onApplyTdee,
+  loading,
+}: {
+  history: TdeePoint[];
+  perPhase: PhaseTdee[];
+  activePhaseId: string | null;
+  currentTdee: number;
+  onApplyTdee: (tdee: number) => void;
+  loading: boolean;
+}) {
+  if (loading) return null;
+
+  const chartPoints: LinePoint[] = history.map((p) => ({
+    x: dayIndex(p.date),
+    y: p.observedTdee,
+    label: shortLabel(p.date),
+    tooltipLabel: shortLabel(p.date),
+  }));
+  // A single point isn't a trend; need ≥2 to draw a line worth showing.
+  const showChart = chartPoints.length >= 2;
+  // Only phases that actually produced an estimate are worth a row.
+  const phaseRows = perPhase.filter((p) => p.tdee.observedTdee !== null);
+
+  if (!showChart && phaseRows.length === 0) return null;
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
+      <header className="border-b border-border/60 px-5 py-3">
+        <h3 className="text-sm font-semibold tracking-tight">
+          Maintenance over time
+        </h3>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Observed maintenance (kcal/day) inferred from your intake + weight
+          trend, re-estimated weekly.
+        </p>
+      </header>
+
+      {showChart && (
+        <div className="px-5 py-6">
+          <ChartZoomDialog
+            title="Maintenance over time"
+            description="Observed maintenance per week. Tap any point in the expanded view for the exact value."
+          >
+            <MiniLineChart
+              data={chartPoints}
+              height={240}
+              yUnit=" kcal"
+            />
+          </ChartZoomDialog>
+        </div>
+      )}
+
+      {phaseRows.length > 0 && (
+        <div className="space-y-2 border-t border-border/60 px-5 py-4">
+          <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            Maintenance by phase
+          </h4>
+          <ul className="space-y-1.5">
+            {phaseRows.map(({ phase, tdee }) => {
+              const observed = tdee.observedTdee;
+              if (observed === null) return null;
+              const canApply =
+                phase.id === activePhaseId &&
+                Math.abs(observed - currentTdee) >= ADAPTIVE_DELTA_THRESHOLD;
+              const conf = confidenceLabel(tdee.confidence);
+              return (
+                <li
+                  key={phase.id}
+                  className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5"
+                >
+                  <span className="text-sm text-foreground">
+                    <span className="font-medium">
+                      {PHASE_LABELS[phase.kind]}
+                    </span>
+                    {" — "}
+                    <span className="font-mono tabular-nums">
+                      {observed} kcal
+                    </span>
+                    {conf && (
+                      <span className="text-muted-foreground"> · {conf}</span>
+                    )}
+                  </span>
+                  {canApply && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onApplyTdee(observed)}
+                      className="h-7 gap-1.5"
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                      Use for my TDEE
+                    </Button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
     </section>
@@ -684,10 +980,12 @@ function WeightSection({
   entries,
   targetWindow,
   units,
+  markers,
 }: {
   entries: WeightEntry[] | null;
   targetWindow: number;
   units: "metric" | "imperial";
+  markers?: ChartMarker[];
 }) {
   const loading = entries === null;
   const windowed = entries ? entries.slice(-targetWindow) : [];
@@ -758,6 +1056,7 @@ function WeightSection({
               data={points}
               height={240}
               yUnit={` ${unitLabel}`}
+              markers={markers}
             />
           </ChartZoomDialog>
         ) : (
@@ -775,10 +1074,12 @@ function CalorieSection({
   logs,
   targetCalories,
   targetWindow,
+  markers,
 }: {
   logs: DailyLog[] | null;
   targetCalories: number;
   targetWindow: number;
+  markers?: ChartMarker[];
 }) {
   const loading = logs === null;
   // Future dates exist in `logs` whenever the user meal-plans `n`
@@ -877,6 +1178,7 @@ function CalorieSection({
               height={240}
               targetY={targetCalories}
               targetLabel={`${targetCalories} kcal target`}
+              markers={markers}
             />
           </ChartZoomDialog>
         ) : (
@@ -934,6 +1236,13 @@ function EatingWindowSection({
   );
   const latePct = lateCaloriePct(recentMeals, LATE_CUTOFF_HOUR);
   const lateLabel = `${LATE_CUTOFF_HOUR % 12 || 12}${LATE_CUTOFF_HOUR >= 12 ? "pm" : "am"}`;
+  // Typical first/last meal across the same recent days-with-windows.
+  const last7Logs = last7
+    .map((p) => (logs ?? []).find((l) => l.date === p.date))
+    .filter((l): l is DailyLog => Boolean(l));
+  const weekly = computeWeeklyTimingInsights(last7Logs, {
+    eatingHoursTarget: fasting?.enabled ? eatHrs : undefined,
+  });
 
   return (
     <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
@@ -994,13 +1303,20 @@ function EatingWindowSection({
       </div>
 
       {hasData && (
-        <div className="border-t border-border/60 px-5 py-3">
+        <div className="space-y-1 border-t border-border/60 px-5 py-3">
           <p className="text-xs text-muted-foreground">
             {latePct}% of recent calories logged after {lateLabel}
             {streak.longest > 0 && (
               <> · best on-protocol streak {streak.longest}d</>
             )}
           </p>
+          {weekly.avgFirstMinOfDay !== null &&
+            weekly.avgLastMinOfDay !== null && (
+              <p className="text-xs text-muted-foreground">
+                Typically eating {clockFromMinOfDay(weekly.avgFirstMinOfDay)} –{" "}
+                {clockFromMinOfDay(weekly.avgLastMinOfDay)}
+              </p>
+            )}
         </div>
       )}
     </section>

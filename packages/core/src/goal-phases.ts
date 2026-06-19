@@ -1,4 +1,6 @@
 import { addDays } from "./date";
+import type { WeightEntry } from "./records";
+import { type AdaptiveTdee, inferAdaptiveTdee } from "./trends";
 import type { GoalPhase, GoalPhaseKind, PersonalInfo } from "./types";
 
 /** Pure goal-phase logic. A phase plan lets a user sequence a cut → diet
@@ -247,6 +249,74 @@ export function presetLeanBulk(today: string, weightKg: number): GoalPhase[] {
       weightKg,
     ),
   ];
+}
+
+/** All phases overlapping the window `[startDate, endDate)` (both
+ *  `YYYY-MM-DD`), ordered oldest-first. Drives the phase-boundary markers on
+ *  the Trends charts and scopes the per-phase TDEE read. */
+export function phasesInWindow(
+  phases: GoalPhase[] | undefined,
+  startDate: string,
+  endDate: string,
+): GoalPhase[] {
+  if (!phases) return [];
+  return sortPhases(
+    phases.filter((p) => p.startDate < endDate && phaseEndDate(p) > startDate),
+  );
+}
+
+/** A phase paired with the maintenance estimate observed during it. */
+export type PhaseTdee = { phase: GoalPhase; tdee: AdaptiveTdee };
+
+/** Per-phase observed maintenance: `inferAdaptiveTdee` re-run scoped to each
+ *  phase's OWN date window, so a cut and a later lean bulk get independent
+ *  reads (the body's maintenance shifts between them). Only phases that have
+ *  started (`startDate ≤ today`) are evaluated, and a still-running phase is
+ *  capped at today. Thresholds scale down for short phases — a 2-week diet
+ *  break can't satisfy the 28-day defaults — so they can still produce a
+ *  (lower-confidence) estimate. Oldest-first; the caller picks the active
+ *  phase. Phases with too little data come back with `observedTdee: null`
+ *  (confidence "none") rather than being dropped, so the active phase always
+ *  appears. */
+export function inferAdaptiveTdeePerPhase(opts: {
+  weights: WeightEntry[];
+  intake: { date: string; calories: number }[];
+  phases: GoalPhase[] | undefined;
+  today: string;
+}): PhaseTdee[] {
+  if (!opts.phases) return [];
+  // `inferAdaptiveTdee` → `smoothWeights` trusts ascending date order; sort
+  // once up front so each phase's filtered slice stays ordered regardless of
+  // how the caller supplied the weights.
+  const sortedWeights = [...opts.weights].sort((a, b) =>
+    a.date < b.date ? -1 : a.date > b.date ? 1 : 0,
+  );
+  const started = sortPhases(
+    opts.phases.filter((p) => p.startDate <= opts.today),
+  );
+  return started.map((phase) => {
+    const end = phaseEndDate(phase);
+    // `phaseEndDate` is exclusive: a phase whose window ends on/before today is
+    // capped at its own end (today already belongs to the next phase); only a
+    // still-running phase extends through today (today + 1, exclusive).
+    const windowEnd = end <= opts.today ? end : addDays(opts.today, 1);
+    const phaseDays = Math.max(1, daysBetween(phase.startDate, windowEnd));
+    const weights = sortedWeights.filter(
+      (w) => w.date >= phase.startDate && w.date < windowEnd,
+    );
+    const intake = opts.intake.filter(
+      (d) => d.date >= phase.startDate && d.date < windowEnd,
+    );
+    const tdee = inferAdaptiveTdee({
+      weights,
+      intake,
+      // Window large enough to span the whole (already-filtered) phase.
+      windowDays: phaseDays + 1,
+      minWindowDays: clamp(Math.round(phaseDays * 0.5), 7, 14),
+      minLoggedDays: clamp(Math.round(phaseDays / 4), 4, 10),
+    });
+    return { phase, tdee };
+  });
 }
 
 /** Mint a blank phase for the "Add phase" editor (starts after the last
