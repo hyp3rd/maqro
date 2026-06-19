@@ -162,4 +162,13 @@ export const FEATURES = {
    *  planner would be, and their target stays on the single linear goal
    *  (the target injection re-checks the tier, so a downgrade reverts). */
   canUseGoalPhases: (tier: Tier) => tierAtLeast(tier, "pro"),
+  /** Advanced adaptive-TDEE analytics: the maintenance-over-time chart and
+   *  per-goal-phase maintenance reads on the Progress → Trends view. Pro only
+   *  (the one-tap "use this as my TDEE" estimate itself stays free — this gates
+   *  the historical chart + per-phase breakdown, the Pro-depth layer). */
+  canViewTdeeHistory: (tier: Tier) => tierAtLeast(tier, "pro"),
+  /** Hands-off weekly auto-adapt of the maintenance TDEE (the opt-in toggle +
+   *  the weekly cron that applies small changes / holds large ones). Pro only;
+   *  the cron re-checks this per user so a downgrade stops it. */
+  canAutoAdaptTdee: (tier: Tier) => tierAtLeast(tier, "pro"),
 };

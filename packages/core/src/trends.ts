@@ -1,3 +1,4 @@
+import { addDays } from "./date";
 import type { WeightEntry } from "./records";
 import { KCAL_PER_KG } from "./types";
 
@@ -430,5 +431,144 @@ export function inferAdaptiveTdee(opts: {
     weightSlopeKgPerWeek,
     confidence,
     advisory,
+  };
+}
+
+/** One point on the observed-maintenance time series. */
+export type TdeePoint = {
+  /** As-of date (`YYYY-MM-DD`) the estimate was computed for. */
+  date: string;
+  observedTdee: number;
+  confidence: AdaptiveTdeeConfidence;
+};
+
+/** Default reach + spacing of the TDEE-over-time series. Weekly points over
+ *  ~6 months is enough to read a trend without re-running the estimate for
+ *  every day. */
+const TDEE_HISTORY_SPAN_DAYS = 180;
+const TDEE_HISTORY_STEP_DAYS = 7;
+
+/** The adaptive-TDEE estimate as a time series — `inferAdaptiveTdee` re-run
+ *  "as of" each weekly point over the trailing `spanDays`, using only the data
+ *  available up to that date. Shows how observed maintenance has moved as the
+ *  body adapts, WITHOUT persisting anything: it's derived on the fly from the
+ *  same weights + intake the rest of Trends already holds, so there's no store,
+ *  migration, or Pro-downgrade cleanup. Points with too little data
+ *  (`observedTdee` null) are omitted, so an early series may be short. */
+export function computeTdeeHistory(opts: {
+  weights: WeightEntry[];
+  intake: { date: string; calories: number }[];
+  spanDays?: number;
+  stepDays?: number;
+  windowDays?: number;
+}): TdeePoint[] {
+  const spanDays = opts.spanDays ?? TDEE_HISTORY_SPAN_DAYS;
+  const stepDays = opts.stepDays ?? TDEE_HISTORY_STEP_DAYS;
+  if (stepDays < 1) throw new Error("TDEE-history step must be ≥ 1 day");
+  if (opts.weights.length === 0) return [];
+
+  // `inferAdaptiveTdee` → `smoothWeights` trusts ascending date order; sort once.
+  const sorted = [...opts.weights].sort((a, b) =>
+    a.date < b.date ? -1 : a.date > b.date ? 1 : 0,
+  );
+  const firstDate = sorted[0].date;
+  const lastDate = sorted[sorted.length - 1].date;
+
+  const points: TdeePoint[] = [];
+  // As-of dates from (last − span) forward to last, oldest first. Anchor the
+  // first offset on a step multiple so `back === 0` (the latest, most relevant
+  // point) is always included even when span isn't a multiple of step.
+  const firstBack = Math.floor(spanDays / stepDays) * stepDays;
+  for (let back = firstBack; back >= 0; back -= stepDays) {
+    const asOf = addDays(lastDate, -back);
+    if (asOf < firstDate) continue; // no weigh-ins yet at this as-of date
+    const est = inferAdaptiveTdee({
+      weights: sorted.filter((w) => w.date <= asOf),
+      intake: opts.intake.filter((d) => d.date <= asOf),
+      windowDays: opts.windowDays,
+    });
+    if (est.observedTdee !== null) {
+      points.push({
+        date: asOf,
+        observedTdee: est.observedTdee,
+        confidence: est.confidence,
+      });
+    }
+  }
+  return points;
+}
+
+/** What a weekly auto-adapt run should do with a fresh maintenance estimate. */
+export type AutoAdaptAction = "apply" | "hold" | "skip";
+
+export type AutoAdaptDecision = {
+  action: AutoAdaptAction;
+  /** The TDEE to apply (action "apply") or suggest (action "hold"); null on
+   *  "skip". */
+  newTdee: number | null;
+  /** Signed change vs. the current basis (`newTdee − currentTdee`); 0 on skip. */
+  deltaKcal: number;
+  /** Short human reason — for the change log + the user notification. */
+  reason: string;
+};
+
+/** How big a weekly auto-adapt step may be applied automatically. A change
+ *  within this cap is a safe nudge and lands hands-off; anything larger is held
+ *  for a one-tap confirm so a big swing never moves the target silently. */
+export const AUTO_ADAPT_STEP_CAP = 75;
+
+/** Decide what a weekly **auto-adapt** run does, given the freshly observed
+ *  maintenance and the TDEE the targets currently use. The hybrid policy
+ *  (opt-in, Pro):
+ *   - **skip** — confidence below "medium", or the change is within the noise
+ *     floor (already calibrated). No change, no nudge.
+ *   - **apply** — `|delta| ≤ stepCap`: a small, safe weekly nudge, applied
+ *     automatically. The new value is the observed maintenance (itself already
+ *     within the cap of the current basis).
+ *   - **hold** — `|delta| > stepCap`: too large to move silently; surface the
+ *     observed maintenance for a one-tap confirm instead.
+ *  Pure + deterministic so the cron and its tests share one policy. Never acts
+ *  on a "none"/"low" estimate. */
+export function decideAutoAdapt(opts: {
+  observed: AdaptiveTdee;
+  currentTdee: number;
+  stepCap?: number;
+  noiseFloor?: number;
+}): AutoAdaptDecision {
+  const stepCap = opts.stepCap ?? AUTO_ADAPT_STEP_CAP;
+  const noiseFloor = opts.noiseFloor ?? ADAPTIVE_DELTA_THRESHOLD;
+  const { observedTdee, confidence } = opts.observed;
+  const skip = (reason: string): AutoAdaptDecision => ({
+    action: "skip",
+    newTdee: null,
+    deltaKcal: 0,
+    reason,
+  });
+
+  if (observedTdee === null) {
+    return skip("not enough recent data to estimate maintenance");
+  }
+  if (confidence !== "medium" && confidence !== "high") {
+    return skip("estimate confidence too low to auto-adapt");
+  }
+  const delta = observedTdee - opts.currentTdee;
+  if (Math.abs(delta) < noiseFloor) {
+    return skip("already within the noise floor of your maintenance");
+  }
+
+  const signed = `${delta > 0 ? "+" : ""}${delta}`;
+  if (Math.abs(delta) <= stepCap) {
+    return {
+      action: "apply",
+      newTdee: observedTdee,
+      deltaKcal: delta,
+      reason: `auto-adjusted maintenance to ${observedTdee} kcal (${signed})`,
+    };
+  }
+  return {
+    action: "hold",
+    newTdee: observedTdee,
+    deltaKcal: delta,
+    reason: `${observedTdee} kcal suggested (${signed}) — confirm to apply`,
   };
 }

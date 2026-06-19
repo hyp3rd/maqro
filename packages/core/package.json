@@ -23,6 +23,7 @@
     "./recent-foods": "./src/recent-foods.ts",
     "./records": "./src/records.ts",
     "./streaks": "./src/streaks.ts",
+    "./timing-insights": "./src/timing-insights.ts",
     "./trends": "./src/trends.ts",
     "./types": "./src/types.ts",
     "./units": "./src/units.ts",

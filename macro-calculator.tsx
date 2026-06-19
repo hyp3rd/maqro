@@ -767,7 +767,14 @@ const MacroCalculator = () => {
   // (the optional macro override) can all ride through the same path.
   const handlePersonalInfoChange = (
     name: string,
-    value: string | number | null | string[] | MacroSplit | GoalPhase[],
+    value:
+      | string
+      | number
+      | boolean
+      | null
+      | string[]
+      | MacroSplit
+      | GoalPhase[],
   ) => {
     setPersonalInfo({ ...personalInfo, [name]: value });
   };
@@ -2327,6 +2334,9 @@ const MacroCalculator = () => {
             );
           }}
           fasting={personalInfo.fasting}
+          goalPhases={personalInfo.goalPhases}
+          autoAdaptSuggestion={personalInfo.autoAdaptSuggestion}
+          onDismissAutoAdapt={() => patchProfile("autoAdaptSuggestion", null)}
         />
       )}
 

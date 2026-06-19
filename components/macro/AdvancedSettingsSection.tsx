@@ -1,5 +1,9 @@
 "use client";
 
+import { useAdaptiveTdee } from "@/hooks/use-adaptive-tdee";
+import { useAiUsage } from "@/hooks/use-ai-usage";
+import { FEATURES } from "@/lib/billing/tiers";
+import { ADAPTIVE_DELTA_THRESHOLD, confidenceLabel } from "@/lib/trends";
 import React from "react";
 import { cn } from "../../lib/utils";
 import { Input } from "../ui/input";
@@ -10,7 +14,7 @@ interface AdvancedSettingsSectionProps {
   personalInfo: PersonalInfo;
   onPersonalInfoChange: (
     name: string,
-    value: number | null | MacroSplit,
+    value: number | boolean | null | MacroSplit,
   ) => void;
 }
 
@@ -22,6 +26,23 @@ export function AdvancedSettingsSection({
   personalInfo,
   onPersonalInfoChange,
 }: AdvancedSettingsSectionProps) {
+  // The same maintenance estimate Progress → Trends shows, surfaced right on
+  // the override field. Suggest it when there's no override yet, or when it
+  // differs from the current override by more than the shared noise floor.
+  const adaptive = useAdaptiveTdee();
+  const suggested = adaptive.observedTdee;
+  const current = personalInfo.manualTdee ?? null;
+  const showSuggestion =
+    suggested !== null &&
+    (current === null ||
+      Math.abs(suggested - current) >= ADAPTIVE_DELTA_THRESHOLD);
+
+  // Hands-off weekly auto-adapt is Pro; only surface the opt-in to those who
+  // can use it (the weekly cron re-checks the tier independently).
+  const { state: usage } = useAiUsage();
+  const autoAdaptAvailable =
+    usage.status === "ok" && FEATURES.canAutoAdaptTdee(usage.data.tier);
+
   return (
     <Section
       title="Advanced"
@@ -60,7 +81,48 @@ export function AdvancedSettingsSection({
             if (!Number.isNaN(v)) onPersonalInfoChange("manualTdee", v);
           }}
         />
+        {showSuggestion && suggested !== null && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]">
+            <span className="text-muted-foreground">
+              Suggested from your trend:{" "}
+              <span className="font-mono font-medium tabular-nums text-foreground">
+                {suggested} kcal
+              </span>
+              {confidenceLabel(adaptive.confidence) && (
+                <> ({confidenceLabel(adaptive.confidence)})</>
+              )}
+            </span>
+            <button
+              type="button"
+              onClick={() => onPersonalInfoChange("manualTdee", suggested)}
+              className="font-medium text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Use
+            </button>
+          </div>
+        )}
       </Field>
+
+      {autoAdaptAvailable && (
+        <label className="flex items-start gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={personalInfo.autoAdaptTdee ?? false}
+            onChange={(e) =>
+              onPersonalInfoChange("autoAdaptTdee", e.target.checked)
+            }
+            className="mt-0.5 h-3.5 w-3.5 rounded border-border"
+          />
+          <span className="text-muted-foreground">
+            <span className="font-medium text-foreground">
+              Auto-adjust weekly
+            </span>{" "}
+            — once a week, update this from your logged intake and weight trend.
+            Small changes apply automatically; a big jump waits for your OK. You
+            can always edit it back.
+          </span>
+        </label>
+      )}
 
       <MacroSplitField
         value={personalInfo.macroSplit ?? null}

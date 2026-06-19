@@ -1,15 +1,18 @@
 import type { GoalPhase, PersonalInfo } from "@/components/macro/types";
+import type { WeightEntry } from "@/lib/db";
 import { describe, expect, it } from "vitest";
 import {
   activePhase,
   dietBreakNudge,
   effectiveGoal,
+  inferAdaptiveTdeePerPhase,
   nextPhase,
   normalizePhase,
   phaseEndDate,
   phaseGoal,
   phaseHasRate,
   phaseProgress,
+  phasesInWindow,
   presetCut,
   presetCutThenBreak,
   presetLeanBulk,
@@ -246,5 +249,184 @@ describe("presets", () => {
     const [p] = presetLeanBulk("2026-06-04", 68);
     expect(p.kind).toBe("leanBulk");
     expect(p.weeklyRateKg).toBeGreaterThan(0);
+  });
+});
+
+describe("phasesInWindow", () => {
+  const cut = phase({ id: "cut", startDate: "2026-06-01", durationWeeks: 4 }); // → 06-29
+  const brk = phase({
+    id: "brk",
+    kind: "dietBreak",
+    startDate: "2026-06-29",
+    durationWeeks: 2,
+  }); // → 07-13
+
+  it("returns phases overlapping [start, end), oldest first", () => {
+    const out = phasesInWindow([brk, cut], "2026-06-15", "2026-07-01");
+    expect(out.map((p) => p.id)).toEqual(["cut", "brk"]);
+  });
+
+  it("excludes phases entirely outside the window", () => {
+    const before = phase({
+      id: "b",
+      startDate: "2026-05-01",
+      durationWeeks: 2,
+    });
+    const after = phase({ id: "a", startDate: "2026-08-01", durationWeeks: 2 });
+    const out = phasesInWindow(
+      [before, cut, after],
+      "2026-06-15",
+      "2026-07-01",
+    );
+    expect(out.map((p) => p.id)).toEqual(["cut"]);
+  });
+
+  it("is empty for undefined phases", () => {
+    expect(phasesInWindow(undefined, "2026-06-01", "2026-07-01")).toEqual([]);
+  });
+});
+
+// Local builders mirroring trends.test.ts — consecutive daily weigh-ins/intake.
+function dailyWeights(
+  startISO: string,
+  n: number,
+  kg: (i: number) => number,
+): WeightEntry[] {
+  const base = new Date(`${startISO}T00:00:00`);
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(base);
+    d.setDate(base.getDate() + i);
+    return {
+      date: d.toISOString().slice(0, 10),
+      kg: kg(i),
+      recordedAt: 0,
+      serverUpdatedAt: null,
+    };
+  });
+}
+
+function dailyIntake(
+  startISO: string,
+  n: number,
+  kcal: number,
+): { date: string; calories: number }[] {
+  const base = new Date(`${startISO}T00:00:00`);
+  return Array.from({ length: n }, (_, i) => {
+    const d = new Date(base);
+    d.setDate(base.getDate() + i);
+    return { date: d.toISOString().slice(0, 10), calories: kcal };
+  });
+}
+
+// TZ-safe YYYY-MM-DD arithmetic (round-trips through local getters, no UTC
+// shift) — used where data dates must align exactly with literal phase dates.
+function addDaysStr(date: string, days: number): string {
+  const [y, m, d] = date.split("-").map(Number);
+  const t = new Date(y, m - 1, d + days);
+  const mm = String(t.getMonth() + 1).padStart(2, "0");
+  const dd = String(t.getDate()).padStart(2, "0");
+  return `${t.getFullYear()}-${mm}-${dd}`;
+}
+
+function weighInsFrom(
+  start: string,
+  n: number,
+  kg: (i: number) => number,
+): WeightEntry[] {
+  return Array.from({ length: n }, (_, i) => ({
+    date: addDaysStr(start, i),
+    kg: kg(i),
+    recordedAt: 0,
+    serverUpdatedAt: null,
+  }));
+}
+
+function intakeFrom(
+  start: string,
+  n: number,
+  kcal: (i: number) => number,
+): { date: string; calories: number }[] {
+  return Array.from({ length: n }, (_, i) => ({
+    date: addDaysStr(start, i),
+    calories: kcal(i),
+  }));
+}
+
+describe("inferAdaptiveTdeePerPhase", () => {
+  it("scopes the estimate to each started phase and skips future ones", () => {
+    const cut = phase({
+      id: "cut",
+      kind: "cut",
+      startDate: "2026-06-01",
+      durationWeeks: 8, // → 07-27
+    });
+    const bulk = phase({
+      id: "bulk",
+      kind: "leanBulk",
+      startDate: "2026-07-27",
+      durationWeeks: 8,
+    });
+    // 45 days of flat-weight, 2200 kcal logging inside the cut window.
+    const weights = dailyWeights("2026-06-01", 45, () => 80);
+    const intake = dailyIntake("2026-06-01", 45, 2200);
+
+    const out = inferAdaptiveTdeePerPhase({
+      weights,
+      intake,
+      phases: [bulk, cut],
+      today: "2026-07-15", // inside the cut; the bulk hasn't started
+    });
+
+    expect(out.map((p) => p.phase.id)).toEqual(["cut"]); // future bulk excluded
+    const cutTdee = out[0].tdee;
+    expect(cutTdee.observedTdee).not.toBeNull();
+    // Flat weight ⇒ maintenance ≈ the logged intake.
+    expect(cutTdee.observedTdee).toBeGreaterThan(2180);
+    expect(cutTdee.observedTdee).toBeLessThan(2220);
+  });
+
+  it("excludes the transition day from a phase that ends exactly today", () => {
+    // The cut ends 2026-06-29 (exclusive); a diet break starts that same day,
+    // and today IS the transition. The 06-29 log belongs to the break — it
+    // must NOT leak into the cut's window (the < vs <= boundary).
+    const cut = phase({
+      id: "cut",
+      kind: "cut",
+      startDate: "2026-06-01",
+      durationWeeks: 4, // → 2026-06-29
+    });
+    const brk = phase({
+      id: "brk",
+      kind: "dietBreak",
+      startDate: "2026-06-29",
+      durationWeeks: 4,
+    });
+    const weights = weighInsFrom("2026-06-01", 40, () => 80); // flat ⇒ slope 0
+    // A 10000-kcal spike on the transition day (i=28 → 06-29); every cut day is
+    // 2200. With flat weight, observed maintenance == mean intake, so the spike
+    // would visibly pull the cut's estimate up if the boundary leaked it in.
+    const intake = intakeFrom("2026-06-01", 40, (i) =>
+      i === 28 ? 10000 : 2200,
+    );
+
+    const out = inferAdaptiveTdeePerPhase({
+      weights,
+      intake,
+      phases: [cut, brk],
+      today: "2026-06-29",
+    });
+    const cutRow = out.find((p) => p.phase.id === "cut");
+    expect(cutRow?.tdee.observedTdee).toBe(2200);
+  });
+
+  it("is empty when there are no phases", () => {
+    expect(
+      inferAdaptiveTdeePerPhase({
+        weights: [],
+        intake: [],
+        phases: undefined,
+        today: "2026-07-15",
+      }),
+    ).toEqual([]);
   });
 });

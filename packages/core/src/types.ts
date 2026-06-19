@@ -312,6 +312,26 @@ export type PersonalInfo = {
    * against real-world weight change - formula-based TDEE estimates run
    * 10–20% high for many people. */
   manualTdee?: number | null;
+  /** Opt-in to hands-off weekly auto-adapt of the maintenance TDEE (Pro). When
+   * true, the weekly cron re-estimates maintenance from logged intake vs. the
+   * weight trend and applies small changes automatically (holding larger ones
+   * for confirmation — see `autoAdaptSuggestion`). Off/absent = the estimate
+   * stays advisory (the Progress card + Calculator badge only). Rides the
+   * profile blob — no migration. */
+  autoAdaptTdee?: boolean;
+  /** The latest weekly auto-adapt outcome, surfaced in-app (it doubles as the
+   * "you were notified" record). `kind: "applied"` = a small change the cron
+   * already wrote to `manualTdee` (shown as a reversible heads-up); `kind:
+   * "pending"` = a large change held for a one-tap confirm. Cleared once the
+   * user applies or dismisses it. `tdee` is the maintenance value, `deltaKcal`
+   * the signed change vs. the prior basis, `createdAt` ms epoch. Rides the
+   * profile blob — no migration. */
+  autoAdaptSuggestion?: {
+    kind: "applied" | "pending";
+    tdee: number;
+    deltaKcal: number;
+    createdAt: number;
+  } | null;
   /** Optional manual macro split (percentages). When set + valid, overrides
    * the default goal+dietType-derived ratios in `computeMacros`. */
   macroSplit?: MacroSplit | null;

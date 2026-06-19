@@ -1,6 +1,11 @@
 import type { WeightEntry } from "@/lib/db";
 import { describe, expect, it } from "vitest";
 import {
+  AUTO_ADAPT_STEP_CAP,
+  type AdaptiveTdee,
+  type AdaptiveTdeeConfidence,
+  computeTdeeHistory,
+  decideAutoAdapt,
   detectPlateau,
   inferAdaptiveTdee,
   recalibrateTdee,
@@ -294,5 +299,134 @@ describe("inferAdaptiveTdee", () => {
     const r = inferAdaptiveTdee({ weights, intake });
     expect(r.meanIntake).toBe(2400);
     expect(r.observedTdee).toBe(2400);
+  });
+});
+
+describe("computeTdeeHistory", () => {
+  it("returns an empty series with no weigh-ins", () => {
+    expect(computeTdeeHistory({ weights: [], intake: [] })).toEqual([]);
+  });
+
+  it("produces an ascending weekly series anchored on the latest weigh-in", () => {
+    const weights = dailyWeights("2026-04-01", 60, () => 80);
+    const intake = dailyIntake("2026-04-01", 60, 2500);
+    const hist = computeTdeeHistory({
+      weights,
+      intake,
+      spanDays: 60,
+      stepDays: 7,
+    });
+    expect(hist.length).toBeGreaterThan(1);
+    // Newest point is always the latest weigh-in date (the loop includes back=0).
+    expect(hist[hist.length - 1].date).toBe(weights[weights.length - 1].date);
+    // Dates strictly ascending.
+    for (let i = 1; i < hist.length; i++) {
+      expect(hist[i].date > hist[i - 1].date).toBe(true);
+    }
+    // Flat weight + 2500 intake ⇒ every observed point sits near 2500.
+    for (const p of hist) {
+      expect(p.observedTdee).toBeGreaterThan(2480);
+      expect(p.observedTdee).toBeLessThan(2520);
+    }
+  });
+
+  it("omits as-of points that don't yet have enough data", () => {
+    // Only the back half of the window has logged intake, so early as-of
+    // points can't meet the logged-day floor and are dropped.
+    const weights = dailyWeights("2026-04-01", 60, () => 80);
+    const intake = dailyIntake("2026-05-01", 30, 2500);
+    const hist = computeTdeeHistory({
+      weights,
+      intake,
+      spanDays: 60,
+      stepDays: 7,
+    });
+    expect(hist.length).toBeGreaterThan(0);
+    // Nothing before intake started showing up.
+    expect(hist.every((p) => p.date >= intake[0].date)).toBe(true);
+  });
+
+  it("rejects a non-positive step", () => {
+    const weights = dailyWeights("2026-04-01", 30, () => 80);
+    expect(() =>
+      computeTdeeHistory({ weights, intake: [], stepDays: 0 }),
+    ).toThrow();
+  });
+});
+
+describe("decideAutoAdapt", () => {
+  function adaptive(
+    observedTdee: number | null,
+    confidence: AdaptiveTdeeConfidence = "high",
+  ): AdaptiveTdee {
+    return {
+      observedTdee,
+      windowDays: 28,
+      loggedDays: 20,
+      meanIntake: observedTdee,
+      weightSlopeKgPerWeek: 0,
+      confidence,
+      advisory: null,
+    };
+  }
+
+  it("skips when there's no estimate", () => {
+    const d = decideAutoAdapt({ observed: adaptive(null), currentTdee: 2500 });
+    expect(d.action).toBe("skip");
+    expect(d.newTdee).toBeNull();
+  });
+
+  it("skips when confidence is below medium", () => {
+    expect(
+      decideAutoAdapt({ observed: adaptive(2700, "low"), currentTdee: 2500 })
+        .action,
+    ).toBe("skip");
+    expect(
+      decideAutoAdapt({ observed: adaptive(2700, "none"), currentTdee: 2500 })
+        .action,
+    ).toBe("skip");
+  });
+
+  it("skips when the change is within the noise floor", () => {
+    // |2530 − 2500| = 30 < 50 noise floor.
+    expect(
+      decideAutoAdapt({ observed: adaptive(2530), currentTdee: 2500 }).action,
+    ).toBe("skip");
+  });
+
+  it("applies a small change automatically (≤ step cap)", () => {
+    // |2560 − 2500| = 60: above the floor, within the 75 cap → apply.
+    const d = decideAutoAdapt({ observed: adaptive(2560), currentTdee: 2500 });
+    expect(d.action).toBe("apply");
+    expect(d.newTdee).toBe(2560);
+    expect(d.deltaKcal).toBe(60);
+  });
+
+  it("applies right at the step cap, holds one kcal past it", () => {
+    expect(
+      decideAutoAdapt({
+        observed: adaptive(2500 + AUTO_ADAPT_STEP_CAP),
+        currentTdee: 2500,
+      }).action,
+    ).toBe("apply");
+    expect(
+      decideAutoAdapt({
+        observed: adaptive(2500 + AUTO_ADAPT_STEP_CAP + 1),
+        currentTdee: 2500,
+      }).action,
+    ).toBe("hold");
+  });
+
+  it("holds a large change for confirmation (suggests the full value)", () => {
+    const d = decideAutoAdapt({ observed: adaptive(2800), currentTdee: 2500 });
+    expect(d.action).toBe("hold");
+    expect(d.newTdee).toBe(2800); // the full observed value, for one-tap confirm
+    expect(d.deltaKcal).toBe(300);
+  });
+
+  it("auto-applies downward steps too", () => {
+    const d = decideAutoAdapt({ observed: adaptive(2440), currentTdee: 2500 });
+    expect(d.action).toBe("apply");
+    expect(d.deltaKcal).toBe(-60);
   });
 });
