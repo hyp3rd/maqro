@@ -3,16 +3,18 @@
 > Status of the product: the core (calculator, AI meal planning + deterministic
 > fallback, photo/voice/barcode logging, recipes, pantry/shopping, micronutrients,
 > sync modes, 3‑tier billing, passkeys/MFA, push/email) is mature and shipped.
-> These four initiatives are the highest‑leverage _next_ work — they add accuracy,
-> daily ergonomics, expected breadth, and goal depth without diluting the
-> local‑first / privacy‑first positioning.
+> Initiatives 1 through 4 below (adaptive TDEE, quick‑add, hydration/fasting
+> breadth, goal phases) have now **shipped** — they added accuracy, daily
+> ergonomics, expected breadth, and goal depth without diluting the local‑first /
+> privacy‑first positioning. The live forward edge is initiative 5 (activity‑based
+> TDEE), which needs the native app.
 
 Sequenced by leverage:
 
 1. **Adaptive TDEE loop** ✓ shipped
-1. **Logging quick‑add** — recent foods ✓ shipped; favorites / copy‑a‑meal next
-1. **Breadth** — water/hydration + meal timestamps → eating windows / fasting
-1. **Goal phases** (cut → diet break → maintenance → lean bulk)
+1. **Logging quick‑add** — recent foods, favorites, copy‑a‑meal ✓ shipped
+1. **Breadth** — water/hydration + fasting / eating windows ✓ shipped
+1. **Goal phases** (cut → diet break → maintenance → lean bulk) ✓ shipped
 
 A deliberate non‑goal list lives at the bottom.
 
@@ -88,7 +90,7 @@ Calculator manual‑TDEE "suggested from your trend" badge.
 
 ---
 
-## 2. Logging quick‑add — _shipped (recent foods)_
+## 2. Logging quick‑add — _shipped (recent foods, favorites, copy‑a‑meal)_
 
 **Problem.** The highest‑frequency action is re‑logging the same foods. Templates
 exist but are heavyweight (explicit save, separate view). No recent/frequent list,
@@ -106,65 +108,71 @@ no "copy yesterday's dinner."
   draws down the pantry identically), and the sheet stays open for rapid logging.
   Search tile hint now reads "Recent + database."
 
-**Not done (fast follow-ups).**
+**Also shipped — favorites + copy‑a‑meal.**
 
-- **Frequent foods** (frequency-ranked view/toggle — `extractFoodPreferences`
-  already exists) and **explicit favorites** (a synced `favoriteFoods` store).
-- **Copy a meal**: re‑add a previous day's whole meal slot into today.
+- **Favorites** — a synced `favoriteFoods` store (`addFavoriteFood` /
+  `upsertFavoriteFood` in [lib/db.ts](../lib/db.ts)), surfaced as a
+  **Recent · Favorites** tab strip in
+  [QuickAddFoods.tsx](../components/macro/QuickAddFoods.tsx).
+- **Copy a meal** — a one‑tap "Log this again" re‑adds a whole meal's foods at
+  once ([MealHubSheet.tsx](../components/macro/MealHubSheet.tsx) `onCopyMeal`, also
+  on the desktop [MealPlanner.tsx](../components/macro/MealPlanner.tsx) form).
 
-**Open questions (for the follow-ups).** Favorites = explicit star vs.
-auto‑frequency? Whether to add a recency↔frequency toggle.
+**Frequent foods — deliberately dropped (not a gap).** A separate
+frequency‑ranked list read effectively the same as the recency list for how
+people actually log, so it was folded into Recent rather than shipped as its own
+tab ([QuickAddFoods.tsx](../components/macro/QuickAddFoods.tsx)).
 
 ---
 
-## 3. Breadth — hydration + eating windows / fasting — _planned_
+## 3. Breadth — hydration + eating windows / fasting — _shipped_
 
-**Problem.** No water tracking (universally expected), and logs are keyed by date
-with meals as _slots_ — there's **no time‑of‑day** anywhere, which blocks IF /
+**Problem (solved).** There was no water tracking, and logs were keyed by date
+with meals as _slots_ — **no time‑of‑day** anywhere, which blocked IF /
 eating‑window tracking and meal‑timing insights.
 
-**Approach.**
+**Status — shipped (changelog Phase 22).**
 
-- **Hydration**: a `waterIntake` store (`{date, ml}`) + a tap‑to‑add counter with a
-  goal; show on Progress.
-- **Meal timestamps**: add an optional `loggedAt`/`time` to logged meals (additive,
-  back‑compatible). Unlocks: eating‑window length, first/last‑meal times, "% of
-  calories after 8pm," and a simple fast timer.
+- **Hydration** — a synced `waterIntake` store + a tap‑to‑add
+  [WaterCounter](../components/macro/WaterCounter.tsx) on the day view, against a
+  **bodyweight‑scaled daily goal** ([lib/hydration.ts](../lib/hydration.ts)); also
+  on the Progress card and in the health report.
+- **Meal timestamps** — an optional `loggedAt` landed on each logged food
+  ([types.ts](../packages/core/src/types.ts), additive / back‑compatible), which is
+  what drives the eating‑window math (per‑food, not per‑slot).
+- **Intermittent fasting** — a manual fast timer started from the day view
+  ([FastingCard](../components/macro/FastingCard.tsx)) with protocols (16:8 / 18:6 /
+  20:4 / custom) and an hour‑by‑hour phase timeline
+  ([FastingView](../components/macro/FastingView.tsx),
+  [lib/fasting.ts](../lib/fasting.ts)); completed fasts save to a synced history.
 
-**Data model.** New `waterIntake` store; additive optional timestamp on meal/log
-records (no breaking change). Both synced.
-
-**UX.** Water widget on Calculator/Progress; eating‑window summary + optional fast
-timer; timing insights feed the existing meal‑insights engine.
-
-**Gating.** Water free; advanced timing insights a candidate Pro hook.
-
-**Open questions.** Where the fast timer lives; default hydration goal (formula vs.
-fixed); whether timing is per‑meal or per‑food.
+**Not done.** "% of calories after 8pm" / first‑last‑meal timing insights beyond
+the eating window are still open.
 
 ---
 
-## 4. Goal phases — _planned_
+## 4. Goal phases — _shipped (Pro)_
 
-**Problem.** Goals are linear (`lose|maintain|gain` + `weeklyRateKg`). Serious users
-run _phases_: a cut, a diet break / refeed, maintenance, a lean bulk — with planned
-transitions. The plateau/recalibration machinery is begging for this.
+**Problem (solved).** Goals were linear (`lose|maintain|gain` + `weeklyRateKg`).
+Serious users run _phases_: a cut, a diet break / refeed, maintenance, a lean
+bulk — with planned transitions.
 
-**Approach.** A `goalPhases` concept: an ordered list of `{type, startDate,
-durationWeeks, weeklyRateKg}` that drives the active target by date, with scheduled
-transitions and gentle nudges ("diet break recommended after 10 weeks of deficit").
-Integrates with Adaptive TDEE (re‑estimate maintenance at each phase boundary).
+**Status — shipped (Pro).**
 
-**Data model.** A `goalPhases` store (or a `phases` array on the profile), synced.
-Likely wants the target‑history store deferred from initiative 1.
+- An ordered `GoalPhase[]` on the profile (synced) drives the **active target by
+  date** — `phaseGoal` maps each phase kind to a goal, and applying a phase that
+  would _raise_ today's target warns first
+  ([packages/core/src/goal-phases.ts](../packages/core/src/goal-phases.ts)).
+- A **phase planner**
+  ([GoalPhasesPlanner](../components/macro/GoalPhasesPlanner.tsx)) with a preset
+  (12‑week cut → 2‑week diet break) plus fully custom phases.
+- The **active phase on the dashboard**
+  ([ActivePhaseBanner](../components/macro/ActivePhaseBanner.tsx)) and a
+  **diet‑break nudge** after 10 weeks of cutting (`dietBreakNudge`).
 
-**UX.** A phase planner in Settings/Calculator; the active phase shown on the
-dashboard; phase transitions surfaced in Trends.
-
-**Gating.** Strong **Pro** candidate (depth for the precise audience).
-
-**Open questions.** Preset templates (e.g., "12‑wk cut → 2‑wk break") vs. fully
-custom; how aggressively to auto‑advance phases.
+**Not done.** Phase transitions are **not yet surfaced in Trends**, and the
+phase‑boundary Adaptive‑TDEE re‑estimate (the initiative 1 integration) is still
+open.
 
 ---
 
@@ -185,8 +193,10 @@ OS health stores are **on-device, native-only** — there is no web path:
   — also native-only.
 
 So Apple Health / Health Connect ⇒ **shipping a native companion app** (App Store /
-Play presence, native build + review + upkeep). That's a separate **native-app
-track**, deliberately deferred until the web product is further along.
+Play presence, native build + review + upkeep). That native track is now
+committed — **React Native + Expo**, with the shared‑logic foundation
+(`@maqro/core`) already being extracted — but the **activity‑sync feature itself
+stays deferred** until that app exists; nothing in this section has started yet.
 
 **Web-feasible subset (no native code).** First-party **cloud OAuth wearables** —
 **Fitbit Web API** (Google's own recommended migration target), **Oura v2**,
@@ -215,10 +225,10 @@ HealthKit/Health Connect are interchangeable adapters behind one model.
 - **5a — web track (optional, no native):** direct OAuth with 1–2 cloud wearables
   (Fitbit + Oura) → steps + active energy → feed the TDEE model as bootstrap +
   change-detector.
-- **5b — native track (later):** wrap the existing PWA in **Capacitor** + HealthKit /
-  Health Connect plugins to read on-device activity (and optionally write
-  calories/macros/water back), POSTing to the backend. This is the App-Store/Play
-  commitment noted above.
+- **5b — native track (later):** a **React Native + Expo** client (HealthKit /
+  Health Connect via Expo config plugins) reads on-device activity (and optionally
+  writes calories/macros/water back), POSTing to the backend. This is the
+  App-Store/Play commitment noted above.
 
 **Tensions.** Aggregators (Terra/Vital) add a third party in the health-data path +
 per-user cost + a privacy-positioning conflict → prefer **direct vendor OAuth**.
