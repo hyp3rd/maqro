@@ -7,15 +7,25 @@
   "exports": {
     ".": "./src/index.ts",
     "./age": "./src/age.ts",
+    "./batch-apply": "./src/batch-apply.ts",
+    "./blood-pressure": "./src/blood-pressure.ts",
+    "./body-fat": "./src/body-fat.ts",
     "./date": "./src/date.ts",
+    "./diet": "./src/diet.ts",
     "./fasting": "./src/fasting.ts",
     "./goal-phases": "./src/goal-phases.ts",
+    "./hydration": "./src/hydration.ts",
+    "./log-food": "./src/log-food.ts",
     "./macros": "./src/macros.ts",
+    "./meal-schedule": "./src/meal-schedule.ts",
     "./off": "./src/off.ts",
     "./rda": "./src/rda.ts",
+    "./recent-foods": "./src/recent-foods.ts",
     "./records": "./src/records.ts",
+    "./streaks": "./src/streaks.ts",
     "./trends": "./src/trends.ts",
     "./types": "./src/types.ts",
+    "./units": "./src/units.ts",
     "./weekly-recap": "./src/weekly-recap.ts"
   }
 }
