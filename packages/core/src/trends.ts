@@ -477,8 +477,11 @@ export function computeTdeeHistory(opts: {
   const points: TdeePoint[] = [];
   // As-of dates from (last − span) forward to last, oldest first. Anchor the
   // first offset on a step multiple so `back === 0` (the latest, most relevant
-  // point) is always included even when span isn't a multiple of step.
-  const firstBack = Math.floor(spanDays / stepDays) * stepDays;
+  // point) is always included even when span isn't a multiple of step. Round
+  // UP so the oldest offset still covers the full requested span (a `floor`
+  // would stop short by up to `stepDays − 1`); an offset that predates the
+  // first weigh-in is skipped below, so over-reaching is harmless.
+  const firstBack = Math.ceil(spanDays / stepDays) * stepDays;
   for (let back = firstBack; back >= 0; back -= stepDays) {
     const asOf = addDays(lastDate, -back);
     if (asOf < firstDate) continue; // no weigh-ins yet at this as-of date

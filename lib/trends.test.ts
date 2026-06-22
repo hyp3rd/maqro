@@ -330,6 +330,23 @@ describe("computeTdeeHistory", () => {
     }
   });
 
+  it("covers the full requested span when data reaches back far enough", () => {
+    // 90 days of data with a 60-day span: the oldest plotted point must reach
+    // back at least the full span (the loop anchors firstBack on ceil(span/step)
+    // — a floor would stop ~one step short of the requested window).
+    const weights = dailyWeights("2026-03-01", 90, () => 80);
+    const intake = dailyIntake("2026-03-01", 90, 2500);
+    const hist = computeTdeeHistory({
+      weights,
+      intake,
+      spanDays: 60,
+      stepDays: 7,
+    });
+    const last = Date.parse(hist[hist.length - 1].date);
+    const oldest = Date.parse(hist[0].date);
+    expect((last - oldest) / 86_400_000).toBeGreaterThanOrEqual(60);
+  });
+
   it("omits as-of points that don't yet have enough data", () => {
     // Only the back half of the window has logged intake, so early as-of
     // points can't meet the logged-day floor and are dropped.
