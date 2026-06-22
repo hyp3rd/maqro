@@ -60,6 +60,16 @@ export async function GET(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: selErr.message }, { status: 500 });
   }
   const optedIn = rows ?? [];
+  // The `.limit(MAX_USERS)` caps the batch; if we hit it exactly, more opted-in
+  // users likely exist and got silently dropped this run. Surface it (logs +
+  // response) rather than letting `optedIn: 500` look like a complete pass.
+  // Pagination is the fix if opt-in counts ever routinely approach the cap.
+  const truncated = optedIn.length === MAX_USERS;
+  if (truncated) {
+    console.warn(
+      `[cron/auto-adapt-tdee] hit MAX_USERS=${MAX_USERS}; some opted-in users were not processed this run.`,
+    );
+  }
 
   const nowIso = new Date().toISOString();
   const today = nowIso.slice(0, 10);
@@ -156,5 +166,6 @@ export async function GET(req: Request): Promise<NextResponse> {
     held,
     skipped,
     errors,
+    truncated,
   });
 }
