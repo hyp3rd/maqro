@@ -171,6 +171,27 @@ describe("computeMacros", () => {
     expect(r.targetCalories).toBe(r.bmr);
   });
 
+  it("uses the per-phase tdeeOverride over both manualTdee and the formula", () => {
+    // Override wins even when a (different) global manualTdee is also set.
+    const r = computeMacros({ ...baseline, manualTdee: 2000 }, undefined, 3000);
+    expect(r.tdee).toBe(3000);
+    expect(r.targetCalories).toBe(3000); // maintain → no offset
+  });
+
+  it("ignores tdeeOverride when null/undefined/≤0 (falls back to manualTdee)", () => {
+    for (const v of [null, undefined, 0, -100]) {
+      const r = computeMacros({ ...baseline, manualTdee: 2000 }, undefined, v);
+      expect(r.tdee).toBe(2000);
+    }
+  });
+
+  it("still applies the safety floor to a low tdeeOverride", () => {
+    const r = computeMacros({ ...baseline, goal: "maintain" }, undefined, 500);
+    // Override sets TDEE to 500, but the target floors to max(bmr, 1200).
+    expect(r.tdee).toBe(500);
+    expect(r.targetCalories).toBe(r.bmr);
+  });
+
   describe("macroSplit override", () => {
     it("applies the override when set, ignoring goal+dietType defaults", () => {
       // Goal=lose normally yields 40/25/35 (P/C/F). Override to 50/30/20 and

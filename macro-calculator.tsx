@@ -681,8 +681,17 @@ const MacroCalculator = () => {
           weeklyRateKg: effective.weeklyRateKg,
         },
         nowMs,
+        // The active phase's own maintenance override (Pro), if set, drives the
+        // target ahead of the global manualTdee.
+        effective.phase?.tdeeOverride ?? undefined,
       ),
-    [personalInfo, effective.goal, effective.weeklyRateKg, nowMs],
+    [
+      personalInfo,
+      effective.goal,
+      effective.weeklyRateKg,
+      effective.phase?.tdeeOverride,
+      nowMs,
+    ],
   );
 
   // Today's calorie target for a *hypothetical* goal-phase list, via the same
@@ -697,6 +706,7 @@ const MacroCalculator = () => {
     return computeMacros(
       { ...hypo, goal: eff.goal, weeklyRateKg: eff.weeklyRateKg },
       nowMs,
+      eff.phase?.tdeeOverride ?? undefined,
     ).targetCalories;
   };
 
@@ -2337,6 +2347,22 @@ const MacroCalculator = () => {
           goalPhases={personalInfo.goalPhases}
           autoAdaptSuggestion={personalInfo.autoAdaptSuggestion}
           onDismissAutoAdapt={() => patchProfile("autoAdaptSuggestion", null)}
+          onApplyPhaseTdee={(phaseId, tdee) =>
+            patchProfile(
+              "goalPhases",
+              (personalInfo.goalPhases ?? []).map((p) =>
+                p.id === phaseId ? { ...p, tdeeOverride: tdee } : p,
+              ),
+            )
+          }
+          onClearPhaseTdee={(phaseId) =>
+            patchProfile(
+              "goalPhases",
+              (personalInfo.goalPhases ?? []).map((p) =>
+                p.id === phaseId ? { ...p, tdeeOverride: null } : p,
+              ),
+            )
+          }
         />
       )}
 

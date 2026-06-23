@@ -19,6 +19,10 @@ export type NotificationPrefs = {
    *  …) used to compute "local hour". `null` falls back to the
    *  cron's UTC default to preserve historical behavior. */
   timezone: string | null;
+  /** Master opt-in for supplement reminders (email always, push additionally
+   *  when `pushEnabled`). The per-supplement times live on each supplement's
+   *  schedule; this is the on/off switch the hourly cron checks. */
+  supplementReminders: boolean;
 };
 
 export type NotificationPrefsState =
@@ -58,6 +62,7 @@ const DEFAULT_PREFS: NotificationPrefs = {
   pushEnabled: false,
   reminderHour: DEFAULT_REMINDER_HOUR,
   timezone: null,
+  supplementReminders: false,
 };
 
 /** Read + write the caller's notification preferences. Direct
@@ -98,7 +103,7 @@ export function useNotificationPrefs(): UseNotificationPrefsResult {
       const { data, error } = await supabase
         .from("notification_preferences")
         .select(
-          "daily_reminder, weekly_recap, push_enabled, reminder_hour, timezone",
+          "daily_reminder, weekly_recap, push_enabled, reminder_hour, timezone, supplement_reminders",
         )
         .eq("user_id", user.id)
         .maybeSingle();
@@ -127,6 +132,9 @@ export function useNotificationPrefs(): UseNotificationPrefsResult {
           // doesn't have to pick it manually. The next `update`
           // call persists whatever they have.
           timezone: (data?.timezone as string | undefined) ?? detectTimeZone(),
+          supplementReminders:
+            (data?.supplement_reminders as boolean | undefined) ??
+            DEFAULT_PREFS.supplementReminders,
         },
       });
     })();
@@ -163,6 +171,7 @@ export function useNotificationPrefs(): UseNotificationPrefsResult {
             push_enabled: next.pushEnabled,
             reminder_hour: next.reminderHour,
             timezone: next.timezone,
+            supplement_reminders: next.supplementReminders,
           },
           { onConflict: "user_id" },
         );

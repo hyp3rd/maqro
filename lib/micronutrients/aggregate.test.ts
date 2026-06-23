@@ -431,3 +431,70 @@ describe("computeMicronutrientWindow", () => {
     expect(out).toHaveLength(3);
   });
 });
+
+describe("supplement micronutrient feed", () => {
+  it("folds absolute supplement micros into the totals, marked approximate", () => {
+    const r = aggregateMicronutrientsDetailed([], new Map(), {
+      vitaminD: 25,
+      iron: 8,
+    });
+    expect(r.totals).toEqual({ vitaminD: 25, iron: 8 });
+    expect(r.approx.vitaminD).toBe(true);
+    expect(r.approx.iron).toBe(true);
+  });
+
+  it("adds supplement micros on top of an exact food's micros for one nutrient", () => {
+    const steak: FoodItem = {
+      ...food("steak", 100),
+      offCode: "123",
+      micronutrients: { iron: 2 },
+    };
+    const r = aggregateMicronutrientsDetailed([meal([steak])], new Map(), {
+      iron: 8,
+    });
+    expect(r.totals.iron).toBe(10); // 2 (food, exact) + 8 (supplement)
+    expect(r.approx.iron).toBe(true); // the supplement contribution flips it
+  });
+
+  it("surfaces a supplements-only day (no food log) in the window", () => {
+    const win = computeMicronutrientWindow(
+      [],
+      new Map(),
+      "2026-06-30",
+      30,
+      new Map([["2026-06-01", { vitaminD: 25 }]]),
+    );
+    expect(win).toHaveLength(1);
+    expect(win[0].date).toBe("2026-06-01");
+    expect(win[0].totals).toEqual({ vitaminD: 25 });
+    expect(win[0].approx.vitaminD).toBe(true);
+  });
+
+  it("merges supplement micros into a matching food-log day", () => {
+    const milk: FoodItem = {
+      ...food("milk", 100),
+      offCode: "9",
+      micronutrients: { calcium: 120 },
+    };
+    const win = computeMicronutrientWindow(
+      [dayLog("2026-06-02", [milk])],
+      new Map(),
+      "2026-06-30",
+      30,
+      new Map([["2026-06-02", { vitaminD: 25 }]]),
+    );
+    expect(win).toHaveLength(1);
+    expect(win[0].totals).toEqual({ calcium: 120, vitaminD: 25 });
+  });
+
+  it("excludes a supplement day after today", () => {
+    const win = computeMicronutrientWindow(
+      [],
+      new Map(),
+      "2026-06-30",
+      30,
+      new Map([["2026-07-15", { iron: 5 }]]),
+    );
+    expect(win).toHaveLength(0);
+  });
+});

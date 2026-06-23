@@ -1,6 +1,7 @@
 "use client";
 
 import { MicronutrientsSection } from "@/components/macro/MicronutrientsSection";
+import { SupplementsSection } from "@/components/macro/SupplementsSection";
 import type { GoalPhase, PersonalInfo } from "@/components/macro/types";
 import { ChartZoomDialog } from "@/components/shell/ChartZoomDialog";
 import {
@@ -150,6 +151,11 @@ type Props = {
   autoAdaptSuggestion?: PersonalInfo["autoAdaptSuggestion"];
   /** Clear the surfaced auto-adapt outcome (after applying or dismissing it). */
   onDismissAutoAdapt?: () => void;
+  /** Pin a goal phase to its observed maintenance (sets that phase's
+   *  `tdeeOverride`). Pro — drives the target while the phase is active. */
+  onApplyPhaseTdee: (phaseId: string, tdee: number) => void;
+  /** Clear a goal phase's maintenance override (back to the global TDEE). */
+  onClearPhaseTdee: (phaseId: string) => void;
 };
 
 function parseLocalDate(d: string): Date {
@@ -197,6 +203,8 @@ export function ProgressView({
   goalPhases,
   autoAdaptSuggestion,
   onDismissAutoAdapt,
+  onApplyPhaseTdee,
+  onClearPhaseTdee,
 }: Props) {
   const [weights, setWeights] = useState<WeightEntry[] | null>(null);
   const [logs, setLogs] = useState<DailyLog[] | null>(null);
@@ -408,8 +416,8 @@ export function ProgressView({
         history={tdeeHistory}
         perPhase={perPhaseTdee}
         activePhaseId={activePhaseId}
-        currentTdee={formulaTdee}
-        onApplyTdee={onApplyTdee}
+        onApplyPhaseTdee={onApplyPhaseTdee}
+        onClearPhaseTdee={onClearPhaseTdee}
         loading={weights === null}
       />
       <WeightSection
@@ -454,6 +462,7 @@ export function ProgressView({
         logs={logs}
         windowDays={WINDOW_DAYS}
       />
+      <SupplementsSection />
     </div>
   );
 }
@@ -723,15 +732,17 @@ function AdaptiveTdeeProSection({
   history,
   perPhase,
   activePhaseId,
-  currentTdee,
-  onApplyTdee,
+  onApplyPhaseTdee,
+  onClearPhaseTdee,
   loading,
 }: {
   history: TdeePoint[];
   perPhase: PhaseTdee[];
   activePhaseId: string | null;
-  currentTdee: number;
-  onApplyTdee: (tdee: number) => void;
+  /** Pin a phase to its observed maintenance (writes that phase's override). */
+  onApplyPhaseTdee: (phaseId: string, tdee: number) => void;
+  /** Clear a phase's maintenance override (back to the global TDEE). */
+  onClearPhaseTdee: (phaseId: string) => void;
   loading: boolean;
 }) {
   if (loading) return null;
@@ -781,13 +792,24 @@ function AdaptiveTdeeProSection({
           <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
             Maintenance by phase
           </h4>
+          <p className="text-xs text-muted-foreground">
+            Pin a phase to its own maintenance — it drives your target while
+            that phase is active, independent of your global TDEE.
+          </p>
           <ul className="space-y-1.5">
             {phaseRows.map(({ phase, tdee }) => {
               const observed = tdee.observedTdee;
               if (observed === null) return null;
+              const override =
+                phase.tdeeOverride && phase.tdeeOverride > 0
+                  ? phase.tdeeOverride
+                  : null;
+              const isActive = phase.id === activePhaseId;
+              // Offer "apply" when there's no override yet, or the observed
+              // value has drifted from the pinned one by more than the noise floor.
               const canApply =
-                phase.id === activePhaseId &&
-                Math.abs(observed - currentTdee) >= ADAPTIVE_DELTA_THRESHOLD;
+                override === null ||
+                Math.abs(observed - override) >= ADAPTIVE_DELTA_THRESHOLD;
               const conf = confidenceLabel(tdee.confidence);
               return (
                 <li
@@ -798,6 +820,9 @@ function AdaptiveTdeeProSection({
                     <span className="font-medium">
                       {PHASE_LABELS[phase.kind]}
                     </span>
+                    {isActive && (
+                      <span className="text-muted-foreground"> · active</span>
+                    )}
                     {" — "}
                     <span className="font-mono tabular-nums">
                       {observed} kcal
@@ -805,19 +830,39 @@ function AdaptiveTdeeProSection({
                     {conf && (
                       <span className="text-muted-foreground"> · {conf}</span>
                     )}
+                    {override !== null && (
+                      <span className="text-muted-foreground">
+                        {" "}
+                        · using{" "}
+                        <span className="font-mono tabular-nums">
+                          {override}
+                        </span>
+                      </span>
+                    )}
                   </span>
-                  {canApply && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={() => onApplyTdee(observed)}
-                      className="h-7 gap-1.5"
-                    >
-                      <Check className="h-3.5 w-3.5" />
-                      Use for my TDEE
-                    </Button>
-                  )}
+                  <span className="flex items-center gap-2">
+                    {canApply && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onApplyPhaseTdee(phase.id, observed)}
+                        className="h-7 gap-1.5"
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                        Use for this phase
+                      </Button>
+                    )}
+                    {override !== null && (
+                      <button
+                        type="button"
+                        onClick={() => onClearPhaseTdee(phase.id)}
+                        className="text-xs text-muted-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </span>
                 </li>
               );
             })}

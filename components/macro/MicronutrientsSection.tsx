@@ -10,8 +10,14 @@ import {
 import { useAiUsage } from "@/hooks/use-ai-usage";
 import { effectiveAge } from "@/lib/age";
 import { FEATURES } from "@/lib/billing/tiers";
-import type { DailyLog } from "@/lib/db";
-import { getProfile, listMicronutrientProfiles, todayKey } from "@/lib/db";
+import type { DailyLog, Supplement, SupplementIntake } from "@/lib/db";
+import {
+  getProfile,
+  listMicronutrientProfiles,
+  listSupplementIntake,
+  listSupplements,
+  todayKey,
+} from "@/lib/db";
 import {
   averageMicronutrientsDetailed,
   computeMicronutrientWindow,
@@ -25,7 +31,9 @@ import {
   MICRONUTRIENTS,
   type BiologicalSex,
   type MicronutrientKey,
+  type MicronutrientValues,
 } from "@/lib/rda";
+import { supplementMicrosForDay, supplementsById } from "@/lib/supplements";
 import { useDataRev } from "@/lib/sync/data-bus";
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, Sparkles } from "lucide-react";
@@ -61,8 +69,12 @@ export function MicronutrientsSection({
 
   const [profiles, setProfiles] = useState<MicronutrientProfile[] | null>(null);
   const [userProfile, setUserProfile] = useState<PersonalInfo | null>(null);
+  const [supplements, setSupplements] = useState<Supplement[] | null>(null);
+  const [intake, setIntake] = useState<SupplementIntake[] | null>(null);
   const profilesRev = useDataRev("micronutrientProfiles");
   const userProfileRev = useDataRev("profile");
+  const supplementsRev = useDataRev("supplements");
+  const intakeRev = useDataRev("supplementIntake");
 
   useEffect(() => {
     // Only load profiles for Pro users — no point hitting IDB for a
@@ -97,6 +109,26 @@ export function MicronutrientsSection({
     };
   }, [isPro, userProfileRev]);
 
+  useEffect(() => {
+    // Logged supplements feed their absolute micros into the daily totals.
+    if (!isPro) return;
+    let cancelled = false;
+    Promise.all([listSupplements(), listSupplementIntake()])
+      .then(([s, i]) => {
+        if (cancelled) return;
+        setSupplements(s);
+        setIntake(i);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setSupplements([]);
+        setIntake([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isPro, supplementsRev, intakeRev]);
+
   // Per-nutrient daily targets: NIH RDA by age + sex, FDA Daily Value
   // fallback. Recomputed when the profile changes.
   const targets = useMemo(
@@ -126,7 +158,20 @@ export function MicronutrientsSection({
         window: [] as MicronutrientDay[],
       };
     const map = new Map(profiles.map((p) => [p.nameKey, p]));
-    const w = computeMicronutrientWindow(logs, map, today, windowDays);
+    // Per-day supplement micros (absolute) → folded into each day's totals.
+    const byId = supplementsById(supplements ?? []);
+    const supByDate = new Map<string, MicronutrientValues>();
+    for (const rec of intake ?? []) {
+      const m = supplementMicrosForDay(rec, byId);
+      if (Object.keys(m).length > 0) supByDate.set(rec.date, m);
+    }
+    const w = computeMicronutrientWindow(
+      logs,
+      map,
+      today,
+      windowDays,
+      supByDate,
+    );
     const detailed = averageMicronutrientsDetailed(w);
     return {
       averages: detailed.totals,
@@ -135,7 +180,7 @@ export function MicronutrientsSection({
       daysCovered: w.length,
       window: w,
     };
-  }, [logs, profiles, today, windowDays]);
+  }, [logs, profiles, supplements, intake, today, windowDays]);
 
   // While the tier is still resolving, render nothing — avoids a
   // flash of the upgrade prompt for a Pro user mid-fetch.

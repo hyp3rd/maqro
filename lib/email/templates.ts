@@ -110,6 +110,123 @@ export function dailyReminderEmail(opts: {
   };
 }
 
+/** Weekly auto-adapt outcome. `applied` = a small change the cron already
+ *  wrote to the user's maintenance (reversible heads-up); `pending` = a larger
+ *  change held for a one-tap confirm. Tone: matter-of-fact, reversible, no
+ *  alarm. */
+export function autoAdaptEmail(opts: {
+  appUrl: string;
+  kind: "applied" | "pending";
+  newTdee: number;
+  deltaKcal: number;
+}): { subject: string; html: string; text: string } {
+  const dir = opts.deltaKcal > 0 ? "higher" : "lower";
+  const absDelta = Math.abs(opts.deltaKcal);
+  const progressUrl = `${opts.appUrl}/app?view=progress`;
+
+  const subject =
+    opts.kind === "applied"
+      ? `Your maintenance was adjusted to ${opts.newTdee} kcal`
+      : `New maintenance estimate: ${opts.newTdee} kcal — confirm to apply`;
+
+  const headline =
+    opts.kind === "applied"
+      ? `Maintenance adjusted to ${opts.newTdee} kcal/day`
+      : `New maintenance estimate: ${opts.newTdee} kcal/day`;
+
+  const message =
+    opts.kind === "applied"
+      ? `Your recent intake and weight trend moved your maintenance about ${absDelta} kcal ${dir}. Auto-adapt updated your daily target to match — a small weekly nudge. Your targets already reflect it, and you can change it back anytime under Advanced.`
+      : `Your recent logging puts maintenance near ${opts.newTdee} kcal — about ${absDelta} kcal ${dir} than your target uses now. That's a bigger move, so we held it for you to confirm rather than changing it automatically. Apply it in one tap.`;
+
+  const cta =
+    opts.kind === "applied" ? "See it in Progress" : "Review and apply";
+
+  const bodyHtml = `
+    <h1 style="margin:0 0 12px;font-size:20px;font-weight:600;letter-spacing:-0.02em;">
+      ${headline}
+    </h1>
+    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#3a3a40;">
+      ${message}
+    </p>
+    <a href="${progressUrl}" style="display:inline-block;background:#0a0a0c;color:#ffffff;text-decoration:none;padding:10px 16px;border-radius:8px;font-size:14px;font-weight:500;">
+      ${cta}
+    </a>
+  `;
+
+  const text = [
+    headline,
+    "",
+    message,
+    "",
+    `${cta}: ${progressUrl}`,
+    "",
+    `Manage email preferences: ${opts.appUrl}/app?view=settings`,
+  ].join("\n");
+
+  return {
+    subject,
+    html: shell({
+      appUrl: opts.appUrl,
+      preheader:
+        opts.kind === "applied"
+          ? `Maintenance is now ${opts.newTdee} kcal — reversible anytime.`
+          : `Maintenance looks like ${opts.newTdee} kcal — confirm to apply.`,
+      bodyHtml,
+    }),
+    text,
+  };
+}
+
+/** Supplement reminder — "time for your {name}". Sent by the hourly
+ *  supplement-reminder cron at the user's scheduled local time. Calm + factual;
+ *  the in-app card is where they mark it taken. */
+export function supplementReminderEmail(opts: {
+  appUrl: string;
+  name: string;
+  doseLabel?: string;
+}): { subject: string; html: string; text: string } {
+  const dose =
+    opts.doseLabel && opts.doseLabel.trim().length > 0
+      ? ` (${opts.doseLabel.trim()})`
+      : "";
+  const subject = `Time for your ${opts.name}`;
+  const url = `${opts.appUrl}/app?view=progress`;
+
+  const bodyHtml = `
+    <h1 style="margin:0 0 12px;font-size:20px;font-weight:600;letter-spacing:-0.02em;">
+      Time for your ${opts.name}
+    </h1>
+    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#3a3a40;">
+      A reminder to take your ${opts.name}${dose}. Mark it as taken in the app to
+      keep your micronutrient totals accurate.
+    </p>
+    <a href="${url}" style="display:inline-block;background:#0a0a0c;color:#ffffff;text-decoration:none;padding:10px 16px;border-radius:8px;font-size:14px;font-weight:500;">
+      Open Maqro
+    </a>
+  `;
+
+  const text = [
+    `Time for your ${opts.name}${dose}.`,
+    "",
+    "Mark it as taken in the app to keep your micronutrient totals accurate.",
+    "",
+    `Open Maqro: ${url}`,
+    "",
+    `Manage reminder preferences: ${opts.appUrl}/app?view=settings`,
+  ].join("\n");
+
+  return {
+    subject,
+    html: shell({
+      appUrl: opts.appUrl,
+      preheader: `A reminder to take your ${opts.name}.`,
+      bodyHtml,
+    }),
+    text,
+  };
+}
+
 /** Format a date-only ISO window bound ("2026-05-12") as a human label
  *  ("May 12"). Parsed and formatted in UTC so a date-only string never
  *  shifts a day in the server's local zone. Emails are English-only. */

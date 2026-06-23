@@ -268,6 +268,13 @@ export type GoalPhase = {
   startDate: string;
   durationWeeks: number;
   weeklyRateKg: number;
+  /** Optional per-phase maintenance override (kcal/day). When set (> 0) and
+   * this phase is active, it drives the calorie/macro target instead of the
+   * global `PersonalInfo.manualTdee` — so a cut and a lean bulk can carry
+   * independently-calibrated maintenance. Applied via the per-phase
+   * "use for this phase" action on the adaptive-TDEE card. `null`/absent = use
+   * the global TDEE. Rides the profile blob — no migration. */
+  tdeeOverride?: number | null;
   /** Optional free-text label ("off-season", "holiday"). */
   notes?: string;
 };

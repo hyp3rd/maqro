@@ -2,12 +2,14 @@
 
 import { useFastingStatus } from "@/hooks/use-fasting-status";
 import { useNow } from "@/hooks/use-now";
+import { todayKey } from "@/lib/db";
 import {
   eatingHours,
   formatDuration,
   PROTOCOLS,
   type FastingProtocol,
 } from "@/lib/fasting";
+import { computeDailyTiming } from "@/lib/timing-insights";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import {
@@ -75,6 +77,7 @@ export function FastingCard({
     status,
     fasting,
     fastingHours,
+    logs,
     isHydrated,
     startFast,
     stopFast,
@@ -117,6 +120,10 @@ export function FastingCard({
 
   const eatHrs = eatingHours(fasting);
   const isFasting = status.phase === "fasting";
+  // Today's eating window from logged meal times (independent of the fast
+  // timer) — null until a meal carries a `loggedAt`.
+  const todayLog = logs.find((l) => l.date === todayKey());
+  const todayTiming = todayLog ? computeDailyTiming(todayLog.meals) : null;
 
   function openEdit() {
     setDraft(toLocalInput(status.fastStartedAt ?? Date.now()));
@@ -269,6 +276,16 @@ export function FastingCard({
             </div>
           )}
         </>
+      )}
+
+      {/* Today's eating window — when you actually ate, from logged meal
+          times. Independent of the manual fast timer above. */}
+      {todayTiming && (
+        <p className="font-mono text-[11px] tabular-nums text-muted-foreground">
+          Ate {clock(todayTiming.window.firstAt)}–
+          {clock(todayTiming.window.lastAt)} ·{" "}
+          {formatDuration(todayTiming.window.lengthMin)}
+        </p>
       )}
 
       {/* Start / Stop + links. */}
