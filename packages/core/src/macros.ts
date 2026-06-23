@@ -14,7 +14,15 @@ import {
  * gram targets from the user's profile. Uses Mifflin-St Jeor for BMR. The
  * daily delta is clamped so the target never drops below max(BMR, 1200) and
  * the rate is clamped to ≤1% of bodyweight/week (textbook upper bound). */
-export function computeMacros(p: PersonalInfo, now?: number): CalculatedValues {
+export function computeMacros(
+  p: PersonalInfo,
+  now?: number,
+  /** An active goal-phase's own TDEE override, if any. Resolved by the caller
+   *  from the phase covering the target date (Pro). Takes precedence over the
+   *  global `manualTdee` so a phase can be calibrated independently; still
+   *  subject to the safety floor. `null`/`undefined`/≤0 = not set. */
+  tdeeOverride?: number | null,
+): CalculatedValues {
   // Mifflin-St Jeor has two paths: +5 (assumed-male physiology) or -161
   // (assumed-female physiology). For non-binary / prefer-not-to-say we
   // pick the lower-calorie estimate (-161). It's the conservative choice:
@@ -30,11 +38,16 @@ export function computeMacros(p: PersonalInfo, now?: number): CalculatedValues {
     ? 10 * p.weight + 6.25 * p.height - 5 * age + 5
     : 10 * p.weight + 6.25 * p.height - 5 * age - 161;
 
-  // Manual TDEE overrides the formula-based estimate when provided. Without
-  // it, we use BMR × activity multiplier, which is a textbook approximation
-  // known to overestimate real-world TDEE by 10–20% for many people.
+  // TDEE precedence: an active goal-phase override wins, then the global manual
+  // TDEE, then the formula (BMR × activity multiplier — a textbook approximation
+  // known to overestimate real-world TDEE by 10–20% for many people). A phase
+  // override lets a cut and a lean bulk carry independently-calibrated
+  // maintenance; the global manual override is the single-goal fallback.
   const formulaTdee = bmr * activityMultipliers[p.activityLevel];
-  const tdee = p.manualTdee && p.manualTdee > 0 ? p.manualTdee : formulaTdee;
+  const phaseTdee = tdeeOverride && tdeeOverride > 0 ? tdeeOverride : null;
+  const tdee =
+    phaseTdee ??
+    (p.manualTdee && p.manualTdee > 0 ? p.manualTdee : formulaTdee);
 
   const safeRate = Math.min(Math.max(p.weeklyRateKg, 0), p.weight * 0.01);
   const requestedDelta = goalDirection[p.goal] * ((safeRate * KCAL_PER_KG) / 7);
