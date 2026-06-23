@@ -11,6 +11,7 @@ import {
   applyServerPantryNotification,
   applyServerProfile,
   applyServerRecipe,
+  applyServerSupplementIntake,
   applyServerWaterIntake,
   applyServerWeightEntry,
   applyServerDeletion,
@@ -34,6 +35,7 @@ import {
   pantryNotificationFromRow,
   profileFromRow,
   recipeFromRow,
+  supplementIntakeFromRow,
   waterFromRow,
   weightFromRow,
   type CustomFoodRow,
@@ -46,6 +48,7 @@ import {
   type PantryNotificationRow,
   type ProfileRow,
   type RecipeRow,
+  type SupplementIntakeRow,
   type WaterRow,
   type WeightRow,
 } from "./mappers";
@@ -136,6 +139,17 @@ export function startRealtimeSubscription(
         "postgres_changes",
         { event: "*", schema: "public", table: "water_intake", filter },
         run(handleWater),
+      )
+      .subscribe(buildSubscribeHandler()),
+  );
+
+  channels.push(
+    supabase
+      .channel("sync-supplement-intake")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "supplement_intake", filter },
+        run(handleSupplementIntake),
       )
       .subscribe(buildSubscribeHandler()),
   );
@@ -329,6 +343,18 @@ async function handleWater(payload: LoosePayload) {
   const entry = waterFromRow(row);
   await applyServerWaterIntake(entry.date, entry.ml, row.updated_at);
   notifyDataChanged("waterIntake");
+}
+
+async function handleSupplementIntake(payload: LoosePayload) {
+  // Like water: date-keyed, upsert-only — ignore server DELETE (handled by
+  // clearAllStores on sign-out).
+  if (payload.eventType === "DELETE") return;
+  const row = newRow<SupplementIntakeRow>(payload);
+  if (!row) return;
+  if (await isOwnEcho("supplementIntake", row.updated_at)) return;
+  const entry = supplementIntakeFromRow(row);
+  await applyServerSupplementIntake(entry.date, entry.taken, row.updated_at);
+  notifyDataChanged("supplementIntake");
 }
 
 async function handleCustomFood(payload: LoosePayload) {

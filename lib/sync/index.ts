@@ -18,6 +18,8 @@ import {
   applyServerMicronutrientProfile,
   applyServerProfile,
   applyServerRecipe,
+  applyServerSupplement,
+  applyServerSupplementIntake,
   applyServerWaterIntake,
   applyServerWeightEntry,
   clearAllStores,
@@ -37,6 +39,8 @@ import {
   listPantryItems,
   listPantryNotifications,
   listRecipes,
+  listSupplementIntake,
+  listSupplements,
   listWaterIntake,
   listWeightEntries,
   markBloodPressureSynced,
@@ -52,6 +56,8 @@ import {
   markPantryNotificationSynced,
   markProfileSynced,
   markRecipeSynced,
+  markSupplementIntakeSynced,
+  markSupplementSynced,
   markWaterIntakeSynced,
   markWeightEntrySynced,
   upsertCustomFood,
@@ -60,6 +66,7 @@ import {
   upsertPantryItem,
   upsertPantryNotification,
   upsertRecipe,
+  upsertSupplement,
   type BloodPressure,
   type BodyMeasurement,
   type CustomFood,
@@ -70,6 +77,8 @@ import {
   type MealTemplate,
   type PantryItem,
   type PantryNotification,
+  type Supplement,
+  type SupplementIntake,
   type WaterIntake,
   type WeightEntry,
 } from "@/lib/db";
@@ -107,6 +116,10 @@ import {
   profileToRow,
   recipeFromRow,
   recipeToRow,
+  supplementFromRow,
+  supplementIntakeFromRow,
+  supplementIntakeToRow,
+  supplementToRow,
   waterFromRow,
   waterToRow,
   weightFromRow,
@@ -129,6 +142,8 @@ import {
   type PantryNotificationRow,
   type ProfileRow,
   type RecipeRow,
+  type SupplementIntakeRow,
+  type SupplementRow,
   type WaterRow,
   type WeightRow,
 } from "./mappers";
@@ -139,6 +154,7 @@ export type SyncResult = {
     dailyLogs: number;
     weightEntries: number;
     waterIntake: number;
+    supplementIntake: number;
     bodyMeasurements: number;
     bloodPressure: number;
     fastSessions: number;
@@ -146,6 +162,7 @@ export type SyncResult = {
     mealTemplates: number;
     recipes: number;
     mealSchedules: number;
+    supplements: number;
     pantryItems: number;
     pantryNotifications: number;
     favoriteStores: number;
@@ -157,6 +174,7 @@ export type SyncResult = {
     dailyLogs: number;
     weightEntries: number;
     waterIntake: number;
+    supplementIntake: number;
     bodyMeasurements: number;
     bloodPressure: number;
     fastSessions: number;
@@ -164,6 +182,7 @@ export type SyncResult = {
     mealTemplates: number;
     recipes: number;
     mealSchedules: number;
+    supplements: number;
     pantryItems: number;
     pantryNotifications: number;
     favoriteStores: number;
@@ -187,6 +206,7 @@ const ZERO_COUNTS = {
   dailyLogs: 0,
   weightEntries: 0,
   waterIntake: 0,
+  supplementIntake: 0,
   bodyMeasurements: 0,
   bloodPressure: 0,
   fastSessions: 0,
@@ -194,6 +214,7 @@ const ZERO_COUNTS = {
   mealTemplates: 0,
   recipes: 0,
   mealSchedules: 0,
+  supplements: 0,
   pantryItems: 0,
   pantryNotifications: 0,
   favoriteStores: 0,
@@ -243,6 +264,7 @@ export async function runInitialSync(
   await pullDailyLogs(supabase, userId, result);
   await pullWeightEntries(supabase, userId, result);
   await pullWaterIntake(supabase, userId, result);
+  await pullSupplementIntake(supabase, userId, result);
   await pullBodyMeasurements(supabase, userId, result);
   await pullBloodPressure(supabase, userId, result);
   await pullFastSessions(supabase, userId, result);
@@ -250,6 +272,7 @@ export async function runInitialSync(
   await pullMealTemplates(supabase, userId, result);
   await pullRecipes(supabase, userId, result);
   await pullMealSchedules(supabase, userId, result);
+  await pullSupplements(supabase, userId, result);
   await pullPantryItems(supabase, userId, result);
   await pullPantryNotifications(supabase, userId, result);
   await pullFavoriteStores(supabase, userId, result);
@@ -263,6 +286,7 @@ export async function runInitialSync(
   await pushDailyLogs(supabase, userId, result);
   await pushWeightEntries(supabase, userId, result);
   await pushWaterIntake(supabase, userId, result);
+  await pushSupplementIntake(supabase, userId, result);
   await pushBodyMeasurements(supabase, userId, result);
   await pushBloodPressure(supabase, userId, result);
   await pushFastSessions(supabase, userId, result);
@@ -270,6 +294,7 @@ export async function runInitialSync(
   await pushMealTemplates(supabase, userId, result);
   await pushRecipes(supabase, userId, result);
   await pushMealSchedules(supabase, userId, result);
+  await pushSupplements(supabase, userId, result);
   await pushPantryItems(supabase, userId, result);
   await pushPantryNotifications(supabase, userId, result);
   await pushFavoriteStores(supabase, userId, result);
@@ -482,6 +507,7 @@ const DELETE_TARGET: Record<
   mealTemplates: { table: "meal_templates", pk: "id" },
   recipes: { table: "recipes", pk: "id" },
   mealSchedules: { table: "meal_schedules", pk: "id" },
+  supplements: { table: "supplements", pk: "id" },
   dailyLogs: { table: "daily_logs", pk: "date" },
   weightHistory: { table: "weight_history", pk: "date" },
   bodyMeasurements: { table: "body_measurements", pk: "date" },
@@ -642,6 +668,34 @@ async function pushWaterIntake(
     if (outcome.status === "inserted" || outcome.status === "updated") {
       await markWaterIntakeSynced(entry.date, outcome.serverUpdatedAt);
       result.pushed.waterIntake++;
+    }
+  }
+}
+
+async function pushSupplementIntake(
+  supabase: SupabaseClient,
+  userId: string,
+  result: SyncResult,
+) {
+  const entries = await listSupplementIntake();
+  for (const entry of entries) {
+    if (!isDirty(entry)) continue;
+    const row = supplementIntakeToRow(userId, entry);
+    const outcome = await pushRow(
+      supabase,
+      "supplement_intake",
+      row,
+      { user_id: userId, date: entry.date },
+      entry.serverUpdatedAt,
+      "push supplement intake",
+    );
+    if (outcome.status === "conflict") {
+      result.conflicts++;
+      continue;
+    }
+    if (outcome.status === "inserted" || outcome.status === "updated") {
+      await markSupplementIntakeSynced(entry.date, outcome.serverUpdatedAt);
+      result.pushed.supplementIntake++;
     }
   }
 }
@@ -964,6 +1018,65 @@ async function pushMealScheduleOnce(
 }
 
 /** @internal Exported for unit tests. Not part of the stable sync API. */
+export async function pushSupplements(
+  supabase: SupabaseClient,
+  userId: string,
+  result: SyncResult,
+) {
+  const supplements = await listSupplements();
+  for (const supplement of supplements) {
+    if (!isDirty(supplement)) continue;
+    const outcome = await pushSupplementOnce(
+      supabase,
+      userId,
+      supplement,
+      "push supplement",
+    );
+    if (outcome === "conflict") {
+      result.conflicts++;
+      continue;
+    }
+    if (outcome === "synced") result.pushed.supplements++;
+  }
+}
+
+async function pushSupplementOnce(
+  supabase: SupabaseClient,
+  userId: string,
+  supplement: Supplement,
+  label: string,
+): Promise<"synced" | "conflict"> {
+  const row = supplementToRow(userId, supplement);
+  const outcome = await pushRow(
+    supabase,
+    "supplements",
+    row,
+    { id: supplement.id },
+    (supplement as Supplement & { serverUpdatedAt?: string | null })
+      .serverUpdatedAt,
+    label,
+  );
+  if (outcome.status === "conflict") return "conflict";
+  if (outcome.status === "uuid-collision") {
+    const newId = crypto.randomUUID();
+    await upsertSupplement({
+      ...supplement,
+      id: newId,
+      serverUpdatedAt: null,
+    } as Supplement & { serverUpdatedAt: null });
+    await applyServerDeletion("supplements", supplement.id);
+    return pushSupplementOnce(
+      supabase,
+      userId,
+      { ...supplement, id: newId },
+      `${label} (re-mint retry)`,
+    );
+  }
+  await markSupplementSynced(supplement.id, outcome.serverUpdatedAt);
+  return "synced";
+}
+
+/** @internal Exported for unit tests. Not part of the stable sync API. */
 export async function pushPantryItems(
   supabase: SupabaseClient,
   userId: string,
@@ -1250,6 +1363,37 @@ async function pullWaterIntake(
   if (result.pulled.waterIntake > before) notifyDataChanged("waterIntake");
 }
 
+async function pullSupplementIntake(
+  supabase: SupabaseClient,
+  userId: string,
+  result: SyncResult,
+) {
+  const { data, error } = await withTimeout(
+    "pull supplement intake",
+    (signal) =>
+      supabase
+        .from("supplement_intake")
+        .select("user_id, date, taken, recorded_at, updated_at")
+        .eq("user_id", userId)
+        .abortSignal(signal),
+  );
+  if (error) throw asError(error, "pull supplement intake");
+  if (!data) return;
+  const locals = new Map(
+    (await listSupplementIntake()).map((e: SupplementIntake) => [e.date, e]),
+  );
+  const before = result.pulled.supplementIntake;
+  for (const row of data as SupplementIntakeRow[]) {
+    const localRow = locals.get(row.date);
+    if (!shouldApplyServer(localRow?.serverUpdatedAt, row.updated_at)) continue;
+    const entry = supplementIntakeFromRow(row);
+    await applyServerSupplementIntake(entry.date, entry.taken, row.updated_at);
+    result.pulled.supplementIntake++;
+  }
+  if (result.pulled.supplementIntake > before)
+    notifyDataChanged("supplementIntake");
+}
+
 async function pullBodyMeasurements(
   supabase: SupabaseClient,
   userId: string,
@@ -1476,6 +1620,37 @@ async function pullMealSchedules(
     result.pulled.mealSchedules++;
   }
   if (result.pulled.mealSchedules > before) notifyDataChanged("mealSchedules");
+}
+
+async function pullSupplements(
+  supabase: SupabaseClient,
+  userId: string,
+  result: SyncResult,
+) {
+  const { data, error } = await withTimeout("pull supplements", (signal) =>
+    supabase
+      .from("supplements")
+      .select(
+        "id, user_id, name, dose_label, micros, schedule, notes, sort_order, created_at, updated_at",
+      )
+      .eq("user_id", userId)
+      .abortSignal(signal),
+  );
+  if (error) throw asError(error, "pull supplements");
+  if (!data) return;
+  const locals = new Map(
+    (await listSupplements()).map(
+      (s: Supplement & { serverUpdatedAt?: string | null }) => [s.id, s],
+    ),
+  );
+  const before = result.pulled.supplements;
+  for (const row of data as SupplementRow[]) {
+    const localRow = locals.get(row.id);
+    if (!shouldApplyServer(localRow?.serverUpdatedAt, row.updated_at)) continue;
+    await applyServerSupplement(supplementFromRow(row), row.updated_at);
+    result.pulled.supplements++;
+  }
+  if (result.pulled.supplements > before) notifyDataChanged("supplements");
 }
 
 async function pullPantryItems(

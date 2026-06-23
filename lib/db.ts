@@ -19,13 +19,17 @@ import type {
   MealTemplate,
   PantryNotification,
   Sortable,
+  Supplement,
+  SupplementIntake,
+  SupplementIntakeEntry,
+  SupplementSchedule,
   Versioned,
   WaterIntake,
   WeightEntry,
 } from "@maqro/core/records";
 
 const DB_NAME = "maqro";
-const DB_VERSION = 20;
+const DB_VERSION = 21;
 
 const STORE_CUSTOM_FOODS = "customFoods";
 const STORE_PROFILE = "profile";
@@ -38,6 +42,8 @@ const STORE_BLOOD_PRESSURE = "bloodPressure";
 const STORE_FAST_SESSIONS = "fastSessions";
 const STORE_RECIPES = "recipes";
 const STORE_MEAL_SCHEDULES = "mealSchedules";
+const STORE_SUPPLEMENTS = "supplements";
+const STORE_SUPPLEMENT_INTAKE = "supplementIntake";
 const STORE_PANTRY_ITEMS = "pantryItems";
 const STORE_PANTRY_NOTIFICATIONS = "pantryNotifications";
 const STORE_FAVORITE_STORES = "favoriteStores";
@@ -96,6 +102,10 @@ export type {
   MealTemplate,
   PantryNotification,
   Sortable,
+  Supplement,
+  SupplementIntake,
+  SupplementIntakeEntry,
+  SupplementSchedule,
   Versioned,
   WaterIntake,
   WeightEntry,
@@ -109,6 +119,7 @@ export type DeletableStore =
   | "mealTemplates"
   | "recipes"
   | "mealSchedules"
+  | "supplements"
   | "dailyLogs"
   | "weightHistory"
   | "bodyMeasurements"
@@ -289,6 +300,7 @@ interface MacroDB extends DBSchema {
   [STORE_MEAL_TEMPLATES]: { key: string; value: MealTemplate };
   [STORE_WEIGHT_HISTORY]: { key: string; value: WeightEntry };
   [STORE_WATER_INTAKE]: { key: string; value: WaterIntake };
+  [STORE_SUPPLEMENT_INTAKE]: { key: string; value: SupplementIntake };
   [STORE_BODY_MEASUREMENTS]: { key: string; value: BodyMeasurement };
   [STORE_BLOOD_PRESSURE]: { key: string; value: BloodPressure };
   [STORE_FAST_SESSIONS]: { key: string; value: FastSession };
@@ -298,6 +310,7 @@ interface MacroDB extends DBSchema {
     indexes: { byName: string };
   };
   [STORE_MEAL_SCHEDULES]: { key: string; value: MealSchedule };
+  [STORE_SUPPLEMENTS]: { key: string; value: Supplement };
   [STORE_PANTRY_ITEMS]: {
     key: string;
     value: PantryItem;
@@ -556,6 +569,14 @@ function getDB(): Promise<IDBPDatabase<MacroDB>> {
             await store.put({ ...winner, nameKey: newKey });
           }
         })();
+      }
+      // v20 → v21: supplements + supplementIntake stores. Additive — the
+      // supplement library is id-keyed (client-minted UUID, mirrors
+      // mealSchedules); the daily intake log is `date`-keyed (one
+      // last-write-wins row per day, mirrors waterIntake).
+      if (oldVersion < 21) {
+        db.createObjectStore(STORE_SUPPLEMENTS, { keyPath: "id" });
+        db.createObjectStore(STORE_SUPPLEMENT_INTAKE, { keyPath: "date" });
       }
     },
   });
@@ -1141,6 +1162,73 @@ export async function listWaterIntake(): Promise<WaterIntake[]> {
   return rows.sort((a, b) => (a.date < b.date ? -1 : 1));
 }
 
+// ─── Supplement intake ─────────────────────────────────────────────────────
+
+/** Set a day's taken-supplement list to an absolute value — one row per day,
+ *  last-write-wins (mirrors `setWaterTotal`). Preserves the row's
+ *  `serverUpdatedAt` so the push knows the right base version. */
+export async function saveSupplementIntake(
+  date: string,
+  taken: SupplementIntakeEntry[],
+): Promise<void> {
+  const db = await getDB();
+  const existing = await db.get(STORE_SUPPLEMENT_INTAKE, date);
+  await db.put(STORE_SUPPLEMENT_INTAKE, {
+    date,
+    taken,
+    recordedAt: Date.now(),
+    localUpdatedAt: nowIso(),
+    serverUpdatedAt: existing?.serverUpdatedAt ?? null,
+  });
+  notifyDataChanged("supplementIntake");
+}
+
+/** Sync-layer hook: write a server-pulled supplement-intake row. */
+export async function applyServerSupplementIntake(
+  date: string,
+  taken: SupplementIntakeEntry[],
+  serverUpdatedAt: string,
+): Promise<void> {
+  const db = await getDB();
+  await db.put(STORE_SUPPLEMENT_INTAKE, {
+    date,
+    taken,
+    recordedAt: Date.parse(serverUpdatedAt) || Date.now(),
+    localUpdatedAt: serverUpdatedAt,
+    serverUpdatedAt,
+  });
+}
+
+/** Sync-layer hook: refresh the version token after a successful push. */
+export async function markSupplementIntakeSynced(
+  date: string,
+  serverUpdatedAt: string,
+): Promise<void> {
+  const db = await getDB();
+  const row = await db.get(STORE_SUPPLEMENT_INTAKE, date);
+  if (!row) return;
+  await db.put(STORE_SUPPLEMENT_INTAKE, {
+    ...row,
+    localUpdatedAt: serverUpdatedAt,
+    serverUpdatedAt,
+  });
+}
+
+export async function getSupplementIntake(
+  date: string,
+): Promise<SupplementIntake | null> {
+  const db = await getDB();
+  const row = await db.get(STORE_SUPPLEMENT_INTAKE, date);
+  return row ?? null;
+}
+
+/** All supplement-intake rows, oldest first — the natural order for charts. */
+export async function listSupplementIntake(): Promise<SupplementIntake[]> {
+  const db = await getDB();
+  const rows = await db.getAll(STORE_SUPPLEMENT_INTAKE);
+  return rows.sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
 // ─── Body measurements ─────────────────────────────────────────────────────
 
 /** Record a measurement set on `date`. Same-date saves overwrite the
@@ -1534,6 +1622,85 @@ export async function deleteMealSchedule(id: string): Promise<void> {
   await db.delete(STORE_MEAL_SCHEDULES, id);
   await recordDeletion("mealSchedules", id);
   notifyDataChanged("mealSchedules");
+}
+
+// ─── Supplements ────────────────────────────────────────────────────────────
+
+/** Save a new supplement. Mints a client-side UUID shared with Supabase. */
+export async function addSupplement(
+  supplement: Omit<Supplement, "id" | "createdAt" | "updatedAt">,
+): Promise<string> {
+  const db = await getDB();
+  const now = Date.now();
+  const id = mintId();
+  await db.put(STORE_SUPPLEMENTS, {
+    ...supplement,
+    id,
+    createdAt: now,
+    updatedAt: now,
+    localUpdatedAt: nowIso(),
+    serverUpdatedAt: null,
+  });
+  notifyDataChanged("supplements");
+  return id;
+}
+
+/** Upsert a supplement at a specific id — the edit flow + the sync layer's
+ *  UUID-collision recovery. Bumps `updatedAt` + the local sync token. */
+export async function upsertSupplement(
+  supplement: Supplement & Partial<Versioned>,
+): Promise<void> {
+  const db = await getDB();
+  const existing = await db.get(STORE_SUPPLEMENTS, supplement.id);
+  await db.put(STORE_SUPPLEMENTS, {
+    ...supplement,
+    updatedAt: Date.now(),
+    localUpdatedAt: nowIso(),
+    serverUpdatedAt:
+      supplement.serverUpdatedAt ?? existing?.serverUpdatedAt ?? null,
+  });
+  notifyDataChanged("supplements");
+}
+
+/** Sync-layer hook: write a server-pulled supplement. */
+export async function applyServerSupplement(
+  supplement: Supplement,
+  serverUpdatedAt: string,
+): Promise<void> {
+  const db = await getDB();
+  await db.put(STORE_SUPPLEMENTS, {
+    ...supplement,
+    localUpdatedAt: serverUpdatedAt,
+    serverUpdatedAt,
+  });
+}
+
+/** Sync-layer hook: refresh the version token after a successful push. */
+export async function markSupplementSynced(
+  id: string,
+  serverUpdatedAt: string,
+): Promise<void> {
+  const db = await getDB();
+  const row = await db.get(STORE_SUPPLEMENTS, id);
+  if (!row) return;
+  await db.put(STORE_SUPPLEMENTS, {
+    ...row,
+    localUpdatedAt: serverUpdatedAt,
+    serverUpdatedAt,
+  });
+}
+
+export async function listSupplements(): Promise<Supplement[]> {
+  const db = await getDB();
+  const rows = await db.getAll(STORE_SUPPLEMENTS);
+  return rows.sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export async function deleteSupplement(id: string): Promise<void> {
+  const db = await getDB();
+  await db.delete(STORE_SUPPLEMENTS, id);
+  await recordDeletion("supplements", id);
+  notifyDataChanged("supplements");
 }
 
 // ─── Pantry items ──────────────────────────────────────────────────────────
@@ -2118,6 +2285,7 @@ export async function applyServerDeletion(
     mealTemplates: STORE_MEAL_TEMPLATES,
     recipes: STORE_RECIPES,
     mealSchedules: STORE_MEAL_SCHEDULES,
+    supplements: STORE_SUPPLEMENTS,
     dailyLogs: STORE_DAILY_LOGS,
     weightHistory: STORE_WEIGHT_HISTORY,
     bodyMeasurements: STORE_BODY_MEASUREMENTS,
@@ -2161,6 +2329,8 @@ export async function clearAllStores(): Promise<void> {
       STORE_MEAL_TEMPLATES,
       STORE_WEIGHT_HISTORY,
       STORE_WATER_INTAKE,
+      STORE_SUPPLEMENT_INTAKE,
+      STORE_SUPPLEMENTS,
       STORE_BODY_MEASUREMENTS,
       STORE_BLOOD_PRESSURE,
       STORE_FAST_SESSIONS,
@@ -2182,6 +2352,8 @@ export async function clearAllStores(): Promise<void> {
     tx.objectStore(STORE_MEAL_TEMPLATES).clear(),
     tx.objectStore(STORE_WEIGHT_HISTORY).clear(),
     tx.objectStore(STORE_WATER_INTAKE).clear(),
+    tx.objectStore(STORE_SUPPLEMENT_INTAKE).clear(),
+    tx.objectStore(STORE_SUPPLEMENTS).clear(),
     tx.objectStore(STORE_BODY_MEASUREMENTS).clear(),
     tx.objectStore(STORE_BLOOD_PRESSURE).clear(),
     tx.objectStore(STORE_FAST_SESSIONS).clear(),

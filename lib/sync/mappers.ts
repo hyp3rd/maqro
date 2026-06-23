@@ -22,6 +22,10 @@ import type {
   MealTemplate,
   PantryItem,
   PantryNotification,
+  Supplement,
+  SupplementIntake,
+  SupplementIntakeEntry,
+  SupplementSchedule,
   WaterIntake,
   WeightEntry,
 } from "@/lib/db";
@@ -130,6 +134,38 @@ export function waterFromRow(row: WaterRow): WaterIntake {
   return {
     date: row.date,
     ml: row.ml,
+    recordedAt: Date.parse(row.recorded_at),
+  };
+}
+
+// ─── Supplement intake ─────────────────────────────────────────────────────
+
+export type SupplementIntakeRow = {
+  user_id: string;
+  date: string;
+  taken: SupplementIntakeEntry[];
+  recorded_at: string;
+  updated_at: string;
+};
+
+export function supplementIntakeToRow(
+  userId: string,
+  entry: SupplementIntake,
+): Pick<SupplementIntakeRow, "user_id" | "date" | "taken" | "recorded_at"> {
+  return {
+    user_id: userId,
+    date: entry.date,
+    taken: entry.taken,
+    recorded_at: new Date(entry.recordedAt).toISOString(),
+  };
+}
+
+export function supplementIntakeFromRow(
+  row: SupplementIntakeRow,
+): SupplementIntake {
+  return {
+    date: row.date,
+    taken: row.taken,
     recordedAt: Date.parse(row.recorded_at),
   };
 }
@@ -547,6 +583,53 @@ export function mealScheduleFromRow(row: MealScheduleRow): MealSchedule {
     endDate: row.end_date,
     daysOfWeek: row.days_of_week,
     scale: row.scale,
+    sortOrder: row.sort_order ?? undefined,
+    createdAt: Date.parse(row.created_at),
+    updatedAt: Date.parse(row.updated_at),
+  };
+}
+
+// ─── Supplements ─────────────────────────────────────────────────────────────
+
+export type SupplementRow = {
+  id: string;
+  user_id: string;
+  name: string;
+  dose_label: string;
+  micros: MicronutrientValues;
+  /** Optional reminder schedule — absent (null) when the user logs ad-hoc. */
+  schedule: SupplementSchedule | null;
+  notes: string | null;
+  sort_order?: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export function supplementToRow(
+  userId: string,
+  supplement: Supplement,
+): Omit<SupplementRow, "updated_at"> {
+  return {
+    id: supplement.id,
+    user_id: userId,
+    name: supplement.name,
+    dose_label: supplement.doseLabel,
+    micros: supplement.micros,
+    schedule: supplement.schedule ?? null,
+    notes: supplement.notes ?? null,
+    sort_order: supplement.sortOrder ?? null,
+    created_at: new Date(supplement.createdAt).toISOString(),
+  };
+}
+
+export function supplementFromRow(row: SupplementRow): Supplement {
+  return {
+    id: row.id,
+    name: row.name,
+    doseLabel: row.dose_label,
+    micros: row.micros,
+    schedule: row.schedule ?? undefined,
+    notes: row.notes ?? undefined,
     sortOrder: row.sort_order ?? undefined,
     createdAt: Date.parse(row.created_at),
     updatedAt: Date.parse(row.updated_at),

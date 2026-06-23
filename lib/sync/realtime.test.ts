@@ -110,6 +110,7 @@ describe("startRealtimeSubscription — channel wiring", () => {
       "pantry_notifications",
       "profiles",
       "recipes",
+      "supplement_intake",
       "water_intake",
       "weight_history",
     ]);
@@ -123,10 +124,10 @@ describe("startRealtimeSubscription — channel wiring", () => {
   it("unsubscribe removes every channel", () => {
     const { sb, channels, getRemoveCalls } = makeFakeSupabase();
     const handle = startRealtimeSubscription(sb, USER_ID);
-    expect(channels).toHaveLength(12);
+    expect(channels).toHaveLength(13);
 
     handle.unsubscribe();
-    expect(getRemoveCalls()).toBe(12);
+    expect(getRemoveCalls()).toBe(13);
   });
 });
 

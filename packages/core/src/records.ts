@@ -1,3 +1,4 @@
+import type { MicronutrientValues } from "./rda";
 import type { Food, FoodItem, Meal } from "./types";
 
 /** Persisted-record domain types — the shapes stored locally (IndexedDB) and
@@ -136,3 +137,51 @@ export type MealSchedule = {
   updatedAt: number;
 } & Versioned &
   Sortable;
+
+/** An optional reminder schedule riding a `Supplement` (one schedule per
+ *  supplement). A reminder fires when the user's local hour is in `reminderTimes`
+ *  AND the local weekday is in `daysOfWeek`. Empty arrays = no reminders. */
+export type SupplementSchedule = {
+  /** Hours-of-day to remind at (0–23, local). */
+  reminderTimes: number[];
+  /** 0=Sun … 6=Sat the reminders fire on. */
+  daysOfWeek: number[];
+};
+
+/** A reusable supplement definition the user logs + (optionally) schedules. The
+ *  nutrient payload is the ABSOLUTE amount provided per dose (NOT per-100g like a
+ *  food) — e.g. a 25µg vitamin-D capsule is `{ vitaminD: 25 }`. It reuses the
+ *  micronutrient key set so it feeds the same daily totals. id is a client-minted
+ *  UUID shared with Supabase. A **Pro** feature — gated alongside micronutrient
+ *  tracking. */
+export type Supplement = {
+  id: string;
+  name: string;
+  /** Free-text dose label shown in the UI, e.g. "1000 IU / 25µg · 1 capsule". */
+  doseLabel: string;
+  /** Absolute micronutrient amounts per dose, in the catalog's canonical units. */
+  micros: MicronutrientValues;
+  /** Optional reminder schedule. Absent = the user just logs it ad-hoc. */
+  schedule?: SupplementSchedule;
+  notes?: string;
+  createdAt: number;
+  updatedAt: number;
+} & Versioned &
+  Sortable;
+
+/** One taken-supplement entry within a day. */
+export type SupplementIntakeEntry = {
+  supplementId: string;
+  /** Number of doses taken (1 = a single dose). Multiplies the supplement's
+   *  per-dose micros when feeding the daily totals. */
+  doses: number;
+};
+
+/** What supplements the user actually took on a given day — the input to the
+ *  micronutrient feed. Keyed by `YYYY-MM-DD` local date; one row per day,
+ *  last-write-wins (mirrors `WaterIntake`). */
+export type SupplementIntake = {
+  date: string;
+  taken: SupplementIntakeEntry[];
+  recordedAt: number;
+} & Versioned;

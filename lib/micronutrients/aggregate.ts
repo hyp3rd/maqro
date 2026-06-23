@@ -1,6 +1,10 @@
 import type { MacroBreakdown, Meal } from "@/components/macro/types";
 import type { DailyLog } from "@/lib/db";
-import { MICRONUTRIENT_KEYS, type MicronutrientKey } from "@/lib/rda";
+import {
+  MICRONUTRIENT_KEYS,
+  type MicronutrientKey,
+  type MicronutrientValues,
+} from "@/lib/rda";
 import { SUB_MACRO_KEYS } from "@maqro/core/macros";
 import type { MicronutrientProfile, MicronutrientTotals } from "./types";
 
@@ -76,8 +80,10 @@ function profileSourceIsExact(source: MicronutrientProfile["source"]): boolean {
 export function aggregateMicronutrients(
   meals: Meal[],
   profiles: Map<string, MicronutrientProfile>,
+  supplementMicros?: MicronutrientValues,
 ): MicronutrientTotals {
-  return aggregateMicronutrientsDetailed(meals, profiles).totals;
+  return aggregateMicronutrientsDetailed(meals, profiles, supplementMicros)
+    .totals;
 }
 
 /** `aggregateMicronutrients` plus the per-nutrient precision flag the UI needs
@@ -100,6 +106,10 @@ export function aggregateMicronutrients(
 export function aggregateMicronutrientsDetailed(
   meals: Meal[],
   profiles: Map<string, MicronutrientProfile>,
+  /** Absolute micronutrient amounts from the day's logged supplements (already
+   *  summed across doses — see `supplementMicrosForDay`). Folded into the totals
+   *  unscaled and tagged approximate (user-entered, not barcode-verified). */
+  supplementMicros?: MicronutrientValues,
 ): { totals: MicronutrientTotals; approx: MicronutrientProvenance } {
   const totals = {} as Record<MicronutrientKey, number>;
   const seen = {} as Record<MicronutrientKey, boolean>;
@@ -141,6 +151,20 @@ export function aggregateMicronutrientsDetailed(
           seen[key] = true;
           approx[key] = true; // macro-side fallback is an approximation
         }
+      }
+    }
+  }
+
+  // Supplements contribute ABSOLUTE amounts (no per-100g scaling). They're
+  // always approximate (a user-entered dose, not a barcode-matched product), so
+  // any nutrient they touch flips approx — the conservative reduction.
+  if (supplementMicros) {
+    for (const key of MICRONUTRIENT_KEYS) {
+      const v = supplementMicros[key];
+      if (typeof v === "number" && Number.isFinite(v) && v !== 0) {
+        totals[key] = (totals[key] ?? 0) + v;
+        seen[key] = true;
+        approx[key] = true;
       }
     }
   }
@@ -307,18 +331,33 @@ export function computeMicronutrientWindow(
   profiles: Map<string, MicronutrientProfile>,
   today: string,
   days: number,
+  /** Per-day absolute supplement micros (date → summed amounts). Days with
+   *  supplements but no food log still appear; days with neither are skipped. */
+  supplementMicrosByDate?: Map<string, MicronutrientValues>,
 ): MicronutrientDay[] {
+  const logsByDate = new Map(logs.map((l) => [l.date, l]));
+  // Union of dated sources, today-bounded — so a supplements-only day (no food
+  // logged) still surfaces its nutrients in the panel/trends.
+  const dates = new Set<string>();
+  for (const log of logs) if (log.date <= today) dates.add(log.date);
+  if (supplementMicrosByDate) {
+    for (const date of supplementMicrosByDate.keys()) {
+      if (date <= today) dates.add(date);
+    }
+  }
+
   const out: MicronutrientDay[] = [];
-  for (const log of logs) {
-    if (log.date > today) continue;
+  for (const date of dates) {
+    const meals = logsByDate.get(date)?.meals ?? [];
     const { totals, approx } = aggregateMicronutrientsDetailed(
-      log.meals,
+      meals,
       profiles,
+      supplementMicrosByDate?.get(date),
     );
-    // Skip days where no food was enriched — an empty totals object
-    // carries no signal and would just be a gap in every chart.
+    // Skip days where nothing was enriched — an empty totals object carries no
+    // signal and would just be a gap in every chart.
     if (Object.keys(totals).length === 0) continue;
-    out.push({ date: log.date, totals, approx });
+    out.push({ date, totals, approx });
   }
   out.sort((a, b) => (a.date < b.date ? -1 : 1));
   return days > 0 ? out.slice(-days) : out;

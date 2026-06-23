@@ -1,6 +1,7 @@
 "use client";
 
 import { MicronutrientsSection } from "@/components/macro/MicronutrientsSection";
+import { SupplementsSection } from "@/components/macro/SupplementsSection";
 import type { GoalPhase, PersonalInfo } from "@/components/macro/types";
 import { ChartZoomDialog } from "@/components/shell/ChartZoomDialog";
 import {
@@ -461,6 +462,7 @@ export function ProgressView({
         logs={logs}
         windowDays={WINDOW_DAYS}
       />
+      <SupplementsSection />
     </div>
   );
 }
