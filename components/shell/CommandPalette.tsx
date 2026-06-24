@@ -76,8 +76,8 @@ const NAV_COMMANDS: NavCommand[] = [
     keywords: ["weight", "graph", "trend", "plateau", "streak"],
   },
   {
-    key: "fasting",
-    label: "Fasting",
+    key: "health",
+    label: "Health",
     icon: Hourglass,
     keywords: [
       "intermittent",
@@ -87,6 +87,10 @@ const NAV_COMMANDS: NavCommand[] = [
       "autophagy",
       "ketosis",
       "eating window",
+      "fasting",
+      "supplement",
+      "vitamin",
+      "supplements",
     ],
   },
   {

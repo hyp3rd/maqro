@@ -224,11 +224,11 @@ export function UserMenu({
                 desktop-only and only appears once a fast is running — so this
                 is the only way to reach (and first enable) it on a phone. */}
               <DropdownMenuItem
-                onSelect={() => onSelectView("fasting")}
+                onSelect={() => onSelectView("health")}
                 className="gap-2"
               >
                 <Hourglass className="h-3.5 w-3.5 text-muted-foreground" />
-                Fasting
+                Health
               </DropdownMenuItem>
               <DropdownMenuSeparator />
             </>
@@ -388,11 +388,11 @@ function SignedOutMenu({
             Templates
           </DropdownMenuItem>
           <DropdownMenuItem
-            onSelect={() => onSelectView("fasting")}
+            onSelect={() => onSelectView("health")}
             className="gap-2"
           >
             <Hourglass className="h-3.5 w-3.5 text-muted-foreground" />
-            Fasting
+            Health
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem

@@ -16,7 +16,7 @@ const LABELS: Record<ViewKey, string> = {
   profile: "Profile",
   plan: "Meal Plan",
   progress: "Progress",
-  fasting: "Fasting",
+  health: "Health",
   foods: "My Foods",
   recipes: "Recipes",
   templates: "Meal Templates",

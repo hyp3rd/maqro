@@ -191,7 +191,7 @@ export function supplementReminderEmail(opts: {
       ? ` (${opts.doseLabel.trim()})`
       : "";
   const subject = `Time for your ${opts.name}`;
-  const url = `${opts.appUrl}/app?view=progress`;
+  const url = `${opts.appUrl}/app?view=health`;
 
   const bodyHtml = `
     <h1 style="margin:0 0 12px;font-size:20px;font-weight:600;letter-spacing:-0.02em;">

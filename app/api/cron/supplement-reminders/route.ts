@@ -176,7 +176,7 @@ export async function GET(req: Request): Promise<NextResponse> {
               {
                 title: `Time for your ${name}`,
                 body: "Tap to mark it as taken.",
-                url: `${appUrl}/app?view=progress`,
+                url: `${appUrl}/app?view=health`,
                 tag: "supplement-reminder",
               },
             );

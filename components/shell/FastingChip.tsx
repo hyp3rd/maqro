@@ -25,7 +25,7 @@ export function FastingChip({
   return (
     <button
       type="button"
-      onClick={() => onSelectView?.("fasting")}
+      onClick={() => onSelectView?.("health")}
       aria-label={
         fastingPhase
           ? `Fasting — eating window opens in ${formatDuration(status.remainingMin)} — open the Fasting page`

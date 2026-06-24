@@ -34,6 +34,7 @@ import { SaveTemplateDialog } from "./components/macro/SaveTemplateDialog";
 import { SettingsView } from "./components/macro/SettingsView";
 import { ShoppingListView } from "./components/macro/ShoppingListView";
 import { SuggestDayDialog } from "./components/macro/SuggestDayDialog";
+import { SupplementsSection } from "./components/macro/SupplementsSection";
 import { TemplatesView } from "./components/macro/TemplatesView";
 import { UpgradeDialog } from "./components/macro/UpgradeDialog";
 import { VoiceLogSheet } from "./components/macro/VoiceLogSheet";
@@ -242,7 +243,7 @@ const VIEW_PARAM_VALUES = [
   "profile",
   "plan",
   "progress",
-  "fasting",
+  "health",
   "foods",
   "recipes",
   "templates",
@@ -253,6 +254,9 @@ const VIEW_PARAM_VALUES = [
 
 function viewFromParam(raw: string | null): ViewKey {
   if (raw === null) return "calculator";
+  // Back-compat: the fasting page became the Health page — keep old
+  // `?view=fasting` links (bookmarks, prior emails) landing in the right place.
+  if (raw === "fasting") return "health";
   return (VIEW_PARAM_VALUES as readonly string[]).includes(raw)
     ? (raw as ViewKey)
     : "calculator";
@@ -2314,6 +2318,19 @@ const MacroCalculator = () => {
             setLogFlowMealId(null);
             setLogMealOpen(true);
           }}
+          onOpenPhoto={
+            user
+              ? () => {
+                  // Mealless capture from the FAB satellite: the photo
+                  // review step picks the meal, so clear any guided target
+                  // (and the "Back to method" affordance with it).
+                  setLogTargetMealId(null);
+                  setLogFlowMealId(null);
+                  setCameraMode("photo");
+                  setCameraSheetOpen(true);
+                }
+              : undefined
+          }
         />
       )}
 
@@ -2366,7 +2383,12 @@ const MacroCalculator = () => {
         />
       )}
 
-      {view === "fasting" && <FastingView onSelectView={setView} />}
+      {view === "health" && (
+        <div className="mx-auto max-w-4xl space-y-6">
+          <FastingView onSelectView={setView} />
+          <SupplementsSection />
+        </div>
+      )}
 
       {view === "foods" && (
         <MyFoodsView onChange={() => setCustomFoodsRev((r) => r + 1)} />
@@ -2403,6 +2425,10 @@ const MacroCalculator = () => {
         onOpenChange={setCameraSheetOpen}
         aiAvailable={!!user}
         initialMode={cameraMode}
+        // The mealless Photo quick-capture (FAB) is the only path that opens
+        // photo mode with no target meal; lock out the Barcode tab there, as a
+        // scan would have no meal to log to. Every other path sets a target.
+        lockMode={cameraMode === "photo" && logTargetMealId === null}
         dietPreference={personalInfo.dietPreference}
         pairPhoneAvailable={!!user && !isMobile}
         onFoodPicked={(food) => {
@@ -2618,6 +2644,12 @@ const MacroCalculator = () => {
         customFoodsRev={customFoodsRev}
         onLogFood={logFoodToMeal}
         onBack={backToMethod}
+        // Done dismisses the whole guided flow (the launcher is already
+        // closed); reuse the same teardown the X / Escape run.
+        onDone={() => {
+          setFoodSearchOpen(false);
+          setLogFlowMealId(null);
+        }}
       />
 
       <OnboardingWizard

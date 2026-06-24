@@ -31,6 +31,10 @@ type Props = {
   /** Return to the previous step (the guided Log-meal method picker)
    *  rather than closing outright. */
   onBack: () => void;
+  /** Finish adding: dismiss the whole add-food flow back to the meal log
+   *  (not just up one step like `onBack`). Surfaced as a "Done" button so
+   *  the user isn't left hunting for an exit after logging a few foods. */
+  onDone: () => void;
 };
 
 function clampGrams(n: number): number {
@@ -54,6 +58,7 @@ export function FoodSearchSheet({
   customFoodsRev,
   onLogFood,
   onBack,
+  onDone,
 }: Props) {
   // Scroll-lock, Escape, focus trap + restore — the shared overlay contract.
   // The search Input's autoFocus wins the initial focus (the hook honors it).
@@ -80,6 +85,7 @@ export function FoodSearchSheet({
           customFoodsRev={customFoodsRev}
           onLogFood={onLogFood}
           onBack={onBack}
+          onDone={onDone}
         />
       </div>
     </div>,
@@ -93,12 +99,14 @@ function FoodSearchBody({
   customFoodsRev,
   onLogFood,
   onBack,
+  onDone,
 }: {
   mealId: number | null;
   mealName: string;
   customFoodsRev: number;
   onLogFood: (food: Food, mealId: number, grams: number) => void;
   onBack: () => void;
+  onDone: () => void;
 }) {
   const [query, setQuery] = useState("");
   // The expanded result (its key) + the grams in its inline editor.
@@ -155,6 +163,17 @@ function FoodSearchBody({
           </p>
         </div>
         <MarketSwitcher />
+        {/* Finish the whole flow. Foods log as you add them, so there's no
+            "save" — Done just dismisses back to the meal log (the X / overlay
+            only get you out of the topmost sheet, which reads as "cancel"). */}
+        <Button
+          type="button"
+          size="sm"
+          onClick={onDone}
+          className="h-9 shrink-0"
+        >
+          Done
+        </Button>
       </header>
 
       <div className="border-b border-border/60 px-3 py-3">

@@ -1,7 +1,6 @@
 "use client";
 
 import { MicronutrientsSection } from "@/components/macro/MicronutrientsSection";
-import { SupplementsSection } from "@/components/macro/SupplementsSection";
 import type { GoalPhase, PersonalInfo } from "@/components/macro/types";
 import { ChartZoomDialog } from "@/components/shell/ChartZoomDialog";
 import {
@@ -406,6 +405,7 @@ export function ProgressView({
         adaptive={adaptive}
         tdeeReco={tdeeReco}
         currentTdee={formulaTdee}
+        goal={goal}
         onApplyTdee={onApplyTdee}
         loading={weights === null}
         units={units}
@@ -462,7 +462,6 @@ export function ProgressView({
         logs={logs}
         windowDays={WINDOW_DAYS}
       />
-      <SupplementsSection />
     </div>
   );
 }
@@ -515,6 +514,7 @@ function TrendsSection({
   adaptive,
   tdeeReco,
   currentTdee,
+  goal,
   onApplyTdee,
   loading,
   units,
@@ -528,6 +528,9 @@ function TrendsSection({
    *  if set, else the formula) — the baseline the adaptive estimate is
    *  compared against. */
   currentTdee: number;
+  /** Current goal — a flat trend is the *goal* when maintaining (frame it as
+   *  success), an attention signal when losing/gaining. */
+  goal: "lose" | "maintain" | "gain";
   onApplyTdee: (tdee: number) => void;
   loading: boolean;
   units: "metric" | "imperial";
@@ -624,26 +627,45 @@ function TrendsSection({
         </div>
       )}
 
-      {plateau.advisory && (
-        <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-5 py-4">
-          <header className="mb-1.5 flex items-center gap-2">
-            <LineChart className="h-3.5 w-3.5 text-amber-700 dark:text-amber-400" />
-            <h3 className="text-xs font-medium uppercase tracking-wider text-amber-700 dark:text-amber-400">
-              Plateau detected
-            </h3>
-          </header>
-          <p className="text-sm leading-relaxed text-foreground">
-            {plateau.advisory}
-          </p>
-          {plateau.startKg !== null && plateau.endKg !== null && (
-            <p className="mt-2 font-mono text-[11px] tabular-nums text-muted-foreground">
-              Smoothed weight: {kgToDisplay(plateau.startKg, units).toFixed(1)}{" "}
-              → {kgToDisplay(plateau.endKg, units).toFixed(1)} {unitLabel} over{" "}
-              {plateau.daysFlat} days
-            </p>
-          )}
-        </div>
-      )}
+      {plateau.advisory &&
+        (() => {
+          // A flat trend is the GOAL when maintaining (positive/neutral); an
+          // attention signal when losing/gaining (amber).
+          const onTarget = goal === "maintain";
+          const tone = onTarget
+            ? "border-emerald-500/30 bg-emerald-500/5"
+            : "border-amber-500/30 bg-amber-500/5";
+          const accent = onTarget
+            ? "text-emerald-700 dark:text-emerald-400"
+            : "text-amber-700 dark:text-amber-400";
+          return (
+            <div className={cn("rounded-lg border px-5 py-4", tone)}>
+              <header className="mb-1.5 flex items-center gap-2">
+                <LineChart className={cn("h-3.5 w-3.5", accent)} />
+                <h3
+                  className={cn(
+                    "text-xs font-medium uppercase tracking-wider",
+                    accent,
+                  )}
+                >
+                  {onTarget ? "Holding steady" : "Plateau detected"}
+                </h3>
+              </header>
+              <p className="text-sm leading-relaxed text-foreground">
+                {plateau.advisory}
+              </p>
+              {plateau.startKg !== null && plateau.endKg !== null && (
+                <p className="mt-2 font-mono text-[11px] tabular-nums text-muted-foreground">
+                  Smoothed weight:{" "}
+                  {kgToDisplay(plateau.startKg, units).toFixed(1)} →{" "}
+                  {kgToDisplay(plateau.endKg, units).toFixed(1)} {unitLabel}{" "}
+                  over {plateau.daysFlat} days · {plateau.weighIns} weigh-in
+                  {plateau.weighIns === 1 ? "" : "s"}
+                </p>
+              )}
+            </div>
+          );
+        })()}
 
       {showAdaptive && observed !== null && (
         <div className="rounded-lg border border-border/60 bg-card px-5 py-4">
