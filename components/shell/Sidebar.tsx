@@ -9,7 +9,7 @@ import {
   ChefHat,
   ChevronLeft,
   ChevronRight,
-  Hourglass,
+  HeartPulse,
   LayoutGrid,
   LineChart,
   Package,
@@ -30,7 +30,7 @@ export type ViewKey =
   | "profile"
   | "plan"
   | "progress"
-  | "fasting"
+  | "health"
   | "foods"
   | "recipes"
   | "templates"
@@ -50,7 +50,7 @@ const NAV: NavItem[] = [
   { key: "profile", label: "Profile", icon: UserCircle },
   { key: "plan", label: "Meal Plan", icon: Utensils },
   { key: "progress", label: "Progress", icon: LineChart },
-  { key: "fasting", label: "Fasting", icon: Hourglass },
+  { key: "health", label: "Health", icon: HeartPulse },
   { key: "foods", label: "My Foods", icon: Apple },
   { key: "recipes", label: "Recipes", icon: ChefHat },
   { key: "templates", label: "Templates", icon: LayoutGrid },

@@ -40,6 +40,25 @@ const WEEKDAY_FULL = [
   "Saturday",
 ];
 
+/** Per-dose sanity ceilings (in each nutrient's canonical unit). Generous
+ *  enough for real high-dose supplements but block fat-fingered magnitudes /
+ *  unit mix-ups that would poison the micronutrient totals. */
+const SUPPLEMENT_DOSE_MAX: Record<MicronutrientKey, number> = {
+  fiber: 50, // g
+  sodium: 5000, // mg
+  potassium: 5000, // mg
+  calcium: 2500, // mg (UL)
+  iron: 100, // mg
+  magnesium: 1000, // mg
+  zinc: 100, // mg
+  vitaminC: 2000, // mg (UL)
+  vitaminD: 250, // µg (= 10000 IU; above the 100µg UL, a generous ceiling)
+  vitaminB12: 5000, // µg (high-dose B12 is real)
+};
+
+/** Vitamin D: 1 µg = 40 IU. Storage is canonical µg; IU is a display option. */
+const VITAMIN_D_IU_PER_UG = 40;
+
 /** Supplements card on the Progress view (Pro, alongside Micronutrients). Log a
  *  supplement and its per-dose nutrients feed the daily micronutrient totals;
  *  an optional schedule drives in-app + email reminders. Non-Pro users see
@@ -314,14 +333,19 @@ function SupplementForm({
     initial?.schedule?.daysOfWeek ?? [0, 1, 2, 3, 4, 5, 6],
   );
   const [hourPick, setHourPick] = useState(9);
+  const [vitaminDUnit, setVitaminDUnit] = useState<"µg" | "IU">("µg");
   const [saving, setSaving] = useState(false);
 
-  function setMicro(key: MicronutrientKey, raw: string) {
-    const v = Number.parseFloat(raw);
+  /** Store a nutrient's canonical-unit amount, clamped to its sanity ceiling;
+   *  null / ≤0 removes it. */
+  function applyMicro(key: MicronutrientKey, value: number | null) {
     setMicros((m) => {
       const next = { ...m };
-      if (raw.trim() === "" || !Number.isFinite(v) || v <= 0) delete next[key];
-      else next[key] = v;
+      if (value === null || !Number.isFinite(value) || value <= 0) {
+        delete next[key];
+      } else {
+        next[key] = Math.min(value, SUPPLEMENT_DOSE_MAX[key]);
+      }
       return next;
     });
   }
@@ -394,28 +418,70 @@ function SupplementForm({
           Enter the amounts on the label — leave the rest blank.
         </p>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          {MICRONUTRIENT_KEYS.map((key) => (
-            <label
-              key={key}
-              className="flex items-center gap-1.5 text-xs"
-            >
-              <span className="w-20 shrink-0 truncate text-muted-foreground">
-                {MICRONUTRIENTS[key].label}
-              </span>
-              <input
-                type="number"
-                inputMode="decimal"
-                min="0"
-                step="any"
-                value={micros[key] ?? ""}
-                onChange={(e) => setMicro(key, e.target.value)}
-                className="h-8 w-full min-w-0 rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              />
-              <span className="w-6 shrink-0 text-[10px] text-muted-foreground">
-                {MICRONUTRIENTS[key].unit}
-              </span>
-            </label>
-          ))}
+          {MICRONUTRIENT_KEYS.map((key) => {
+            // Vitamin D can be entered in IU (1µg = 40 IU); storage stays µg.
+            const isD = key === "vitaminD";
+            const ug = micros[key];
+            const display =
+              isD && vitaminDUnit === "IU"
+                ? ug === undefined
+                  ? ""
+                  : Math.round(ug * VITAMIN_D_IU_PER_UG)
+                : (ug ?? "");
+            const maxAttr =
+              isD && vitaminDUnit === "IU"
+                ? SUPPLEMENT_DOSE_MAX.vitaminD * VITAMIN_D_IU_PER_UG
+                : SUPPLEMENT_DOSE_MAX[key];
+            return (
+              <label
+                key={key}
+                className="flex items-center gap-1.5 text-xs"
+              >
+                <span className="w-20 shrink-0 truncate text-muted-foreground">
+                  {MICRONUTRIENTS[key].label}
+                </span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  max={maxAttr}
+                  step="any"
+                  value={display}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    const n = Number.parseFloat(raw);
+                    if (raw.trim() === "" || !Number.isFinite(n)) {
+                      applyMicro(key, null);
+                    } else {
+                      applyMicro(
+                        key,
+                        isD && vitaminDUnit === "IU"
+                          ? n / VITAMIN_D_IU_PER_UG
+                          : n,
+                      );
+                    }
+                  }}
+                  className="h-8 w-full min-w-0 rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+                {isD ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setVitaminDUnit((u) => (u === "µg" ? "IU" : "µg"))
+                    }
+                    aria-label={`Vitamin D unit: ${vitaminDUnit} (tap to switch)`}
+                    className="w-7 shrink-0 text-left text-[10px] font-medium text-brand hover:underline"
+                  >
+                    {vitaminDUnit}
+                  </button>
+                ) : (
+                  <span className="w-6 shrink-0 text-[10px] text-muted-foreground">
+                    {MICRONUTRIENTS[key].unit}
+                  </span>
+                )}
+              </label>
+            );
+          })}
         </div>
       </div>
 

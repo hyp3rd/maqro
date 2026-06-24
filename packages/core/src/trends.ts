@@ -63,6 +63,9 @@ export type PlateauState = {
    *  NULL when there isn't enough data to make a call. */
   startKg: number | null;
   endKg: number | null;
+  /** How many smoothed weigh-ins fed the flat-band call. Low counts mean the
+   *  read is tentative — the UI can say "log a few more to confirm". */
+  weighIns: number;
   /** Human-readable advisory the UI can render as-is, or null if
    *  there's nothing useful to say (insufficient data, or movement
    *  is healthy). */
@@ -104,6 +107,7 @@ export function detectPlateau(
       daysFlat: 0,
       startKg: null,
       endKg: null,
+      weighIns: 0,
       advisory: null,
     };
   }
@@ -116,6 +120,7 @@ export function detectPlateau(
       daysFlat: 0,
       startKg: null,
       endKg: null,
+      weighIns: 0,
       advisory: null,
     };
   }
@@ -124,22 +129,34 @@ export function detectPlateau(
   // we run out of points. `daysFlat` is the gap to the earliest
   // in-tolerance point.
   let earliest = last;
+  let earliestIdx = smoothed.length - 1;
   for (let i = smoothed.length - 2; i >= 0; i--) {
     const p = smoothed[i];
     if (Math.abs(p.smoothed - last.smoothed) > toleranceKg) break;
     earliest = p;
+    earliestIdx = i;
   }
   const daysFlat = dayDiff(earliest.date, last.date);
   const plateaued = daysFlat >= windowDays;
+  // Smoothed weigh-ins inside the flat band (earliest…last inclusive).
+  const weighIns = smoothed.length - earliestIdx;
 
   let advisory: string | null = null;
   if (plateaued) {
+    const basis = `across ${weighIns} weigh-in${weighIns === 1 ? "" : "s"} over ${daysFlat} days`;
+    // Few weigh-ins ⇒ the call is tentative; explain why a single new entry
+    // won't have cleared it (the trend is smoothed over weeks).
+    const moreData =
+      weighIns < 4
+        ? " Log a few more weigh-ins to be sure — a single reading won't shift a multi-week trend."
+        : "";
     if (goal === "lose") {
-      advisory = `Weight has been flat (±${toleranceKg} kg) for ${daysFlat} days while you're aiming to lose. Common causes: TDEE estimate too high (recalibrate below), unlogged calories, water retention from a new training stimulus. Try tightening logging accuracy for 1–2 weeks before lowering calories.`;
+      advisory = `Weight has been flat (±${toleranceKg} kg) ${basis} while you're aiming to lose. Likely causes: TDEE estimate too high (recalibrate below), unlogged calories, or water retention from a new training stimulus. Tighten logging accuracy for 1–2 weeks before lowering calories.${moreData}`;
     } else if (goal === "gain") {
-      advisory = `Weight has been flat for ${daysFlat} days while you're aiming to gain. Either your TDEE is being underestimated and you're maintaining, or surplus calories aren't actually landing on the plate. Add 100–150 kcal/day, give it another 2 weeks.`;
+      advisory = `Weight has been flat (±${toleranceKg} kg) ${basis} while you're aiming to gain. Either your TDEE is underestimated and you're maintaining, or the surplus isn't landing on the plate. Add 100–150 kcal/day and give it another 2 weeks.${moreData}`;
     } else {
-      advisory = `Weight has been stable (±${toleranceKg} kg) for ${daysFlat} days — that's the goal. Carry on.`;
+      // Maintaining: a flat trend is the goal — frame it as success, not alarm.
+      advisory = `Weight has been stable (±${toleranceKg} kg) ${basis} — that's exactly the goal while maintaining. Carry on.`;
     }
   }
   return {
@@ -147,6 +164,7 @@ export function detectPlateau(
     daysFlat,
     startKg: earliest.smoothed,
     endKg: last.smoothed,
+    weighIns,
     advisory,
   };
 }

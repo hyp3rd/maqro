@@ -52,6 +52,11 @@ type Props = {
    *  of always defaulting to scan. Ignored when the mode isn't
    *  available (e.g. `photo` while `aiAvailable` is false). */
   initialMode?: "scan" | "photo";
+  /** Hide the other capture tab and pin the sheet to `initialMode`. Used by
+   *  the mealless Photo quick-capture (the FAB): a barcode scanned there has
+   *  no target meal to log to and would silently seed the desktop-only inline
+   *  form, so the Barcode tab must not be reachable from that entry. */
+  lockMode?: boolean;
   /** Profile's diet preference — sent to /api/identify-meal so the
    *  seed catalog the AI sees matches the user's universe. */
   dietPreference?: DietPreference;
@@ -82,6 +87,7 @@ export function CameraSheet({
   onOpenChange,
   aiAvailable,
   initialMode,
+  lockMode,
   dietPreference,
   pairPhoneAvailable,
   onFoodPicked,
@@ -126,6 +132,7 @@ export function CameraSheet({
       <CameraSheetBody
         aiAvailable={aiAvailable}
         initialMode={initialMode}
+        lockMode={lockMode}
         dietPreference={dietPreference}
         pairPhoneAvailable={pairPhoneAvailable}
         onBack={onBack}
@@ -159,6 +166,7 @@ export function CameraSheet({
 function CameraSheetBody({
   aiAvailable,
   initialMode,
+  lockMode,
   dietPreference,
   pairPhoneAvailable,
   onBack,
@@ -170,6 +178,7 @@ function CameraSheetBody({
 }: {
   aiAvailable: boolean;
   initialMode?: "scan" | "photo";
+  lockMode?: boolean;
   dietPreference?: DietPreference;
   pairPhoneAvailable: boolean;
   onBack?: () => void;
@@ -182,9 +191,15 @@ function CameraSheetBody({
   const [resetKey, setResetKey] = useState(0);
   const [phase, setPhase] = useState<Phase>({ kind: "capture" });
 
-  const modes: Array<"scan" | "photo"> = aiAvailable
-    ? ["scan", "photo"]
-    : ["scan"];
+  // `lockMode` pins the sheet to the requested tab (scan needs no AI; photo
+  // does), hiding the switcher so a mealless Photo capture can't fall into a
+  // barcode scan with nowhere to log it.
+  const modes: Array<"scan" | "photo"> =
+    lockMode && initialMode && (initialMode === "scan" || aiAvailable)
+      ? [initialMode]
+      : aiAvailable
+        ? ["scan", "photo"]
+        : ["scan"];
 
   async function lookupBarcode(code: string) {
     setPhase({ kind: "looking-up", code });

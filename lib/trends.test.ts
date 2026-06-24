@@ -110,6 +110,42 @@ describe("detectPlateau", () => {
     expect(detectPlateau(flat, "gain").advisory).toMatch(/aiming to gain/);
     expect(detectPlateau(flat, "maintain").advisory).toMatch(/Carry on/);
   });
+
+  it("reports how many smoothed weigh-ins back the plateau call", () => {
+    // 30 daily readings, all flat → a well-supported call (weighIns ≫ 4).
+    const flat = Array.from({ length: 30 }, (_, i) =>
+      weighIn(`2026-05-${(i + 1).toString().padStart(2, "0")}`, 80),
+    );
+    const r = detectPlateau(flat, "lose");
+    expect(r.weighIns).toBeGreaterThan(4);
+    expect(r.advisory).toMatch(/weigh-ins over \d+ days/);
+    // Plenty of data → no "log more to be sure" nudge.
+    expect(r.advisory).not.toMatch(/Log a few more weigh-ins/);
+  });
+
+  it("adds a confirmation nudge when few weigh-ins back the call", () => {
+    // Seven consecutive days seed the 7-day window, then a single reading
+    // 14 days later — only two smoothed points span the flat band, so the
+    // call is tentative and should ask for more data.
+    const sparse = [
+      ...Array.from({ length: 7 }, (_, i) => weighIn(`2026-05-0${i + 1}`, 80)),
+      weighIn("2026-05-21", 80),
+    ];
+    const r = detectPlateau(sparse, "lose");
+    expect(r.plateaued).toBe(true);
+    expect(r.weighIns).toBeLessThan(4);
+    expect(r.advisory).toMatch(/Log a few more weigh-ins/);
+  });
+
+  it("never nags for more data while maintaining, even on a thin record", () => {
+    const sparse = [
+      ...Array.from({ length: 7 }, (_, i) => weighIn(`2026-05-0${i + 1}`, 80)),
+      weighIn("2026-05-21", 80),
+    ];
+    const r = detectPlateau(sparse, "maintain");
+    expect(r.advisory).toMatch(/Carry on/);
+    expect(r.advisory).not.toMatch(/Log a few more weigh-ins/);
+  });
 });
 
 describe("recalibrateTdee", () => {

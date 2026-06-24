@@ -137,6 +137,12 @@ export function MealHubSheet({
           customFoodsRev={customFoodsRev}
           onLogFood={onLogFood}
           onBack={() => setSearchOpen(false)}
+          // Back drops to the hub (one level); Done leaves the add-food flow
+          // entirely — close the search and the hub beneath it.
+          onDone={() => {
+            setSearchOpen(false);
+            onOpenChange(false);
+          }}
         />
       )}
     </>

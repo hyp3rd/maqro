@@ -188,6 +188,10 @@ interface MealPlannerProps {
    *  point. The dense inline AddFoodForm is desktop-only; on mobile
    *  this drives a step-by-step bottom-sheet instead. */
   onOpenLogMeal: () => void;
+  /** Open the photo-capture sheet directly (mealless — the review step
+   *  picks the meal). Surfaced as a mobile FAB satellite; omitted when AI
+   *  is unavailable so the satellite hides. */
+  onOpenPhoto?: () => void;
 }
 
 const MealPlanner: React.FC<MealPlannerProps> = ({
@@ -256,6 +260,7 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
   onOpenSuggestDay,
   onOpenMealDetail,
   onOpenLogMeal,
+  onOpenPhoto,
 }) => {
   const isError = mealPlanMessage.toLowerCase().includes("error");
   const dayIsEmpty = meals.every((m) => m.foods.length === 0);
@@ -660,7 +665,11 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
 
       {/* Thumb-zone quick-add: opens the guided Log meal sheet from
           anywhere in the list. Mobile-only. */}
-      <QuickAddFab onOpen={onOpenLogMeal} />
+      <QuickAddFab
+        onOpen={onOpenLogMeal}
+        onPhoto={onOpenPhoto}
+        onVoice={onOpenVoice}
+      />
     </div>
   );
 };

@@ -316,7 +316,7 @@ export function FastingCard({
         {onSelectView && (
           <button
             type="button"
-            onClick={() => onSelectView("fasting")}
+            onClick={() => onSelectView("health")}
             className="ml-auto inline-flex items-center gap-0.5 text-[11px] font-medium text-brand transition-colors hover:text-brand/80"
           >
             View phases &amp; details
