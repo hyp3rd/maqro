@@ -183,7 +183,7 @@ authoritative subscription state from Stripe so partial event
 payloads can't corrupt the profile row.
 
 **API-version note**: we pin the SDK's `apiVersion` to
-`2026-04-22.dahlia` in [`lib/billing/stripe.ts`](../lib/billing/stripe.ts).
+`2026-06-24.dahlia` in [`lib/billing/stripe.ts`](../lib/billing/stripe.ts).
 That version moved `current_period_end` off the top-level
 `Subscription` and onto each subscription item - our webhook
 reads it from `subscription.items.data[0].current_period_end`. If
