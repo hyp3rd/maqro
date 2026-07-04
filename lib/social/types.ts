@@ -59,8 +59,7 @@ export type PublishablePost = Pick<
 /** Outcome of a publish-adapter call. `id` is the platform post id; `url` a
  *  permalink when one can be formed. */
 export type PublishResult =
-  | { ok: true; id: string; url?: string }
-  | { ok: false; error: string };
+  { ok: true; id: string; url?: string } | { ok: false; error: string };
 
 /** LinkedIn connection state for the dashboard. `source` distinguishes a stored
  *  OAuth connection (auto-refreshing) from a manual env token (no refresh). */

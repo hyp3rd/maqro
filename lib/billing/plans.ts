@@ -128,11 +128,7 @@ export function yearlySavingsEur(plan: PlanData): number {
  *  here is the render order. Resolved via
  *  `pricingPage.matrix.sections.<key>` on the consumer side. */
 export type MatrixSection =
-  | "core"
-  | "aiFeatures"
-  | "syncData"
-  | "communication"
-  | "support";
+  "core" | "aiFeatures" | "syncData" | "communication" | "support";
 
 /** One row of the per-feature comparison matrix. Boolean means
  *  "yes/no"; string means a per-tier value to render verbatim

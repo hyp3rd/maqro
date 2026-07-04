@@ -27,8 +27,7 @@ type CacheEntry = {
 let cache: CacheEntry | null = null;
 
 export type AllowlistResult =
-  | { ok: true; mode: "open" | "restricted" }
-  | { ok: false; reason: string };
+  { ok: true; mode: "open" | "restricted" } | { ok: false; reason: string };
 
 /** Returns whether the given hostname is permitted under the current
  *  allowlist policy. Hostnames are matched case-insensitively and

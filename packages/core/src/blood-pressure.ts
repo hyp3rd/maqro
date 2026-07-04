@@ -7,12 +7,7 @@
  *  Stage 1 (diastolic), and 185/70 is a crisis. Pure; tested in
  *  `./blood-pressure.test.ts`. */
 export type BloodPressureCategory =
-  | "low"
-  | "normal"
-  | "elevated"
-  | "stage1"
-  | "stage2"
-  | "crisis";
+  "low" | "normal" | "elevated" | "stage1" | "stage2" | "crisis";
 
 export function bloodPressureCategory(
   systolic: number,

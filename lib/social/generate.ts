@@ -12,8 +12,7 @@ const BRAND =
   "Maqro is a private, offline-first macro and nutrition tracker: log meals, plan recipes, and track weight and health, with optional AI help.";
 
 export type GenerateResult =
-  | { ok: true; posts: GeneratedPost[] }
-  | { ok: false; error: string };
+  { ok: true; posts: GeneratedPost[] } | { ok: false; error: string };
 
 /** Draft one X / LinkedIn / Instagram post from a changelog entry. The voice
  *  rules are in the prompt for guidance, but the deterministic `lintTone` pass

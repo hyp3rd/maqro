@@ -126,8 +126,7 @@ describe("requireTurnstile (route gate)", () => {
     // The Cloudflare error-code is logged so the 403 is diagnosable.
     expect(mockReportServerError).toHaveBeenCalledTimes(1);
     const firstCall = mockReportServerError.mock.calls[0] as
-      | unknown[]
-      | undefined;
+      unknown[] | undefined;
     expect(String(firstCall?.[0])).toMatch(/invalid-input-response/);
   });
 

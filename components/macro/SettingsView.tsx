@@ -819,9 +819,7 @@ function AboutSection() {
  *  Supabase's magic-link, which is fragile cross-device (only works on
  *  the browser the request originated from). */
 type ChangeEmailStage =
-  | { kind: "closed" }
-  | { kind: "request" }
-  | { kind: "verify"; email: string };
+  { kind: "closed" } | { kind: "request" } | { kind: "verify"; email: string };
 
 function ChangeEmailSection({ currentEmail }: { currentEmail: string | null }) {
   const [stage, setStage] = useState<ChangeEmailStage>({ kind: "closed" });

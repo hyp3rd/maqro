@@ -782,13 +782,7 @@ const MacroCalculator = () => {
   const handlePersonalInfoChange = (
     name: string,
     value:
-      | string
-      | number
-      | boolean
-      | null
-      | string[]
-      | MacroSplit
-      | GoalPhase[],
+      string | number | boolean | null | string[] | MacroSplit | GoalPhase[],
   ) => {
     setPersonalInfo({ ...personalInfo, [name]: value });
   };

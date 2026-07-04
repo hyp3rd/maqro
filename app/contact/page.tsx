@@ -45,12 +45,7 @@ import Link from "next/link";
  *  stay can keep typing. */
 
 type CategoryKey =
-  | "account"
-  | "billing"
-  | "bug"
-  | "feature"
-  | "security"
-  | "general";
+  "account" | "billing" | "bug" | "feature" | "security" | "general";
 
 type Category = {
   key: CategoryKey;

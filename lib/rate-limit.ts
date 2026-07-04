@@ -21,8 +21,7 @@ import { createClient } from "@supabase/supabase-js";
  *  throttled for /backup-email — they're separate exposure surfaces. */
 
 export type RateLimitResult =
-  | { allowed: true }
-  | { allowed: false; retryAfterSeconds: number };
+  { allowed: true } | { allowed: false; retryAfterSeconds: number };
 
 function adminClient() {
   const config = getSupabaseSecretConfig();

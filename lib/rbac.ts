@@ -42,8 +42,7 @@ export async function currentUserRole(): Promise<Role> {
 }
 
 export type RequireAdminResult =
-  | { ok: true; userId: string }
-  | { ok: false; response: NextResponse };
+  { ok: true; userId: string } | { ok: false; response: NextResponse };
 
 /** Guard for admin-only API routes. Usage:
  *
