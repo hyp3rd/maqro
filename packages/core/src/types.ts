@@ -7,12 +7,7 @@ export type FoodSource = "builtin" | "custom" | "off" | "ciqual";
  * via the My Foods form so the planner never ships a salmon fillet into a
  * vegan plan. `undefined` is treated as "unknown" → omnivore-only. */
 export type FoodKind =
-  | "land-meat"
-  | "seafood"
-  | "egg"
-  | "dairy"
-  | "honey"
-  | "plant";
+  "land-meat" | "seafood" | "egg" | "dairy" | "honey" | "plant";
 
 /** Optional macro-breakdown fields surfaced "where available" - OFF
  *  lookups, AI vision, or user-entered custom foods can populate them;
@@ -197,11 +192,7 @@ export type Gender = "male" | "female" | "nonbinary" | "preferNotToSay";
  * is about macro distribution). Plumbed into the meal-planner so generated
  * plans only include foods the user actually eats. */
 export type DietPreference =
-  | "omnivore"
-  | "vegetarian"
-  | "vegan"
-  | "pescatarian"
-  | "carnivore";
+  "omnivore" | "vegetarian" | "vegan" | "pescatarian" | "carnivore";
 
 /** Curated list of cuisines the user enjoys. Used as a soft hint to the
  * AI meal planner - e.g. an "Italian + Mediterranean" pick produces

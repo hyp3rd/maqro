@@ -49,8 +49,7 @@ function priceIdFromSubscription(
 }
 
 export type DispatchOutcome =
-  | { status: "success" }
-  | { status: "error"; error: Error };
+  { status: "success" } | { status: "error"; error: Error };
 
 /** Route a verified Stripe event to its handler.
  *

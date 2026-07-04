@@ -17,10 +17,7 @@ import {
  *  is an inert no-op, so the sections render unchanged outside the hub. */
 
 export type SecurityStatusKey =
-  | "twoStep"
-  | "passkeys"
-  | "backupEmail"
-  | "trustedDevices";
+  "twoStep" | "passkeys" | "backupEmail" | "trustedDevices";
 
 export type SecurityTone = "good" | "muted";
 

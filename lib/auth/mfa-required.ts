@@ -3,8 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 /** Decision returned by `requiresMfaUpgrade()`. */
 export type MfaUpgradeDecision =
-  | { needsUpgrade: false }
-  | { needsUpgrade: true; reason: "aal1-with-totp" };
+  { needsUpgrade: false } | { needsUpgrade: true; reason: "aal1-with-totp" };
 
 /** Determines whether the caller's session must be promoted to AAL2
  *  before a protected page renders. The Supabase pattern is:
@@ -60,9 +59,7 @@ function authenticatedWithPasskey(
   // auth-js types `currentAuthenticationMethods` as `string[] | AMREntry[]`,
   // so an entry may be a bare method name OR an `{ method }` object.
   methods:
-    | ReadonlyArray<string | { method?: string | null }>
-    | null
-    | undefined,
+    ReadonlyArray<string | { method?: string | null }> | null | undefined,
 ): boolean {
   return (methods ?? []).some((m) => {
     const name = (typeof m === "string" ? m : (m?.method ?? "")).toLowerCase();

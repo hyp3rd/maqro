@@ -27,12 +27,7 @@ import type { Food, Meal } from "./types";
  *  full-screen tool the parent opens (search overlay, camera, recipe /
  *  template picker, voice sheet). */
 export type LogMethod =
-  | "search"
-  | "recipe"
-  | "template"
-  | "barcode"
-  | "photo"
-  | "voice";
+  "search" | "recipe" | "template" | "barcode" | "photo" | "voice";
 
 type Props = {
   open: boolean;

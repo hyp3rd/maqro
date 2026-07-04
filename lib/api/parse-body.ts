@@ -28,8 +28,7 @@ import type { ZodType } from "zod";
  *    - Pairs with the `maqro/require-aal2-gate` ESLint rule as
  *      defense-in-depth: that rule covers auth; this covers input. */
 export type ParseBodyResult<T> =
-  | { ok: true; data: T }
-  | { ok: false; response: NextResponse };
+  { ok: true; data: T } | { ok: false; response: NextResponse };
 
 export async function parseBody<T>(
   req: Request,

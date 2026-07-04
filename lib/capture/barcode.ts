@@ -26,10 +26,7 @@ const FORMATS = ["ean_13", "upc_a", "ean_8"] as const;
 /** Frame sources accepted by `decodeFrame`. Internally we coerce
  *  everything to a canvas so both engines see the same input. */
 export type FrameSource =
-  | HTMLCanvasElement
-  | HTMLImageElement
-  | ImageBitmap
-  | Blob;
+  HTMLCanvasElement | HTMLImageElement | ImageBitmap | Blob;
 
 /** Unified engine surface — CameraView only ever sees this. */
 export type BarcodeEngine = {

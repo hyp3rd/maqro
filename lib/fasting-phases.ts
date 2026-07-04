@@ -13,22 +13,12 @@ import {
  *  the pure math that maps fast-minutes onto the bands. */
 
 export type FastingPhaseKey =
-  | "fed"
-  | "settling"
-  | "glycogen"
-  | "fatBurning"
-  | "ketosis"
-  | "autophagy";
+  "fed" | "settling" | "glycogen" | "fatBurning" | "ketosis" | "autophagy";
 
 /** A semantic accent name; the UI maps it to Tailwind classes (keeping this
  *  module free of styling). */
 export type PhaseAccent =
-  | "amber"
-  | "yellow"
-  | "lime"
-  | "teal"
-  | "sky"
-  | "indigo";
+  "amber" | "yellow" | "lime" | "teal" | "sky" | "indigo";
 
 export type FastingPhase = {
   key: FastingPhaseKey;

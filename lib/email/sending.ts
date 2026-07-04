@@ -63,8 +63,7 @@ export type AdminSendParams = {
 };
 
 export type AdminSendResult =
-  | { ok: true; id: string }
-  | { ok: false; error: SendError };
+  { ok: true; id: string } | { ok: false; error: SendError };
 
 /** Send a message via Resend. Mirrors `resend.emails.send()` but
  *  with our `{ok, error}` result shape so callers don't have to

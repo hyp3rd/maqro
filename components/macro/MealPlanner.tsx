@@ -327,8 +327,7 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
 
   function handleDragStart(event: DragStartEvent) {
     const data = event.active.data.current as
-      | { mealId: number; foodId: number }
-      | undefined;
+      { mealId: number; foodId: number } | undefined;
     if (data) setActiveFood(data);
   }
 
@@ -337,16 +336,14 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
     const { active, over } = event;
     if (!over) return;
     const src = active.data.current as
-      | { mealId: number; foodId: number }
-      | undefined;
+      { mealId: number; foodId: number } | undefined;
     if (!src) return;
 
     // The drop target is either another food row (id `mealId:foodId`)
     // or a meal-level droppable (id `meal-${mealId}`, fires when the
     // meal has zero items or you drop in the empty space around them).
     const over_ = over.data.current as
-      | { mealId: number; foodId?: number; type?: string }
-      | undefined;
+      { mealId: number; foodId?: number; type?: string } | undefined;
     const destMealId = over_?.mealId ?? src.mealId;
 
     let destIndex: number | undefined;
