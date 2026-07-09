@@ -107,7 +107,7 @@ const rule = {
     },
   },
   create(context) {
-    const filename = context.filename ?? context.getFilename();
+    const filename = context.filename;
     // Scope: only `app/api/**/route.ts` (skip tests + non-route
     // files). The test suffix check is belt-and-braces; tests
     // shouldn't even contain route bodies.
