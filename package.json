@@ -49,7 +49,7 @@
     "@radix-ui/react-tooltip": "^1.2.12",
     "@react-pdf/renderer": "^4.5.1",
     "@supabase/ssr": "^0.12.0",
-    "@supabase/supabase-js": "^2.110.2",
+    "@supabase/supabase-js": "^2.110.3",
     "@types/web-push": "^3.6.4",
     "@upstash/redis": "^1.38.0",
     "@zxing/browser": "^0.2.1",
