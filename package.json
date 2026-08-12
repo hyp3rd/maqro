@@ -88,7 +88,7 @@
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
-    "eslint": "^9.7",
+    "eslint": "^10.8",
     "eslint-config-next": "^16.3.0",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^30.0.1",
