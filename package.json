@@ -1,6 +1,6 @@
 {
   "name": "maqro",
-  "version": "0.9.17",
+  "version": "0.9.18",
   "private": true,
   "license": "Attribution-NonCommercial-NoDerivatives 4.0 International",
   "workspaces": [
@@ -33,7 +33,7 @@
     "db:new": "supabase migration new"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.126.0",
+    "@anthropic-ai/sdk": "^0.127.0",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
@@ -60,7 +60,7 @@
     "cmdk": "^1.1.1",
     "disposable-email-domains": "^1.0.62",
     "idb": "^8.0.3",
-    "lucide-react": "^1.46.0",
+    "lucide-react": "^1.47.0",
     "motion": "^13.4.0",
     "next": "^16.3.5",
     "next-intl": "^4.14.5",
@@ -84,7 +84,7 @@
     "@tailwindcss/postcss": "^4.3.3",
     "@testing-library/react": "^16.3.3",
     "@trivago/prettier-plugin-sort-imports": "^6.0.2",
-    "@types/node": "^26.5.1",
+    "@types/node": "^26.6.2",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
@@ -93,7 +93,7 @@
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^30.1.0",
     "playwright": "^1.63.0",
-    "prettier": "^3.9.7",
+    "prettier": "^3.9.8",
     "prettier-plugin-tailwindcss": "^0.8.1",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
