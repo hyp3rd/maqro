@@ -2,202 +2,225 @@ import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   assertAal2,
+  assertFreshAal2,
   isMfaProtectedPath,
+  type MfaGateUser,
   requiresMfaUpgrade,
 } from "./mfa-required";
 
-/** Build a fake SupabaseClient whose `auth.mfa` exposes only the
- *  two methods our helper calls. The full type is enormous — we
- *  cast through `unknown` because the contract surface we need is
- *  tiny + stable. */
-function fakeSupabase(opts: {
-  aalLevel?: "aal1" | "aal2" | "unknown" | null;
-  nextLevel?: "aal1" | "aal2" | "unknown" | null;
-  totp?: Array<{ status: "verified" | "unverified" }>;
-  /** The session's authentication methods (JWT `amr`). */
-  amr?: Array<{ method: string }>;
-  aalThrows?: boolean;
-  factorsThrows?: boolean;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-}): SupabaseClient<any, any, any> {
-  const mfa = {
-    async getAuthenticatorAssuranceLevel() {
-      if (opts.aalThrows) throw new Error("AAL failed");
-      return {
-        data:
-          opts.aalLevel === null
-            ? null
-            : {
-                currentLevel: opts.aalLevel ?? "aal1",
-                nextLevel: opts.nextLevel ?? "aal1",
-                currentAuthenticationMethods: opts.amr ?? [],
-              },
-        error: null,
-      };
-    },
-    async listFactors() {
-      if (opts.factorsThrows) throw new Error("listFactors failed");
-      return { data: { totp: opts.totp ?? [], all: [] }, error: null };
-    },
-  };
+const USER_ID = "a0000000-0000-4000-8000-000000000001";
+
+/** The user `auth.getUser()` returned — the server-verified source of truth
+ *  for enrollment. */
+function verifiedUser(
+  factors: Array<"verified" | "unverified"> = [],
+): MfaGateUser {
   return {
-    auth: { mfa },
+    id: USER_ID,
+    factors: factors.map((status, i) => ({
+      id: `factor-${i}`,
+      factor_type: "totp",
+      status,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    })) as MfaGateUser["factors"],
+  };
+}
+
+/** A fake client exposing the VERIFIED claims path (`getClaims`) plus the
+ *  cookie-derived paths the gate must NOT consult (`getSession`,
+ *  `mfa.getAuthenticatorAssuranceLevel`, `mfa.listFactors`). The latter are
+ *  spies seeded with a "no MFA" story so any accidental use flips a test. */
+function fakeSupabase(
+  opts: {
+    aal?: string;
+    amr?: unknown;
+    sub?: string;
+    claimsError?: boolean;
+    claimsThrows?: boolean;
+  } = {},
+) {
+  const getClaims = vi.fn(async () => {
+    if (opts.claimsThrows) throw new Error("jwks fetch failed");
+    if (opts.claimsError) {
+      return { data: null, error: new Error("invalid JWT") };
+    }
+    return {
+      data: {
+        claims: {
+          sub: opts.sub ?? USER_ID,
+          aal: opts.aal ?? "aal1",
+          amr: opts.amr ?? [{ method: "otp", timestamp: 1 }],
+        },
+      },
+      error: null,
+    };
+  });
+  // What a tampered / stale auth cookie says: no factors, nothing owed.
+  const getSession = vi.fn(async () => ({
+    data: { session: { user: { id: USER_ID, factors: [] } } },
+    error: null,
+  }));
+  const getAuthenticatorAssuranceLevel = vi.fn(async () => ({
+    data: { currentLevel: "aal1", nextLevel: "aal1" },
+    error: null,
+  }));
+  const listFactors = vi.fn(async () => ({
+    data: { totp: [], all: [] },
+    error: null,
+  }));
+  const client = {
+    auth: {
+      getClaims,
+      getSession,
+      mfa: { getAuthenticatorAssuranceLevel, listFactors },
+    },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as unknown as SupabaseClient<any, any, any>;
+  return {
+    client,
+    getClaims,
+    cookieReaders: [getSession, getAuthenticatorAssuranceLevel],
+  };
 }
 
 describe("requiresMfaUpgrade", () => {
-  it("returns false when AAL is already aal2 (MFA done)", async () => {
-    const supabase = fakeSupabase({ aalLevel: "aal2", nextLevel: "aal2" });
-    await expect(requiresMfaUpgrade(supabase)).resolves.toEqual({
+  it("passes a user with no factors without verifying claims", async () => {
+    const { client, getClaims } = fakeSupabase();
+    await expect(requiresMfaUpgrade(client, verifiedUser())).resolves.toEqual({
       needsUpgrade: false,
     });
+    expect(getClaims).not.toHaveBeenCalled();
   });
 
-  it("returns false at aal1 when no TOTP is enrolled", async () => {
-    const supabase = fakeSupabase({
-      aalLevel: "aal1",
-      // nextLevel defaults to aal1 when no factors are enrolled
-      nextLevel: "aal1",
-      totp: [],
-    });
-    await expect(requiresMfaUpgrade(supabase)).resolves.toEqual({
-      needsUpgrade: false,
-    });
+  it("passes a user whose only factor is UNVERIFIED (mid-enrollment)", async () => {
+    const { client } = fakeSupabase();
+    await expect(
+      requiresMfaUpgrade(client, verifiedUser(["unverified"])),
+    ).resolves.toEqual({ needsUpgrade: false });
   });
 
-  it("returns false at aal1 when only an UNVERIFIED TOTP is enrolled", async () => {
-    // A factor mid-enrollment shouldn't gate access — the user
-    // is in the middle of setting it up; they haven't committed
-    // to MFA yet.
-    const supabase = fakeSupabase({
-      aalLevel: "aal1",
-      nextLevel: "aal2",
-      totp: [{ status: "unverified" }],
-    });
-    await expect(requiresMfaUpgrade(supabase)).resolves.toEqual({
-      needsUpgrade: false,
-    });
+  it("passes an enrolled user whose verified claims are aal2", async () => {
+    const { client } = fakeSupabase({ aal: "aal2" });
+    await expect(
+      requiresMfaUpgrade(client, verifiedUser(["verified"])),
+    ).resolves.toEqual({ needsUpgrade: false });
   });
 
-  it("returns true at aal1 with verified TOTP and aal2 available", async () => {
-    const supabase = fakeSupabase({
-      aalLevel: "aal1",
-      nextLevel: "aal2",
-      totp: [{ status: "verified" }],
+  it("demands the second factor from an enrolled user at aal1", async () => {
+    const { client } = fakeSupabase({ aal: "aal1" });
+    await expect(
+      requiresMfaUpgrade(client, verifiedUser(["verified"])),
+    ).resolves.toEqual({ needsUpgrade: true, reason: "second-factor-pending" });
+  });
+
+  it("decides enrollment from the server-verified user, not the auth cookie", async () => {
+    // The cookie session (tampered, or stale from before enrollment) lists no
+    // factors and reports nextLevel aal1. The user GoTrue returned has a
+    // verified TOTP factor. The gate must follow the server — and never even
+    // read the cookie copy.
+    const { client, cookieReaders } = fakeSupabase({ aal: "aal1" });
+    await expect(
+      requiresMfaUpgrade(client, verifiedUser(["verified"])),
+    ).resolves.toEqual({ needsUpgrade: true, reason: "second-factor-pending" });
+    for (const reader of cookieReaders) expect(reader).not.toHaveBeenCalled();
+  });
+
+  it("accepts a passkey sign-in (aal1 + amr passkey) for an enrolled user", async () => {
+    const { client } = fakeSupabase({
+      aal: "aal1",
+      amr: [{ method: "passkey", timestamp: 1 }],
     });
-    await expect(requiresMfaUpgrade(supabase)).resolves.toEqual({
+    await expect(
+      requiresMfaUpgrade(client, verifiedUser(["verified"])),
+    ).resolves.toEqual({ needsUpgrade: false });
+  });
+
+  it("does not treat other amr methods as a passkey", async () => {
+    const { client } = fakeSupabase({
+      aal: "aal1",
+      amr: [{ method: "oauth" }, "magiclink", { method: "webauthn-ish" }],
+    });
+    await expect(
+      requiresMfaUpgrade(client, verifiedUser(["verified"])),
+    ).resolves.toMatchObject({ needsUpgrade: true });
+  });
+
+  it("fails closed when the claims can't be verified", async () => {
+    const { client } = fakeSupabase({ claimsError: true });
+    await expect(
+      requiresMfaUpgrade(client, verifiedUser(["verified"])),
+    ).resolves.toEqual({
       needsUpgrade: true,
-      reason: "aal1-with-totp",
+      reason: "assurance-unverifiable",
     });
   });
 
-  it("does NOT demand TOTP when the session was authenticated with a passkey (even with TOTP enrolled)", async () => {
-    // A passkey sign-in is AAL1 in Supabase but satisfies our MFA bar. Without
-    // the amr check this same input would return needsUpgrade:true (see the
-    // test above) and bounce a passkey user to the TOTP prompt.
-    const supabase = fakeSupabase({
-      aalLevel: "aal1",
-      nextLevel: "aal2",
-      totp: [{ status: "verified" }],
-      amr: [{ method: "webauthn" }],
-    });
-    await expect(requiresMfaUpgrade(supabase)).resolves.toEqual({
-      needsUpgrade: false,
+  it("fails closed when claim verification throws", async () => {
+    const { client } = fakeSupabase({ claimsThrows: true });
+    await expect(
+      requiresMfaUpgrade(client, verifiedUser(["verified"])),
+    ).resolves.toEqual({
+      needsUpgrade: true,
+      reason: "assurance-unverifiable",
     });
   });
 
-  it("recognizes the passkey method regardless of the exact amr string / casing", async () => {
-    const supabase = fakeSupabase({
-      aalLevel: "aal1",
-      nextLevel: "aal2",
-      totp: [{ status: "verified" }],
-      amr: [{ method: "otp" }, { method: "Passkey" }],
+  it("fails closed when the verified claims belong to another subject", async () => {
+    const { client } = fakeSupabase({
+      aal: "aal2",
+      sub: "a0000000-0000-4000-8000-000000000999",
     });
-    await expect(requiresMfaUpgrade(supabase)).resolves.toEqual({
-      needsUpgrade: false,
-    });
-  });
-
-  it("returns false on AAL endpoint failure (lenient — don't lock non-MFA users out)", async () => {
-    const supabase = fakeSupabase({ aalThrows: true });
-    await expect(requiresMfaUpgrade(supabase)).resolves.toEqual({
-      needsUpgrade: false,
-    });
-  });
-
-  it("returns false on listFactors failure even at aal1 (lenient)", async () => {
-    const supabase = fakeSupabase({
-      aalLevel: "aal1",
-      nextLevel: "aal2",
-      factorsThrows: true,
-    });
-    await expect(requiresMfaUpgrade(supabase)).resolves.toEqual({
-      needsUpgrade: false,
-    });
-  });
-
-  it("returns false when AAL response has no data", async () => {
-    const supabase = fakeSupabase({ aalLevel: null });
-    await expect(requiresMfaUpgrade(supabase)).resolves.toEqual({
-      needsUpgrade: false,
+    await expect(
+      requiresMfaUpgrade(client, verifiedUser(["verified"])),
+    ).resolves.toEqual({
+      needsUpgrade: true,
+      reason: "assurance-unverifiable",
     });
   });
 
   describe("with isTrustedDevice predicate", () => {
     it("bypasses the upgrade when isTrustedDevice resolves true", async () => {
-      // This is the "trust this device for 7 days" path — AAL1 +
-      // verified TOTP would normally redirect, but a valid trust
-      // grant short-circuits.
-      const supabase = fakeSupabase({
-        aalLevel: "aal1",
-        nextLevel: "aal2",
-        totp: [{ status: "verified" }],
-      });
+      const { client } = fakeSupabase({ aal: "aal1" });
       const isTrustedDevice = vi.fn().mockResolvedValue(true);
       await expect(
-        requiresMfaUpgrade(supabase, { isTrustedDevice }),
+        requiresMfaUpgrade(client, verifiedUser(["verified"]), {
+          isTrustedDevice,
+        }),
       ).resolves.toEqual({ needsUpgrade: false });
       expect(isTrustedDevice).toHaveBeenCalledOnce();
     });
 
     it("still demands upgrade when isTrustedDevice resolves false", async () => {
-      const supabase = fakeSupabase({
-        aalLevel: "aal1",
-        nextLevel: "aal2",
-        totp: [{ status: "verified" }],
-      });
+      const { client } = fakeSupabase({ aal: "aal1" });
       const isTrustedDevice = vi.fn().mockResolvedValue(false);
       await expect(
-        requiresMfaUpgrade(supabase, { isTrustedDevice }),
-      ).resolves.toEqual({ needsUpgrade: true, reason: "aal1-with-totp" });
+        requiresMfaUpgrade(client, verifiedUser(["verified"]), {
+          isTrustedDevice,
+        }),
+      ).resolves.toEqual({
+        needsUpgrade: true,
+        reason: "second-factor-pending",
+      });
     });
 
     it("falls back to needsUpgrade when isTrustedDevice throws (strict)", async () => {
-      // A throw from the trust check is treated as "no trust" — same
-      // policy as `isCurrentDeviceTrusted` already enforces internally.
-      const supabase = fakeSupabase({
-        aalLevel: "aal1",
-        nextLevel: "aal2",
-        totp: [{ status: "verified" }],
-      });
+      const { client } = fakeSupabase({ aal: "aal1" });
       const isTrustedDevice = vi.fn().mockRejectedValue(new Error("kaboom"));
       await expect(
-        requiresMfaUpgrade(supabase, { isTrustedDevice }),
-      ).resolves.toEqual({ needsUpgrade: true, reason: "aal1-with-totp" });
+        requiresMfaUpgrade(client, verifiedUser(["verified"]), {
+          isTrustedDevice,
+        }),
+      ).resolves.toEqual({
+        needsUpgrade: true,
+        reason: "second-factor-pending",
+      });
     });
 
     it("does not call isTrustedDevice on non-MFA users (cheap fast path)", async () => {
-      // Non-MFA users never reach the AAL1+verified-TOTP branch where
-      // the predicate fires. Verifying this keeps the DB lookup off
-      // the hot path for the vast majority of users.
-      const supabase = fakeSupabase({
-        aalLevel: "aal1",
-        nextLevel: "aal1",
-        totp: [],
-      });
+      const { client } = fakeSupabase({ aal: "aal1" });
       const isTrustedDevice = vi.fn().mockResolvedValue(true);
-      await requiresMfaUpgrade(supabase, { isTrustedDevice });
+      await requiresMfaUpgrade(client, verifiedUser(), { isTrustedDevice });
       expect(isTrustedDevice).not.toHaveBeenCalled();
     });
   });
@@ -241,29 +264,21 @@ describe("isMfaProtectedPath", () => {
 });
 
 describe("assertAal2", () => {
-  it("returns ok when upgrade is not needed (no MFA enrolled)", async () => {
-    const supabase = fakeSupabase({
-      aalLevel: "aal1",
-      nextLevel: "aal1",
-      totp: [],
-    });
-    const result = await assertAal2(supabase);
+  it("returns ok when no MFA is enrolled", async () => {
+    const { client } = fakeSupabase();
+    const result = await assertAal2(client, verifiedUser());
     expect(result.ok).toBe(true);
   });
 
-  it("returns ok when session is already at aal2", async () => {
-    const supabase = fakeSupabase({ aalLevel: "aal2", nextLevel: "aal2" });
-    const result = await assertAal2(supabase);
+  it("returns ok when the session is already at aal2", async () => {
+    const { client } = fakeSupabase({ aal: "aal2" });
+    const result = await assertAal2(client, verifiedUser(["verified"]));
     expect(result.ok).toBe(true);
   });
 
   it("returns a 403 response with mfa-required kind when upgrade is needed", async () => {
-    const supabase = fakeSupabase({
-      aalLevel: "aal1",
-      nextLevel: "aal2",
-      totp: [{ status: "verified" }],
-    });
-    const result = await assertAal2(supabase);
+    const { client } = fakeSupabase({ aal: "aal1" });
+    const result = await assertAal2(client, verifiedUser(["verified"]));
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.response.status).toBe(403);
@@ -280,13 +295,24 @@ describe("assertAal2", () => {
     expect(body.error).not.toMatch(/\bMFA\b/);
   });
 
-  it("uses the lenient path on Supabase outage (treats errors as no-upgrade)", async () => {
-    // Inherits `requiresMfaUpgrade`'s lenient behaviour. A
-    // Supabase outage on the AAL endpoint shouldn't accidentally
-    // block every authenticated user — better to let a single
-    // request through than lock the whole user base out.
-    const supabase = fakeSupabase({ aalThrows: true });
-    const result = await assertAal2(supabase);
+  it("fails closed for an enrolled user when claims can't be verified", async () => {
+    const { client } = fakeSupabase({ claimsError: true });
+    const result = await assertAal2(client, verifiedUser(["verified"]));
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe("assertFreshAal2", () => {
+  it("rejects the cookie-tampering case: aal1 session, server says enrolled", async () => {
+    const { client, cookieReaders } = fakeSupabase({ aal: "aal1" });
+    const result = await assertFreshAal2(client, verifiedUser(["verified"]));
+    expect(result.ok).toBe(false);
+    for (const reader of cookieReaders) expect(reader).not.toHaveBeenCalled();
+  });
+
+  it("allows an aal2 session", async () => {
+    const { client } = fakeSupabase({ aal: "aal2" });
+    const result = await assertFreshAal2(client, verifiedUser(["verified"]));
     expect(result.ok).toBe(true);
   });
 });

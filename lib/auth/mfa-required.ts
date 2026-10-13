@@ -1,37 +1,28 @@
+import {
+  hasVerifiedFactor,
+  sessionProvedSecondFactor,
+} from "@/lib/auth/mfa-policy";
 import { NextResponse } from "next/server";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient, User } from "@supabase/supabase-js";
 
 /** Decision returned by `requiresMfaUpgrade()`. */
 export type MfaUpgradeDecision =
-  { needsUpgrade: false } | { needsUpgrade: true; reason: "aal1-with-totp" };
+  | { needsUpgrade: false }
+  | {
+      needsUpgrade: true;
+      /** `second-factor-pending`: enrolled, the session hasn't proved it yet.
+       *  `assurance-unverifiable`: enrolled, but the session's claims could
+       *  not be verified (or name another subject) — fail closed. */
+      reason: "second-factor-pending" | "assurance-unverifiable";
+    };
 
-/** Determines whether the caller's session must be promoted to AAL2
- *  before a protected page renders. The Supabase pattern is:
- *
- *    - Session authenticated with a passkey (recognized from the
- *      JWT `amr`) => already meets our MFA bar; never asked for TOTP,
- *      even though Supabase reports the passkey sign-in as AAL1.
- *    - AAL1 ("password / OTP only") + has a verified TOTP factor =>
- *      the second factor is still owed; we must redirect to the MFA
- *      challenge before letting them past page chrome.
- *    - AAL1 + no verified TOTP factor => no MFA enrolled, session is
- *      already at its terminal level for this user.
- *    - AAL2 => already promoted, nothing to do.
- *    - Anything else (unknown future levels, errors) => default-DENY
- *      the upgrade requirement. We don't want a transient Supabase
- *      outage to lock out users who genuinely don't have MFA on.
- *
- *  The function is intentionally lenient on errors — a Supabase
- *  outage on `mfa.listFactors()` should fall through to "no upgrade
- *  needed" rather than redirect a non-MFA user into a challenge they
- *  can't complete. The cost of a false negative (one bypass while
- *  the API is down) is far smaller than the cost of a false positive
- *  (entire user base locked out).
- *
- *  Why this lives in `lib/auth/` and not inside the proxy: we want
- *  to call the same check from API route handlers too (each one
- *  decides whether AAL2 is required for its endpoint), and a shared
- *  helper keeps the policy in one place. */
+/** The server-verified user the gate decides on: the object returned by
+ *  `supabase.auth.getUser()` (a GoTrue `/user` round-trip), NEVER the user
+ *  embedded in the cookie session (`getSession()`, or the no-argument
+ *  `mfa.getAuthenticatorAssuranceLevel()` which reads it), because that
+ *  copy is client-controlled. */
+export type MfaGateUser = Pick<User, "id" | "factors">;
+
 /** Options accepted by both `requiresMfaUpgrade` and `assertAal2`.
  *
  *  `isTrustedDevice` is the trust-this-device escape hatch: when
@@ -45,28 +36,26 @@ export interface MfaUpgradeOptions {
   isTrustedDevice?: () => Promise<boolean>;
 }
 
-/** True when the session was established with a passkey / WebAuthn method.
- *  A passkey is phishing-resistant and multi-factor by construction
- *  (possession of the authenticator + the user-verification gesture), so it
- *  meets our second-factor bar on its own. Supabase issues a passkey sign-in
- *  as an AAL1 session — passkeys are a primary login method, NOT a Supabase
- *  second factor (only TOTP / phone count toward aal2) — so we recognize it
- *  here from the session's authentication methods (amr) instead of demanding a
- *  TOTP code it already makes redundant. The exact `amr` method string is set
- *  server-side by GoTrue and isn't contractually documented, so we match
- *  defensively on the family name rather than a single literal. */
-function authenticatedWithPasskey(
-  // auth-js types `currentAuthenticationMethods` as `string[] | AMREntry[]`,
-  // so an entry may be a bare method name OR an `{ method }` object.
-  methods:
-    ReadonlyArray<string | { method?: string | null }> | null | undefined,
-): boolean {
-  return (methods ?? []).some((m) => {
-    const name = (typeof m === "string" ? m : (m?.method ?? "")).toLowerCase();
-    return name.includes("webauthn") || name.includes("passkey");
-  });
-}
-
+/** Determines whether the caller's session must be promoted before a
+ *  protected page renders or a gated route runs. The policy itself lives in
+ *  `lib/auth/mfa-policy.ts`:
+ *
+ *    - No VERIFIED factor on the server-verified `user` => nothing more to
+ *      prove; any session passes. No extra network call.
+ *    - A verified factor => the session's VERIFIED JWT claims
+ *      (`auth.getClaims()`: signature-checked against the project JWKS, or
+ *      through GoTrue for symmetric keys) must show `aal2` or a passkey
+ *      sign-in.
+ *    - A verified factor but claims that can't be verified, or that name a
+ *      different subject than `user` => fail CLOSED (upgrade required).
+ *
+ *  Enrollment comes from `user.factors` — the GoTrue response — and never
+ *  from the session object serialized into the auth cookie: a stale or
+ *  tampered cookie that drops `user.factors` must not skip the second
+ *  factor.
+ *
+ *  Why this lives in `lib/auth/` and not inside the proxy: the proxy and
+ *  every gated API route call it, so the policy stays in one place. */
 export async function requiresMfaUpgrade(
   // SupabaseClient<any> because we don't depend on the generated
   // Database type — only the auth namespace, which is the same
@@ -75,79 +64,42 @@ export async function requiresMfaUpgrade(
   // smell.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: SupabaseClient<any, any, any>,
+  user: MfaGateUser,
   opts: MfaUpgradeOptions = {},
 ): Promise<MfaUpgradeDecision> {
-  // `getAuthenticatorAssuranceLevel` reads the JWT claims locally;
-  // no network call. So we can run this on every request without
-  // adding a round-trip.
-  let aal: {
-    currentLevel?: string | null;
-    nextLevel?: string | null;
-    currentAuthenticationMethods?: ReadonlyArray<
-      string | { method?: string | null }
-    > | null;
-  } | null = null;
+  if (!hasVerifiedFactor(user)) return { needsUpgrade: false };
+
+  let claims: { sub?: unknown; aal?: unknown; amr?: unknown };
   try {
-    const resp = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-    aal = resp.data ?? null;
-  } catch {
-    // Token unreadable / malformed — treat as no-upgrade-needed.
-    return { needsUpgrade: false };
-  }
-  if (!aal) return { needsUpgrade: false };
-
-  // A passkey sign-in already satisfies our MFA policy (see
-  // `authenticatedWithPasskey`). Supabase reports it as AAL1, so this MUST be
-  // checked before the aal1/TOTP path below — otherwise a user who has BOTH a
-  // passkey and a TOTP factor would be bounced to the TOTP prompt right after
-  // signing in with their passkey.
-  if (authenticatedWithPasskey(aal.currentAuthenticationMethods)) {
-    return { needsUpgrade: false };
-  }
-
-  // Already at AAL2 → done.
-  if (aal.currentLevel === "aal2") return { needsUpgrade: false };
-  // Not even at AAL1 → user isn't really signed in; the caller's
-  // existing auth check handles this case.
-  if (aal.currentLevel !== "aal1") return { needsUpgrade: false };
-  // AAL1 but the JWT also says there's no AAL2 available → the
-  // user has no MFA enrolled. Session is at its terminal level.
-  if (aal.nextLevel !== "aal2") return { needsUpgrade: false };
-
-  // AAL1 with AAL2 available. Only LIST factors at this point —
-  // every other case short-circuited above so listFactors only
-  // runs for users who actually have it enrolled. This is one API
-  // call per request for MFA-enrolled users at AAL1 (i.e. the
-  // narrow window between OTP verification and TOTP challenge).
-  try {
-    const factorsResp = await supabase.auth.mfa.listFactors();
-    const hasVerifiedTotp = factorsResp.data?.totp?.some(
-      (f) => f.status === "verified",
-    );
-    if (hasVerifiedTotp) {
-      // Trusted-device escape hatch. The DB row in
-      // `mfa_trusted_devices` is authoritative; the deviceId cookie
-      // just identifies WHICH device. When the caller supplies a
-      // check and it resolves true, the user has previously checked
-      // "Trust this device for 7 days" and that window hasn't
-      // expired — skip the upgrade requirement. Failure / missing
-      // check resolves to needsUpgrade (default-deny).
-      if (opts.isTrustedDevice) {
-        try {
-          if (await opts.isTrustedDevice()) {
-            return { needsUpgrade: false };
-          }
-        } catch {
-          // Trust check threw — be strict, demand the upgrade.
-        }
-      }
-      return { needsUpgrade: true, reason: "aal1-with-totp" };
+    const { data, error } = await supabase.auth.getClaims();
+    if (error || !data) {
+      return { needsUpgrade: true, reason: "assurance-unverifiable" };
     }
+    claims = data.claims;
   } catch {
-    // listFactors failed — be lenient. Same rationale as the AAL
-    // try/catch above.
+    return { needsUpgrade: true, reason: "assurance-unverifiable" };
   }
-  return { needsUpgrade: false };
+  // The claims must describe the account the server just returned —
+  // otherwise one user's enrollment would be judged against another
+  // session's assurance level.
+  if (claims.sub !== user.id) {
+    return { needsUpgrade: true, reason: "assurance-unverifiable" };
+  }
+  if (sessionProvedSecondFactor(claims)) return { needsUpgrade: false };
+
+  // Trusted-device escape hatch. The DB row in `mfa_trusted_devices` is
+  // authoritative; the deviceId cookie just identifies WHICH device.
+  // Failure / missing check resolves to needsUpgrade (default-deny).
+  if (opts.isTrustedDevice) {
+    try {
+      if (await opts.isTrustedDevice()) {
+        return { needsUpgrade: false };
+      }
+    } catch {
+      // Trust check threw — be strict, demand the upgrade.
+    }
+  }
+  return { needsUpgrade: true, reason: "second-factor-pending" };
 }
 
 /** API-level companion to the proxy redirect. Use this at the top
@@ -159,13 +111,13 @@ export async function requiresMfaUpgrade(
  *  could still POST to `/api/meal-plan`, `/api/identify-meal`,
  *  `/api/delete-account`, etc.).
  *
- *  Usage at the call site:
+ *  Usage at the call site — pass the user `getUser()` just returned:
  *
  *  ```ts
  *  const supabase = await getSupabaseServer();
  *  const { data: { user } } = await supabase.auth.getUser();
  *  if (!user) return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
- *  const gate = await assertAal2(supabase);
+ *  const gate = await assertAal2(supabase, user);
  *  if (!gate.ok) return gate.response;
  *  // … handler proceeds with a fully-authenticated user
  *  ```
@@ -177,14 +129,15 @@ export async function requiresMfaUpgrade(
  *  `kind: 'mfa-required'` so a client can react specifically
  *  (e.g. prompt the user to complete MFA in-app).
  *
- *  Vacuous-true when no MFA is enrolled — same lenient policy the
- *  proxy uses, so non-MFA users aren't punished for our checking. */
+ *  Vacuous-true when no MFA is enrolled, so non-MFA users aren't
+ *  punished for our checking. */
 export async function assertAal2(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: SupabaseClient<any, any, any>,
+  user: MfaGateUser,
   opts: MfaUpgradeOptions = {},
 ): Promise<{ ok: true } | { ok: false; response: NextResponse }> {
-  const decision = await requiresMfaUpgrade(supabase, opts);
+  const decision = await requiresMfaUpgrade(supabase, user, opts);
   if (!decision.needsUpgrade) return { ok: true };
   return {
     ok: false,
@@ -215,15 +168,16 @@ export async function assertAal2(
  *  device scenario shouldn't let an attacker delete the account or
  *  swap the recovery email without re-entering the TOTP code.
  *
- *  Behaviorally equivalent to `assertAal2(supabase)` with no options —
- *  the named helper makes the intent explicit at the route site and
- *  prevents a future refactor from reflexively threading the trust
+ *  Behaviorally equivalent to `assertAal2(supabase, user)` with no
+ *  options — the named helper makes the intent explicit at the route site
+ *  and prevents a future refactor from reflexively threading the trust
  *  option back in. */
 export async function assertFreshAal2(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: SupabaseClient<any, any, any>,
+  user: MfaGateUser,
 ): Promise<{ ok: true } | { ok: false; response: NextResponse }> {
-  return assertAal2(supabase);
+  return assertAal2(supabase, user);
 }
 
 /** Path prefixes that require an authenticated AAL2 session. Listed

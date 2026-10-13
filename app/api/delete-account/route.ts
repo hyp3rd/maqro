@@ -58,7 +58,7 @@ export async function POST(): Promise<NextResponse> {
   // is meant to spare the user a TOTP prompt on routine actions, not
   // permit account deletion from a temporarily-compromised browser.
   // The user must present their second factor fresh.
-  const gate = await assertFreshAal2(cookieClient);
+  const gate = await assertFreshAal2(cookieClient, user);
   if (!gate.ok) return gate.response;
 
   const secret = getSupabaseSecretConfig();

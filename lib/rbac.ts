@@ -93,7 +93,7 @@ export async function requireAdmin(): Promise<RequireAdminResult> {
   // The admin still types their TOTP code only ONCE per session
   // (the AAL2 promotion lasts as long as the auth cookie), so the
   // friction is bounded.
-  const gate = await assertFreshAal2(supabase);
+  const gate = await assertFreshAal2(supabase, user);
   if (!gate.ok) return { ok: false, response: gate.response };
   const { data: profile } = await supabase
     .from("profiles")

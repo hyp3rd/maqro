@@ -78,7 +78,7 @@ export async function updateSession(
     // false before triggering the redirect. The cookie source is
     // the deviceId mirror written by `getOrCreateDeviceId`; the DB
     // row in `mfa_trusted_devices` is the authoritative grant.
-    const decision = await requiresMfaUpgrade(supabase, {
+    const decision = await requiresMfaUpgrade(supabase, user, {
       isTrustedDevice: () =>
         isCurrentDeviceTrusted(supabase, user.id, request.cookies),
     });

@@ -49,7 +49,7 @@ export async function getEffectiveUser(): Promise<EffectiveUser> {
     return { user: null, mfaPending: false };
   }
   if (!user) return { user: null, mfaPending: false };
-  const decision = await requiresMfaUpgrade(supabase);
+  const decision = await requiresMfaUpgrade(supabase, user);
   if (decision.needsUpgrade) {
     return { user: null, mfaPending: true };
   }

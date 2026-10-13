@@ -32,6 +32,7 @@ export async function POST(): Promise<NextResponse> {
   }
   const gate = await assertAal2(
     cookieClient,
+    user,
     await trustedDeviceOption(cookieClient, user.id),
   );
   if (!gate.ok) return gate.response;

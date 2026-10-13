@@ -60,6 +60,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   // other authenticated route per the require-aal2-gate lint rule.
   const gate = await assertAal2(
     supabase,
+    user,
     await trustedDeviceOption(supabase, user.id),
   );
   if (!gate.ok) return gate.response;

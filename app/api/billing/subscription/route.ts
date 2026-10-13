@@ -85,6 +85,7 @@ async function loadCustomerId(): Promise<
   // not the bare `return gate.response` other routes use.
   const gate = await assertAal2(
     supabase,
+    user,
     await trustedDeviceOption(supabase, user.id),
   );
   if (!gate.ok) return { ok: false, response: gate.response };

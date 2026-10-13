@@ -40,6 +40,7 @@ export async function POST(): Promise<NextResponse> {
   }
   const gate = await assertAal2(
     supabase,
+    user,
     await trustedDeviceOption(supabase, user.id),
   );
   if (!gate.ok) return gate.response;

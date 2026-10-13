@@ -33,7 +33,7 @@ export async function DELETE(): Promise<NextResponse> {
   // owner out before pivoting). The trusted-device escape hatch
   // would let a temporarily-compromised browser strip the backup
   // address without prompting for TOTP — we require it fresh.
-  const gate = await assertFreshAal2(supabase);
+  const gate = await assertFreshAal2(supabase, user);
   if (!gate.ok) return gate.response;
 
   const secret = getSupabaseSecretConfig();
