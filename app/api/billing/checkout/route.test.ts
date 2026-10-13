@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /** POST /api/billing/checkout. The billing-integrity branches: the Stripe
- *  customer id must be persisted (a checked UPDATE of the row migration
- *  0074 guarantees) before any Checkout Session exists, a customer with a
+ *  customer id must be persisted (a checked UPDATE of the profiles row)
+ *  before any Checkout Session exists, a customer with a
  *  live subscription is sent to a plan change instead of a second
  *  subscription, and older open sessions are expired so two tabs can't
  *  both complete. */
@@ -143,10 +143,28 @@ describe("POST /api/billing/checkout — customer persistence", () => {
     expect(h.sessionsCreate).not.toHaveBeenCalled();
   });
 
-  it("refuses to open Checkout when the account has no profiles row", async () => {
+  it("refuses before creating a Stripe customer when the account has no profiles row", async () => {
+    // Until the profile first syncs (or migration 0074 creates the row at
+    // sign-up) there is no row to store a customer on; creating one anyway
+    // would orphan it on every retry.
+    h.profileRead.mockResolvedValue({ data: null, error: null });
+
+    const res = await POST(checkoutRequest());
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: "profile_missing" });
+    expect(h.customersCreate).not.toHaveBeenCalled();
+    expect(h.adminUpdate).not.toHaveBeenCalled();
+    expect(h.sessionsCreate).not.toHaveBeenCalled();
+  });
+
+  it("refuses to open Checkout when the profiles row disappears before the link", async () => {
     h.adminUpdate.mockResolvedValue({ data: [], error: null });
     h.profileRead
-      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce({
+        data: { stripe_customer_id: null },
+        error: null,
+      })
       .mockResolvedValueOnce({ data: null, error: null });
 
     const res = await POST(checkoutRequest());

@@ -27,14 +27,16 @@ const ROUTE = "/api/billing/checkout";
  *  right profile row.
  *
  *  Flow:
- *    1. Look up the caller's profile row.
+ *    1. Look up the caller's profile row. No row (the profile has
+ *       never synced) refuses with 409 `profile_missing` before any
+ *       Stripe object exists: there would be nothing to link the
+ *       customer to.
  *    2. If they already have a stripe_customer_id, reuse it.
  *       Otherwise, create a new Stripe Customer with our user_id
  *       in metadata and store its ID with a checked UPDATE of the
- *       profiles row (migration 0074 creates it at sign-up). If the
- *       ID can't be stored, no Checkout Session is created: a
- *       subscription on a customer no profile knows bills the user
- *       without ever entitling them.
+ *       profiles row. If the ID can't be stored, no Checkout
+ *       Session is created: a subscription on a customer no profile
+ *       knows bills the user without ever entitling them.
  *    3. Refuse (409 `subscription_exists`) when the customer already
  *       has a live subscription. A second subscription double-bills,
  *       and the webhook can track only one; a plan change goes
@@ -127,8 +129,22 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
+  // The row is created by the account's first profile push (and, once
+  // migration 0074 ships, at sign-up). Without it a new customer can't be
+  // stored, so refuse before creating one that would only be orphaned.
+  if (!profile) {
+    return NextResponse.json(
+      {
+        error:
+          "Your profile hasn't synced to your account yet. Set it up, then try again in a moment.",
+        code: "profile_missing",
+      },
+      { status: 409 },
+    );
+  }
+
   // 2. First-time subscriber: create the customer and link it.
-  let customerId = (profile?.stripe_customer_id ?? null) as string | null;
+  let customerId = (profile.stripe_customer_id ?? null) as string | null;
   if (!customerId) {
     const linked = await createAndLinkCustomer(stripe, supabase, user);
     if (!linked.ok) return linked.response;
@@ -291,7 +307,7 @@ async function createAndLinkCustomer(
   }
 
   // 0 rows: either a concurrent checkout linked its customer first, or
-  // the account has no profiles row at all.
+  // the profiles row was deleted since the caller read it.
   const { data: current, error: rereadError } = await supabase
     .from("profiles")
     .select("stripe_customer_id")
