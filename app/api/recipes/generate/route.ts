@@ -8,6 +8,13 @@ import {
   unmatchedIngredientNames,
   type AiRecipeSubmit,
 } from "@/lib/ai/recipe";
+import { AI_MAX_JSON_BODY_BYTES } from "@/lib/ai/request-limits";
+import {
+  CustomFoodsWire,
+  PantryBiasWire,
+  PreferenceTagsWire,
+  RecentlyEatenWire,
+} from "@/lib/ai/request-schemas";
 import { parseBody } from "@/lib/api/parse-body";
 import { assertAal2 } from "@/lib/auth/mfa-required";
 import { checkAndIncrementAiUsage } from "@/lib/billing/usage";
@@ -29,18 +36,10 @@ const HINT_MAX_LEN = 200;
 /** Wire shape for recipe-generation requests. Same loose-on-extras
  *  pattern as meal-plan: validate the must-have fields (diet enum,
  *  array shapes), let optional metadata on `customFoods` pass
- *  through. Hint is capped here by Zod's `.max(HINT_MAX_LEN)` so a
- *  client sending a 100KB string doesn't reach the model. */
-const FoodWire = z
-  .object({
-    name: z.string().min(1),
-    protein: z.number(),
-    carbs: z.number(),
-    fat: z.number(),
-    calories: z.number(),
-  })
-  .loose();
-
+ *  through. Every string and list that reaches the prompt is size-capped
+ *  (lib/ai/request-limits.ts); the hint is capped at HINT_MAX_LEN, the
+ *  same limit the dialog's textarea enforces, so a client sending a 100KB
+ *  string doesn't reach the model. */
 const BodySchema = z.object({
   dietPreference: z.enum([
     "omnivore",
@@ -49,19 +48,13 @@ const BodySchema = z.object({
     "pescatarian",
     "carnivore",
   ]),
-  cuisinePreferences: z.array(z.string()).optional(),
-  allergies: z.array(z.string()).optional(),
-  dislikedFoods: z.array(z.string()).optional(),
-  customFoods: z.array(FoodWire).optional(),
-  hint: z.string().max(2000).optional(),
-  recentlyEatenFoods: z
-    .array(z.object({ name: z.string(), count: z.number() }))
-    .optional(),
-  pantryItems: z
-    .array(
-      z.object({ name: z.string(), quantity: z.number(), unit: z.string() }),
-    )
-    .optional(),
+  cuisinePreferences: PreferenceTagsWire.optional(),
+  allergies: PreferenceTagsWire.optional(),
+  dislikedFoods: PreferenceTagsWire.optional(),
+  customFoods: CustomFoodsWire.optional(),
+  hint: z.string().max(HINT_MAX_LEN).optional(),
+  recentlyEatenFoods: RecentlyEatenWire.optional(),
+  pantryItems: PantryBiasWire.optional(),
 });
 
 /** Reattach the project-wide Food shape onto the loose-validated
@@ -114,7 +107,9 @@ export async function POST(req: Request): Promise<NextResponse> {
   // 3. Validate body. The schema enforces the diet enum + array
   //    shapes + hint length; the cast re-attaches the project-wide
   //    Food type for downstream catalog helpers.
-  const parsed = await parseBody(req, BodySchema);
+  const parsed = await parseBody(req, BodySchema, {
+    maxBytes: AI_MAX_JSON_BODY_BYTES,
+  });
   if (!parsed.ok) return parsed.response;
   const body = parsed.data as BodyForRoute;
 

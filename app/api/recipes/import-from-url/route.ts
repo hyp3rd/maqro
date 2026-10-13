@@ -1,3 +1,4 @@
+import { AI_MAX_JSON_BODY_BYTES } from "@/lib/ai/request-limits";
 import { parseBody } from "@/lib/api/parse-body";
 import { assertAal2 } from "@/lib/auth/mfa-required";
 import { FEATURES } from "@/lib/billing/tiers";
@@ -16,8 +17,14 @@ import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
+/** Longest recipe URL accepted. 2048 is the long-standing practical URL
+ *  ceiling across browsers and CDNs; the final URL is echoed into the AI
+ *  extraction prompt, so it must be bounded. (The page text itself is
+ *  capped by `htmlToReadableText`.) */
+const MAX_URL_CHARS = 2048;
+
 const BodySchema = z.object({
-  url: z.string().min(1),
+  url: z.string().min(1).max(MAX_URL_CHARS),
   parseWithAi: z.boolean().optional(),
 });
 
@@ -97,7 +104,9 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  const parsed = await parseBody(req, BodySchema);
+  const parsed = await parseBody(req, BodySchema, {
+    maxBytes: AI_MAX_JSON_BODY_BYTES,
+  });
   if (!parsed.ok) return parsed.response;
   const urlInput = parsed.data.url.trim();
   if (urlInput.length === 0) {

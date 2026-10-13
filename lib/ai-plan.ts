@@ -2,6 +2,10 @@
 
 import type { DietPreference, Food, Meal } from "@/components/macro/types";
 import type { CoherenceIssue } from "@/lib/ai/plan-coherence";
+import {
+  AI_MAX_BIAS_ITEMS,
+  AI_MAX_CUSTOM_FOODS,
+} from "@/lib/ai/request-limits";
 import { clientFetch } from "@/lib/auth/client-fetch";
 import type { MarketCode } from "@/lib/markets";
 
@@ -65,16 +69,27 @@ export type AiPlanResult =
 
 /** POST to /api/meal-plan. Network and non-2xx responses are mapped to
  * discriminated `AiPlanResult` kinds so callers can match instead of
- * branching on HTTP status codes. */
+ * branching on HTTP status codes.
+ *
+ * The open-ended lists are clamped to the route's size limits
+ * (lib/ai/request-limits.ts) so a large library never turns into a 400.
+ * Callers pass custom foods newest-first (`listCustomFoods` order), so the
+ * newest survive; the route only renders the first 30 bias items anyway. */
 export async function requestAiMealPlan(
   req: AiPlanRequest,
 ): Promise<AiPlanResult> {
+  const payload: AiPlanRequest = {
+    ...req,
+    customFoods: req.customFoods.slice(0, AI_MAX_CUSTOM_FOODS),
+    recentlyEatenFoods: req.recentlyEatenFoods?.slice(0, AI_MAX_BIAS_ITEMS),
+    pantryItems: req.pantryItems?.slice(0, AI_MAX_BIAS_ITEMS),
+  };
   let res: Response;
   try {
     res = await clientFetch("/api/meal-plan", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(req),
+      body: JSON.stringify(payload),
     });
   } catch (err) {
     return {

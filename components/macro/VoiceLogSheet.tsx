@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { AI_MAX_CUSTOM_FOODS } from "@/lib/ai/request-limits";
 import { clientFetch } from "@/lib/auth/client-fetch";
 import { listCustomFoods } from "@/lib/db";
 import {
@@ -280,17 +281,19 @@ function VoiceLogBody({
         body: JSON.stringify({
           transcript,
           dietPreference,
-          customFoods: customs.map((c) => ({
-            name: c.name,
-            protein: c.protein,
-            carbs: c.carbs,
-            fat: c.fat,
-            calories: c.calories,
-            category: c.category,
-            subCategory: c.subCategory,
-            brand: c.brand,
-            dietKind: c.dietKind,
-          })),
+          customFoods: customs
+            .slice(0, AI_MAX_CUSTOM_FOODS)
+            .map((c) => ({
+              name: c.name,
+              protein: c.protein,
+              carbs: c.carbs,
+              fat: c.fat,
+              calories: c.calories,
+              category: c.category,
+              subCategory: c.subCategory,
+              brand: c.brand,
+              dietKind: c.dietKind,
+            })),
         }),
       });
       if (!res.ok) {

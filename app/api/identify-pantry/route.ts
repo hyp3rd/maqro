@@ -1,5 +1,9 @@
 import { markLastBlockForCache } from "@/lib/ai/anthropic-helpers";
 import { getAnthropicConfig } from "@/lib/ai/env";
+import {
+  AI_MAX_IMAGE_BODY_BYTES,
+  AI_MAX_IMAGE_BYTES,
+} from "@/lib/ai/request-limits";
 import { parseBody } from "@/lib/api/parse-body";
 import { assertAal2 } from "@/lib/auth/mfa-required";
 import { checkAndIncrementAiUsage } from "@/lib/billing/usage";
@@ -15,7 +19,6 @@ import Anthropic from "@anthropic-ai/sdk";
 const MODEL: Anthropic.Model = "claude-sonnet-4-6";
 export const maxDuration = 60;
 const MAX_TOKENS = 1024;
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // Anthropic's documented limit.
 const MAX_ITEMS = 30;
 
 /** One pantry item identified in a photo. Unlike the meal route, there
@@ -90,15 +93,17 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (!usage.allowed) return aiUsageDeniedResponse(usage);
 
   // 3. Validate body. Schema gates shape + the MIME enum; the image
-  //    size cap stays inline because it references MAX_IMAGE_BYTES.
-  const parsed = await parseBody(req, BodySchema);
+  //    size cap stays inline because it references AI_MAX_IMAGE_BYTES.
+  const parsed = await parseBody(req, BodySchema, {
+    maxBytes: AI_MAX_IMAGE_BODY_BYTES,
+  });
   if (!parsed.ok) return parsed.response;
   const body = parsed.data;
   const approxBytes = Math.floor((body.imageBase64.length * 3) / 4);
-  if (approxBytes > MAX_IMAGE_BYTES) {
+  if (approxBytes > AI_MAX_IMAGE_BYTES) {
     return NextResponse.json(
       {
-        error: `Image too large (${Math.round(approxBytes / 1024)} KB). Max ${MAX_IMAGE_BYTES / 1024} KB.`,
+        error: `Image too large (${Math.round(approxBytes / 1024)} KB). Max ${AI_MAX_IMAGE_BYTES / 1024} KB.`,
       },
       { status: 413 },
     );

@@ -1,4 +1,10 @@
 import { getAnthropicConfig } from "@/lib/ai/env";
+import {
+  AI_MAX_JSON_BODY_BYTES,
+  AI_MAX_LABEL_CHARS,
+  AI_MAX_MEAL_SLOTS,
+  AI_MAX_NAME_CHARS,
+} from "@/lib/ai/request-limits";
 import { parseBody } from "@/lib/api/parse-body";
 import { assertAal2 } from "@/lib/auth/mfa-required";
 import { checkAndIncrementAiUsage } from "@/lib/billing/usage";
@@ -16,16 +22,18 @@ const MAX_TOKENS = 1024;
  *  needs to pick a coherent, macro-fitting day. The id is opaque — the client
  *  resolves it back to the full recipe. */
 const RecipeWire = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
+  id: z.string().min(1).max(AI_MAX_LABEL_CHARS),
+  name: z.string().min(1).max(AI_MAX_NAME_CHARS),
   protein: z.number(),
   carbs: z.number(),
   fat: z.number(),
   calories: z.number(),
-  cuisine: z.string().optional(),
-  diet: z.string().optional(),
+  cuisine: z.string().max(AI_MAX_LABEL_CHARS).optional(),
+  diet: z.string().max(AI_MAX_LABEL_CHARS).optional(),
 });
 
+/** Every string that reaches the prompt is size-capped
+ *  (lib/ai/request-limits.ts). */
 const BodySchema = z.object({
   targets: z.object({
     protein: z.number(),
@@ -33,7 +41,10 @@ const BodySchema = z.object({
     fat: z.number(),
     calories: z.number(),
   }),
-  mealSlots: z.array(z.string().min(1)).min(1).max(8),
+  mealSlots: z
+    .array(z.string().min(1).max(AI_MAX_LABEL_CHARS))
+    .min(1)
+    .max(AI_MAX_MEAL_SLOTS),
   recipes: z.array(RecipeWire).min(1).max(200),
 });
 
@@ -79,7 +90,9 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (!usage.allowed) return aiUsageDeniedResponse(usage);
 
   // 3. Validate body.
-  const parsed = await parseBody(req, BodySchema);
+  const parsed = await parseBody(req, BodySchema, {
+    maxBytes: AI_MAX_JSON_BODY_BYTES,
+  });
   if (!parsed.ok) return parsed.response;
   const { targets, mealSlots, recipes } = parsed.data;
 

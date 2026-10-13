@@ -12,6 +12,10 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  AI_MAX_BIAS_ITEMS,
+  AI_MAX_CUSTOM_FOODS,
+} from "@/lib/ai/request-limits";
 import { clientFetch } from "@/lib/auth/client-fetch";
 import {
   listCustomFoods,
@@ -109,11 +113,9 @@ function GenerateRecipeDialogBody({
       let pantryItems: { name: string; quantity: number; unit: string }[] = [];
       try {
         const rows = await listPantryItems();
-        pantryItems = rows.map((p) => ({
-          name: p.name,
-          quantity: p.quantity,
-          unit: p.unit,
-        }));
+        pantryItems = rows
+          .slice(0, AI_MAX_BIAS_ITEMS)
+          .map((p) => ({ name: p.name, quantity: p.quantity, unit: p.unit }));
       } catch {
         // Proceed with no pantry bias.
       }
@@ -128,17 +130,19 @@ function GenerateRecipeDialogBody({
           dislikedFoods: profile.dislikedFoods,
           // The route expects Food shape - map CustomFood by copying the
           // fields it uses. id is dropped server-side so we don't bother.
-          customFoods: customs.map((c) => ({
-            name: c.name,
-            protein: c.protein,
-            carbs: c.carbs,
-            fat: c.fat,
-            calories: c.calories,
-            category: c.category,
-            subCategory: c.subCategory,
-            brand: c.brand,
-            dietKind: c.dietKind,
-          })),
+          customFoods: customs
+            .slice(0, AI_MAX_CUSTOM_FOODS)
+            .map((c) => ({
+              name: c.name,
+              protein: c.protein,
+              carbs: c.carbs,
+              fat: c.fat,
+              calories: c.calories,
+              category: c.category,
+              subCategory: c.subCategory,
+              brand: c.brand,
+              dietKind: c.dietKind,
+            })),
           hint: hint.trim() || undefined,
           recentlyEatenFoods,
           pantryItems,

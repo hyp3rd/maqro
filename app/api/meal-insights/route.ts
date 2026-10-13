@@ -1,4 +1,8 @@
 import { getAnthropicConfig } from "@/lib/ai/env";
+import {
+  AI_MAX_JSON_BODY_BYTES,
+  AI_MAX_NAME_CHARS,
+} from "@/lib/ai/request-limits";
 import { parseBody } from "@/lib/api/parse-body";
 import { assertAal2 } from "@/lib/auth/mfa-required";
 import { FEATURES } from "@/lib/billing/tiers";
@@ -8,6 +12,7 @@ import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import Anthropic from "@anthropic-ai/sdk";
+import { MICRONUTRIENT_KEYS } from "@maqro/core/rda";
 
 /** "AI advice" for the meal-detail view. Takes a single meal's macro /
  *  sub-macro / micronutrient profile plus the deterministic flags the
@@ -33,10 +38,21 @@ const MealSchema = z
     fiber: z.number().optional(),
     saturatedFat: z.number().optional(),
     foods: z
-      .array(z.object({ name: z.string(), grams: z.number() }).loose())
+      .array(
+        z
+          .object({
+            name: z.string().max(AI_MAX_NAME_CHARS),
+            grams: z.number(),
+          })
+          .loose(),
+      )
       .max(40),
-    /** Per-nutrient % of the user's daily target, e.g. `{ vitaminC: 88 }`. */
-    microPctOfTarget: z.record(z.string(), z.number()).optional(),
+    /** Per-nutrient % of the user's daily target, e.g. `{ vitaminC: 88 }`.
+     *  Keys are rendered into the prompt, so only the known micronutrient
+     *  keys the client iterates (MICRONUTRIENT_KEYS) are accepted. */
+    microPctOfTarget: z
+      .partialRecord(z.enum(MICRONUTRIENT_KEYS), z.number())
+      .optional(),
   })
   .loose();
 
@@ -92,7 +108,9 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (!usage.allowed) return aiUsageDeniedResponse(usage);
 
   // 5. Validate body.
-  const parsed = await parseBody(req, BodySchema);
+  const parsed = await parseBody(req, BodySchema, {
+    maxBytes: AI_MAX_JSON_BODY_BYTES,
+  });
   if (!parsed.ok) return parsed.response;
   const { meal, flags } = parsed.data;
 
