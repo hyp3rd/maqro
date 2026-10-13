@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 import type { Meal } from "@/components/macro/types";
+import { replaceDayIfUnchanged } from "@/lib/daily-log-cas";
 import { IDBFactory } from "fake-indexeddb";
 import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -196,6 +197,7 @@ describe("useDailyLog", () => {
 });
 
 const DATE = "2026-05-13";
+const OTHER_DATE = "2026-05-12";
 
 function dayWith(name: string): Meal[] {
   return [
@@ -299,5 +301,115 @@ describe("useDailyLog - identity changes", () => {
     // so the day stays hydrated with the same meals.
     expect(result.current.isHydrated).toBe(true);
     expect(result.current.meals[0]!.foods[0]!.name).toBe("Guest oats");
+  });
+});
+
+describe("useDailyLog - commitToDay (deferred edits)", () => {
+  beforeEach(() => {
+    auth.user = null;
+  });
+
+  it("applies in memory when the target day is still displayed", async () => {
+    const { useDailyLog } = await freshHook();
+    const { result } = renderHook(() => useDailyLog(DATE, DEFAULT_MEALS));
+    await waitFor(() => expect(result.current.isHydrated).toBe(true));
+    const target = result.current.day;
+
+    let applied: boolean | undefined;
+    await act(async () => {
+      applied = await result.current.commitToDay(target, () => dayWith("Plan"));
+    });
+
+    expect(applied).toBe(true);
+    expect(result.current.meals[0]!.foods[0]!.name).toBe("Plan");
+  });
+
+  it("writes to the original day, never the one now displayed, after navigation", async () => {
+    const { useDailyLog } = await freshHook();
+    const db = await import("@/lib/db");
+    await db.saveDailyLog(OTHER_DATE, dayWith("Yesterday's real log"));
+
+    const { result, rerender } = renderHook(
+      ({ date }) => useDailyLog(date, DEFAULT_MEALS),
+      { initialProps: { date: DATE } },
+    );
+    await waitFor(() => expect(result.current.isHydrated).toBe(true));
+    const target = result.current.day;
+    const snapshot = result.current.meals;
+
+    // The user navigates to yesterday while the request is in flight.
+    rerender({ date: OTHER_DATE });
+    await waitFor(() =>
+      expect(result.current.meals[0]!.foods[0]?.name).toBe(
+        "Yesterday's real log",
+      ),
+    );
+
+    let applied: boolean | undefined;
+    await act(async () => {
+      applied = await result.current.commitToDay(target, (latest) =>
+        replaceDayIfUnchanged(latest, snapshot, dayWith("Plan")),
+      );
+    });
+    await pastDebounce();
+
+    expect(applied).toBe(true);
+    expect((await db.getDailyLog(DATE))!.meals[0]!.foods[0]!.name).toBe("Plan");
+    expect((await db.getDailyLog(OTHER_DATE))!.meals[0]!.foods[0]!.name).toBe(
+      "Yesterday's real log",
+    );
+    expect(result.current.meals[0]!.foods[0]!.name).toBe(
+      "Yesterday's real log",
+    );
+  });
+
+  it("writes nothing when the update rejects the latest state", async () => {
+    const { useDailyLog } = await freshHook();
+    const db = await import("@/lib/db");
+    const { result } = renderHook(() => useDailyLog(DATE, DEFAULT_MEALS));
+    await waitFor(() => expect(result.current.isHydrated).toBe(true));
+    const saveSpy = vi.spyOn(db, "saveDailyLog");
+
+    let applied: boolean | undefined;
+    await act(async () => {
+      applied = await result.current.commitToDay(
+        result.current.day,
+        () => null,
+      );
+    });
+    await pastDebounce();
+
+    expect(applied).toBe(false);
+    expect(saveSpy).not.toHaveBeenCalled();
+    expect(result.current.meals).toEqual(DEFAULT_MEALS);
+  });
+
+  it("drops an edit started by a user who has since signed out", async () => {
+    const { useDailyLog } = await freshHook();
+    const db = await import("@/lib/db");
+    auth.user = asUser("user-a");
+    const { result, rerender } = renderHook(() =>
+      useDailyLog(DATE, DEFAULT_MEALS),
+    );
+    await waitFor(() => expect(result.current.isHydrated).toBe(true));
+    const target = result.current.day;
+
+    await db.clearAllStores();
+    auth.user = null;
+    rerender();
+    await waitFor(() => expect(result.current.isHydrated).toBe(true));
+    const saveSpy = vi.spyOn(db, "saveDailyLog");
+
+    let applied: boolean | undefined;
+    await act(async () => {
+      applied = await result.current.commitToDay(target, () =>
+        dayWith("A's plan"),
+      );
+    });
+    await pastDebounce();
+
+    expect(applied).toBe(false);
+    expect(saveSpy).not.toHaveBeenCalled();
+    expect(await db.getDailyLog(DATE)).toBeNull();
   });
 });

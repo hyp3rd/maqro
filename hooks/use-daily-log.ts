@@ -2,31 +2,41 @@
 
 import type { Meal } from "@/components/macro/types";
 import { useUser } from "@/hooks/use-user";
+import { sameMeals } from "@/lib/daily-log-cas";
 import { getDailyLog, saveDailyLog } from "@/lib/db";
 import { enqueueMicronutrientEnrichment } from "@/lib/micronutrients/enqueue";
 import { reportStorageError, reportStorageOk } from "@/lib/storage-status";
 import { bumpPending } from "@/lib/sync-status";
 import { useDataRev } from "@/lib/sync/data-bus";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const WRITE_DEBOUNCE_MS = 500;
 
-/** Cheap structural compare of two days' meals. Used to ignore our own
- *  data-bus echo: `saveDailyLog` now notifies `dailyLogs` so other consumers
- *  refresh on a local log, which re-runs this hook's load effect — but the
- *  IDB re-read returns the value we just wrote, so we keep the existing
- *  `meals` reference (no state churn, no save→notify→reload→save loop). A
- *  genuine peer change has different content and still applies. Meal arrays
- *  are one day's worth, so JSON serialization is negligible. */
-function sameMeals(a: Meal[], b: Meal[]): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
-}
+/** The day (and signed-in identity) a deferred edit was started for. Capture
+ *  `day` when the user acts, hand it back to `commitToDay` once the async
+ *  work resolves. `epoch` changes whenever a signed-in user goes away (sign-
+ *  out or account switch), so an edit started by the previous account can
+ *  never land in the next one's store. */
+export type DayTarget = { readonly date: string; readonly epoch: number };
 
 export type DailyLogState = {
   date: string;
   meals: Meal[];
   setMeals: (next: Meal[]) => void;
   isHydrated: boolean;
+  /** The currently displayed day, for deferred edits (see `DayTarget`). */
+  day: DayTarget;
+  /** Apply a deferred edit to the day it was started for, against that
+   *  day's LATEST meals: in memory while the day is still displayed and
+   *  hydrated (keeps edits the write debounce hasn't flushed), otherwise
+   *  straight to its IndexedDB row. `update` returns `null` to reject the
+   *  latest state (e.g. it changed since the edit was computed). Resolves
+   *  `true` when the edit landed, `false` when it was rejected or the
+   *  signed-in identity changed. IndexedDB errors reject. */
+  commitToDay: (
+    target: DayTarget,
+    update: (latest: Meal[]) => Meal[] | null,
+  ) => Promise<boolean>;
 };
 
 /** Persists the meal log for a specific date in IndexedDB. The caller
@@ -81,13 +91,27 @@ export function useDailyLog(date: string, defaultMeals: Meal[]): DailyLogState {
   // changes, so the previous account's edits never unlock a write.
   const hasRealLocalData = useRef(false);
   const loadedEpoch = useRef(epoch);
-  // Read by the debounced save's enrichment call, which runs after the
-  // render that scheduled it. Synced in an effect because writing refs
-  // during render is disallowed.
-  const isSignedInRef = useRef(isSignedIn);
+  // Latest values for the deferred paths (the debounced save's enrichment
+  // call, `commitToDay`), which run after the render that scheduled them.
+  // Synced in an effect because writing refs during render is disallowed.
+  const latest = useRef({
+    date,
+    epoch,
+    meals,
+    isHydrated,
+    isSignedIn,
+    defaultMeals,
+  });
   useEffect(() => {
-    isSignedInRef.current = isSignedIn;
-  }, [isSignedIn]);
+    latest.current = {
+      date,
+      epoch,
+      meals,
+      isHydrated,
+      isSignedIn,
+      defaultMeals,
+    };
+  }, [date, epoch, meals, isHydrated, isSignedIn, defaultMeals]);
 
   useEffect(() => {
     if (date === "") return; // SSR snapshot; skip until hydrate.
@@ -127,7 +151,7 @@ export function useDailyLog(date: string, defaultMeals: Meal[]): DailyLogState {
       // Offer the day's foods for background micronutrient enrichment.
       // Fire-and-forget + Pro-gated server-side. Skip it entirely when
       // signed out — the route is auth-only and would just 401.
-      if (isSignedInRef.current) enqueueMicronutrientEnrichment(meals);
+      if (latest.current.isSignedIn) enqueueMicronutrientEnrichment(meals);
     }, WRITE_DEBOUNCE_MS);
     return () => window.clearTimeout(t);
   }, [meals, date, isHydrated]);
@@ -137,11 +161,40 @@ export function useDailyLog(date: string, defaultMeals: Meal[]): DailyLogState {
   // so the auto-save effect is unblocked even on a fresh session where
   // nothing was loaded from IDB. Internal hydration uses setMealsState
   // directly to avoid spurious pending signals.
-  function setMeals(next: Meal[]) {
+  const setMeals = useCallback((next: Meal[]) => {
     hasRealLocalData.current = true;
     bumpPending();
     setMealsState(next);
-  }
+  }, []);
 
-  return { date, meals, setMeals, isHydrated };
+  const day = useMemo<DayTarget>(() => ({ date, epoch }), [date, epoch]);
+
+  const commitToDay = useCallback(
+    async (
+      target: DayTarget,
+      update: (latestMeals: Meal[]) => Meal[] | null,
+    ): Promise<boolean> => {
+      const now = latest.current;
+      if (target.epoch !== now.epoch) return false;
+      if (target.date === now.date && now.isHydrated) {
+        const next = update(now.meals);
+        if (next === null) return false;
+        setMeals(next);
+        return true;
+      }
+      const log = await getDailyLog(target.date);
+      // The identity may have changed while the row was being read.
+      if (target.epoch !== latest.current.epoch) return false;
+      const next = update(log?.meals ?? now.defaultMeals);
+      if (next === null) return false;
+      // saveDailyLog's data-bus notify re-hydrates this hook if the user
+      // switches back to `target.date`.
+      await saveDailyLog(target.date, next);
+      bumpPending();
+      return true;
+    },
+    [setMeals],
+  );
+
+  return { date, meals, setMeals, isHydrated, day, commitToDay };
 }
