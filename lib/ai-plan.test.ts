@@ -2,6 +2,10 @@ import type { Food } from "@/components/macro/types";
 import {
   AI_MAX_BIAS_ITEMS,
   AI_MAX_CUSTOM_FOODS,
+  AI_MAX_LABEL_CHARS,
+  AI_MAX_NAME_CHARS,
+  AI_MAX_REFINEMENT_CHARS,
+  AI_MAX_UNIT_CHARS,
 } from "@/lib/ai/request-limits";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type AiPlanRequest, requestAiMealPlan } from "./ai-plan";
@@ -75,6 +79,53 @@ describe("requestAiMealPlan", () => {
     const sent = sentBody();
     expect(sent.recentlyEatenFoods).toHaveLength(AI_MAX_BIAS_ITEMS);
     expect(sent.pantryItems).toHaveLength(AI_MAX_BIAS_ITEMS);
+  });
+
+  it("fits long stored strings to the route's limits but sends slot names as-is", async () => {
+    const long = "x".repeat(250);
+    const plannedFood = {
+      id: 1,
+      name: long,
+      protein: 1,
+      carbs: 1,
+      fat: 1,
+      calories: 17,
+      portionSize: 100,
+    };
+
+    await requestAiMealPlan(
+      request({
+        mealNames: ["Breakfast", "Lunch"],
+        customFoods: [{ ...food(1), name: long, category: long }],
+        cuisinePreferences: [long],
+        allergies: [long],
+        dislikedFoods: [long],
+        refinement: "y".repeat(AI_MAX_REFINEMENT_CHARS + 50),
+        previousMeals: [{ id: 2, name: "Lunch", foods: [plannedFood] }],
+        targetMealName: "Lunch",
+        recentlyEatenFoods: [{ name: long, count: 3 }],
+        pantryItems: [{ name: long, quantity: 1, unit: long }],
+      }),
+    );
+
+    const sent = sentBody();
+    expect(sent.customFoods[0]?.name).toHaveLength(AI_MAX_NAME_CHARS);
+    expect(sent.customFoods[0]?.category).toHaveLength(AI_MAX_LABEL_CHARS);
+    expect(sent.cuisinePreferences[0]).toHaveLength(AI_MAX_LABEL_CHARS);
+    expect(sent.allergies[0]).toHaveLength(AI_MAX_LABEL_CHARS);
+    expect(sent.dislikedFoods[0]).toHaveLength(AI_MAX_LABEL_CHARS);
+    expect(sent.refinement).toHaveLength(AI_MAX_REFINEMENT_CHARS);
+    expect(sent.previousMeals?.[0]?.foods[0]?.name).toHaveLength(
+      AI_MAX_NAME_CHARS,
+    );
+    expect(sent.previousMeals?.[0]?.foods[0]?.portionSize).toBe(100);
+    expect(sent.recentlyEatenFoods?.[0]?.name).toHaveLength(AI_MAX_NAME_CHARS);
+    expect(sent.pantryItems?.[0]?.name).toHaveLength(AI_MAX_NAME_CHARS);
+    expect(sent.pantryItems?.[0]?.unit).toHaveLength(AI_MAX_UNIT_CHARS);
+    // The planner matches the returned meal to its slot by exact name.
+    expect(sent.mealNames).toEqual(["Breakfast", "Lunch"]);
+    expect(sent.previousMeals?.[0]?.name).toBe("Lunch");
+    expect(sent.targetMealName).toBe("Lunch");
   });
 
   it("leaves a request within the limits unchanged", async () => {

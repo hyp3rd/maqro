@@ -9,8 +9,9 @@
  *
  *  How they were sized: from what the app legitimately sends, with
  *  headroom, so normal use never trips them. Server schemas enforce them
- *  (lib/ai/request-schemas.ts and each route's BodySchema); clients that
- *  send open-ended lists clamp to them before sending.
+ *  (lib/ai/request-schemas.ts and each route's BodySchema); clients fit
+ *  open-ended lists and stored, unbounded strings (food names, tags,
+ *  pantry items) to them before sending (lib/ai/request-payload.ts).
  *
  *  Plain constants, no zod: client components import this module. */
 

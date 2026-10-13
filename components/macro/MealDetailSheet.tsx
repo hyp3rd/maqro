@@ -8,6 +8,8 @@ import type {
 } from "@/components/macro/types";
 import { useAiUsage } from "@/hooks/use-ai-usage";
 import { effectiveAge } from "@/lib/age";
+import { AI_MAX_NAME_CHARS } from "@/lib/ai/request-limits";
+import { clampAiText } from "@/lib/ai/request-payload";
 import { clientFetch } from "@/lib/auth/client-fetch";
 import { FEATURES } from "@/lib/billing/tiers";
 import { getProfile, listMicronutrientProfiles } from "@/lib/db";
@@ -524,8 +526,10 @@ function AiAdvice({
             fiber: fiberGrams,
             saturatedFat: breakdown.saturatedFat,
             addedSugars: breakdown.addedSugars,
+            // Logged names are unbounded (OFF names are stored verbatim);
+            // fit them to the route's limit so a long one can't 400.
             foods: meal.foods.map((f) => ({
-              name: f.name,
+              name: clampAiText(f.name, AI_MAX_NAME_CHARS),
               grams: f.portionSize,
             })),
             microPctOfTarget: Object.keys(microPctOfTarget).length

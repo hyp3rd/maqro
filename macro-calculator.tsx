@@ -63,6 +63,7 @@ import { useUser } from "./hooks/use-user";
 import { addedFoodMessage } from "./lib/add-food-constants";
 import { requestAiMealPlan } from "./lib/ai-plan";
 import type { CoherenceIssue } from "./lib/ai/plan-coherence";
+import { toAiCustomFoods } from "./lib/ai/request-payload";
 import { clientFetch } from "./lib/auth/client-fetch";
 import { FEATURES } from "./lib/billing/tiers";
 import {
@@ -916,8 +917,8 @@ const MacroCalculator = () => {
         throw new Error(dlError?.message ?? "Photo download failed.");
       }
       const base64 = await blobToBase64(blob);
-      // Load customs on demand - same pattern the in-sheet identify
-      // flow uses; keeps the wire shape consistent.
+      // Load customs on demand - same pattern and wire shape (fitted to
+      // the route's size limits) as the in-sheet identify flow.
       const { listCustomFoods: listFoods } = await import("./lib/db");
       const customs = await listFoods().catch(() => []);
       const aiRes = await clientFetch("/api/identify-meal", {
@@ -927,17 +928,7 @@ const MacroCalculator = () => {
           imageBase64: base64,
           mediaType: "image/jpeg",
           dietPreference: personalInfo.dietPreference,
-          customFoods: customs.map((c) => ({
-            name: c.name,
-            protein: c.protein,
-            carbs: c.carbs,
-            fat: c.fat,
-            calories: c.calories,
-            category: c.category,
-            subCategory: c.subCategory,
-            brand: c.brand,
-            dietKind: c.dietKind,
-          })),
+          customFoods: toAiCustomFoods(customs),
         }),
       });
       if (!aiRes.ok) {

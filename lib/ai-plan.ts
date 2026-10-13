@@ -3,9 +3,17 @@
 import type { DietPreference, Food, Meal } from "@/components/macro/types";
 import type { CoherenceIssue } from "@/lib/ai/plan-coherence";
 import {
-  AI_MAX_BIAS_ITEMS,
   AI_MAX_CUSTOM_FOODS,
+  AI_MAX_FOODS_PER_MEAL,
+  AI_MAX_REFINEMENT_CHARS,
 } from "@/lib/ai/request-limits";
+import {
+  clampAiFoodLabels,
+  clampAiText,
+  toAiPantryBias,
+  toAiPreferenceTags,
+  toAiRecentlyEaten,
+} from "@/lib/ai/request-payload";
 import { clientFetch } from "@/lib/auth/client-fetch";
 import type { MarketCode } from "@/lib/markets";
 
@@ -67,23 +75,45 @@ export type AiPlanResult =
   | { kind: "cap-reached"; used: number; cap: number } // 402 - free-tier cap hit
   | { kind: "error"; message: string };
 
+/** The request as /api/meal-plan accepts it: the user's stored data fitted
+ * to the route's size limits (lib/ai/request-limits.ts) so a large
+ * library or a long food name never turns into a 400. Lists are clamped
+ * (callers pass custom foods newest-first, `listCustomFoods` order, so the
+ * newest survive; the route only renders the first 30 bias items anyway)
+ * and strings that come from unbounded stored data are truncated
+ * (lib/ai/request-payload.ts). Meal-slot names are app-defined and sent
+ * as-is: the caller matches the returned meal to its slot by name. */
+export function toAiPlanPayload(req: AiPlanRequest): AiPlanRequest {
+  return {
+    ...req,
+    customFoods: req.customFoods
+      .slice(0, AI_MAX_CUSTOM_FOODS)
+      .map(clampAiFoodLabels),
+    cuisinePreferences: toAiPreferenceTags(req.cuisinePreferences),
+    allergies: toAiPreferenceTags(req.allergies),
+    dislikedFoods: toAiPreferenceTags(req.dislikedFoods),
+    // A coherence-issue refinement embeds food names, which can be long.
+    refinement:
+      req.refinement === undefined
+        ? undefined
+        : clampAiText(req.refinement, AI_MAX_REFINEMENT_CHARS),
+    previousMeals: req.previousMeals?.map((m) => ({
+      ...m,
+      foods: m.foods.slice(0, AI_MAX_FOODS_PER_MEAL).map(clampAiFoodLabels),
+    })),
+    recentlyEatenFoods:
+      req.recentlyEatenFoods && toAiRecentlyEaten(req.recentlyEatenFoods),
+    pantryItems: req.pantryItems && toAiPantryBias(req.pantryItems),
+  };
+}
+
 /** POST to /api/meal-plan. Network and non-2xx responses are mapped to
  * discriminated `AiPlanResult` kinds so callers can match instead of
- * branching on HTTP status codes.
- *
- * The open-ended lists are clamped to the route's size limits
- * (lib/ai/request-limits.ts) so a large library never turns into a 400.
- * Callers pass custom foods newest-first (`listCustomFoods` order), so the
- * newest survive; the route only renders the first 30 bias items anyway. */
+ * branching on HTTP status codes. The body is `toAiPlanPayload(req)`. */
 export async function requestAiMealPlan(
   req: AiPlanRequest,
 ): Promise<AiPlanResult> {
-  const payload: AiPlanRequest = {
-    ...req,
-    customFoods: req.customFoods.slice(0, AI_MAX_CUSTOM_FOODS),
-    recentlyEatenFoods: req.recentlyEatenFoods?.slice(0, AI_MAX_BIAS_ITEMS),
-    pantryItems: req.pantryItems?.slice(0, AI_MAX_BIAS_ITEMS),
-  };
+  const payload = toAiPlanPayload(req);
   let res: Response;
   try {
     res = await clientFetch("/api/meal-plan", {

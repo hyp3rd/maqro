@@ -1,8 +1,10 @@
+import { toAiPlanPayload } from "@/lib/ai-plan";
 import { REFINERS } from "@/lib/ai/refiners";
 import {
   AI_MAX_IMAGE_BYTES,
   AI_MAX_JSON_BODY_BYTES,
 } from "@/lib/ai/request-limits";
+import { toAiCustomFoods } from "@/lib/ai/request-payload";
 import { checkAndIncrementAiUsage } from "@/lib/billing/usage";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MICRONUTRIENT_KEYS } from "@maqro/core/rda";
@@ -466,6 +468,77 @@ describe("AI routes reject oversized prompt input before metering or calling the
     expect(mockCreate).not.toHaveBeenCalled();
     // A rejected request is never charged a credit.
     expect(checkAndIncrementAiUsage).not.toHaveBeenCalled();
+  });
+});
+
+describe("AI routes accept stored data with names longer than the caps, as the clients send it", () => {
+  // Custom-food and logged-food names have no length bound where they are
+  // stored (OFF names are copied verbatim), so the clients fit them to the
+  // caps (lib/ai/request-payload.ts). Each case builds the body with the
+  // same builder the client uses and asserts the route accepts it and
+  // debits exactly one credit.
+  const longName = `${s(240)} chicken breast`;
+  const storedCustoms = [
+    {
+      id: "c1",
+      createdAt: 1,
+      ...food(longName),
+      category: s(150),
+      brand: s(300),
+    },
+  ];
+  const cases: Array<[string, Handler, string, unknown]> = [
+    [
+      "identify-meal",
+      identifyMeal,
+      "/api/identify-meal",
+      { ...IMAGE, customFoods: toAiCustomFoods(storedCustoms) },
+    ],
+    [
+      "voice-log",
+      voiceLog,
+      "/api/voice-log",
+      { transcript: "an apple", customFoods: toAiCustomFoods(storedCustoms) },
+    ],
+    [
+      "recipes/generate",
+      recipesGenerate,
+      "/api/recipes/generate",
+      {
+        dietPreference: "omnivore",
+        customFoods: toAiCustomFoods(storedCustoms),
+      },
+    ],
+    [
+      "meal-plan",
+      mealPlan,
+      "/api/meal-plan",
+      toAiPlanPayload({
+        ...MEAL_PLAN,
+        dietPreference: "omnivore",
+        customFoods: storedCustoms,
+        cuisinePreferences: [],
+        allergies: [s(150)],
+        dislikedFoods: [],
+        refinement: "Swap the chicken",
+        previousMeals: [
+          {
+            id: 2,
+            name: "Lunch",
+            foods: [{ ...foodItem(1, longName), portionSize: 150 }],
+          },
+        ],
+        recentlyEatenFoods: [{ name: longName, count: 4 }],
+        pantryItems: [{ name: longName, quantity: 1, unit: s(60) }],
+      }),
+    ],
+  ];
+
+  it.each(cases)("%s", async (_label, handler, path, body) => {
+    const res = await handler(post(path, body));
+    expect([400, 413]).not.toContain(res.status);
+    expect(checkAndIncrementAiUsage).toHaveBeenCalledTimes(1);
+    expect(mockCreate).toHaveBeenCalled();
   });
 });
 
