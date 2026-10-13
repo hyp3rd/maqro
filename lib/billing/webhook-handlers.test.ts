@@ -764,9 +764,9 @@ describe("profile writes must land (no silent 0-row or failed writes)", () => {
 
 describe("subscription events for a customer the profile doesn't know yet", () => {
   it("links the customer through subscription.metadata.user_id when the profile has none", async () => {
-    // Checkout never persisted the customer id before 0074 (its upsert
-    // always failed), so these events found no profile. The subscription
-    // carries our user_id in metadata (set at checkout).
+    // Checkout never persisted the customer id before its checked UPDATE
+    // (the old upsert always failed), so these events found no profile.
+    // The subscription carries our user_id in metadata (set at checkout).
     const { admin, spies } = makeAdmin(
       { data: null, error: null },
       {
@@ -802,6 +802,47 @@ describe("subscription events for a customer the profile doesn't know yet", () =
       is_premium: true,
     });
     // The link only lands on a profile that still has no customer.
+    expect(spies.updateFilters).toContainEqual([
+      "is",
+      "stripe_customer_id",
+      null,
+    ]);
+  });
+
+  it("fails the event when a concurrent write links another customer first", async () => {
+    // The profile had no customer when read, but the conditional link
+    // (`stripe_customer_id IS NULL`) matched nothing by the time it ran.
+    // That must surface as a replayable error, not a success.
+    const { admin, spies } = makeAdmin(
+      { data: null, error: null },
+      {
+        byUser: {
+          data: {
+            user_id: "user-1",
+            stripe_customer_id: null,
+            stripe_subscription_id: null,
+            cancellation_email_sent_at: null,
+          },
+          error: null,
+        },
+        update: { data: [], error: null },
+      },
+    );
+    const { stripe } = makeStripe();
+
+    const outcome = await dispatchStripeEvent(
+      {
+        type: "customer.subscription.updated",
+        data: {
+          object: subscriptionObject({ metadata: { user_id: "user-1" } }),
+        },
+      } as never,
+      admin,
+      stripe,
+    );
+
+    expect(outcome.status).toBe("error");
+    expect(spies.update).toHaveBeenCalledTimes(1);
     expect(spies.updateFilters).toContainEqual([
       "is",
       "stripe_customer_id",
