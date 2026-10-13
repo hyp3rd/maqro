@@ -1,9 +1,14 @@
 import { REFINERS } from "@/lib/ai/refiners";
-import { AI_MAX_JSON_BODY_BYTES } from "@/lib/ai/request-limits";
+import {
+  AI_MAX_IMAGE_BYTES,
+  AI_MAX_JSON_BODY_BYTES,
+} from "@/lib/ai/request-limits";
+import { checkAndIncrementAiUsage } from "@/lib/billing/usage";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MICRONUTRIENT_KEYS } from "@maqro/core/rda";
 import { CUISINES } from "@maqro/core/types";
 import { POST as identifyMeal } from "./identify-meal/route";
+import { POST as identifyPantry } from "./identify-pantry/route";
 import { POST as mealInsights } from "./meal-insights/route";
 import { POST as mealPlan } from "./meal-plan/route";
 import { POST as recipesGenerate } from "./recipes/generate/route";
@@ -15,10 +20,11 @@ import { POST as voiceLog } from "./voice-log/route";
 /** Request-size limits on every AI route (lib/ai/request-limits.ts).
  *
  *  The monthly AI quota counts requests, not tokens, so each route must
- *  refuse an oversized prompt input BEFORE the model is called. Every
- *  rejection case asserts the Anthropic SDK was never reached; the
- *  acceptance cases build the largest payloads the app legitimately sends
- *  and assert validation lets them through to the model. */
+ *  refuse an oversized prompt input BEFORE the model is called, and
+ *  before the quota is debited so a rejected request costs no credit.
+ *  Every rejection case asserts neither the Anthropic SDK nor the meter
+ *  was reached; the acceptance cases build the largest payloads the app
+ *  legitimately sends and assert validation lets them through. */
 
 const { mockCreate } = vi.hoisted(() => ({ mockCreate: vi.fn() }));
 
@@ -83,6 +89,9 @@ function post(path: string, body: unknown): Request {
 }
 
 const s = (n: number) => "x".repeat(n);
+/** A base64 string whose decoded size is just over AI_MAX_IMAGE_BYTES but
+ *  whose request body is still under the vision routes' byte cap. */
+const OVERSIZED_IMAGE_BASE64_CHARS = 4 * Math.ceil(AI_MAX_IMAGE_BYTES / 3) + 8;
 const food = (name: string) => ({
   name,
   protein: 10,
@@ -132,13 +141,14 @@ const INSIGHT_MEAL = {
 };
 
 beforeEach(() => {
+  vi.mocked(checkAndIncrementAiUsage).mockClear();
   mockCreate.mockReset();
   // Acceptance cases only need to prove validation passed; failing the
   // model call keeps every route on its short error path.
   mockCreate.mockRejectedValue(new Error("model unavailable in test"));
 });
 
-describe("AI routes reject oversized prompt input before calling the model", () => {
+describe("AI routes reject oversized prompt input before metering or calling the model", () => {
   const cases: Array<[string, Handler, string, unknown, number]> = [
     // meal-plan
     [
@@ -298,6 +308,28 @@ describe("AI routes reject oversized prompt input before calling the model", () 
       { ...IMAGE, customFoods: [food(s(201))] },
       400,
     ],
+    [
+      "identify-meal: image over the decoded-size cap",
+      identifyMeal,
+      "/api/identify-meal",
+      { ...IMAGE, imageBase64: s(OVERSIZED_IMAGE_BASE64_CHARS) },
+      413,
+    ],
+    // identify-pantry
+    [
+      "identify-pantry: unsupported media type",
+      identifyPantry,
+      "/api/identify-pantry",
+      { ...IMAGE, mediaType: "image/gif" },
+      400,
+    ],
+    [
+      "identify-pantry: image over the decoded-size cap",
+      identifyPantry,
+      "/api/identify-pantry",
+      { ...IMAGE, imageBase64: s(OVERSIZED_IMAGE_BASE64_CHARS) },
+      413,
+    ],
     // voice-log
     [
       "voice-log: too many custom foods",
@@ -312,6 +344,20 @@ describe("AI routes reject oversized prompt input before calling the model", () 
       "/api/voice-log",
       { transcript: "an apple", customFoods: [food(s(201))] },
       400,
+    ],
+    [
+      "voice-log: whitespace-only transcript",
+      voiceLog,
+      "/api/voice-log",
+      { transcript: "   " },
+      400,
+    ],
+    [
+      "voice-log: transcript over the cap",
+      voiceLog,
+      "/api/voice-log",
+      { transcript: s(1001) },
+      413,
     ],
     [
       "voice-log: body over the byte cap",
@@ -418,6 +464,8 @@ describe("AI routes reject oversized prompt input before calling the model", () 
     const res = await handler(post(path, body));
     expect(res.status).toBe(status);
     expect(mockCreate).not.toHaveBeenCalled();
+    // A rejected request is never charged a credit.
+    expect(checkAndIncrementAiUsage).not.toHaveBeenCalled();
   });
 });
 

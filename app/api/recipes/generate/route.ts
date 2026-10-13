@@ -99,21 +99,18 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  // 2b. Free-tier monthly cap (shared across all three AI routes).
-  //     402 short-circuits before the Anthropic call.
-  const usage = await checkAndIncrementAiUsage(supabase, user.id);
-  if (!usage.allowed) return aiUsageDeniedResponse(usage);
-
   // 3. Validate body. The schema enforces the diet enum + array
   //    shapes + hint length; the cast re-attaches the project-wide
-  //    Food type for downstream catalog helpers.
+  //    Food type for downstream catalog helpers. Runs BEFORE metering
+  //    so a rejected body (400/413) is never charged a credit.
   const parsed = await parseBody(req, BodySchema, {
     maxBytes: AI_MAX_JSON_BODY_BYTES,
   });
   if (!parsed.ok) return parsed.response;
   const body = parsed.data as BodyForRoute;
 
-  // 4. Pre-build the diet-filtered seed catalog.
+  // 4. Pre-build the diet-filtered seed catalog. Also ahead of metering:
+  //    an empty catalog is a 400, not a model call.
   const seedCatalog = buildSeedCatalog(body.dietPreference, body.customFoods);
   if (!seedCatalog) {
     return NextResponse.json(
@@ -123,6 +120,12 @@ export async function POST(req: Request): Promise<NextResponse> {
       { status: 400 },
     );
   }
+
+  // 4b. Monthly AI quota (shared by every metered AI route): debited
+  //     atomically after every request-level rejection and before the
+  //     Anthropic call. 402 at the cap, 503 when metering is unavailable.
+  const usage = await checkAndIncrementAiUsage(supabase, user.id);
+  if (!usage.allowed) return aiUsageDeniedResponse(usage);
 
   // 5. Build prompt context.
   const cuisines = (body.cuisinePreferences ?? []).filter(Boolean);

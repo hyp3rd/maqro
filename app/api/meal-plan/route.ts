@@ -185,17 +185,12 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  // 2b. Free-tier monthly cap. Premium users skip the meter; free
-  //     users get FREE_AI_CAP_PER_MONTH calls across all three AI
-  //     routes combined. Increment happens here so a 402 short-
-  //     circuits before we burn any Anthropic budget.
-  const usage = await checkAndIncrementAiUsage(supabase, user.id);
-  if (!usage.allowed) return aiUsageDeniedResponse(usage);
-
   // 3. Validate body. The schema enforces shape + numeric ranges +
   //    the diet enum; the cast to `BodyForRoute` re-attaches the
   //    richer Food/FoodItem TypeScript types so downstream catalog /
   //    plan helpers stay type-checked. Runtime guard, static type.
+  //    Runs BEFORE metering so a rejected body (400/413) is never
+  //    charged a credit.
   const parsed = await parseBody(req, BodySchema, {
     maxBytes: AI_MAX_JSON_BODY_BYTES,
   });
@@ -203,7 +198,8 @@ export async function POST(req: Request): Promise<NextResponse> {
   const body = parsed.data as BodyForRoute;
 
   // 4. Pre-build the diet-filtered seed catalog. The AI sees this in the
-  //    system prompt + can expand it via search_open_food_facts.
+  //    system prompt + can expand it via search_open_food_facts. Also
+  //    ahead of metering: an empty catalog is a 400, not a model call.
   const seedCatalog = buildSeedCatalog(body.dietPreference, body.customFoods);
   if (!seedCatalog) {
     return NextResponse.json(
@@ -213,6 +209,13 @@ export async function POST(req: Request): Promise<NextResponse> {
       { status: 400 },
     );
   }
+
+  // 4b. Monthly AI quota, shared by every metered AI route. Premium
+  //     users skip the meter; capped users are debited atomically here,
+  //     after every request-level rejection and before any Anthropic
+  //     spend: 402 at the cap, 503 when metering itself is unavailable.
+  const usage = await checkAndIncrementAiUsage(supabase, user.id);
+  if (!usage.allowed) return aiUsageDeniedResponse(usage);
 
   // 5. Build the system prompt + agent instructions.
   const cuisines = (body.cuisinePreferences ?? []).filter(Boolean);

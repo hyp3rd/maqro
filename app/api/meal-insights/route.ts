@@ -103,16 +103,19 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  // 4. Free-tier monthly cap (shared across all AI routes).
-  const usage = await checkAndIncrementAiUsage(supabase, user.id);
-  if (!usage.allowed) return aiUsageDeniedResponse(usage);
-
-  // 5. Validate body.
+  // 4. Validate body. Runs BEFORE metering so a rejected body (400/413)
+  //    is never charged a credit.
   const parsed = await parseBody(req, BodySchema, {
     maxBytes: AI_MAX_JSON_BODY_BYTES,
   });
   if (!parsed.ok) return parsed.response;
   const { meal, flags } = parsed.data;
+
+  // 5. Monthly AI quota (shared by every metered AI route): debited
+  //    atomically after every request-level rejection and before the
+  //    Anthropic call. 402 at the cap, 503 when metering is unavailable.
+  const usage = await checkAndIncrementAiUsage(supabase, user.id);
+  if (!usage.allowed) return aiUsageDeniedResponse(usage);
 
   // 6. Build the prompt. The numbers are the grounding; the flags are
   //    the read; the ask is for actionable swaps, not a recap.

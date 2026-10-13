@@ -141,14 +141,11 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  // 2b. Free-tier monthly cap (shared across all three AI routes).
-  //     402 short-circuits before image decode / Anthropic call.
-  const usage = await checkAndIncrementAiUsage(supabase, user.id);
-  if (!usage.allowed) return aiUsageDeniedResponse(usage);
-
   // 3. Validate body. Schema enforces shape, MIME enum, and the
   //    presence of the base64 string; the image-size cap below stays
   //    inline because it depends on the runtime AI_MAX_IMAGE_BYTES.
+  //    Runs BEFORE metering so a rejected body (400/413) is never
+  //    charged a credit.
   const parsed = await parseBody(req, BodySchema, {
     maxBytes: AI_MAX_IMAGE_BODY_BYTES,
   });
@@ -164,6 +161,12 @@ export async function POST(req: Request): Promise<NextResponse> {
       { status: 413 },
     );
   }
+
+  // 3b. Monthly AI quota (shared by every metered AI route): debited
+  //     atomically after every request-level rejection and before the
+  //     Anthropic call. 402 at the cap, 503 when metering is unavailable.
+  const usage = await checkAndIncrementAiUsage(supabase, user.id);
+  if (!usage.allowed) return aiUsageDeniedResponse(usage);
 
   // 4. Build the catalog. NB: no diet filter here - the user is
   //    identifying what's already on the plate, not asking for

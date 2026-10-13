@@ -110,14 +110,11 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  // 2b. Free-tier monthly cap (shared across all AI routes).
-  const usage = await checkAndIncrementAiUsage(supabase, user.id);
-  if (!usage.allowed) return aiUsageDeniedResponse(usage);
-
   // 3. Validate body. Schema guarantees `transcript` is a string;
   //    we still trim + non-empty-check inline because the project
   //    treats whitespace-only as "missing", and Zod's `.min(1)`
-  //    couldn't express that without a custom refinement.
+  //    couldn't express that without a custom refinement. Runs BEFORE
+  //    metering so a rejected body (400/413) is never charged a credit.
   const parsed = await parseBody(req, BodySchema, {
     maxBytes: AI_MAX_JSON_BODY_BYTES,
   });
@@ -135,6 +132,12 @@ export async function POST(req: Request): Promise<NextResponse> {
       { status: 413 },
     );
   }
+
+  // 3b. Monthly AI quota (shared by every metered AI route): debited
+  //     atomically after every request-level rejection and before the
+  //     Anthropic call. 402 at the cap, 503 when metering is unavailable.
+  const usage = await checkAndIncrementAiUsage(supabase, user.id);
+  if (!usage.allowed) return aiUsageDeniedResponse(usage);
 
   // 4. Build the catalog.
   const catalog: Food[] = [...foodDatabase, ...(body.customFoods ?? [])];

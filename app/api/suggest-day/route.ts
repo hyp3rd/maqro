@@ -84,17 +84,19 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  // 2b. Free-tier monthly cap (shared across all AI routes). 402 short-circuits
-  //     before the Anthropic call.
-  const usage = await checkAndIncrementAiUsage(supabase, user.id);
-  if (!usage.allowed) return aiUsageDeniedResponse(usage);
-
-  // 3. Validate body.
+  // 3. Validate body. Runs BEFORE metering so a rejected body (400/413)
+  //    is never charged a credit.
   const parsed = await parseBody(req, BodySchema, {
     maxBytes: AI_MAX_JSON_BODY_BYTES,
   });
   if (!parsed.ok) return parsed.response;
   const { targets, mealSlots, recipes } = parsed.data;
+
+  // 3b. Monthly AI quota (shared by every metered AI route): debited
+  //     atomically after every request-level rejection and before the
+  //     Anthropic call. 402 at the cap, 503 when metering is unavailable.
+  const usage = await checkAndIncrementAiUsage(supabase, user.id);
+  if (!usage.allowed) return aiUsageDeniedResponse(usage);
 
   const recipeIds = new Set(recipes.map((r) => r.id));
   const slotSet = new Set(mealSlots);
