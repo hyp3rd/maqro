@@ -86,7 +86,10 @@ export async function POST(): Promise<NextResponse> {
     callerRoute: "/api/delete-account",
   });
   if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: 500 });
+    return NextResponse.json(
+      { error: result.error },
+      { status: result.status },
+    );
   }
 
   // Confirmation email. Best-effort, sent AFTER the destructive op
