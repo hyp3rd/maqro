@@ -1,7 +1,7 @@
 "use client";
 
+import { AccountMismatchDialog } from "@/components/auth/AccountMismatchDialog";
 import { TotpCodeInput } from "@/components/auth/TotpCodeInput";
-import { UnsyncedChangesDialog } from "@/components/auth/UnsyncedChangesDialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -21,8 +21,6 @@ import { signOutAndClearLocal } from "@/lib/auth/sign-out";
 import { signOutRisk } from "@/lib/auth/sign-out-guard";
 import { usePasskeyChallenge } from "@/lib/auth/use-passkey-challenge";
 import { useTotpChallenge } from "@/lib/auth/use-totp-challenge";
-import { clearAllStores } from "@/lib/db";
-import { reportStorageError } from "@/lib/storage-status";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { getSyncSnapshot } from "@/lib/sync-status";
 import { useEffect, useRef, useState } from "react";
@@ -56,10 +54,9 @@ export function MfaChallengeDialog() {
   // instead" button. The dialog still requires a verified TOTP factor to open
   // (that's who the gate fires for); the passkey is an extra one-tap option.
   const [hasPasskey, setHasPasskey] = useState(false);
-  // Wrong-account bail-out with unsynced local changes: how many, while the
-  // user decides whether to keep or discard them (null = not asking).
-  const [bailAtRisk, setBailAtRisk] = useState<number | null>(null);
-  const [bailBusy, setBailBusy] = useState(false);
+  // Wrong-account bail-out that discarded unsynced local changes: how many,
+  // while the user acknowledges it (null = nothing to tell).
+  const [bailDiscarded, setBailDiscarded] = useState<number | null>(null);
 
   useEffect(() => {
     return subscribeMfaChallenge(async (resolver) => {
@@ -113,46 +110,30 @@ export function MfaChallengeDialog() {
     resolverRef.current?.reject("failed");
     resolverRef.current = null;
     setOpen(false);
-    const supabase = getSupabaseBrowser();
-    // No pre-sign-out sync here: the session now belongs to the other account,
-    // so syncing would push this device's data into it.
+    // Count what is about to be discarded, for the notice below.
     const risk = signOutRisk(getSyncSnapshot());
-    if (!risk.atRisk) {
-      if (supabase) await signOutAndClearLocal(supabase);
-      window.location.assign("/login");
+    // Wipe and end the wrong session together, unconditionally. The original
+    // account's unsynced changes cannot be kept: its session is gone (no pre-
+    // sign-out sync is possible, and syncing now would push into the other
+    // account), and local data has no owner, so whoever signs in next, most
+    // likely the account whose passkey was just used, would adopt and upload
+    // it. Asking first would only leave that data behind if the tab closed.
+    const supabase = getSupabaseBrowser();
+    if (supabase) await signOutAndClearLocal(supabase);
+    if (risk.atRisk) {
+      // Tell the user what was lost before leaving; acknowledging navigates.
+      setBailDiscarded(risk.count);
       return;
     }
-    // Unsynced changes of the original account are still on this device.
-    // The wrong-identity session must end NOW either way (it can't be kept
-    // while the user decides), so sign it out first and only then ask whether
-    // to keep the local data for the original account or discard it.
-    if (supabase) await supabase.auth.signOut();
-    setBailAtRisk(risk.count);
-  }
-
-  /** "Keep changes": leave IndexedDB as is so signing back in to the
-   *  original account syncs them. The session is already gone. */
-  function keepBailChanges() {
-    setBailAtRisk(null);
-    window.location.assign("/login");
-  }
-
-  /** "Discard changes": the wipe `signOutAndClearLocal` would have done. */
-  async function discardBailChanges() {
-    setBailBusy(true);
-    await clearAllStores().catch(reportStorageError);
     window.location.assign("/login");
   }
 
   return (
     <>
-      <UnsyncedChangesDialog
-        open={bailAtRisk !== null}
-        count={bailAtRisk ?? 0}
-        reason="account-mismatch"
-        busy={bailBusy}
-        onCancel={keepBailChanges}
-        onConfirm={() => void discardBailChanges()}
+      <AccountMismatchDialog
+        open={bailDiscarded !== null}
+        count={bailDiscarded ?? 0}
+        onAcknowledge={() => window.location.assign("/login")}
       />
       <Dialog
         open={open}

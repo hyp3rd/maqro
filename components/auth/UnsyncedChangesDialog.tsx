@@ -16,33 +16,25 @@ export type UnsyncedChangesDialogProps = {
   open: boolean;
   /** Unsynced changes at risk; `0` means "unknown, but not verified synced". */
   count: number;
-  /** Why the dialog is shown:
-   *   - `sign-out`: the user asked to sign out; cancelling keeps them signed
-   *     in, confirming signs out and wipes this device's data.
-   *   - `account-mismatch`: the session was already ended (a passkey step-up
-   *     resolved to a different account); cancelling keeps the local data,
-   *     confirming discards it. */
-  reason: "sign-out" | "account-mismatch";
   /** Disables both actions while the confirmed action runs. */
   busy: boolean;
   onCancel: () => void;
   onConfirm: () => void;
 };
 
-/** Warns before an action wipes local changes that never reached the server.
- *  Shared by every sign-out entry point (see `useSafeSignOut`) and the MFA
- *  dialog's wrong-account bail-out. Dismissing (Escape / overlay) is always
+/** Warns before signing out wipes local changes that never reached the
+ *  server. Shared by every user-initiated sign-out entry point (see
+ *  `useSafeSignOut`): cancelling keeps the user signed in, confirming signs
+ *  out and wipes this device's data. Dismissing (Escape / overlay) is always
  *  the non-destructive choice. */
 export function UnsyncedChangesDialog({
   open,
   count,
-  reason,
   busy,
   onCancel,
   onConfirm,
 }: UnsyncedChangesDialogProps) {
   const t = useTranslations("signOutGuard");
-  const signOut = reason === "sign-out";
   return (
     <AlertDialog
       open={open}
@@ -53,17 +45,14 @@ export function UnsyncedChangesDialog({
     >
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>
-            {signOut ? t("signOut.title") : t("accountMismatch.title")}
-          </AlertDialogTitle>
+          <AlertDialogTitle>{t("signOut.title")}</AlertDialogTitle>
           <AlertDialogDescription>
-            {t("changes", { count })}{" "}
-            {signOut ? t("signOut.body") : t("accountMismatch.body")}
+            {t("changes", { count })} {t("signOut.body")}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={busy}>
-            {signOut ? t("signOut.cancel") : t("accountMismatch.keep")}
+            {t("signOut.cancel")}
           </AlertDialogCancel>
           <AlertDialogAction
             onClick={(e) => {
@@ -75,7 +64,7 @@ export function UnsyncedChangesDialog({
             disabled={busy}
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
           >
-            {signOut ? t("signOut.confirm") : t("accountMismatch.discard")}
+            {t("signOut.confirm")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
