@@ -7,7 +7,6 @@ import {
   applyServerBodyMeasurement,
   applyServerCustomFood,
   applyServerDailyLog,
-  applyServerDeletion,
   applyServerFastSession,
   applyServerFavoriteFood,
   applyServerFavoriteStore,
@@ -25,6 +24,7 @@ import {
   clearAllStores,
   clearDeletion,
   getProfileRecord,
+  isDirtyRecord,
   listBloodPressure,
   listBodyMeasurements,
   listCustomFoods,
@@ -43,44 +43,16 @@ import {
   listSupplements,
   listWaterIntake,
   listWeightEntries,
-  markBloodPressureSynced,
-  markBodyMeasurementSynced,
-  markCustomFoodSynced,
-  markFastSessionSynced,
-  markFavoriteFoodSynced,
-  markFavoriteStoreSynced,
-  markDailyLogSynced,
-  markMealScheduleSynced,
-  markMealTemplateSynced,
-  markPantryItemSynced,
-  markPantryNotificationSynced,
   markProfileSynced,
-  markRecipeSynced,
-  markSupplementIntakeSynced,
-  markSupplementSynced,
-  markWaterIntakeSynced,
-  markWeightEntrySynced,
-  upsertCustomFood,
-  upsertMealSchedule,
-  upsertMealTemplate,
-  upsertPantryItem,
-  upsertPantryNotification,
-  upsertRecipe,
-  upsertSupplement,
-  type BloodPressure,
-  type BodyMeasurement,
-  type CustomFood,
-  type DailyLog,
+  markRecordSynced,
+  rebaseDirtyProfile,
+  rebaseDirtyRecord,
+  reconcileServerAbsences,
+  reassignLocalRecordId,
+  type ApplyServerOutcome,
   type DeletionRecord,
-  type FastSession,
-  type MealSchedule,
-  type MealTemplate,
-  type PantryItem,
-  type PantryNotification,
-  type Supplement,
-  type SupplementIntake,
-  type WaterIntake,
-  type WeightEntry,
+  type SyncStoreName,
+  type Versioned,
 } from "@/lib/db";
 import {
   getSyncStatus,
@@ -201,6 +173,8 @@ export type SyncResult = {
   deletionsPushed: number;
 };
 
+type SyncCountKey = keyof SyncResult["pushed"];
+
 const ZERO_COUNTS = {
   profile: 0,
   dailyLogs: 0,
@@ -222,21 +196,90 @@ const ZERO_COUNTS = {
   micronutrientProfiles: 0,
 };
 
+/** Thrown at the END of a sync run when one or more steps failed. Every
+ *  table's pull and push — and every row within a push — runs in
+ *  isolation: a server-rejected row (a CHECK violation, say) or a failed
+ *  table request no longer aborts the rest of the run. The failures are
+ *  collected and surfaced together here, so the status pill still reports
+ *  the error while everything that *could* sync did. The rejected rows
+ *  stay dirty and are retried on the next sync. */
+export class SyncIncompleteError extends Error {
+  readonly errors: readonly unknown[];
+
+  constructor(errors: readonly unknown[]) {
+    const messages = errors.map(errorMessage);
+    super(
+      messages.length === 1
+        ? messages[0]
+        : `${messages.length} sync steps failed: ${messages.join("; ")}`,
+    );
+    this.name = "SyncIncompleteError";
+    this.errors = errors;
+  }
+}
+
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (
+    err &&
+    typeof err === "object" &&
+    "message" in err &&
+    typeof (err as { message: unknown }).message === "string"
+  ) {
+    return (err as { message: string }).message;
+  }
+  return String(err);
+}
+
+/** Run one isolated sync step. A failure is collected into `errors` and the
+ *  run carries on — except an auth failure (expired JWT, revoked session),
+ *  which every later request would hit too: that one aborts the run
+ *  immediately so `triggerSync` can sign the user out. */
+async function isolate(
+  errors: unknown[],
+  step: () => Promise<void>,
+): Promise<void> {
+  try {
+    await step();
+  } catch (err) {
+    if (isAuthError(err)) throw err;
+    errors.push(err);
+  }
+}
+
+/** Shared state of one sync run, handed to every per-table step. */
+type SyncRun = {
+  supabase: SupabaseClient;
+  userId: string;
+  result: SyncResult;
+  errors: unknown[];
+};
+
 /** Pull then push, in that order — critical on a first sign-in (fresh
  *  IDB, e.g. an incognito window). If we pushed first, any synthetic
  *  "default" row a hook had just written to IDB (an empty meals array,
  *  a default-shaped profile) would `upsert` over the server's real
- *  data and wipe it. Pull-first means the server is the source of
- *  truth: real data lands in IDB before any push gets a chance to
- *  send junk back up. On subsequent runs (data already in IDB and
- *  marked clean) the pull is a no-op for unchanged rows; only genuine
- *  user edits are dirty and get pushed.
+ *  data and wipe it. Pull-first means the server's real data lands in
+ *  IDB before any push gets a chance to send junk back up. On
+ *  subsequent runs (data already in IDB and marked clean) the pull is a
+ *  no-op for unchanged rows; only genuine user edits are dirty and get
+ *  pushed.
  *
- *  Push handles its own optimistic-concurrency check
- *  (`.eq("updated_at", serverUpdatedAt)`) — conflicts on push (rejected
- *  because a peer device changed the same row first) are counted and
- *  surfaced via `result.conflicts`; the row stays dirty so the next
- *  sync, post-pull, has a fresh base to retry from.
+ *  A pull NEVER overwrites a dirty local row (see the sync-engine
+ *  primitives in `lib/db.ts`). A dirty row whose base version is stale —
+ *  another device changed the row since we last pulled — is therefore
+ *  rejected by the push's optimistic-concurrency check
+ *  (`.eq("updated_at", serverUpdatedAt)`), counted in
+ *  `result.conflicts` and surfaced on the status pill. The row stays
+ *  dirty until the user resolves it: "keep this device's version"
+ *  ({@link resolveConflictsKeepingLocal}) or "discard"
+ *  ({@link discardPendingChanges}).
+ *
+ *  Every pull is a full, paginated read of the user's rows, so after it
+ *  the engine also reconciles remote deletes (rows a peer deleted while
+ *  this device was offline, or on a table without realtime).
+ *
+ *  Every step runs in isolation (see {@link SyncIncompleteError}).
  *
  *  Idempotent — re-running converges to the latest server state for
  *  every clean row and pushes any still-dirty rows on the next attempt. */
@@ -244,63 +287,61 @@ export async function runInitialSync(
   supabase: SupabaseClient,
   userId: string,
 ): Promise<SyncResult> {
-  const result: SyncResult = {
-    pushed: { ...ZERO_COUNTS },
-    pulled: { ...ZERO_COUNTS },
-    conflicts: 0,
-    deletionsPushed: 0,
+  const run: SyncRun = {
+    supabase,
+    userId,
+    result: {
+      pushed: { ...ZERO_COUNTS },
+      pulled: { ...ZERO_COUNTS },
+      conflicts: 0,
+      deletionsPushed: 0,
+    },
+    errors: [],
   };
+  const step = (fn: () => Promise<void>) => isolate(run.errors, fn);
 
   // Drain deletion tombstones FIRST. If the user deleted a row
   // locally since the last sync, we want that delete to land on the
-  // server before the upcoming pull — otherwise pull would re-fetch
-  // the row and write it straight back into IDB ("silent
-  // resurrection" bug). Failures here are not fatal; the tombstone
-  // stays in the store and the next sync retries.
-  await pushDeletions(supabase, result);
+  // server before the upcoming pull. (A tombstone that fails to push
+  // also keeps the pull from writing the row back — see
+  // `applyServerRecord`.)
+  await step(() => pushDeletions(run));
 
   // Pull next — see the comment above for the incognito-clobber reason.
-  await pullProfile(supabase, userId, result);
-  await pullDailyLogs(supabase, userId, result);
-  await pullWeightEntries(supabase, userId, result);
-  await pullWaterIntake(supabase, userId, result);
-  await pullSupplementIntake(supabase, userId, result);
-  await pullBodyMeasurements(supabase, userId, result);
-  await pullBloodPressure(supabase, userId, result);
-  await pullFastSessions(supabase, userId, result);
-  await pullCustomFoods(supabase, userId, result);
-  await pullMealTemplates(supabase, userId, result);
-  await pullRecipes(supabase, userId, result);
-  await pullMealSchedules(supabase, userId, result);
-  await pullSupplements(supabase, userId, result);
-  await pullPantryItems(supabase, userId, result);
-  await pullPantryNotifications(supabase, userId, result);
-  await pullFavoriteStores(supabase, userId, result);
-  await pullFavoriteFoods(supabase, userId, result);
-  // Pull-only: micronutrient profiles are written server-side by the
-  // enrichment cron. The client never authors them locally in v1, so
-  // there's no push counterpart — nothing is ever dirty here.
-  await pullMicronutrientProfiles(supabase, userId, result);
+  await step(() => pullProfile(supabase, userId, run.result));
+  for (const table of SYNC_TABLES) await step(() => table.pull(run));
 
-  await pushProfile(supabase, userId, result);
-  await pushDailyLogs(supabase, userId, result);
-  await pushWeightEntries(supabase, userId, result);
-  await pushWaterIntake(supabase, userId, result);
-  await pushSupplementIntake(supabase, userId, result);
-  await pushBodyMeasurements(supabase, userId, result);
-  await pushBloodPressure(supabase, userId, result);
-  await pushFastSessions(supabase, userId, result);
-  await pushCustomFoods(supabase, userId, result);
-  await pushMealTemplates(supabase, userId, result);
-  await pushRecipes(supabase, userId, result);
-  await pushMealSchedules(supabase, userId, result);
-  await pushSupplements(supabase, userId, result);
-  await pushPantryItems(supabase, userId, result);
-  await pushPantryNotifications(supabase, userId, result);
-  await pushFavoriteStores(supabase, userId, result);
-  await pushFavoriteFoods(supabase, userId, result);
+  await step(() => pushProfile(supabase, userId, run.result));
+  for (const table of SYNC_TABLES) await step(() => table.push(run));
 
-  return result;
+  if (run.errors.length > 0) throw new SyncIncompleteError(run.errors);
+  return run.result;
+}
+
+/** Map a finished run onto the status pill. A successful sync can still
+ *  leave dirty rows behind when a peer device changed them first — those
+ *  are real conflicts the user needs to know about, so surface them
+ *  instead of silently flipping to "synced". */
+function settleSyncStatus(result: SyncResult): void {
+  if (result.conflicts > 0) {
+    setSyncConflict(result.conflicts);
+  } else {
+    setSynced();
+  }
+}
+
+/** Record a failed run on the status pill. Auth-flavored failures (expired
+ *  JWT, rotated refresh token, the user got deleted server-side, RLS no
+ *  longer resolves) mean the session can't recover on its own — and
+ *  continuing to accept local edits would just pile up dirty rows that
+ *  never push. Tear the local state down so the next render sees `!user`
+ *  and prompts a clean re-sign-in. Fire-and-forget: the caller still
+ *  rethrows so its promise rejects with the original error shape. */
+function surfaceSyncFailure(supabase: SupabaseClient, err: unknown): void {
+  setSyncError(err);
+  if (isAuthError(err)) {
+    void signOutAndClearLocal(supabase);
+  }
 }
 
 /** Wraps {@link runInitialSync} with sync-status side-effects so both the
@@ -313,28 +354,50 @@ export async function triggerSync(
   setSyncing();
   try {
     const result = await runInitialSync(supabase, userId);
-    // A successful sync can still leave dirty rows behind when the
-    // server's version moved on between our pull and our push — those
-    // are real conflicts the user needs to know about. Surface them on
-    // the status pill instead of silently flipping to "synced".
-    if (result.conflicts > 0) {
-      setSyncConflict(result.conflicts);
-    } else {
-      setSynced();
-    }
+    settleSyncStatus(result);
     return result;
   } catch (err) {
-    setSyncError(err);
-    // Auth-flavored failures (expired JWT, rotated refresh token, the
-    // user got deleted server-side, RLS no longer resolves) mean the
-    // session can't recover on its own — and continuing to accept
-    // local edits would just pile up dirty rows that never push. Tear
-    // the local state down so the next render sees `!user` and
-    // prompts a clean re-sign-in. Fire-and-forget: we still rethrow
-    // so the caller's promise rejects with the original error shape.
-    if (isAuthError(err)) {
-      void signOutAndClearLocal(supabase);
+    surfaceSyncFailure(supabase, err);
+    throw err;
+  }
+}
+
+/** Conflict resolution "keep this device's version" — the action behind the
+ *  status pill's "Needs review" state. For every dirty row whose base
+ *  version is stale, adopt the server's CURRENT version token as the new
+ *  base without touching the row's content (or clear it when the server row
+ *  is gone), then run a normal sync: the push now passes the
+ *  optimistic-concurrency check and this device's edit wins. Only ever run
+ *  on an explicit user choice — automatic syncs keep surfacing the
+ *  conflict instead of silently picking a side.
+ *
+ *  Non-reentrant on the sync-status state like {@link triggerSync}. */
+export async function resolveConflictsKeepingLocal(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<SyncResult | null> {
+  if (getSyncStatus().state === "syncing") return null;
+  setSyncing();
+  try {
+    const rebaseErrors: unknown[] = [];
+    await isolate(rebaseErrors, () => rebaseProfileConflict(supabase, userId));
+    for (const table of SYNC_TABLES) {
+      await isolate(rebaseErrors, () => table.rebase(supabase, userId));
     }
+    let result: SyncResult;
+    try {
+      result = await runInitialSync(supabase, userId);
+    } catch (err) {
+      if (rebaseErrors.length > 0 && err instanceof SyncIncompleteError) {
+        throw new SyncIncompleteError([...rebaseErrors, ...err.errors]);
+      }
+      throw err;
+    }
+    if (rebaseErrors.length > 0) throw new SyncIncompleteError(rebaseErrors);
+    settleSyncStatus(result);
+    return result;
+  } catch (err) {
+    surfaceSyncFailure(supabase, err);
     throw err;
   }
 }
@@ -422,8 +485,7 @@ type PushResult =
  *  synced via the returned `serverUpdatedAt`.
  *
  *  Why generic: every table is a copy of the same dance, only the table
- *  name and PK filters differ. Centralizing it keeps the per-table push
- *  functions to a handful of lines each. */
+ *  name and PK filters differ. */
 async function pushRow<Row extends object>(
   supabase: SupabaseClient,
   table: string,
@@ -481,17 +543,6 @@ async function pushRow<Row extends object>(
   };
 }
 
-/** A local row is "dirty" — needs pushing — when its server token is
- *  missing or doesn't match its local-mod token. Centralized so the
- *  semantics are identical for every store. */
-function isDirty(row: {
-  localUpdatedAt?: string;
-  serverUpdatedAt?: string | null;
-}): boolean {
-  if (!row.serverUpdatedAt) return true;
-  return row.localUpdatedAt !== row.serverUpdatedAt;
-}
-
 // ─── Push deletions (tombstone drain) ─────────────────────────────────────
 
 /** Maps the `DeletableStore` enum (which matches the IDB store names)
@@ -521,16 +572,11 @@ const DELETE_TARGET: Record<
 
 /** Drains the IDB deletion-tombstone store: for each tombstone, issues
  *  `DELETE FROM <table> WHERE <pk> = <rowKey>` server-side and clears
- *  the tombstone on success. Per-tombstone errors are swallowed (the
- *  tombstone stays in the store; the next sync retries) so a single
- *  network blip doesn't abort the whole sync. */
-async function pushDeletions(supabase: SupabaseClient, result: SyncResult) {
-  let tombstones: DeletionRecord[];
-  try {
-    tombstones = await listDeletions();
-  } catch {
-    return;
-  }
+ *  the tombstone on success. A failed delete keeps its tombstone (the
+ *  next sync retries) and is collected into the run's errors — it does
+ *  not stop the other tombstones or the rest of the sync. */
+async function pushDeletions(run: SyncRun) {
+  const tombstones = await listDeletions();
   for (const t of tombstones) {
     const target = DELETE_TARGET[t.storeName];
     if (!target) {
@@ -539,27 +585,28 @@ async function pushDeletions(supabase: SupabaseClient, result: SyncResult) {
       await clearDeletion(t.storeName, t.rowKey).catch(() => {});
       continue;
     }
-    const { error } = await withTimeout(
-      `push deletion ${target.table}#${t.rowKey}`,
-      (signal) =>
-        supabase
+    const label = `push deletion ${target.table}#${t.rowKey}`;
+    await isolate(run.errors, async () => {
+      const { error } = await withTimeout(label, (signal) =>
+        run.supabase
           .from(target.table)
           .delete()
           .eq(target.pk, t.rowKey)
           .abortSignal(signal),
-    ).catch((err) => ({ error: err as { message?: string } }));
-    if (error) {
-      // Don't drop the tombstone — try again next sync. Common reasons
-      // we'd hit this: transient network failure, RLS misconfig. We
-      // do NOT throw, so the rest of the sync still runs.
-      continue;
-    }
-    await clearDeletion(t.storeName, t.rowKey).catch(() => {});
-    result.deletionsPushed++;
+      );
+      if (error) {
+        if (isAuthError(error)) throw error;
+        throw asError(error, label);
+      }
+      await clearDeletion(t.storeName, t.rowKey);
+      run.result.deletionsPushed++;
+    });
   }
 }
 
 // ─── Push ──────────────────────────────────────────────────────────────────
+// The profile is a single row with its own push/pull below; every other
+// table goes through the generic per-table sync further down.
 
 async function pushProfile(
   supabase: SupabaseClient,
@@ -568,7 +615,7 @@ async function pushProfile(
 ) {
   const profile = await getProfileRecord();
   if (!profile) return;
-  if (!isDirty(profile)) return;
+  if (!isDirtyRecord(profile)) return;
   const row = profileToRow(userId, stripVersioned(profile));
   const outcome = await pushRow<Pick<ProfileRow, "user_id" | "payload">>(
     supabase,
@@ -583,662 +630,8 @@ async function pushProfile(
     return;
   }
   if (outcome.status === "inserted" || outcome.status === "updated") {
-    await markProfileSynced(outcome.serverUpdatedAt);
+    await markProfileSynced(outcome.serverUpdatedAt, profile.localUpdatedAt);
     result.pushed.profile = 1;
-  }
-}
-
-async function pushDailyLogs(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const logs = await listDailyLogs();
-  for (const log of logs) {
-    if (!isDirty(log)) continue;
-    const row = dailyLogToRow(userId, log);
-    const outcome = await pushRow(
-      supabase,
-      "daily_logs",
-      row,
-      { user_id: userId, date: log.date },
-      log.serverUpdatedAt,
-      "push daily log",
-    );
-    if (outcome.status === "conflict") {
-      result.conflicts++;
-      continue;
-    }
-    if (outcome.status === "inserted" || outcome.status === "updated") {
-      await markDailyLogSynced(log.date, outcome.serverUpdatedAt);
-      result.pushed.dailyLogs++;
-    }
-  }
-}
-
-async function pushWeightEntries(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const entries = await listWeightEntries();
-  for (const entry of entries) {
-    if (!isDirty(entry)) continue;
-    const row = weightToRow(userId, entry);
-    const outcome = await pushRow(
-      supabase,
-      "weight_history",
-      row,
-      { user_id: userId, date: entry.date },
-      entry.serverUpdatedAt,
-      "push weight entry",
-    );
-    if (outcome.status === "conflict") {
-      result.conflicts++;
-      continue;
-    }
-    if (outcome.status === "inserted" || outcome.status === "updated") {
-      await markWeightEntrySynced(entry.date, outcome.serverUpdatedAt);
-      result.pushed.weightEntries++;
-    }
-  }
-}
-
-async function pushWaterIntake(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const entries = await listWaterIntake();
-  for (const entry of entries) {
-    if (!isDirty(entry)) continue;
-    const row = waterToRow(userId, entry);
-    const outcome = await pushRow(
-      supabase,
-      "water_intake",
-      row,
-      { user_id: userId, date: entry.date },
-      entry.serverUpdatedAt,
-      "push water intake",
-    );
-    if (outcome.status === "conflict") {
-      result.conflicts++;
-      continue;
-    }
-    if (outcome.status === "inserted" || outcome.status === "updated") {
-      await markWaterIntakeSynced(entry.date, outcome.serverUpdatedAt);
-      result.pushed.waterIntake++;
-    }
-  }
-}
-
-async function pushSupplementIntake(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const entries = await listSupplementIntake();
-  for (const entry of entries) {
-    if (!isDirty(entry)) continue;
-    const row = supplementIntakeToRow(userId, entry);
-    const outcome = await pushRow(
-      supabase,
-      "supplement_intake",
-      row,
-      { user_id: userId, date: entry.date },
-      entry.serverUpdatedAt,
-      "push supplement intake",
-    );
-    if (outcome.status === "conflict") {
-      result.conflicts++;
-      continue;
-    }
-    if (outcome.status === "inserted" || outcome.status === "updated") {
-      await markSupplementIntakeSynced(entry.date, outcome.serverUpdatedAt);
-      result.pushed.supplementIntake++;
-    }
-  }
-}
-
-async function pushBodyMeasurements(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const entries = await listBodyMeasurements();
-  for (const entry of entries) {
-    if (!isDirty(entry)) continue;
-    const row = bodyMeasurementToRow(userId, entry);
-    const outcome = await pushRow(
-      supabase,
-      "body_measurements",
-      row,
-      { user_id: userId, date: entry.date },
-      entry.serverUpdatedAt,
-      "push body measurement",
-    );
-    if (outcome.status === "conflict") {
-      result.conflicts++;
-      continue;
-    }
-    if (outcome.status === "inserted" || outcome.status === "updated") {
-      await markBodyMeasurementSynced(entry.date, outcome.serverUpdatedAt);
-      result.pushed.bodyMeasurements++;
-    }
-  }
-}
-
-async function pushBloodPressure(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const entries = await listBloodPressure();
-  for (const entry of entries) {
-    if (!isDirty(entry)) continue;
-    const row = bloodPressureToRow(userId, entry);
-    const outcome = await pushRow(
-      supabase,
-      "blood_pressure",
-      row,
-      { user_id: userId, date: entry.date },
-      entry.serverUpdatedAt,
-      "push blood pressure",
-    );
-    if (outcome.status === "conflict") {
-      result.conflicts++;
-      continue;
-    }
-    if (outcome.status === "inserted" || outcome.status === "updated") {
-      await markBloodPressureSynced(entry.date, outcome.serverUpdatedAt);
-      result.pushed.bloodPressure++;
-    }
-  }
-}
-
-async function pushFastSessions(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const entries = await listFastSessions();
-  for (const entry of entries) {
-    if (!isDirty(entry)) continue;
-    const row = fastSessionToRow(userId, entry);
-    const outcome = await pushRow(
-      supabase,
-      "fast_sessions",
-      row,
-      { user_id: userId, id: entry.id },
-      entry.serverUpdatedAt,
-      "push fast session",
-    );
-    if (outcome.status === "conflict") {
-      result.conflicts++;
-      continue;
-    }
-    if (outcome.status === "inserted" || outcome.status === "updated") {
-      await markFastSessionSynced(entry.id, outcome.serverUpdatedAt);
-      result.pushed.fastSessions++;
-    }
-  }
-}
-
-/** @internal Exported for unit tests. Not part of the stable sync API. */
-export async function pushCustomFoods(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const foods = await listCustomFoods();
-  for (const food of foods) {
-    if (!isDirty(food)) continue;
-    const outcome = await pushCustomFoodOnce(
-      supabase,
-      userId,
-      food,
-      "push custom food",
-    );
-    if (outcome === "conflict") {
-      result.conflicts++;
-      continue;
-    }
-    if (outcome === "synced") result.pushed.customFoods++;
-  }
-}
-
-async function pushCustomFoodOnce(
-  supabase: SupabaseClient,
-  userId: string,
-  food: CustomFood,
-  label: string,
-): Promise<"synced" | "conflict"> {
-  const row = customFoodToRow(userId, food);
-  const outcome = await pushRow(
-    supabase,
-    "custom_foods",
-    row,
-    { id: food.id },
-    food.serverUpdatedAt,
-    label,
-  );
-  if (outcome.status === "conflict") return "conflict";
-  if (outcome.status === "uuid-collision") {
-    // Re-mint locally and retry once. Bubbles into a fresh INSERT
-    // path which goes through the no-server-token branch above.
-    const newId = crypto.randomUUID();
-    await upsertCustomFood({ ...food, id: newId, serverUpdatedAt: null });
-    // UUID-collision recovery: re-mint the local row with a fresh
-    // UUID and drop the old one. We use applyServerDeletion (not
-    // deleteCustomFood) so a tombstone *isn't* created — the OLD UUID
-    // never belonged to this user on the server, so we have nothing
-    // to delete server-side.
-    await applyServerDeletion("customFoods", food.id);
-    const retry = await pushCustomFoodOnce(
-      supabase,
-      userId,
-      { ...food, id: newId, serverUpdatedAt: null },
-      `${label} (re-mint retry)`,
-    );
-    return retry;
-  }
-  await markCustomFoodSynced(food.id, outcome.serverUpdatedAt);
-  return "synced";
-}
-
-/** @internal Exported for unit tests. Not part of the stable sync API. */
-export async function pushMealTemplates(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const templates = await listMealTemplates();
-  for (const template of templates) {
-    if (!isDirty(template)) continue;
-    const outcome = await pushTemplateOnce(
-      supabase,
-      userId,
-      template,
-      "push meal template",
-    );
-    if (outcome === "conflict") {
-      result.conflicts++;
-      continue;
-    }
-    if (outcome === "synced") result.pushed.mealTemplates++;
-  }
-}
-
-async function pushTemplateOnce(
-  supabase: SupabaseClient,
-  userId: string,
-  template: MealTemplate,
-  label: string,
-): Promise<"synced" | "conflict"> {
-  const row = mealTemplateToRow(userId, template);
-  const outcome = await pushRow(
-    supabase,
-    "meal_templates",
-    row,
-    { id: template.id },
-    template.serverUpdatedAt,
-    label,
-  );
-  if (outcome.status === "conflict") return "conflict";
-  if (outcome.status === "uuid-collision") {
-    const newId = crypto.randomUUID();
-    await upsertMealTemplate({ ...template, id: newId, serverUpdatedAt: null });
-    await applyServerDeletion("mealTemplates", template.id);
-    return pushTemplateOnce(
-      supabase,
-      userId,
-      { ...template, id: newId, serverUpdatedAt: null },
-      `${label} (re-mint retry)`,
-    );
-  }
-  await markMealTemplateSynced(template.id, outcome.serverUpdatedAt);
-  return "synced";
-}
-
-/** @internal Exported for unit tests. Not part of the stable sync API. */
-export async function pushRecipes(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const recipes = await listRecipes();
-  for (const recipe of recipes) {
-    if (!isDirty(recipe)) continue;
-    const outcome = await pushRecipeOnce(
-      supabase,
-      userId,
-      recipe,
-      "push recipe",
-    );
-    if (outcome === "conflict") {
-      result.conflicts++;
-      continue;
-    }
-    if (outcome === "synced") result.pushed.recipes++;
-  }
-}
-
-async function pushRecipeOnce(
-  supabase: SupabaseClient,
-  userId: string,
-  recipe: Recipe,
-  label: string,
-): Promise<"synced" | "conflict"> {
-  const row = recipeToRow(userId, recipe);
-  const outcome = await pushRow(
-    supabase,
-    "recipes",
-    row,
-    { id: recipe.id },
-    (recipe as Recipe & { serverUpdatedAt?: string | null }).serverUpdatedAt,
-    label,
-  );
-  if (outcome.status === "conflict") return "conflict";
-  if (outcome.status === "uuid-collision") {
-    const newId = crypto.randomUUID();
-    await upsertRecipe({
-      ...recipe,
-      id: newId,
-      serverUpdatedAt: null,
-    } as Recipe & { serverUpdatedAt: null });
-    await applyServerDeletion("recipes", recipe.id);
-    return pushRecipeOnce(
-      supabase,
-      userId,
-      { ...recipe, id: newId },
-      `${label} (re-mint retry)`,
-    );
-  }
-  await markRecipeSynced(recipe.id, outcome.serverUpdatedAt);
-  return "synced";
-}
-
-/** @internal Exported for unit tests. Not part of the stable sync API. */
-export async function pushMealSchedules(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const schedules = await listMealSchedules();
-  for (const schedule of schedules) {
-    if (!isDirty(schedule)) continue;
-    const outcome = await pushMealScheduleOnce(
-      supabase,
-      userId,
-      schedule,
-      "push meal schedule",
-    );
-    if (outcome === "conflict") {
-      result.conflicts++;
-      continue;
-    }
-    if (outcome === "synced") result.pushed.mealSchedules++;
-  }
-}
-
-async function pushMealScheduleOnce(
-  supabase: SupabaseClient,
-  userId: string,
-  schedule: MealSchedule,
-  label: string,
-): Promise<"synced" | "conflict"> {
-  const row = mealScheduleToRow(userId, schedule);
-  const outcome = await pushRow(
-    supabase,
-    "meal_schedules",
-    row,
-    { id: schedule.id },
-    (schedule as MealSchedule & { serverUpdatedAt?: string | null })
-      .serverUpdatedAt,
-    label,
-  );
-  if (outcome.status === "conflict") return "conflict";
-  if (outcome.status === "uuid-collision") {
-    const newId = crypto.randomUUID();
-    await upsertMealSchedule({
-      ...schedule,
-      id: newId,
-      serverUpdatedAt: null,
-    } as MealSchedule & { serverUpdatedAt: null });
-    await applyServerDeletion("mealSchedules", schedule.id);
-    return pushMealScheduleOnce(
-      supabase,
-      userId,
-      { ...schedule, id: newId },
-      `${label} (re-mint retry)`,
-    );
-  }
-  await markMealScheduleSynced(schedule.id, outcome.serverUpdatedAt);
-  return "synced";
-}
-
-/** @internal Exported for unit tests. Not part of the stable sync API. */
-export async function pushSupplements(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const supplements = await listSupplements();
-  for (const supplement of supplements) {
-    if (!isDirty(supplement)) continue;
-    const outcome = await pushSupplementOnce(
-      supabase,
-      userId,
-      supplement,
-      "push supplement",
-    );
-    if (outcome === "conflict") {
-      result.conflicts++;
-      continue;
-    }
-    if (outcome === "synced") result.pushed.supplements++;
-  }
-}
-
-async function pushSupplementOnce(
-  supabase: SupabaseClient,
-  userId: string,
-  supplement: Supplement,
-  label: string,
-): Promise<"synced" | "conflict"> {
-  const row = supplementToRow(userId, supplement);
-  const outcome = await pushRow(
-    supabase,
-    "supplements",
-    row,
-    { id: supplement.id },
-    (supplement as Supplement & { serverUpdatedAt?: string | null })
-      .serverUpdatedAt,
-    label,
-  );
-  if (outcome.status === "conflict") return "conflict";
-  if (outcome.status === "uuid-collision") {
-    const newId = crypto.randomUUID();
-    await upsertSupplement({
-      ...supplement,
-      id: newId,
-      serverUpdatedAt: null,
-    } as Supplement & { serverUpdatedAt: null });
-    await applyServerDeletion("supplements", supplement.id);
-    return pushSupplementOnce(
-      supabase,
-      userId,
-      { ...supplement, id: newId },
-      `${label} (re-mint retry)`,
-    );
-  }
-  await markSupplementSynced(supplement.id, outcome.serverUpdatedAt);
-  return "synced";
-}
-
-/** @internal Exported for unit tests. Not part of the stable sync API. */
-export async function pushPantryItems(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const items = await listPantryItems();
-  for (const item of items) {
-    if (!isDirty(item)) continue;
-    const outcome = await pushPantryItemOnce(
-      supabase,
-      userId,
-      item,
-      "push pantry item",
-    );
-    if (outcome === "conflict") {
-      result.conflicts++;
-      continue;
-    }
-    if (outcome === "synced") result.pushed.pantryItems++;
-  }
-}
-
-async function pushPantryItemOnce(
-  supabase: SupabaseClient,
-  userId: string,
-  item: PantryItem,
-  label: string,
-): Promise<"synced" | "conflict"> {
-  const row = pantryItemToRow(userId, item);
-  const outcome = await pushRow(
-    supabase,
-    "pantry_items",
-    row,
-    { id: item.id },
-    item.serverUpdatedAt,
-    label,
-  );
-  if (outcome.status === "conflict") return "conflict";
-  if (outcome.status === "uuid-collision") {
-    const newId = crypto.randomUUID();
-    await upsertPantryItem({ ...item, id: newId, serverUpdatedAt: null });
-    await applyServerDeletion("pantryItems", item.id);
-    return pushPantryItemOnce(
-      supabase,
-      userId,
-      { ...item, id: newId },
-      `${label} (re-mint retry)`,
-    );
-  }
-  await markPantryItemSynced(item.id, outcome.serverUpdatedAt);
-  return "synced";
-}
-
-/** @internal Exported for unit tests. Not part of the stable sync API. */
-export async function pushPantryNotifications(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const notifs = await listPantryNotifications();
-  for (const notif of notifs) {
-    if (!isDirty(notif)) continue;
-    const outcome = await pushPantryNotificationOnce(
-      supabase,
-      userId,
-      notif,
-      "push pantry notification",
-    );
-    if (outcome === "conflict") {
-      result.conflicts++;
-      continue;
-    }
-    if (outcome === "synced") result.pushed.pantryNotifications++;
-  }
-}
-
-async function pushPantryNotificationOnce(
-  supabase: SupabaseClient,
-  userId: string,
-  notif: PantryNotification,
-  label: string,
-): Promise<"synced" | "conflict"> {
-  const row = pantryNotificationToRow(userId, notif);
-  const outcome = await pushRow(
-    supabase,
-    "pantry_notifications",
-    row,
-    { id: notif.id },
-    notif.serverUpdatedAt,
-    label,
-  );
-  if (outcome.status === "conflict") return "conflict";
-  if (outcome.status === "uuid-collision") {
-    const newId = crypto.randomUUID();
-    await upsertPantryNotification({
-      ...notif,
-      id: newId,
-      serverUpdatedAt: null,
-    });
-    await applyServerDeletion("pantryNotifications", notif.id);
-    return pushPantryNotificationOnce(
-      supabase,
-      userId,
-      { ...notif, id: newId },
-      `${label} (re-mint retry)`,
-    );
-  }
-  await markPantryNotificationSynced(notif.id, outcome.serverUpdatedAt);
-  return "synced";
-}
-
-export async function pushFavoriteStores(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const stores = await listFavoriteStores();
-  for (const store of stores) {
-    if (!isDirty(store)) continue;
-    // Favourite PKs are OSM keys (text), not UUIDs — no re-mint path.
-    const outcome = await pushRow(
-      supabase,
-      "favorite_stores",
-      favoriteStoreToRow(userId, store),
-      { id: store.id },
-      store.serverUpdatedAt,
-      "push favorite store",
-    );
-    if (outcome.status === "conflict" || outcome.status === "uuid-collision") {
-      result.conflicts++;
-      continue;
-    }
-    await markFavoriteStoreSynced(store.id, outcome.serverUpdatedAt);
-    result.pushed.favoriteStores++;
-  }
-}
-
-/** @internal Exported for unit tests. Not part of the stable sync API. */
-export async function pushFavoriteFoods(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const foods = await listFavoriteFoods();
-  for (const fav of foods) {
-    if (!isDirty(fav)) continue;
-    // UUID PKs (client-minted) — a collision is astronomically unlikely,
-    // so treat it as a conflict rather than carrying a re-mint path.
-    const outcome = await pushRow(
-      supabase,
-      "favorite_foods",
-      favoriteFoodToRow(userId, fav),
-      { id: fav.id },
-      fav.serverUpdatedAt,
-      "push favorite food",
-    );
-    if (outcome.status === "conflict" || outcome.status === "uuid-collision") {
-      result.conflicts++;
-      continue;
-    }
-    await markFavoriteFoodSynced(fav.id, outcome.serverUpdatedAt);
-    result.pushed.favoriteFoods++;
   }
 }
 
@@ -1264,12 +657,9 @@ async function pullProfile(
   if (!data) return;
   const row = data as ProfileRow;
   const profile = profileFromRow(row);
-  // Only overwrite locally if the server is strictly newer than what
-  // we last saw. Otherwise leave the local copy alone — it may be a
-  // dirty local edit that hasn't been pushed yet.
-  const local = await getProfileRecord();
-  if (shouldApplyServer(local?.serverUpdatedAt, row.updated_at)) {
-    await applyServerProfile(profile, row.updated_at);
+  // `applyServerProfile` only writes when the server is strictly newer
+  // than what we last saw AND the local copy isn't a dirty, unpushed edit.
+  if ((await applyServerProfile(profile, row.updated_at)) === "applied") {
     result.pulled.profile = 1;
     // Tell the data bus so useProfile re-runs its load effect and
     // updates React state. Without this, the hook would keep its
@@ -1279,551 +669,827 @@ async function pullProfile(
   }
 }
 
-async function pullDailyLogs(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const { data, error } = await withTimeout("pull daily logs", (signal) =>
+/** Keep-local rebase for the profile row. See
+ *  {@link resolveConflictsKeepingLocal}. */
+async function rebaseProfileConflict(supabase: SupabaseClient, userId: string) {
+  const profile = await getProfileRecord();
+  if (!profile?.serverUpdatedAt || !isDirtyRecord(profile)) return;
+  const { data, error } = await withTimeout("rebase profile", (signal) =>
     supabase
-      .from("daily_logs")
-      .select("user_id, date, meals, updated_at")
+      .from("profiles")
+      .select("updated_at")
       .eq("user_id", userId)
-      .abortSignal(signal),
+      .abortSignal(signal)
+      .maybeSingle(),
   );
-  if (error) throw asError(error, "pull daily logs");
-  if (!data) return;
-  const locals = new Map(
-    (await listDailyLogs()).map((l: DailyLog) => [l.date, l]),
-  );
-  const before = result.pulled.dailyLogs;
-  for (const row of data as DailyLogRow[]) {
-    const localRow = locals.get(row.date);
-    if (!shouldApplyServer(localRow?.serverUpdatedAt, row.updated_at)) continue;
-    const log = dailyLogFromRow(row);
-    await applyServerDailyLog(log.date, log.meals, row.updated_at);
-    result.pulled.dailyLogs++;
+  if (error) throw asError(error, "rebase profile");
+  const current = (data as { updated_at: string } | null)?.updated_at ?? null;
+  if (current !== profile.serverUpdatedAt) {
+    await rebaseDirtyProfile(profile.serverUpdatedAt, current);
   }
-  if (result.pulled.dailyLogs > before) notifyDataChanged("dailyLogs");
 }
 
-async function pullWeightEntries(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const { data, error } = await withTimeout("pull weight history", (signal) =>
-    supabase
-      .from("weight_history")
-      .select("user_id, date, kg, recorded_at, updated_at")
-      .eq("user_id", userId)
-      .abortSignal(signal),
-  );
-  if (error) throw asError(error, "pull weight history");
-  if (!data) return;
-  const locals = new Map(
-    (await listWeightEntries()).map((e: WeightEntry) => [e.date, e]),
-  );
-  const before = result.pulled.weightEntries;
-  for (const row of data as WeightRow[]) {
-    const localRow = locals.get(row.date);
-    if (!shouldApplyServer(localRow?.serverUpdatedAt, row.updated_at)) continue;
-    const entry = weightFromRow(row);
-    await applyServerWeightEntry(entry.date, entry.kg, row.updated_at);
-    result.pulled.weightEntries++;
-  }
-  if (result.pulled.weightEntries > before) notifyDataChanged("weightHistory");
+// ─── Per-table sync ────────────────────────────────────────────────────────
+
+/** Rows per pull request. MUST NOT exceed PostgREST's `max_rows`
+ *  (`[api] max_rows` in supabase/config.toml, and the hosted project's API
+ *  setting — both 1000): a page shorter than this is how a pull knows it
+ *  has read the whole table, which remote-delete reconciliation relies on.
+ *  A test pins this against config.toml. */
+export const PULL_PAGE_SIZE = 1000;
+
+/** Keys passed per `.in(...)` filter in the keep-local rebase, keeping the
+ *  request URL comfortably short. */
+const REBASE_CHUNK_SIZE = 100;
+
+/** Every column of `R`, as a literal list. The type argument makes the
+ *  compiler reject a select list that misses any column of the row type the
+ *  mapper reads (the bug class where `pullPantryItems` silently dropped
+ *  `category` / `density` / `low_threshold`). */
+function columnsOf<R>() {
+  return <const C extends readonly (keyof R & string)[]>(
+    columns: C &
+      ([Exclude<keyof R, C[number]>] extends [never]
+        ? unknown
+        : { missingColumns: Exclude<keyof R, C[number]> }),
+  ): readonly string[] => columns;
 }
 
-async function pullWaterIntake(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const { data, error } = await withTimeout("pull water intake", (signal) =>
-    supabase
-      .from("water_intake")
-      .select("user_id, date, ml, recorded_at, updated_at")
-      .eq("user_id", userId)
-      .abortSignal(signal),
-  );
-  if (error) throw asError(error, "pull water intake");
-  if (!data) return;
-  const locals = new Map(
-    (await listWaterIntake()).map((e: WaterIntake) => [e.date, e]),
-  );
-  const before = result.pulled.waterIntake;
-  for (const row of data as WaterRow[]) {
-    const localRow = locals.get(row.date);
-    if (!shouldApplyServer(localRow?.serverUpdatedAt, row.updated_at)) continue;
-    const entry = waterFromRow(row);
-    await applyServerWaterIntake(entry.date, entry.ml, row.updated_at);
-    result.pulled.waterIntake++;
-  }
-  if (result.pulled.waterIntake > before) notifyDataChanged("waterIntake");
+type LocalRecord = Pick<Versioned, "localUpdatedAt" | "serverUpdatedAt">;
+
+/** Declarative description of one synced table. */
+type TableSpec<R extends { updated_at: string }, L extends LocalRecord> = {
+  table: string;
+  store: SyncStoreName;
+  countKey: SyncCountKey;
+  /** Human noun for push error labels ("push daily log"). */
+  noun: string;
+  /** The column identifying a row within the user's rows (the local key). */
+  keyColumn: keyof R & string;
+  columns: readonly string[];
+  rowKey: (row: R) => string;
+  localKey: (local: L) => string;
+  list: () => Promise<L[]>;
+  apply: (row: R) => Promise<ApplyServerOutcome>;
+  /** Absent for pull-only tables. */
+  push?: {
+    toRow: (userId: string, local: L) => object;
+    pk: (userId: string, local: L) => Record<string, string>;
+    /** What a 42501 on insert means. Absent: a hard RLS rejection, surfaced
+     *  as an error (composite-PK tables can't collide across users). */
+    collision?:
+      | "conflict"
+      | { reassignId: (local: L, newId: string) => Promise<L | null> };
+  };
+};
+
+/** The type-erased operations the run loop drives. */
+type SyncTable = {
+  table: string;
+  columns: readonly string[];
+  pull: (run: SyncRun) => Promise<void>;
+  push: (run: SyncRun) => Promise<void>;
+  rebase: (supabase: SupabaseClient, userId: string) => Promise<void>;
+};
+
+function defineTable<R extends { updated_at: string }, L extends LocalRecord>(
+  spec: TableSpec<R, L>,
+): SyncTable {
+  return {
+    table: spec.table,
+    columns: spec.columns,
+    pull: (run) => pullTable(run, spec),
+    push: (run) => pushTable(run, spec),
+    rebase: (supabase, userId) => rebaseTable(supabase, userId, spec),
+  };
 }
 
-async function pullSupplementIntake(
+/** Read every row the user has in `spec.table`, keyset-paginated on the
+ *  key column so concurrent inserts/deletes can't shift a page boundary.
+ *  Only returns once a short page proves the read is complete. */
+async function fetchAllRows<
+  R extends { updated_at: string },
+  L extends LocalRecord,
+>(run: SyncRun, spec: TableSpec<R, L>, label: string): Promise<R[]> {
+  const rows: R[] = [];
+  let after: string | null = null;
+  for (;;) {
+    const cursor = after;
+    const { data, error } = await withTimeout(label, (signal) => {
+      let q = run.supabase
+        .from(spec.table)
+        .select<string, R>(spec.columns.join(", "))
+        .eq("user_id", run.userId);
+      if (cursor !== null) q = q.gt(spec.keyColumn, cursor);
+      return q
+        .order(spec.keyColumn, { ascending: true })
+        .limit(PULL_PAGE_SIZE)
+        .abortSignal(signal);
+    });
+    if (error) throw asError(error, label);
+    // No error but no array would make reconciliation see an empty server
+    // and delete every clean local row — refuse rather than guess.
+    if (!Array.isArray(data)) throw new Error(`${label}: no data returned`);
+    const page: R[] = data;
+    rows.push(...page);
+    if (page.length < PULL_PAGE_SIZE) return rows;
+    after = spec.rowKey(page[page.length - 1]);
+  }
+}
+
+async function pullTable<
+  R extends { updated_at: string },
+  L extends LocalRecord,
+>(run: SyncRun, spec: TableSpec<R, L>): Promise<void> {
+  const label = `pull ${spec.table}`;
+  // Snapshot the local tokens BEFORE the SELECT: reconciliation only
+  // removes rows that haven't changed since, so a realtime event applied
+  // mid-pull is never mistaken for a remote delete.
+  const baseline = new Map(
+    (await spec.list()).map((l) => [spec.localKey(l), l.serverUpdatedAt]),
+  );
+  const rows = await fetchAllRows(run, spec, label);
+  let changed = false;
+  for (const row of rows) {
+    if ((await spec.apply(row)) === "applied") {
+      run.result.pulled[spec.countKey]++;
+      changed = true;
+    }
+  }
+  const { removed } = await reconcileServerAbsences(
+    spec.store,
+    new Set(rows.map(spec.rowKey)),
+    baseline,
+  );
+  if (removed.length > 0) changed = true;
+  if (changed) notifyDataChanged(spec.store);
+}
+
+async function pushTable<
+  R extends { updated_at: string },
+  L extends LocalRecord,
+>(run: SyncRun, spec: TableSpec<R, L>): Promise<void> {
+  if (!spec.push) return;
+  const locals = await spec.list();
+  for (const local of locals) {
+    if (!isDirtyRecord(local)) continue;
+    // Per-row isolation: one rejected row (e.g. a CHECK violation) stays
+    // dirty and is reported, but every other row still syncs.
+    await isolate(run.errors, () =>
+      pushOne(run, spec, local, `push ${spec.noun}`, 1),
+    );
+  }
+}
+
+async function pushOne<R extends { updated_at: string }, L extends LocalRecord>(
+  run: SyncRun,
+  spec: TableSpec<R, L>,
+  local: L,
+  label: string,
+  reassignmentsLeft: number,
+): Promise<void> {
+  const push = spec.push;
+  if (!push) return;
+  const outcome = await pushRow(
+    run.supabase,
+    spec.table,
+    push.toRow(run.userId, local),
+    push.pk(run.userId, local),
+    local.serverUpdatedAt,
+    label,
+  );
+  if (outcome.status === "conflict") {
+    run.result.conflicts++;
+    return;
+  }
+  if (outcome.status === "uuid-collision") {
+    if (push.collision === "conflict") {
+      run.result.conflicts++;
+      return;
+    }
+    if (!push.collision || reassignmentsLeft <= 0) {
+      // Either a table that can't collide (so this is a genuine RLS
+      // rejection) or a re-minted id that was rejected again — which a
+      // fresh random UUID colliding twice can't explain. Surface it rather
+      // than re-minting forever.
+      throw new Error(
+        `${label}: row-level security rejected the insert (42501)${
+          push.collision ? " even after re-minting its id" : ""
+        }`,
+      );
+    }
+    const moved = await push.collision.reassignId(local, crypto.randomUUID());
+    if (!moved) return; // Deleted locally meanwhile; its tombstone drains.
+    await pushOne(
+      run,
+      spec,
+      moved,
+      `${label} (re-mint retry)`,
+      reassignmentsLeft - 1,
+    );
+    return;
+  }
+  await markRecordSynced(
+    spec.store,
+    spec.localKey(local),
+    outcome.serverUpdatedAt,
+    local.localUpdatedAt,
+  );
+  run.result.pushed[spec.countKey]++;
+}
+
+async function rebaseTable<
+  R extends { updated_at: string },
+  L extends LocalRecord,
+>(
   supabase: SupabaseClient,
   userId: string,
-  result: SyncResult,
-) {
-  const { data, error } = await withTimeout(
-    "pull supplement intake",
-    (signal) =>
+  spec: TableSpec<R, L>,
+): Promise<void> {
+  if (!spec.push) return;
+  const stale = (await spec.list()).filter(
+    (l): l is L & { serverUpdatedAt: string } =>
+      !!l.serverUpdatedAt && isDirtyRecord(l),
+  );
+  if (stale.length === 0) return;
+  const label = `rebase ${spec.table}`;
+  // Widened to `string`: only the key and the token are selected here, so
+  // the rows are read as plain records rather than as full `R` rows.
+  const keyColumn: string = spec.keyColumn;
+  const current = new Map<string, string>();
+  for (let i = 0; i < stale.length; i += REBASE_CHUNK_SIZE) {
+    const keys = stale.slice(i, i + REBASE_CHUNK_SIZE).map(spec.localKey);
+    const { data, error } = await withTimeout(label, (signal) =>
       supabase
-        .from("supplement_intake")
-        .select("user_id, date, taken, recorded_at, updated_at")
+        .from(spec.table)
+        .select<string, Record<string, unknown>>(`${keyColumn}, updated_at`)
         .eq("user_id", userId)
+        .in(keyColumn, keys)
         .abortSignal(signal),
-  );
-  if (error) throw asError(error, "pull supplement intake");
-  if (!data) return;
-  const locals = new Map(
-    (await listSupplementIntake()).map((e: SupplementIntake) => [e.date, e]),
-  );
-  const before = result.pulled.supplementIntake;
-  for (const row of data as SupplementIntakeRow[]) {
-    const localRow = locals.get(row.date);
-    if (!shouldApplyServer(localRow?.serverUpdatedAt, row.updated_at)) continue;
-    const entry = supplementIntakeFromRow(row);
-    await applyServerSupplementIntake(entry.date, entry.taken, row.updated_at);
-    result.pulled.supplementIntake++;
+    );
+    if (error) throw asError(error, label);
+    if (!Array.isArray(data)) throw new Error(`${label}: no data returned`);
+    for (const row of data) {
+      const key = row[keyColumn];
+      const token = row.updated_at;
+      if (typeof key === "string" && typeof token === "string") {
+        current.set(key, token);
+      }
+    }
   }
-  if (result.pulled.supplementIntake > before)
-    notifyDataChanged("supplementIntake");
+  for (const local of stale) {
+    const key = spec.localKey(local);
+    const now = current.get(key) ?? null;
+    if (now !== local.serverUpdatedAt) {
+      await rebaseDirtyRecord(spec.store, key, local.serverUpdatedAt, now);
+    }
+  }
 }
 
-async function pullBodyMeasurements(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const { data, error } = await withTimeout(
-    "pull body measurements",
-    (signal) =>
-      supabase
-        .from("body_measurements")
-        .select(
-          "user_id, date, waist_cm, neck_cm, hips_cm, notes, recorded_at, updated_at",
-        )
-        .eq("user_id", userId)
-        .abortSignal(signal),
-  );
-  if (error) throw asError(error, "pull body measurements");
-  if (!data) return;
-  const locals = new Map(
-    (await listBodyMeasurements()).map((e: BodyMeasurement) => [e.date, e]),
-  );
-  const before = result.pulled.bodyMeasurements;
-  for (const row of data as BodyMeasurementRow[]) {
-    const localRow = locals.get(row.date);
-    if (!shouldApplyServer(localRow?.serverUpdatedAt, row.updated_at)) continue;
-    const entry = bodyMeasurementFromRow(row);
-    await applyServerBodyMeasurement(
-      entry.date,
-      {
-        waistCm: entry.waistCm,
-        neckCm: entry.neckCm,
-        hipsCm: entry.hipsCm,
-        notes: entry.notes,
+// ─── Table catalogue ──────────────────────────────────────────────────────
+// Order matters only for readability of the request log: it mirrors the
+// historical pull/push order.
+
+type RecipeRecord = Recipe & LocalRecord;
+
+const SYNC_TABLES: readonly SyncTable[] = [
+  defineTable({
+    table: "daily_logs",
+    store: "dailyLogs",
+    countKey: "dailyLogs",
+    noun: "daily log",
+    keyColumn: "date",
+    columns: columnsOf<DailyLogRow>()([
+      "user_id",
+      "date",
+      "meals",
+      "updated_at",
+    ]),
+    rowKey: (r: DailyLogRow) => r.date,
+    localKey: (l) => l.date,
+    list: listDailyLogs,
+    apply: (r) => {
+      const log = dailyLogFromRow(r);
+      return applyServerDailyLog(log.date, log.meals, r.updated_at);
+    },
+    push: {
+      toRow: dailyLogToRow,
+      pk: (userId, l) => ({ user_id: userId, date: l.date }),
+    },
+  }),
+  defineTable({
+    table: "weight_history",
+    store: "weightHistory",
+    countKey: "weightEntries",
+    noun: "weight entry",
+    keyColumn: "date",
+    columns: columnsOf<WeightRow>()([
+      "user_id",
+      "date",
+      "kg",
+      "recorded_at",
+      "updated_at",
+    ]),
+    rowKey: (r: WeightRow) => r.date,
+    localKey: (l) => l.date,
+    list: listWeightEntries,
+    apply: (r) => {
+      const entry = weightFromRow(r);
+      return applyServerWeightEntry(entry.date, entry.kg, r.updated_at);
+    },
+    push: {
+      toRow: weightToRow,
+      pk: (userId, l) => ({ user_id: userId, date: l.date }),
+    },
+  }),
+  defineTable({
+    table: "water_intake",
+    store: "waterIntake",
+    countKey: "waterIntake",
+    noun: "water intake",
+    keyColumn: "date",
+    columns: columnsOf<WaterRow>()([
+      "user_id",
+      "date",
+      "ml",
+      "recorded_at",
+      "updated_at",
+    ]),
+    rowKey: (r: WaterRow) => r.date,
+    localKey: (l) => l.date,
+    list: listWaterIntake,
+    apply: (r) => {
+      const entry = waterFromRow(r);
+      return applyServerWaterIntake(entry.date, entry.ml, r.updated_at);
+    },
+    push: {
+      toRow: waterToRow,
+      pk: (userId, l) => ({ user_id: userId, date: l.date }),
+    },
+  }),
+  defineTable({
+    table: "supplement_intake",
+    store: "supplementIntake",
+    countKey: "supplementIntake",
+    noun: "supplement intake",
+    keyColumn: "date",
+    columns: columnsOf<SupplementIntakeRow>()([
+      "user_id",
+      "date",
+      "taken",
+      "recorded_at",
+      "updated_at",
+    ]),
+    rowKey: (r: SupplementIntakeRow) => r.date,
+    localKey: (l) => l.date,
+    list: listSupplementIntake,
+    apply: (r) => {
+      const entry = supplementIntakeFromRow(r);
+      return applyServerSupplementIntake(entry.date, entry.taken, r.updated_at);
+    },
+    push: {
+      toRow: supplementIntakeToRow,
+      pk: (userId, l) => ({ user_id: userId, date: l.date }),
+    },
+  }),
+  defineTable({
+    table: "body_measurements",
+    store: "bodyMeasurements",
+    countKey: "bodyMeasurements",
+    noun: "body measurement",
+    keyColumn: "date",
+    columns: columnsOf<BodyMeasurementRow>()([
+      "user_id",
+      "date",
+      "waist_cm",
+      "neck_cm",
+      "hips_cm",
+      "notes",
+      "recorded_at",
+      "updated_at",
+    ]),
+    rowKey: (r: BodyMeasurementRow) => r.date,
+    localKey: (l) => l.date,
+    list: listBodyMeasurements,
+    apply: (r) => {
+      const entry = bodyMeasurementFromRow(r);
+      return applyServerBodyMeasurement(
+        entry.date,
+        {
+          waistCm: entry.waistCm,
+          neckCm: entry.neckCm,
+          hipsCm: entry.hipsCm,
+          notes: entry.notes,
+        },
+        r.updated_at,
+      );
+    },
+    push: {
+      toRow: bodyMeasurementToRow,
+      pk: (userId, l) => ({ user_id: userId, date: l.date }),
+    },
+  }),
+  defineTable({
+    table: "blood_pressure",
+    store: "bloodPressure",
+    countKey: "bloodPressure",
+    noun: "blood pressure reading",
+    keyColumn: "date",
+    columns: columnsOf<BloodPressureRow>()([
+      "user_id",
+      "date",
+      "systolic",
+      "diastolic",
+      "pulse",
+      "notes",
+      "recorded_at",
+      "updated_at",
+    ]),
+    rowKey: (r: BloodPressureRow) => r.date,
+    localKey: (l) => l.date,
+    list: listBloodPressure,
+    apply: (r) => {
+      const entry = bloodPressureFromRow(r);
+      return applyServerBloodPressure(
+        entry.date,
+        {
+          systolic: entry.systolic,
+          diastolic: entry.diastolic,
+          pulse: entry.pulse,
+          notes: entry.notes,
+        },
+        r.updated_at,
+      );
+    },
+    push: {
+      toRow: bloodPressureToRow,
+      pk: (userId, l) => ({ user_id: userId, date: l.date }),
+    },
+  }),
+  defineTable({
+    table: "fast_sessions",
+    store: "fastSessions",
+    countKey: "fastSessions",
+    noun: "fast session",
+    keyColumn: "id",
+    columns: columnsOf<FastSessionRow>()([
+      "user_id",
+      "id",
+      "started_at",
+      "ended_at",
+      "protocol",
+      "target_hours",
+      "updated_at",
+    ]),
+    rowKey: (r: FastSessionRow) => r.id,
+    localKey: (l) => l.id,
+    list: listFastSessions,
+    apply: (r) => applyServerFastSession(fastSessionFromRow(r), r.updated_at),
+    push: {
+      toRow: fastSessionToRow,
+      pk: (userId, l) => ({ user_id: userId, id: l.id }),
+    },
+  }),
+  defineTable({
+    table: "custom_foods",
+    store: "customFoods",
+    countKey: "customFoods",
+    noun: "custom food",
+    keyColumn: "id",
+    columns: columnsOf<CustomFoodRow>()([
+      "id",
+      "user_id",
+      "name",
+      "protein",
+      "carbs",
+      "fat",
+      "calories",
+      "brand",
+      "category",
+      "sub_category",
+      "diet_kind",
+      "sort_order",
+      "sugars",
+      "added_sugars",
+      "fiber",
+      "saturated_fat",
+      "trans_fat",
+      "mono_fat",
+      "poly_fat",
+      "micronutrients",
+      "created_at",
+      "updated_at",
+    ]),
+    rowKey: (r: CustomFoodRow) => r.id,
+    localKey: (l) => l.id,
+    list: listCustomFoods,
+    apply: (r) => applyServerCustomFood(customFoodFromRow(r), r.updated_at),
+    push: {
+      toRow: customFoodToRow,
+      pk: (_userId, l) => ({ id: l.id }),
+      collision: {
+        reassignId: (l, newId) =>
+          reassignLocalRecordId("customFoods", l.id, newId),
       },
-      row.updated_at,
-    );
-    result.pulled.bodyMeasurements++;
-  }
-  if (result.pulled.bodyMeasurements > before)
-    notifyDataChanged("bodyMeasurements");
-}
-
-async function pullBloodPressure(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const { data, error } = await withTimeout("pull blood pressure", (signal) =>
-    supabase
-      .from("blood_pressure")
-      .select(
-        "user_id, date, systolic, diastolic, pulse, notes, recorded_at, updated_at",
-      )
-      .eq("user_id", userId)
-      .abortSignal(signal),
-  );
-  if (error) throw asError(error, "pull blood pressure");
-  if (!data) return;
-  const locals = new Map(
-    (await listBloodPressure()).map((e: BloodPressure) => [e.date, e]),
-  );
-  const before = result.pulled.bloodPressure;
-  for (const row of data as BloodPressureRow[]) {
-    const localRow = locals.get(row.date);
-    if (!shouldApplyServer(localRow?.serverUpdatedAt, row.updated_at)) continue;
-    const entry = bloodPressureFromRow(row);
-    await applyServerBloodPressure(
-      entry.date,
-      {
-        systolic: entry.systolic,
-        diastolic: entry.diastolic,
-        pulse: entry.pulse,
-        notes: entry.notes,
+    },
+  }),
+  defineTable({
+    table: "meal_templates",
+    store: "mealTemplates",
+    countKey: "mealTemplates",
+    noun: "meal template",
+    keyColumn: "id",
+    columns: columnsOf<MealTemplateRow>()([
+      "id",
+      "user_id",
+      "name",
+      "foods",
+      "sort_order",
+      "created_at",
+      "updated_at",
+    ]),
+    rowKey: (r: MealTemplateRow) => r.id,
+    localKey: (l) => l.id,
+    list: listMealTemplates,
+    apply: (r) => applyServerMealTemplate(mealTemplateFromRow(r), r.updated_at),
+    push: {
+      toRow: mealTemplateToRow,
+      pk: (_userId, l) => ({ id: l.id }),
+      collision: {
+        reassignId: (l, newId) =>
+          reassignLocalRecordId("mealTemplates", l.id, newId),
       },
-      row.updated_at,
-    );
-    result.pulled.bloodPressure++;
-  }
-  if (result.pulled.bloodPressure > before) notifyDataChanged("bloodPressure");
-}
+    },
+  }),
+  defineTable<RecipeRow, RecipeRecord>({
+    table: "recipes",
+    store: "recipes",
+    countKey: "recipes",
+    noun: "recipe",
+    keyColumn: "id",
+    columns: columnsOf<RecipeRow>()([
+      "id",
+      "user_id",
+      "name",
+      "ingredients",
+      "cuisine",
+      "notes",
+      "sort_order",
+      "share_slug",
+      "share_visibility",
+      "source_url",
+      "servings",
+      "prep_time_minutes",
+      "created_at",
+      "updated_at",
+    ]),
+    rowKey: (r) => r.id,
+    localKey: (l) => l.id,
+    list: listRecipes,
+    apply: (r) => applyServerRecipe(recipeFromRow(r), r.updated_at),
+    push: {
+      toRow: recipeToRow,
+      pk: (_userId, l) => ({ id: l.id }),
+      collision: {
+        reassignId: (l, newId) => reassignLocalRecordId("recipes", l.id, newId),
+      },
+    },
+  }),
+  defineTable({
+    table: "meal_schedules",
+    store: "mealSchedules",
+    countKey: "mealSchedules",
+    noun: "meal schedule",
+    keyColumn: "id",
+    columns: columnsOf<MealScheduleRow>()([
+      "id",
+      "user_id",
+      "name",
+      "recipe_id",
+      "meal_names",
+      "start_date",
+      "end_date",
+      "days_of_week",
+      "scale",
+      "sort_order",
+      "created_at",
+      "updated_at",
+    ]),
+    rowKey: (r: MealScheduleRow) => r.id,
+    localKey: (l) => l.id,
+    list: listMealSchedules,
+    apply: (r) => applyServerMealSchedule(mealScheduleFromRow(r), r.updated_at),
+    push: {
+      toRow: mealScheduleToRow,
+      pk: (_userId, l) => ({ id: l.id }),
+      collision: {
+        reassignId: (l, newId) =>
+          reassignLocalRecordId("mealSchedules", l.id, newId),
+      },
+    },
+  }),
+  defineTable({
+    table: "supplements",
+    store: "supplements",
+    countKey: "supplements",
+    noun: "supplement",
+    keyColumn: "id",
+    columns: columnsOf<SupplementRow>()([
+      "id",
+      "user_id",
+      "name",
+      "dose_label",
+      "micros",
+      "schedule",
+      "notes",
+      "sort_order",
+      "created_at",
+      "updated_at",
+    ]),
+    rowKey: (r: SupplementRow) => r.id,
+    localKey: (l) => l.id,
+    list: listSupplements,
+    apply: (r) => applyServerSupplement(supplementFromRow(r), r.updated_at),
+    push: {
+      toRow: supplementToRow,
+      pk: (_userId, l) => ({ id: l.id }),
+      collision: {
+        reassignId: (l, newId) =>
+          reassignLocalRecordId("supplements", l.id, newId),
+      },
+    },
+  }),
+  defineTable({
+    table: "pantry_items",
+    store: "pantryItems",
+    countKey: "pantryItems",
+    noun: "pantry item",
+    keyColumn: "id",
+    columns: columnsOf<PantryItemRow>()([
+      "id",
+      "user_id",
+      "name",
+      "quantity",
+      "unit",
+      "note",
+      "category",
+      "density",
+      "low_threshold",
+      "created_at",
+      "updated_at",
+    ]),
+    rowKey: (r: PantryItemRow) => r.id,
+    localKey: (l) => l.id,
+    list: listPantryItems,
+    apply: (r) => applyServerPantryItem(pantryItemFromRow(r), r.updated_at),
+    push: {
+      toRow: pantryItemToRow,
+      pk: (_userId, l) => ({ id: l.id }),
+      collision: {
+        reassignId: (l, newId) =>
+          reassignLocalRecordId("pantryItems", l.id, newId),
+      },
+    },
+  }),
+  defineTable({
+    table: "pantry_notifications",
+    store: "pantryNotifications",
+    countKey: "pantryNotifications",
+    noun: "pantry notification",
+    keyColumn: "id",
+    columns: columnsOf<PantryNotificationRow>()([
+      "id",
+      "user_id",
+      "type",
+      "item_id",
+      "item_name",
+      "quantity",
+      "unit",
+      "read",
+      "created_at",
+      "updated_at",
+    ]),
+    rowKey: (r: PantryNotificationRow) => r.id,
+    localKey: (l) => l.id,
+    list: listPantryNotifications,
+    apply: (r) =>
+      applyServerPantryNotification(pantryNotificationFromRow(r), r.updated_at),
+    push: {
+      toRow: pantryNotificationToRow,
+      pk: (_userId, l) => ({ id: l.id }),
+      collision: {
+        reassignId: (l, newId) =>
+          reassignLocalRecordId("pantryNotifications", l.id, newId),
+      },
+    },
+  }),
+  defineTable({
+    table: "favorite_stores",
+    store: "favoriteStores",
+    countKey: "favoriteStores",
+    noun: "favorite store",
+    keyColumn: "id",
+    columns: columnsOf<FavoriteStoreRow>()([
+      "id",
+      "user_id",
+      "name",
+      "kind",
+      "lat",
+      "lon",
+      "address",
+      "created_at",
+      "updated_at",
+    ]),
+    rowKey: (r: FavoriteStoreRow) => r.id,
+    localKey: (l) => l.id,
+    list: listFavoriteStores,
+    apply: (r) =>
+      applyServerFavoriteStore(favoriteStoreFromRow(r), r.updated_at),
+    push: {
+      toRow: favoriteStoreToRow,
+      pk: (_userId, l) => ({ id: l.id }),
+      // Favourite PKs are OSM keys (text), not UUIDs — no re-mint path.
+      collision: "conflict",
+    },
+  }),
+  defineTable({
+    table: "favorite_foods",
+    store: "favoriteFoods",
+    countKey: "favoriteFoods",
+    noun: "favorite food",
+    keyColumn: "id",
+    columns: columnsOf<FavoriteFoodRow>()([
+      "id",
+      "user_id",
+      "name_key",
+      "food",
+      "portion",
+      "created_at",
+      "updated_at",
+    ]),
+    rowKey: (r: FavoriteFoodRow) => r.id,
+    localKey: (l) => l.id,
+    list: listFavoriteFoods,
+    apply: (r) => applyServerFavoriteFood(favoriteFoodFromRow(r), r.updated_at),
+    push: {
+      toRow: favoriteFoodToRow,
+      pk: (_userId, l) => ({ id: l.id }),
+      // UUID PKs (client-minted) — a collision is astronomically unlikely,
+      // so treat it as a conflict rather than carrying a re-mint path.
+      collision: "conflict",
+    },
+  }),
+  // Pull-only: micronutrient profiles are written server-side by the
+  // enrichment cron. The client never authors them locally in v1, so
+  // there's no push counterpart. Keyed by `name_key` locally (the unique
+  // identity both sides share).
+  defineTable({
+    table: "micronutrient_profiles",
+    store: "micronutrientProfiles",
+    countKey: "micronutrientProfiles",
+    noun: "micronutrient profile",
+    keyColumn: "name_key",
+    columns: columnsOf<MicronutrientProfileRow>()([
+      "user_id",
+      "name_key",
+      "values",
+      "source",
+      "source_code",
+      "breakdown",
+      "enriched_at",
+      "updated_at",
+    ]),
+    rowKey: (r: MicronutrientProfileRow) => r.name_key,
+    localKey: (l) => l.nameKey,
+    list: listMicronutrientProfiles,
+    apply: (r) =>
+      applyServerMicronutrientProfile(
+        micronutrientProfileFromRow(r),
+        r.updated_at,
+      ),
+  }),
+];
 
-async function pullFastSessions(
+/** @internal The select list each pulled table uses, keyed by table name.
+ *  Exported so a unit test can assert every column a push writes is also
+ *  pulled back (otherwise a pull strips it and the next push nulls it). */
+export const PULLED_COLUMNS: Readonly<Record<string, readonly string[]>> =
+  Object.fromEntries(SYNC_TABLES.map((t) => [t.table, t.columns]));
+
+/** @internal Push one table on its own, with the same per-row isolation as
+ *  a full run; throws {@link SyncIncompleteError} if any row failed.
+ *  Exported for unit tests. Not part of the stable sync API. */
+export async function pushSyncTable(
+  table: string,
   supabase: SupabaseClient,
   userId: string,
   result: SyncResult,
-) {
-  const { data, error } = await withTimeout("pull fast sessions", (signal) =>
-    supabase
-      .from("fast_sessions")
-      .select(
-        "user_id, id, started_at, ended_at, protocol, target_hours, updated_at",
-      )
-      .eq("user_id", userId)
-      .abortSignal(signal),
-  );
-  if (error) throw asError(error, "pull fast sessions");
-  if (!data) return;
-  const locals = new Map(
-    (await listFastSessions()).map((e: FastSession) => [e.id, e]),
-  );
-  const before = result.pulled.fastSessions;
-  for (const row of data as FastSessionRow[]) {
-    const localRow = locals.get(row.id);
-    if (!shouldApplyServer(localRow?.serverUpdatedAt, row.updated_at)) continue;
-    await applyServerFastSession(fastSessionFromRow(row), row.updated_at);
-    result.pulled.fastSessions++;
-  }
-  if (result.pulled.fastSessions > before) notifyDataChanged("fastSessions");
-}
-
-async function pullCustomFoods(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const { data, error } = await withTimeout("pull custom foods", (signal) =>
-    supabase
-      .from("custom_foods")
-      .select(
-        "id, user_id, name, protein, carbs, fat, calories, brand, category, sub_category, diet_kind, sort_order, sugars, added_sugars, fiber, saturated_fat, trans_fat, mono_fat, poly_fat, micronutrients, created_at, updated_at",
-      )
-      .eq("user_id", userId)
-      .abortSignal(signal),
-  );
-  if (error) throw asError(error, "pull custom foods");
-  if (!data) return;
-  const locals = new Map(
-    (await listCustomFoods()).map((f: CustomFood) => [f.id, f]),
-  );
-  const before = result.pulled.customFoods;
-  for (const row of data as CustomFoodRow[]) {
-    const localRow = locals.get(row.id);
-    if (!shouldApplyServer(localRow?.serverUpdatedAt, row.updated_at)) continue;
-    await applyServerCustomFood(customFoodFromRow(row), row.updated_at);
-    result.pulled.customFoods++;
-  }
-  if (result.pulled.customFoods > before) notifyDataChanged("customFoods");
-}
-
-async function pullMealTemplates(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const { data, error } = await withTimeout("pull meal templates", (signal) =>
-    supabase
-      .from("meal_templates")
-      .select("id, user_id, name, foods, sort_order, created_at, updated_at")
-      .eq("user_id", userId)
-      .abortSignal(signal),
-  );
-  if (error) throw asError(error, "pull meal templates");
-  if (!data) return;
-  const locals = new Map(
-    (await listMealTemplates()).map((t: MealTemplate) => [t.id, t]),
-  );
-  const before = result.pulled.mealTemplates;
-  for (const row of data as MealTemplateRow[]) {
-    const localRow = locals.get(row.id);
-    if (!shouldApplyServer(localRow?.serverUpdatedAt, row.updated_at)) continue;
-    await applyServerMealTemplate(mealTemplateFromRow(row), row.updated_at);
-    result.pulled.mealTemplates++;
-  }
-  if (result.pulled.mealTemplates > before) notifyDataChanged("mealTemplates");
-}
-
-async function pullRecipes(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const { data, error } = await withTimeout("pull recipes", (signal) =>
-    supabase
-      .from("recipes")
-      .select(
-        "id, user_id, name, ingredients, cuisine, notes, sort_order, share_slug, share_visibility, source_url, servings, prep_time_minutes, created_at, updated_at",
-      )
-      .eq("user_id", userId)
-      .abortSignal(signal),
-  );
-  if (error) throw asError(error, "pull recipes");
-  if (!data) return;
-  const locals = new Map(
-    (await listRecipes()).map(
-      (r: Recipe & { serverUpdatedAt?: string | null }) => [r.id, r],
-    ),
-  );
-  const before = result.pulled.recipes;
-  for (const row of data as RecipeRow[]) {
-    const localRow = locals.get(row.id);
-    if (!shouldApplyServer(localRow?.serverUpdatedAt, row.updated_at)) continue;
-    await applyServerRecipe(recipeFromRow(row), row.updated_at);
-    result.pulled.recipes++;
-  }
-  if (result.pulled.recipes > before) notifyDataChanged("recipes");
-}
-
-async function pullMealSchedules(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const { data, error } = await withTimeout("pull meal schedules", (signal) =>
-    supabase
-      .from("meal_schedules")
-      .select(
-        "id, user_id, name, recipe_id, meal_names, start_date, end_date, days_of_week, scale, sort_order, created_at, updated_at",
-      )
-      .eq("user_id", userId)
-      .abortSignal(signal),
-  );
-  if (error) throw asError(error, "pull meal schedules");
-  if (!data) return;
-  const locals = new Map(
-    (await listMealSchedules()).map(
-      (s: MealSchedule & { serverUpdatedAt?: string | null }) => [s.id, s],
-    ),
-  );
-  const before = result.pulled.mealSchedules;
-  for (const row of data as MealScheduleRow[]) {
-    const localRow = locals.get(row.id);
-    if (!shouldApplyServer(localRow?.serverUpdatedAt, row.updated_at)) continue;
-    await applyServerMealSchedule(mealScheduleFromRow(row), row.updated_at);
-    result.pulled.mealSchedules++;
-  }
-  if (result.pulled.mealSchedules > before) notifyDataChanged("mealSchedules");
-}
-
-async function pullSupplements(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const { data, error } = await withTimeout("pull supplements", (signal) =>
-    supabase
-      .from("supplements")
-      .select(
-        "id, user_id, name, dose_label, micros, schedule, notes, sort_order, created_at, updated_at",
-      )
-      .eq("user_id", userId)
-      .abortSignal(signal),
-  );
-  if (error) throw asError(error, "pull supplements");
-  if (!data) return;
-  const locals = new Map(
-    (await listSupplements()).map(
-      (s: Supplement & { serverUpdatedAt?: string | null }) => [s.id, s],
-    ),
-  );
-  const before = result.pulled.supplements;
-  for (const row of data as SupplementRow[]) {
-    const localRow = locals.get(row.id);
-    if (!shouldApplyServer(localRow?.serverUpdatedAt, row.updated_at)) continue;
-    await applyServerSupplement(supplementFromRow(row), row.updated_at);
-    result.pulled.supplements++;
-  }
-  if (result.pulled.supplements > before) notifyDataChanged("supplements");
-}
-
-async function pullPantryItems(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const { data, error } = await withTimeout("pull pantry items", (signal) =>
-    supabase
-      .from("pantry_items")
-      .select("id, user_id, name, quantity, unit, note, created_at, updated_at")
-      .eq("user_id", userId)
-      .abortSignal(signal),
-  );
-  if (error) throw asError(error, "pull pantry items");
-  if (!data) return;
-  const locals = new Map((await listPantryItems()).map((p) => [p.id, p]));
-  const before = result.pulled.pantryItems;
-  for (const row of data as PantryItemRow[]) {
-    const localRow = locals.get(row.id);
-    if (!shouldApplyServer(localRow?.serverUpdatedAt, row.updated_at)) continue;
-    await applyServerPantryItem(pantryItemFromRow(row), row.updated_at);
-    result.pulled.pantryItems++;
-  }
-  if (result.pulled.pantryItems > before) notifyDataChanged("pantryItems");
-}
-
-async function pullPantryNotifications(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const { data, error } = await withTimeout(
-    "pull pantry notifications",
-    (signal) =>
-      supabase
-        .from("pantry_notifications")
-        .select(
-          "id, user_id, type, item_id, item_name, quantity, unit, read, created_at, updated_at",
-        )
-        .eq("user_id", userId)
-        .abortSignal(signal),
-  );
-  if (error) throw asError(error, "pull pantry notifications");
-  if (!data) return;
-  const locals = new Map(
-    (await listPantryNotifications()).map((n) => [n.id, n]),
-  );
-  const before = result.pulled.pantryNotifications;
-  for (const row of data as PantryNotificationRow[]) {
-    const localRow = locals.get(row.id);
-    if (!shouldApplyServer(localRow?.serverUpdatedAt, row.updated_at)) continue;
-    await applyServerPantryNotification(
-      pantryNotificationFromRow(row),
-      row.updated_at,
-    );
-    result.pulled.pantryNotifications++;
-  }
-  if (result.pulled.pantryNotifications > before) {
-    notifyDataChanged("pantryNotifications");
-  }
-}
-
-async function pullFavoriteStores(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const { data, error } = await withTimeout("pull favorite stores", (signal) =>
-    supabase
-      .from("favorite_stores")
-      .select(
-        "id, user_id, name, kind, lat, lon, address, created_at, updated_at",
-      )
-      .eq("user_id", userId)
-      .abortSignal(signal),
-  );
-  if (error) throw asError(error, "pull favorite stores");
-  if (!data) return;
-  const locals = new Map((await listFavoriteStores()).map((s) => [s.id, s]));
-  const before = result.pulled.favoriteStores;
-  for (const row of data as FavoriteStoreRow[]) {
-    const localRow = locals.get(row.id);
-    if (!shouldApplyServer(localRow?.serverUpdatedAt, row.updated_at)) continue;
-    await applyServerFavoriteStore(favoriteStoreFromRow(row), row.updated_at);
-    result.pulled.favoriteStores++;
-  }
-  if (result.pulled.favoriteStores > before) {
-    notifyDataChanged("favoriteStores");
-  }
-}
-
-async function pullFavoriteFoods(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const { data, error } = await withTimeout("pull favorite foods", (signal) =>
-    supabase
-      .from("favorite_foods")
-      .select("id, user_id, name_key, food, portion, created_at, updated_at")
-      .eq("user_id", userId)
-      .abortSignal(signal),
-  );
-  if (error) throw asError(error, "pull favorite foods");
-  if (!data) return;
-  const locals = new Map((await listFavoriteFoods()).map((f) => [f.id, f]));
-  const before = result.pulled.favoriteFoods;
-  for (const row of data as FavoriteFoodRow[]) {
-    const localRow = locals.get(row.id);
-    if (!shouldApplyServer(localRow?.serverUpdatedAt, row.updated_at)) continue;
-    await applyServerFavoriteFood(favoriteFoodFromRow(row), row.updated_at);
-    result.pulled.favoriteFoods++;
-  }
-  if (result.pulled.favoriteFoods > before) {
-    notifyDataChanged("favoriteFoods");
-  }
-}
-
-/** Pull micronutrient profiles the enrichment cron wrote server-side.
- *  Pull-only — there's no local authoring path in v1, so unlike the
- *  other stores there's no push counterpart. Keyed by `name_key`
- *  locally (the unique identity both sides share). */
-async function pullMicronutrientProfiles(
-  supabase: SupabaseClient,
-  userId: string,
-  result: SyncResult,
-) {
-  const { data, error } = await withTimeout(
-    "pull micronutrient profiles",
-    (signal) =>
-      supabase
-        .from("micronutrient_profiles")
-        .select(
-          // `breakdown` (migration 0065) MUST be selected — the mapper
-          // (`micronutrientProfileFromRow`) reads it, so omitting it silently
-          // dropped the macro-breakdown backfill on every synced profile.
-          "user_id, name_key, values, source, source_code, breakdown, enriched_at, updated_at",
-        )
-        .eq("user_id", userId)
-        .abortSignal(signal),
-  );
-  if (error) throw asError(error, "pull micronutrient profiles");
-  if (!data) return;
-  const locals = new Map(
-    (await listMicronutrientProfiles()).map((p) => [p.nameKey, p]),
-  );
-  const before = result.pulled.micronutrientProfiles;
-  for (const row of data as MicronutrientProfileRow[]) {
-    const localRow = locals.get(row.name_key);
-    if (!shouldApplyServer(localRow?.serverUpdatedAt, row.updated_at)) continue;
-    await applyServerMicronutrientProfile(
-      micronutrientProfileFromRow(row),
-      row.updated_at,
-    );
-    result.pulled.micronutrientProfiles++;
-  }
-  if (result.pulled.micronutrientProfiles > before) {
-    notifyDataChanged("micronutrientProfiles");
-  }
-}
-
-/** Should we overwrite local with this server row? Yes if we've never
- *  pulled it before, OR if its server timestamp is newer than the one
- *  we last saw. Avoids the bug where pull-after-push unconditionally
- *  clobbers a local edit made in the small window between our push and
- *  our pull. */
-function shouldApplyServer(
-  localServerUpdatedAt: string | null | undefined,
-  serverUpdatedAt: string,
-): boolean {
-  if (!localServerUpdatedAt) return true;
-  return Date.parse(serverUpdatedAt) > Date.parse(localServerUpdatedAt);
+): Promise<void> {
+  const target = SYNC_TABLES.find((t) => t.table === table);
+  if (!target) throw new Error(`unknown sync table: ${table}`);
+  const run: SyncRun = { supabase, userId, result, errors: [] };
+  await isolate(run.errors, () => target.push(run));
+  if (run.errors.length > 0) throw new SyncIncompleteError(run.errors);
 }
 
 /** Strip the Versioned mixin from a saved row so it round-trips through

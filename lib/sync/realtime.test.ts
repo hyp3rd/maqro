@@ -16,13 +16,13 @@ vi.mock("@/lib/storage-status", () => ({
 }));
 
 vi.mock("@/lib/db", () => ({
-  applyServerProfile: vi.fn(),
-  applyServerDailyLog: vi.fn(),
-  applyServerWeightEntry: vi.fn(),
-  applyServerWaterIntake: vi.fn(),
-  applyServerCustomFood: vi.fn(),
-  applyServerMealTemplate: vi.fn(),
-  applyServerRecipe: vi.fn(),
+  applyServerProfile: vi.fn().mockResolvedValue("applied"),
+  applyServerDailyLog: vi.fn().mockResolvedValue("applied"),
+  applyServerWeightEntry: vi.fn().mockResolvedValue("applied"),
+  applyServerWaterIntake: vi.fn().mockResolvedValue("applied"),
+  applyServerCustomFood: vi.fn().mockResolvedValue("applied"),
+  applyServerMealTemplate: vi.fn().mockResolvedValue("applied"),
+  applyServerRecipe: vi.fn().mockResolvedValue("applied"),
   deleteDailyLog: vi.fn(),
   deleteWeightEntry: vi.fn(),
   // Pass A: realtime DELETE handler now uses applyServerDeletion
@@ -30,12 +30,10 @@ vi.mock("@/lib/db", () => ({
   // we don't push a redundant server-side DELETE). The old per-store
   // delete helpers are still mocked because some other tests reach
   // for them, but the realtime handler now hits applyServerDeletion.
-  applyServerDeletion: vi.fn(),
+  applyServerDeletion: vi.fn().mockResolvedValue("deleted"),
   deleteCustomFood: vi.fn(),
   deleteMealTemplate: vi.fn(),
   deleteRecipe: vi.fn(),
-  // For own-echo detection on profile.
-  getProfileRecord: vi.fn().mockResolvedValue(null),
 }));
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -253,33 +251,66 @@ describe("startRealtimeSubscription — payload dispatch", () => {
     expect(vi.mocked(reportStorageError)).toHaveBeenCalledTimes(1);
   });
 
-  it("skips own-echo on profile (incoming updated_at matches local serverUpdatedAt)", async () => {
-    const sameToken = "2026-05-16T12:00:00Z";
-    // Local profile already has this exact server token — incoming
-    // event is just our own write echoing back; should no-op.
-    vi.mocked(db.getProfileRecord).mockResolvedValue({
-      weight: 80,
-      // other PersonalInfo fields not relevant to the test
-      localUpdatedAt: sameToken,
-      serverUpdatedAt: sameToken,
-    } as unknown as Awaited<ReturnType<typeof db.getProfileRecord>>);
-
+  it("doesn't notify the bus when the apply was a no-op (own echo / dirty local row)", async () => {
+    // The IDB layer decides inside one transaction whether the event is
+    // newer than a clean local copy; an own echo comes back "not-newer"
+    // and a dirty local edit "kept-dirty". Either way nothing was written,
+    // so hooks must not re-hydrate.
+    vi.mocked(db.applyServerProfile).mockResolvedValueOnce("not-newer");
     const { sb, channels } = makeFakeSupabase();
     startRealtimeSubscription(sb, USER_ID);
 
     const profileChannel = channels.find((c) => c.table === "profiles");
     if (!profileChannel) throw new Error("missing profile channel");
+    const busCb = vi.fn();
+    const unsub = subscribeDataChanged("profile", busCb);
 
     profileChannel.onCallback({
       eventType: "UPDATE",
-      new: { user_id: USER_ID, payload: { weight: 80 }, updated_at: sameToken },
+      new: {
+        user_id: USER_ID,
+        payload: { weight: 80 },
+        updated_at: "2026-05-16T12:00:00Z",
+      },
       old: {},
     });
     await Promise.resolve();
     await Promise.resolve();
 
-    // No write — we recognized the echo.
-    expect(vi.mocked(db.applyServerProfile)).not.toHaveBeenCalled();
+    expect(vi.mocked(db.applyServerProfile)).toHaveBeenCalledTimes(1);
+    expect(busCb).not.toHaveBeenCalled();
+    unsub();
+  });
+
+  it("ignores a date-keyed DELETE that belongs to another user (DELETE events can't be filtered)", async () => {
+    const { sb, channels } = makeFakeSupabase();
+    startRealtimeSubscription(sb, USER_ID);
+    const ch = channels.find((c) => c.table === "daily_logs");
+    if (!ch) throw new Error("missing daily_logs channel");
+
+    ch.onCallback({
+      eventType: "DELETE",
+      new: {},
+      old: {
+        user_id: "22222222-2222-4222-8222-222222222222",
+        date: "2026-05-16",
+      },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(vi.mocked(db.applyServerDeletion)).not.toHaveBeenCalled();
+
+    ch.onCallback({
+      eventType: "DELETE",
+      new: {},
+      old: { user_id: USER_ID, date: "2026-05-16" },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(vi.mocked(db.applyServerDeletion)).toHaveBeenCalledWith(
+      "dailyLogs",
+      "2026-05-16",
+    );
   });
 
   it("ignores empty {} payload (REPLICA IDENTITY not FULL artifact)", async () => {

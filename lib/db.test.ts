@@ -658,20 +658,27 @@ describe("deletion tombstones (Pass A - silent-resurrection bug)", () => {
 
   it("applyServerDeletion removes the row WITHOUT writing a tombstone (realtime echo path)", async () => {
     const {
-      addCustomFood,
+      applyServerCustomFood,
       applyServerDeletion,
       listCustomFoods,
       listDeletions,
     } = await freshDb();
-    const id = await addCustomFood({
-      name: "Whey",
-      protein: 80,
-      carbs: 8,
-      fat: 2,
-      calories: 370,
-    });
+    // A clean, previously-synced row (a dirty one is kept — see below).
+    const id = "11111111-2222-4333-8444-555555555555";
+    await applyServerCustomFood(
+      {
+        id,
+        name: "Whey",
+        protein: 80,
+        carbs: 8,
+        fat: 2,
+        calories: 370,
+        createdAt: 0,
+      },
+      "2026-05-16T12:00:00Z",
+    );
 
-    await applyServerDeletion("customFoods", id);
+    expect(await applyServerDeletion("customFoods", id)).toBe("deleted");
 
     // The IDB row is gone…
     expect(await listCustomFoods()).toHaveLength(0);
@@ -679,6 +686,34 @@ describe("deletion tombstones (Pass A - silent-resurrection bug)", () => {
     // handler wrote a tombstone we'd echo a redundant DELETE back to
     // the server on the next sync.)
     expect(await listDeletions()).toHaveLength(0);
+  });
+
+  it("applyServerDeletion keeps a dirty row and re-queues it as an insert (local edit wins over a remote delete)", async () => {
+    const {
+      applyServerCustomFood,
+      applyServerDeletion,
+      listCustomFoods,
+      upsertCustomFood,
+    } = await freshDb();
+    const id = "11111111-2222-4333-8444-555555555555";
+    const food = {
+      id,
+      name: "Whey",
+      protein: 80,
+      carbs: 8,
+      fat: 2,
+      calories: 370,
+      createdAt: 0,
+    };
+    await applyServerCustomFood(food, "2026-05-16T12:00:00Z");
+    await upsertCustomFood({ ...food, name: "Whey isolate" }); // dirty
+
+    expect(await applyServerDeletion("customFoods", id)).toBe("kept-dirty");
+
+    const [kept] = await listCustomFoods();
+    expect(kept?.name).toBe("Whey isolate");
+    // Base token cleared → the next push upserts it back.
+    expect(kept?.serverUpdatedAt).toBeNull();
   });
 
   it("applyServerDeletion also clears a pre-existing tombstone (delete already in flight, peer confirmed)", async () => {

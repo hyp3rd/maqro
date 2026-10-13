@@ -2,12 +2,18 @@ import * as db from "@/lib/db";
 import { __resetSyncStatusForTests, getSyncStatus } from "@/lib/sync-status";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import {
-  pushCustomFoods,
-  pushMealTemplates,
-  triggerSync,
-  type SyncResult,
-} from "./index";
+import { pushSyncTable, triggerSync, type SyncResult } from "./index";
+
+const pushCustomFoods = (
+  sb: SupabaseClient,
+  userId: string,
+  result: SyncResult,
+) => pushSyncTable("custom_foods", sb, userId, result);
+const pushMealTemplates = (
+  sb: SupabaseClient,
+  userId: string,
+  result: SyncResult,
+) => pushSyncTable("meal_templates", sb, userId, result);
 
 // Mock the IDB-backed db module so the sync code is exercised in
 // isolation. Each test seeds the mocks with the rows it wants `list*`
@@ -70,35 +76,34 @@ vi.mock("@/lib/db", () => ({
   applyServerSupplementIntake: vi.fn(),
   applyServerWeightEntry: vi.fn(),
   applyServerWaterIntake: vi.fn(),
-  markBodyMeasurementSynced: vi.fn(),
-  markBloodPressureSynced: vi.fn(),
-  markFastSessionSynced: vi.fn(),
-  markCustomFoodSynced: vi.fn(),
-  markDailyLogSynced: vi.fn(),
-  markMealTemplateSynced: vi.fn(),
-  markPantryItemSynced: vi.fn(),
-  markPantryNotificationSynced: vi.fn(),
-  markFavoriteStoreSynced: vi.fn(),
-  markFavoriteFoodSynced: vi.fn(),
   markProfileSynced: vi.fn(),
-  markRecipeSynced: vi.fn(),
-  markMealScheduleSynced: vi.fn(),
-  markSupplementSynced: vi.fn(),
-  markSupplementIntakeSynced: vi.fn(),
-  markWeightEntrySynced: vi.fn(),
-  markWaterIntakeSynced: vi.fn(),
-  upsertCustomFood: vi.fn(),
-  upsertMealTemplate: vi.fn(),
-  upsertPantryItem: vi.fn(),
-  upsertPantryNotification: vi.fn(),
-  upsertRecipe: vi.fn(),
-  upsertMealSchedule: vi.fn(),
-  upsertSupplement: vi.fn(),
-  // Pass A: UUID-collision recovery in the sync engine now uses
-  // applyServerDeletion (silent local-only delete + clear tombstone)
-  // instead of deleteX, so a re-mint cycle doesn't create a phantom
-  // tombstone for the OLD UUID that never reached the server.
-  applyServerDeletion: vi.fn(),
+  // Generic compare-and-set mark (one helper for every multi-row store).
+  markRecordSynced: vi.fn().mockResolvedValue("synced"),
+  // Pure helper — the real definition, so dirty detection is exercised.
+  isDirtyRecord: (row: {
+    localUpdatedAt?: string;
+    serverUpdatedAt?: string | null;
+  }) => !row.serverUpdatedAt || row.localUpdatedAt !== row.serverUpdatedAt,
+  // Remote-delete reconciliation after each complete pull: nothing to do
+  // against the (empty) mocked stores.
+  reconcileServerAbsences: vi
+    .fn()
+    .mockResolvedValue({ removed: [], requeued: [] }),
+  // UUID-collision recovery: atomically move the row to the new id and
+  // return it (mirrors the real helper's contract; the fields are the
+  // minimum the custom-food / template mappers read).
+  reassignLocalRecordId: vi.fn(
+    async (_store: string, _oldId: string, newId: string) => ({
+      id: newId,
+      name: "re-minted",
+      foods: [],
+      createdAt: 0,
+      updatedAt: 0,
+      serverUpdatedAt: null,
+    }),
+  ),
+  rebaseDirtyRecord: vi.fn(),
+  rebaseDirtyProfile: vi.fn(),
   // Tombstone-drain helpers (Pass A). Mocked so the sync's new
   // pushDeletions step is a no-op in these test scenarios.
   listDeletions: vi.fn().mockResolvedValue([]),
@@ -198,6 +203,9 @@ function makeSupabase(opts: {
       select: () => {
         const builder = {
           eq: () => builder,
+          gt: () => builder,
+          order: () => builder,
+          limit: () => builder,
           abortSignal: () => {
             const empty = Promise.resolve({ data: [], error: null });
             // The builder is itself thenable for `await q.eq(...).abortSignal(sig)` -
@@ -289,7 +297,7 @@ describe("pushCustomFoods — per-row push with optimistic concurrency", () => {
     expect(result.pushed.customFoods).toBe(2);
     expect(result.conflicts).toBe(0);
     expect(upsertCalls).toHaveLength(2);
-    expect(vi.mocked(db.markCustomFoodSynced)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(db.markRecordSynced)).toHaveBeenCalledTimes(2);
   });
 
   it("UPDATEs each existing (server token present) row with .eq('updated_at', base)", async () => {
@@ -343,7 +351,7 @@ describe("pushCustomFoods — per-row push with optimistic concurrency", () => {
 
     expect(result.pushed.customFoods).toBe(0);
     expect(result.conflicts).toBe(1);
-    expect(vi.mocked(db.markCustomFoodSynced)).not.toHaveBeenCalled();
+    expect(vi.mocked(db.markRecordSynced)).not.toHaveBeenCalled();
   });
 
   it("skips clean rows (localUpdatedAt === serverUpdatedAt) to avoid no-op pushes", async () => {
@@ -411,12 +419,13 @@ describe("pushCustomFoods — per-row push with optimistic concurrency", () => {
     await pushCustomFoods(sb, USER_ID, result);
 
     expect(result.pushed.customFoods).toBe(1);
-    expect(vi.mocked(db.upsertCustomFood)).toHaveBeenCalledTimes(1);
-    // Re-mint path uses applyServerDeletion (no tombstone) — see the
-    // mock comment above for the why.
-    expect(vi.mocked(db.applyServerDeletion)).toHaveBeenCalledWith(
+    // Re-mint moves the row to a fresh id atomically (no tombstone for
+    // the old id — it never belonged to this user server-side).
+    expect(vi.mocked(db.reassignLocalRecordId)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(db.reassignLocalRecordId)).toHaveBeenCalledWith(
       "customFoods",
       "collides",
+      expect.any(String),
     );
   });
 
@@ -476,10 +485,10 @@ describe("pushMealTemplates — same per-row semantics as customFoods", () => {
     await pushMealTemplates(sb, USER_ID, result);
 
     expect(result.pushed.mealTemplates).toBe(1);
-    expect(vi.mocked(db.upsertMealTemplate)).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(db.applyServerDeletion)).toHaveBeenCalledWith(
+    expect(vi.mocked(db.reassignLocalRecordId)).toHaveBeenCalledWith(
       "mealTemplates",
       "collides",
+      expect.any(String),
     );
   });
 });
@@ -575,6 +584,9 @@ describe("runInitialSync — pull-then-push order (incognito-clobber fix)", () =
           callOrder.push(`select:${table}`);
           const builder = {
             eq: () => builder,
+            gt: () => builder,
+            order: () => builder,
+            limit: () => builder,
             abortSignal: () => {
               const empty = Promise.resolve({ data: [], error: null });
               return Object.assign(empty, {
@@ -633,6 +645,7 @@ describe("runInitialSync — pull-then-push order (incognito-clobber fix)", () =
     vi.mocked(db.listMealTemplates).mockResolvedValue([]);
     vi.mocked(db.listRecipes).mockResolvedValue([]);
     vi.mocked(db.getProfileRecord).mockResolvedValue(null);
+    vi.mocked(db.applyServerProfile).mockResolvedValue("applied");
 
     const { subscribeDataChanged } = await import("./data-bus");
     const busCb = vi.fn();
@@ -644,6 +657,9 @@ describe("runInitialSync — pull-then-push order (incognito-clobber fix)", () =
         select: () => {
           const builder = {
             eq: () => builder,
+            gt: () => builder,
+            order: () => builder,
+            limit: () => builder,
             abortSignal: () => {
               if (table === "profiles") {
                 const p = Promise.resolve({
