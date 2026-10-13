@@ -453,6 +453,25 @@ describe("mark-synced is compare-and-set", () => {
     );
     expect(mealNames(await db.getDailyLog(DAY))).toEqual(["eggs", "toast"]);
   });
+
+  it("writes made during a sync stay pending after it succeeds", async () => {
+    const { db, sync, status, server, sb } = env;
+    await db.saveDailyLog(DAY, meals("eggs"));
+    status.bumpPending();
+    server.onWrite = async () => {
+      server.onWrite = () => {};
+      await db.saveDailyLog(DAY, meals("eggs", "toast"));
+      status.bumpPending();
+    };
+
+    await sync.triggerSync(sb, USER_ID);
+
+    expect(status.getSyncSnapshot()).toMatchObject({
+      status: { state: "synced" },
+      pending: 1,
+      pendingSinceAttempt: 1,
+    });
+  });
 });
 
 describe("error isolation", () => {
