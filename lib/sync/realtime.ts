@@ -215,7 +215,7 @@ export function startRealtimeSubscription(
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "favorite_stores", filter },
-        run(handleFavoriteStore),
+        run((payload) => handleFavoriteStore(payload, userId)),
       )
       .subscribe(buildSubscribeHandler()),
   );
@@ -430,10 +430,15 @@ async function handlePantryNotification(payload: LoosePayload) {
   notifyDataChanged("pantryNotifications");
 }
 
-async function handleFavoriteStore(payload: LoosePayload) {
+async function handleFavoriteStore(payload: LoosePayload, userId: string) {
   if (payload.eventType === "DELETE") {
+    // The id is a shared OSM key, so another user removing the same store
+    // from their favourites produces a DELETE with the same `old.id`. Realtime applies
+    // neither the `user_id` filter nor RLS to DELETE events, so only act on
+    // our own rows: `old` carries the primary key, (user_id, id) since 0077.
     const old = payload.old as Partial<FavoriteStoreRow> | undefined;
-    if (old?.id) await applyServerDeletion("favoriteStores", old.id);
+    if (!old?.id || old.user_id !== userId) return;
+    await applyServerDeletion("favoriteStores", old.id);
     notifyDataChanged("favoriteStores");
     return;
   }

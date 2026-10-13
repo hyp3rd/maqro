@@ -79,8 +79,11 @@ words:
   - codepoint
   - colour
   - colours
+  - conkey
   - conname
+  - conrelid
   - Consolas
+  - contype
   - cooldown
   - Cosentino
   - Couldn
@@ -163,6 +166,7 @@ words:
   - Guanciale
   - harissa
   - hasn
+  - hasnt
   - hcaptcha
   - hellip
   - HMAC
@@ -288,6 +292,7 @@ words:
   - PGRST
   - pgtap
   - PKCE
+  - pkey
   - playsinline
   - plpgsql
   - plusmn
