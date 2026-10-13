@@ -5,14 +5,35 @@ import {
   forceCloseMfaChallenge,
   requestMfaChallenge,
 } from "@/lib/auth/mfa-challenge-bus";
+import {
+  __resetSyncStatusForTests,
+  bumpPending,
+  setSynced,
+} from "@/lib/sync-status";
+import en from "@/messages/en.json";
+import type { ReactElement } from "react";
+import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cleanup,
   fireEvent,
-  render,
+  render as rtlRender,
   screen,
   waitFor,
 } from "@testing-library/react";
+
+/** The dialog renders the (translated) unsynced-changes confirm, so every
+ *  render needs the intl provider the root layout supplies in the app. */
+function render(ui: ReactElement) {
+  return rtlRender(
+    <NextIntlClientProvider
+      locale="en"
+      messages={en}
+    >
+      {ui}
+    </NextIntlClientProvider>,
+  );
+}
 
 /** Behaviour tests for the global MFA challenge dialog.
  *
@@ -41,6 +62,8 @@ const mockPasskeyList = vi.hoisted(() => vi.fn());
 const mockGetUser = vi.hoisted(() => vi.fn());
 const mockSignInWithPasskey = vi.hoisted(() => vi.fn());
 const mockSignOutAndClearLocal = vi.hoisted(() => vi.fn());
+const mockAuthSignOut = vi.hoisted(() => vi.fn());
+const mockClearAllStores = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/supabase/client", () => ({
   getSupabaseBrowser: mockGetSupabaseBrowser,
@@ -48,6 +71,7 @@ vi.mock("@/lib/supabase/client", () => ({
 vi.mock("@/lib/auth/sign-out", () => ({
   signOutAndClearLocal: mockSignOutAndClearLocal,
 }));
+vi.mock("@/lib/db", () => ({ clearAllStores: mockClearAllStores }));
 
 function fakeSupabase() {
   return {
@@ -59,6 +83,7 @@ function fakeSupabase() {
       passkey: { list: mockPasskeyList },
       getUser: mockGetUser,
       signInWithPasskey: mockSignInWithPasskey,
+      signOut: mockAuthSignOut,
     },
   };
 }
@@ -75,6 +100,11 @@ beforeEach(() => {
   // lookup is skipped entirely in the TOTP-only suites above.
   mockPasskeyList.mockResolvedValue({ data: [], error: null });
   mockSignOutAndClearLocal.mockResolvedValue(undefined);
+  mockAuthSignOut.mockResolvedValue({ error: null });
+  mockClearAllStores.mockResolvedValue(undefined);
+  // Default: this page load synced cleanly, nothing pending.
+  __resetSyncStatusForTests();
+  setSynced();
 });
 
 afterEach(() => {
@@ -332,6 +362,52 @@ describe("MfaChallengeDialog - passkey escape", () => {
     // navigates to /login; jsdom no-ops that, which is fine — the security-
     // critical parts are the reject + the sign-out.
     await expect(awaiter).rejects.toThrow(/MFA challenge failed/i);
-    expect(mockSignOutAndClearLocal).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(mockSignOutAndClearLocal).toHaveBeenCalledTimes(1),
+    );
+    // Nothing unsynced → no confirmation needed.
+    expect(screen.queryByText(/haven't synced/i)).toBeNull();
+  });
+
+  async function bailWithUnsyncedChanges() {
+    bumpPending();
+    bumpPending();
+    mockPasskeyList.mockResolvedValue({ data: [{ id: "pk1" }], error: null });
+    mockGetUser
+      .mockResolvedValueOnce({ data: { user: { id: "alice" } } })
+      .mockResolvedValueOnce({ data: { user: { id: "bob" } } });
+    mockSignInWithPasskey.mockResolvedValue({ error: null });
+    const { MfaChallengeDialog } = await import("./MfaChallengeDialog");
+    render(<MfaChallengeDialog />);
+    const awaiter = requestMfaChallenge();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /use a passkey/i }),
+    );
+    await expect(awaiter).rejects.toThrow(/MFA challenge failed/i);
+    await screen.findByText(/2 changes on this device haven't synced/i);
+  }
+
+  it("ends the wrong session at once but asks before discarding unsynced changes", async () => {
+    await bailWithUnsyncedChanges();
+    // The wrong identity is signed out immediately (it must not sync this
+    // device's data while the user decides) — without wiping anything yet.
+    expect(mockAuthSignOut).toHaveBeenCalledTimes(1);
+    expect(mockSignOutAndClearLocal).not.toHaveBeenCalled();
+    expect(mockClearAllStores).not.toHaveBeenCalled();
+  });
+
+  it("keeps the local changes when the user chooses to", async () => {
+    await bailWithUnsyncedChanges();
+    fireEvent.click(screen.getByRole("button", { name: /keep changes/i }));
+    await waitFor(() =>
+      expect(screen.queryByText(/haven't synced/i)).toBeNull(),
+    );
+    expect(mockClearAllStores).not.toHaveBeenCalled();
+  });
+
+  it("wipes the local data when the user discards the changes", async () => {
+    await bailWithUnsyncedChanges();
+    fireEvent.click(screen.getByRole("button", { name: /discard changes/i }));
+    await waitFor(() => expect(mockClearAllStores).toHaveBeenCalledTimes(1));
   });
 });

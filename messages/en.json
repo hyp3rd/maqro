@@ -224,6 +224,21 @@
     },
     "actions": { "cancel": "Cancel", "openIssue": "Open GitHub issue" }
   },
+  "signOutGuard": {
+    "changes": "{count, plural, =0 {Some changes on this device couldn't be confirmed as synced to your account.} one {# change on this device hasn't synced to your account yet.} other {# changes on this device haven't synced to your account yet.}}",
+    "signOut": {
+      "title": "Sign out with unsynced changes?",
+      "body": "Signing out deletes this device's copy of your data, so they will be lost. Cancel to stay signed in and sync once you're back online.",
+      "cancel": "Cancel",
+      "confirm": "Sign out anyway"
+    },
+    "accountMismatch": {
+      "title": "Signed out: different account",
+      "body": "The passkey you used belongs to a different account, so you've been signed out. Keep the changes on this device and sign back in to your original account to sync them, or discard them.",
+      "keep": "Keep changes",
+      "discard": "Discard changes"
+    }
+  },
   "aboutPage": {
     "title": "About Maqro",
     "tagline": "A personal macro calculator + meal planner that respects your time and your privacy. Open source, no tracking, and your data stays on your device.",

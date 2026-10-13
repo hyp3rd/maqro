@@ -1,6 +1,7 @@
 "use client";
 
 import { TotpCodeInput } from "@/components/auth/TotpCodeInput";
+import { UnsyncedChangesDialog } from "@/components/auth/UnsyncedChangesDialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -17,9 +18,13 @@ import {
 } from "@/lib/auth/mfa-challenge-bus";
 import { getVerifiedTotpFactorId } from "@/lib/auth/mfa-factors";
 import { signOutAndClearLocal } from "@/lib/auth/sign-out";
+import { signOutRisk } from "@/lib/auth/sign-out-guard";
 import { usePasskeyChallenge } from "@/lib/auth/use-passkey-challenge";
 import { useTotpChallenge } from "@/lib/auth/use-totp-challenge";
+import { clearAllStores } from "@/lib/db";
+import { reportStorageError } from "@/lib/storage-status";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
+import { getSyncSnapshot } from "@/lib/sync-status";
 import { useEffect, useRef, useState } from "react";
 import { Fingerprint, Loader2, ShieldCheck } from "lucide-react";
 import Link from "next/link";
@@ -51,6 +56,10 @@ export function MfaChallengeDialog() {
   // instead" button. The dialog still requires a verified TOTP factor to open
   // (that's who the gate fires for); the passkey is an extra one-tap option.
   const [hasPasskey, setHasPasskey] = useState(false);
+  // Wrong-account bail-out with unsynced local changes: how many, while the
+  // user decides whether to keep or discard them (null = not asking).
+  const [bailAtRisk, setBailAtRisk] = useState<number | null>(null);
+  const [bailBusy, setBailBusy] = useState(false);
 
   useEffect(() => {
     return subscribeMfaChallenge(async (resolver) => {
@@ -105,41 +114,77 @@ export function MfaChallengeDialog() {
     resolverRef.current = null;
     setOpen(false);
     const supabase = getSupabaseBrowser();
-    if (supabase) await signOutAndClearLocal(supabase);
+    // No pre-sign-out sync here: the session now belongs to the other account,
+    // so syncing would push this device's data into it.
+    const risk = signOutRisk(getSyncSnapshot());
+    if (!risk.atRisk) {
+      if (supabase) await signOutAndClearLocal(supabase);
+      window.location.assign("/login");
+      return;
+    }
+    // Unsynced changes of the original account are still on this device.
+    // The wrong-identity session must end NOW either way (it can't be kept
+    // while the user decides), so sign it out first and only then ask whether
+    // to keep the local data for the original account or discard it.
+    if (supabase) await supabase.auth.signOut();
+    setBailAtRisk(risk.count);
+  }
+
+  /** "Keep changes": leave IndexedDB as is so signing back in to the
+   *  original account syncs them. The session is already gone. */
+  function keepBailChanges() {
+    setBailAtRisk(null);
+    window.location.assign("/login");
+  }
+
+  /** "Discard changes": the wipe `signOutAndClearLocal` would have done. */
+  async function discardBailChanges() {
+    setBailBusy(true);
+    await clearAllStores().catch(reportStorageError);
     window.location.assign("/login");
   }
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(o) => {
-        // Any non-explicit close (overlay click, Escape) is a cancel — the
-        // caller's rejection branch surfaces the original error, the right read
-        // for "I dismissed the prompt without finishing."
-        if (!o) cancel();
-      }}
-    >
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4" />
-            Two-step verification
-          </DialogTitle>
-          <DialogDescription>
-            Enter the 6-digit code from your authenticator app to continue.
-          </DialogDescription>
-        </DialogHeader>
-        {factorId && (
-          <MfaChallengeBody
-            factorId={factorId}
-            hasPasskey={hasPasskey}
-            onVerified={onVerified}
-            onBail={onBail}
-            onCancel={cancel}
-          />
-        )}
-      </DialogContent>
-    </Dialog>
+    <>
+      <UnsyncedChangesDialog
+        open={bailAtRisk !== null}
+        count={bailAtRisk ?? 0}
+        reason="account-mismatch"
+        busy={bailBusy}
+        onCancel={keepBailChanges}
+        onConfirm={() => void discardBailChanges()}
+      />
+      <Dialog
+        open={open}
+        onOpenChange={(o) => {
+          // Any non-explicit close (overlay click, Escape) is a cancel — the
+          // caller's rejection branch surfaces the original error, the right read
+          // for "I dismissed the prompt without finishing."
+          if (!o) cancel();
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4" />
+              Two-step verification
+            </DialogTitle>
+            <DialogDescription>
+              Enter the 6-digit code from your authenticator app to continue.
+            </DialogDescription>
+          </DialogHeader>
+          {factorId && (
+            <MfaChallengeBody
+              factorId={factorId}
+              hasPasskey={hasPasskey}
+              onVerified={onVerified}
+              onBail={onBail}
+              onCancel={cancel}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
