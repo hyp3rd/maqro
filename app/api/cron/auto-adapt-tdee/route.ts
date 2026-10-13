@@ -8,6 +8,7 @@ import { autoAdaptEmail } from "@/lib/email/templates";
 import { activePhase } from "@/lib/goal-phases";
 import { computeMacros } from "@/lib/macros";
 import { sendPush } from "@/lib/push/send";
+import { emailsById, listAllAuthUsers } from "@/lib/supabase/admin-users";
 import { getSupabaseSecretConfig } from "@/lib/supabase/env";
 import { decideAutoAdapt, inferAdaptiveTdee } from "@/lib/trends";
 import { NextResponse } from "next/server";
@@ -160,22 +161,20 @@ export async function GET(req: Request): Promise<NextResponse> {
     );
   }
 
-  // For the per-user notification dispatch: one listUsers call for emails + a
-  // batch read of notification prefs. (Both unpaginated, matching the other
-  // crons — fine until opted-in counts approach the 1000-user page size.)
+  // For the per-user notification dispatch: the email map (paged over every
+  // auth user — a bare listUsers() returns only the first 50) + a batch read
+  // of notification prefs for the opted-in ids.
   const appUrl = getAppUrl();
-  const emailById = new Map<string, string>();
+  let emailById = new Map<string, string>();
   const prefById = new Map<string, AutoAdaptPrefs>();
   if (optedIn.length > 0) {
-    const { data: usersData } = await admin.auth.admin.listUsers();
-    const userList = usersData?.users ?? [];
-    if (userList.length >= 1000) {
-      console.warn(
-        "[cron/auto-adapt-tdee] listUsers hit the default page size; the email map may be incomplete (paginate if this recurs).",
-      );
-    }
-    for (const u of userList) {
-      if (u.email) emailById.set(u.id, u.email);
+    const { users, error: usersErr } = await listAllAuthUsers(admin.auth.admin);
+    if (usersErr) {
+      // Emails are a best-effort heads-up; the TDEE adaptation itself is the
+      // job, so a lookup failure is logged and the run continues push-only.
+      console.error("[cron/auto-adapt-tdee] listUsers failed:", usersErr);
+    } else {
+      emailById = emailsById(users);
     }
     const { data: prefRows } = await admin
       .from("notification_preferences")

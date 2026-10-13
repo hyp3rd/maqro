@@ -4,6 +4,7 @@ import { sendEmail } from "@/lib/email/resend";
 import { supplementReminderEmail } from "@/lib/email/templates";
 import { localDateInTimeZone, localHourInTimeZone } from "@/lib/local-time";
 import { sendPush } from "@/lib/push/send";
+import { emailsById, listAllAuthUsers } from "@/lib/supabase/admin-users";
 import { getSupabaseSecretConfig } from "@/lib/supabase/env";
 import { scheduleFiresAt } from "@/lib/supplements";
 import { NextResponse } from "next/server";
@@ -76,16 +77,13 @@ export async function GET(req: Request): Promise<NextResponse> {
     console.error("[cron/supplement-reminders] ledger prune failed:", pruneErr);
   }
 
-  const { data: usersData, error: usersErr } =
-    await admin.auth.admin.listUsers();
+  // Paged over every auth user — a bare listUsers() returns only the first 50.
+  const { users, error: usersErr } = await listAllAuthUsers(admin.auth.admin);
   if (usersErr) {
     console.error("[cron/supplement-reminders] listUsers failed:", usersErr);
     return NextResponse.json({ error: usersErr.message }, { status: 500 });
   }
-  const emailById = new Map<string, string>();
-  for (const u of usersData?.users ?? []) {
-    if (u.email) emailById.set(u.id, u.email);
-  }
+  const emailById = emailsById(users);
 
   const appUrl = getAppUrl();
   const now = new Date();
