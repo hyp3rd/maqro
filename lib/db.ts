@@ -2041,7 +2041,9 @@ export async function clearDeletion(
 //
 //  1. A dirty local row (never synced, or `localUpdatedAt !==
 //     serverUpdatedAt`) is NEVER overwritten by server data. It stays dirty
-//     and the push surfaces a stale base as a conflict.
+//     and the push surfaces a stale base as a conflict. (When its content
+//     already equals the server's, it only adopts that version as its clean
+//     base — nothing is overwritten.)
 //  2. Marking a row synced is compare-and-set on the pushed snapshot's
 //     `localUpdatedAt`: an edit made while the push was in flight keeps the
 //     row dirty (with the fresh base token) so the next sync pushes it.
@@ -2171,11 +2173,39 @@ export type ApplyServerOutcome =
   | "applied"
   /** The local row is dirty; left untouched (invariant 1). */
   | "kept-dirty"
+  /** The local row was dirty but its server-owned content already equals
+   *  this server version (e.g. our push landed but its acknowledgement was
+   *  lost): it now records that version as its clean base. Content is
+   *  untouched, so there is nothing to re-render. */
+  | "adopted"
   /** The local clean copy already mirrors this (or a newer) server version. */
   | "not-newer"
   /** The user deleted this row locally and the tombstone hasn't been pushed
    *  yet; writing it back would resurrect it (invariant 3). */
   | "tombstoned";
+
+/** A dirty local row may take a server version as its clean base only when
+ *  nothing would be lost: its server-owned content already equals that
+ *  version's, and that version is not older than the base the row branched
+ *  from. This is how a push whose acknowledgement never arrived (a timeout
+ *  or a dropped connection after the server committed) settles on the next
+ *  pull, instead of being re-sent and rejected as a conflict with itself. */
+function adoptsServerVersion(
+  existing: VersionFields,
+  incoming: VersionFields,
+): boolean {
+  if (!incoming.serverUpdatedAt) return false;
+  if (
+    existing.serverUpdatedAt &&
+    compareServerTimestamps(
+      incoming.serverUpdatedAt,
+      existing.serverUpdatedAt,
+    ) < 0
+  ) {
+    return false;
+  }
+  return serverOwnedContent(existing) === serverOwnedContent(incoming);
+}
 
 /** Write one server row into `store` under `key`, honouring the invariants
  *  above. `record` carries `localUpdatedAt === serverUpdatedAt` (clean).
@@ -2208,9 +2238,19 @@ async function applyServerRecord<S extends VersionedStore>(
   if (tombstone) {
     outcome = "tombstoned";
   } else {
-    const existing = (await objectStore.get(key)) as VersionFields | undefined;
-    if (existing && isDirtyRecord(existing)) {
-      outcome = "kept-dirty";
+    const stored = await objectStore.get(key);
+    const existing = stored as VersionFields | undefined;
+    if (stored && existing && isDirtyRecord(existing)) {
+      outcome = adoptsServerVersion(existing, incoming)
+        ? "adopted"
+        : "kept-dirty";
+      if (outcome === "adopted") {
+        await objectStore.put({
+          ...stored,
+          localUpdatedAt: incoming.serverUpdatedAt,
+          serverUpdatedAt: incoming.serverUpdatedAt,
+        });
+      }
     } else if (existing) {
       const order = compareServerTimestamps(
         incoming.serverUpdatedAt ?? "",

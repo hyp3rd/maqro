@@ -521,6 +521,36 @@ describe("the echo of our own push is a no-op", () => {
     handle.unsubscribe();
   });
 
+  it("a push whose acknowledgement was lost settles on the next pull instead of being re-sent", async () => {
+    const { db, sync, status, server, sb } = env;
+    await db.saveDailyLog(DAY, meals("eggs"));
+    // The server commits the row, but the response never reaches us.
+    server.onWrite = () => {
+      server.onWrite = () => {};
+      throw new Error("network connection lost");
+    };
+    await expect(sync.triggerSync(sb, USER_ID)).rejects.toThrow(
+      /connection lost/,
+    );
+    const committed = server.find("daily_logs", { date: DAY }) as {
+      updated_at: string;
+    };
+    const writes = server.attempts.length;
+
+    const result = await sync.triggerSync(sb, USER_ID);
+
+    expect(result?.conflicts).toBe(0);
+    expect(result?.pushed.dailyLogs).toBe(0);
+    expect(
+      server.attempts.slice(writes).filter((a) => a.op !== "select"),
+    ).toEqual([]);
+    expect(status.getSyncStatus().state).toBe("synced");
+    const local = await db.getDailyLog(DAY);
+    expect(mealNames(local)).toEqual(["eggs"]);
+    expect(local?.serverUpdatedAt).toBe(committed.updated_at);
+    expect(local?.localUpdatedAt).toBe(committed.updated_at);
+  });
+
   it("a sync right after pushing a row of every table pulls nothing back", async () => {
     const { db, sync, sb } = env;
     await db.saveProfile({
