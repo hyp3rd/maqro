@@ -255,24 +255,27 @@ type SyncRun = {
   errors: unknown[];
 };
 
-/** Pull then push, in that order — critical on a first sign-in (fresh
- *  IDB, e.g. an incognito window). If we pushed first, any synthetic
- *  "default" row a hook had just written to IDB (an empty meals array,
- *  a default-shaped profile) would `upsert` over the server's real
- *  data and wipe it. Pull-first means the server's real data lands in
- *  IDB before any push gets a chance to send junk back up. On
- *  subsequent runs (data already in IDB and marked clean) the pull is a
- *  no-op for unchanged rows; only genuine user edits are dirty and get
- *  pushed.
+/** Pull then push. On subsequent runs (data already in IDB and marked
+ *  clean) the pull is a no-op for unchanged rows; only genuine user edits
+ *  are dirty and get pushed. Pulling first also settles rows whose last
+ *  push landed without its acknowledgement (they adopt the server version
+ *  instead of being re-sent).
  *
- *  A pull NEVER overwrites a dirty local row (see the sync-engine
- *  primitives in `lib/db.ts`). A dirty row whose base version is stale —
- *  another device changed the row since we last pulled — is therefore
- *  rejected by the push's optimistic-concurrency check
- *  (`.eq("updated_at", serverUpdatedAt)`), counted in
- *  `result.conflicts` and surfaced on the status pill. The row stays
- *  dirty until the user resolves it: "keep this device's version"
- *  ({@link resolveConflictsKeepingLocal}) or "discard"
+ *  A pull NEVER overwrites a dirty local row — including one this device
+ *  created and never synced (see the sync-engine primitives in
+ *  `lib/db.ts`). Pull-first therefore does NOT stop a synthetic "default"
+ *  row a hook wrote to a fresh IDB from being pushed; the hooks'
+ *  `hasRealLocalData` guards do that. What keeps any such row from
+ *  replacing the server's data is the push itself:
+ *   - a dirty row whose base version is stale — another device changed the
+ *     row since we last pulled — fails the UPDATE's optimistic-concurrency
+ *     check (`.eq("updated_at", serverUpdatedAt)`);
+ *   - a never-synced row on a natural-key table (a date-keyed table, the
+ *     profile) is sent with a plain INSERT, which a peer's row for the same
+ *     key rejects (23505) instead of being overwritten.
+ *  Both are counted in `result.conflicts` and surfaced on the status pill.
+ *  The row stays dirty until the user resolves it: "keep this device's
+ *  version" ({@link resolveConflictsKeepingLocal}) or "discard"
  *  ({@link discardPendingChanges}).
  *
  *  Every pull is a full, paginated read of the user's rows, so after it
@@ -307,7 +310,7 @@ export async function runInitialSync(
   // `applyServerRecord`.)
   await step(() => pushDeletions(run));
 
-  // Pull next — see the comment above for the incognito-clobber reason.
+  // Pull next, so the push below starts from the server's current state.
   await step(() => pullProfile(supabase, userId, run.result));
   for (const table of SYNC_TABLES) await step(() => table.pull(run));
 
@@ -363,13 +366,16 @@ export async function triggerSync(
 }
 
 /** Conflict resolution "keep this device's version" — the action behind the
- *  status pill's "Needs review" state. For every dirty row whose base
- *  version is stale, adopt the server's CURRENT version token as the new
+ *  status pill's "Needs review" state, reached only through its
+ *  confirmation dialog. For every dirty row whose base version is stale —
+ *  or, on a natural-key table, that was never synced but whose key a peer
+ *  already created — adopt the server's CURRENT version token as the new
  *  base without touching the row's content (or clear it when the server row
- *  is gone), then run a normal sync: the push now passes the
- *  optimistic-concurrency check and this device's edit wins. Only ever run
- *  on an explicit user choice — automatic syncs keep surfacing the
- *  conflict instead of silently picking a side.
+ *  is gone), then run a normal sync: the push is now a versioned UPDATE
+ *  that passes the optimistic-concurrency check, and this device's version
+ *  replaces the other device's. Only ever run on an explicit user choice —
+ *  automatic syncs keep surfacing the conflict instead of silently picking
+ *  a side.
  *
  *  Non-reentrant on the sync-status state like {@link triggerSync}. */
 export async function resolveConflictsKeepingLocal(
@@ -475,13 +481,25 @@ export function asError(
 type PushResult =
   | { status: "inserted" | "updated"; serverUpdatedAt: string }
   | { status: "conflict" }
-  | { status: "uuid-collision" };
+  | { status: "uuid-collision" }
+  /** A never-synced row sent with INSERT found a server row already holding
+   *  its key (PostgreSQL 23505, HTTP 409): another device created it. */
+  | { status: "duplicate-key" };
+
+/** How a never-synced row is created on the server.
+ *  - `"insert"`: a plain INSERT, for rows identified by a NATURAL key (a
+ *    date, the user id) that two devices can create independently. An
+ *    existing server row is reported as `duplicate-key` and left alone —
+ *    never overwritten.
+ *  - `"upsert"`: for rows keyed by a client-minted UUID, where an existing
+ *    row with our key can only be this device's own earlier push. */
+type CreateMode = "insert" | "upsert";
 
 /** Generic per-row push with optimistic concurrency. If `serverUpdatedAt`
- *  is null (row was created locally, never reached the server), insert.
- *  Otherwise UPDATE with the version check — if zero rows are affected,
- *  the row's version on the server has moved on, which we treat as a
- *  conflict. The caller is responsible for marking the local row as
+ *  is null (row was created locally, never reached the server), create it
+ *  per `create`. Otherwise UPDATE with the version check — if zero rows are
+ *  affected, the row's version on the server has moved on, which we treat
+ *  as a conflict. The caller is responsible for marking the local row as
  *  synced via the returned `serverUpdatedAt`.
  *
  *  Why generic: every table is a copy of the same dance, only the table
@@ -493,25 +511,25 @@ async function pushRow<Row extends object>(
   pkFields: Record<string, string | number>,
   serverUpdatedAt: string | null | undefined,
   label: string,
+  create: CreateMode,
 ): Promise<PushResult> {
   if (!serverUpdatedAt) {
-    // No server token — either a fresh local row or a row whose token
-    // was lost. upsert handles both: row exists upstream → update;
-    // doesn't → insert. The .select() round-trip gives us the new
-    // server-side updated_at.
-    const { data, error } = await withTimeout(label, (signal) =>
-      supabase
-        .from(table)
-        .upsert(row)
+    // No server token: a row this device created. The .select()
+    // round-trip gives us the new server-side updated_at.
+    const { data, error } = await withTimeout(label, (signal) => {
+      const q = supabase.from(table);
+      return (create === "insert" ? q.insert(row) : q.upsert(row))
         .select("updated_at")
         .abortSignal(signal)
-        .single(),
-    );
+        .single();
+    });
     if (error) {
+      const code = (error as { code?: string }).code;
       // RLS row-owned-by-someone-else (UUID collision across users)
       // surfaces here as 42501. Caller can retry with a fresh UUID.
-      if ((error as { code?: string }).code === "42501") {
-        return { status: "uuid-collision" };
+      if (code === "42501") return { status: "uuid-collision" };
+      if (code === "23505" && create === "insert") {
+        return { status: "duplicate-key" };
       }
       throw asError(error, label);
     }
@@ -617,15 +635,28 @@ async function pushProfile(
   if (!profile) return;
   if (!isDirtyRecord(profile)) return;
   const row = profileToRow(userId, stripVersioned(profile));
-  const outcome = await pushRow<Pick<ProfileRow, "user_id" | "payload">>(
-    supabase,
-    "profiles",
-    row,
-    { user_id: userId },
-    profile.serverUpdatedAt,
-    "push profile",
-  );
-  if (outcome.status === "conflict") {
+  const push = (base: string | null | undefined) =>
+    pushRow<Pick<ProfileRow, "user_id" | "payload">>(
+      supabase,
+      "profiles",
+      row,
+      { user_id: userId },
+      base,
+      "push profile",
+      // One row per user: a peer device can create it too, so a profile
+      // this device never synced must not overwrite one that exists.
+      "insert",
+    );
+  let outcome = await push(profile.serverUpdatedAt);
+  if (outcome.status === "duplicate-key") {
+    // The server's row may be the placeholder created with the account
+    // (payload `{}`, "no profile yet") rather than a peer's profile: that
+    // one is replaced through a versioned UPDATE on its token, so a peer
+    // filling it in at the same moment still surfaces as a conflict.
+    const placeholder = await placeholderProfileToken(supabase, userId);
+    if (placeholder) outcome = await push(placeholder);
+  }
+  if (outcome.status === "conflict" || outcome.status === "duplicate-key") {
     result.conflicts++;
     return;
   }
@@ -669,11 +700,41 @@ async function pullProfile(
   }
 }
 
+/** The `updated_at` of the user's server profile row when it is the
+ *  placeholder created with the account — payload `{}`, meaning "no profile
+ *  yet" — or null when there is no such row or it holds a real profile. */
+async function placeholderProfileToken(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<string | null> {
+  const label = "push profile (placeholder check)";
+  const { data, error } = await withTimeout(label, (signal) =>
+    supabase
+      .from("profiles")
+      .select("payload, updated_at")
+      .eq("user_id", userId)
+      .abortSignal(signal)
+      .maybeSingle(),
+  );
+  if (error) throw asError(error, label);
+  const row = data as { payload: unknown; updated_at: string } | null;
+  const payload = row?.payload;
+  const isPlaceholder =
+    !!payload &&
+    typeof payload === "object" &&
+    !Array.isArray(payload) &&
+    Object.keys(payload).length === 0;
+  return isPlaceholder && row ? row.updated_at : null;
+}
+
 /** Keep-local rebase for the profile row. See
- *  {@link resolveConflictsKeepingLocal}. */
+ *  {@link resolveConflictsKeepingLocal}. A never-synced profile whose
+ *  INSERT hit an existing server row takes that row's token, so the next
+ *  push becomes a versioned UPDATE that replaces it. */
 async function rebaseProfileConflict(supabase: SupabaseClient, userId: string) {
   const profile = await getProfileRecord();
-  if (!profile?.serverUpdatedAt || !isDirtyRecord(profile)) return;
+  if (!profile || !isDirtyRecord(profile)) return;
+  const base = profile.serverUpdatedAt ?? null;
   const { data, error } = await withTimeout("rebase profile", (signal) =>
     supabase
       .from("profiles")
@@ -684,9 +745,7 @@ async function rebaseProfileConflict(supabase: SupabaseClient, userId: string) {
   );
   if (error) throw asError(error, "rebase profile");
   const current = (data as { updated_at: string } | null)?.updated_at ?? null;
-  if (current !== profile.serverUpdatedAt) {
-    await rebaseDirtyProfile(profile.serverUpdatedAt, current);
-  }
+  if (current !== base) await rebaseDirtyProfile(base, current);
 }
 
 // ─── Per-table sync ────────────────────────────────────────────────────────
@@ -735,6 +794,10 @@ type TableSpec<R extends { updated_at: string }, L extends LocalRecord> = {
   push?: {
     toRow: (userId: string, local: L) => object;
     pk: (userId: string, local: L) => Record<string, string>;
+    /** How a never-synced row is created — `"insert"` for natural-key
+     *  tables (see {@link CreateMode}): there a server row with the same
+     *  key is a peer's, reported as a conflict instead of overwritten. */
+    create: CreateMode;
     /** What a 42501 on insert means. Absent: a hard RLS rejection, surfaced
      *  as an error (composite-PK tables can't collide across users). */
     collision?:
@@ -857,8 +920,9 @@ async function pushOne<R extends { updated_at: string }, L extends LocalRecord>(
     push.pk(run.userId, local),
     local.serverUpdatedAt,
     label,
+    push.create,
   );
-  if (outcome.status === "conflict") {
+  if (outcome.status === "conflict" || outcome.status === "duplicate-key") {
     run.result.conflicts++;
     return;
   }
@@ -906,10 +970,15 @@ async function rebaseTable<
   userId: string,
   spec: TableSpec<R, L>,
 ): Promise<void> {
-  if (!spec.push) return;
+  const push = spec.push;
+  if (!push) return;
+  // Dirty rows on a base the server may have moved past — and, on
+  // natural-key tables, never-synced rows whose INSERT may have hit a
+  // peer's row for the same key (they adopt that row's token, so the next
+  // push is a versioned UPDATE that replaces it).
   const stale = (await spec.list()).filter(
-    (l): l is L & { serverUpdatedAt: string } =>
-      !!l.serverUpdatedAt && isDirtyRecord(l),
+    (l) =>
+      isDirtyRecord(l) && (!!l.serverUpdatedAt || push.create === "insert"),
   );
   if (stale.length === 0) return;
   const label = `rebase ${spec.table}`;
@@ -939,10 +1008,9 @@ async function rebaseTable<
   }
   for (const local of stale) {
     const key = spec.localKey(local);
+    const base = local.serverUpdatedAt ?? null;
     const now = current.get(key) ?? null;
-    if (now !== local.serverUpdatedAt) {
-      await rebaseDirtyRecord(spec.store, key, local.serverUpdatedAt, now);
-    }
+    if (now !== base) await rebaseDirtyRecord(spec.store, key, base, now);
   }
 }
 
@@ -975,6 +1043,7 @@ const SYNC_TABLES: readonly SyncTable[] = [
     push: {
       toRow: dailyLogToRow,
       pk: (userId, l) => ({ user_id: userId, date: l.date }),
+      create: "insert",
     },
   }),
   defineTable({
@@ -1000,6 +1069,7 @@ const SYNC_TABLES: readonly SyncTable[] = [
     push: {
       toRow: weightToRow,
       pk: (userId, l) => ({ user_id: userId, date: l.date }),
+      create: "insert",
     },
   }),
   defineTable({
@@ -1025,6 +1095,7 @@ const SYNC_TABLES: readonly SyncTable[] = [
     push: {
       toRow: waterToRow,
       pk: (userId, l) => ({ user_id: userId, date: l.date }),
+      create: "insert",
     },
   }),
   defineTable({
@@ -1050,6 +1121,7 @@ const SYNC_TABLES: readonly SyncTable[] = [
     push: {
       toRow: supplementIntakeToRow,
       pk: (userId, l) => ({ user_id: userId, date: l.date }),
+      create: "insert",
     },
   }),
   defineTable({
@@ -1087,6 +1159,7 @@ const SYNC_TABLES: readonly SyncTable[] = [
     push: {
       toRow: bodyMeasurementToRow,
       pk: (userId, l) => ({ user_id: userId, date: l.date }),
+      create: "insert",
     },
   }),
   defineTable({
@@ -1124,6 +1197,7 @@ const SYNC_TABLES: readonly SyncTable[] = [
     push: {
       toRow: bloodPressureToRow,
       pk: (userId, l) => ({ user_id: userId, date: l.date }),
+      create: "insert",
     },
   }),
   defineTable({
@@ -1148,6 +1222,7 @@ const SYNC_TABLES: readonly SyncTable[] = [
     push: {
       toRow: fastSessionToRow,
       pk: (userId, l) => ({ user_id: userId, id: l.id }),
+      create: "upsert",
     },
   }),
   defineTable({
@@ -1187,6 +1262,7 @@ const SYNC_TABLES: readonly SyncTable[] = [
     push: {
       toRow: customFoodToRow,
       pk: (_userId, l) => ({ id: l.id }),
+      create: "upsert",
       collision: {
         reassignId: (l, newId) =>
           reassignLocalRecordId("customFoods", l.id, newId),
@@ -1215,6 +1291,7 @@ const SYNC_TABLES: readonly SyncTable[] = [
     push: {
       toRow: mealTemplateToRow,
       pk: (_userId, l) => ({ id: l.id }),
+      create: "upsert",
       collision: {
         reassignId: (l, newId) =>
           reassignLocalRecordId("mealTemplates", l.id, newId),
@@ -1250,6 +1327,7 @@ const SYNC_TABLES: readonly SyncTable[] = [
     push: {
       toRow: recipeToRow,
       pk: (_userId, l) => ({ id: l.id }),
+      create: "upsert",
       collision: {
         reassignId: (l, newId) => reassignLocalRecordId("recipes", l.id, newId),
       },
@@ -1282,6 +1360,7 @@ const SYNC_TABLES: readonly SyncTable[] = [
     push: {
       toRow: mealScheduleToRow,
       pk: (_userId, l) => ({ id: l.id }),
+      create: "upsert",
       collision: {
         reassignId: (l, newId) =>
           reassignLocalRecordId("mealSchedules", l.id, newId),
@@ -1313,6 +1392,7 @@ const SYNC_TABLES: readonly SyncTable[] = [
     push: {
       toRow: supplementToRow,
       pk: (_userId, l) => ({ id: l.id }),
+      create: "upsert",
       collision: {
         reassignId: (l, newId) =>
           reassignLocalRecordId("supplements", l.id, newId),
@@ -1345,6 +1425,7 @@ const SYNC_TABLES: readonly SyncTable[] = [
     push: {
       toRow: pantryItemToRow,
       pk: (_userId, l) => ({ id: l.id }),
+      create: "upsert",
       collision: {
         reassignId: (l, newId) =>
           reassignLocalRecordId("pantryItems", l.id, newId),
@@ -1377,6 +1458,7 @@ const SYNC_TABLES: readonly SyncTable[] = [
     push: {
       toRow: pantryNotificationToRow,
       pk: (_userId, l) => ({ id: l.id }),
+      create: "upsert",
       collision: {
         reassignId: (l, newId) =>
           reassignLocalRecordId("pantryNotifications", l.id, newId),
@@ -1408,6 +1490,7 @@ const SYNC_TABLES: readonly SyncTable[] = [
     push: {
       toRow: favoriteStoreToRow,
       pk: (_userId, l) => ({ id: l.id }),
+      create: "upsert",
       // Favourite PKs are OSM keys (text), not UUIDs — no re-mint path.
       collision: "conflict",
     },
@@ -1434,6 +1517,7 @@ const SYNC_TABLES: readonly SyncTable[] = [
     push: {
       toRow: favoriteFoodToRow,
       pk: (_userId, l) => ({ id: l.id }),
+      create: "upsert",
       // UUID PKs (client-minted) — a collision is astronomically unlikely,
       // so treat it as a conflict rather than carrying a re-mint path.
       collision: "conflict",

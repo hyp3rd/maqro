@@ -8,7 +8,7 @@
 // a pull clobbering a dirty row, a mark-synced swallowing a mid-push edit,
 // a rejected row aborting the run, a remote delete never reaching this
 // device, a pull dropping columns its push later writes as NULL.
-import type { Meal } from "@/components/macro/types";
+import type { Meal, PersonalInfo } from "@/components/macro/types";
 import { IDBFactory } from "fake-indexeddb";
 import "fake-indexeddb/auto";
 import { readFileSync } from "node:fs";
@@ -22,10 +22,11 @@ const DAY = "2026-05-16";
 
 type Row = Record<string, unknown>;
 type PgError = { code?: string; message: string; details?: string };
-type Op = "select" | "upsert" | "update" | "delete";
+type Op = "select" | "insert" | "upsert" | "update" | "delete";
 type Filter = { column: string; op: "eq" | "gt" | "in"; value: unknown };
 
-/** Natural key per table — what an upsert conflicts on. */
+/** Primary key per table (`["id"]` when absent) — what an upsert conflicts
+ *  on and what an insert must not duplicate. */
 const KEY_COLUMNS: Record<string, string[]> = {
   profiles: ["user_id"],
   daily_logs: ["user_id", "date"],
@@ -135,6 +136,11 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
     if (this.op === "select") this.columns = columns;
     return this;
   }
+  insert(row: Row) {
+    this.op = "insert";
+    this.payload = wire(row);
+    return this;
+  }
   upsert(row: Row) {
     this.op = "upsert";
     this.payload = wire(row);
@@ -235,10 +241,19 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
 
     const updatedAt = server.nextTimestamp();
     let written: Row | undefined;
-    if (this.op === "upsert") {
+    if (this.op === "insert" || this.op === "upsert") {
       const keys = KEY_COLUMNS[table] ?? ["id"];
       const payload = this.payload ?? {};
       written = rows.find((r) => keys.every((k) => r[k] === payload[k]));
+      if (written && this.op === "insert") {
+        return {
+          data: null,
+          error: {
+            code: "23505",
+            message: `duplicate key value violates unique constraint on ${table}`,
+          },
+        };
+      }
       if (written) Object.assign(written, payload, { updated_at: updatedAt });
       else {
         written = { ...payload, updated_at: updatedAt };
@@ -276,6 +291,23 @@ function meals(...names: string[]): Meal[] {
 function mealNames(log: { meals: Meal[] } | null): string[] {
   return (log?.meals ?? []).map((m) => m.name);
 }
+
+const PROFILE: PersonalInfo = {
+  gender: "male",
+  age: 30,
+  weight: 70,
+  height: 175,
+  activityLevel: "moderate",
+  goal: "maintain",
+  dietType: "balanced",
+  dietPreference: "omnivore",
+  cuisinePreferences: [],
+  allergies: [],
+  dislikedFoods: [],
+  weeklyRateKg: 0.5,
+  manualTdee: null,
+  units: "metric",
+};
 
 function supplementRow(id: string, name: string): Row {
   return {
@@ -324,8 +356,9 @@ describe("pull and realtime never overwrite a dirty local row", () => {
     ).toEqual(["phone breakfast"]);
   });
 
-  it("never replaces a never-synced local row with the server's row for the same key", async () => {
-    const { db, sync, server, sb } = env;
+  it("a never-synced local row and a peer's server row for the same key: neither overwrites the other, a conflict is reported", async () => {
+    const { db, sync, status, server, sb } = env;
+    // Both devices started the same new day before seeing each other's.
     server.seed("daily_logs", {
       user_id: USER_ID,
       date: DAY,
@@ -333,9 +366,60 @@ describe("pull and realtime never overwrite a dirty local row", () => {
     });
     await db.saveDailyLog(DAY, meals("mine"));
 
-    await sync.triggerSync(sb, USER_ID);
+    const result = await sync.triggerSync(sb, USER_ID);
 
     expect(mealNames(await db.getDailyLog(DAY))).toEqual(["mine"]);
+    expect(
+      mealNames(server.find("daily_logs", { date: DAY }) as { meals: Meal[] }),
+    ).toEqual(["theirs"]);
+    expect(result?.conflicts).toBe(1);
+    expect(status.getSyncStatus()).toEqual({ state: "conflict", count: 1 });
+    expect(await db.getDailyLog(DAY)).toMatchObject({ serverUpdatedAt: null });
+  });
+
+  it("'keep this device's version' replaces a peer's row for a never-synced natural key", async () => {
+    const { db, sync, status, server, sb } = env;
+    server.seed("water_intake", {
+      user_id: USER_ID,
+      date: DAY,
+      ml: 500,
+      recorded_at: "2026-05-16T08:00:00.000Z",
+    });
+    await db.setWaterTotal(DAY, 1500);
+    await sync.triggerSync(sb, USER_ID);
+    expect(status.getSyncStatus().state).toBe("conflict");
+
+    const result = await sync.resolveConflictsKeepingLocal(sb, USER_ID);
+
+    expect(result?.conflicts).toBe(0);
+    expect(status.getSyncStatus().state).toBe("synced");
+    const serverRow = server.find("water_intake", { date: DAY }) as {
+      ml: number;
+      updated_at: string;
+    };
+    expect(serverRow.ml).toBe(1500);
+    expect(server.rows("water_intake")).toHaveLength(1);
+    const local = await db.getWaterIntake(DAY);
+    expect(local?.serverUpdatedAt).toBe(serverRow.updated_at);
+    expect(local?.localUpdatedAt).toBe(serverRow.updated_at);
+  });
+
+  it("'discard' keeps the peer's row for a never-synced natural key", async () => {
+    const { db, sync, server, sb } = env;
+    server.seed("daily_logs", {
+      user_id: USER_ID,
+      date: DAY,
+      meals: meals("theirs"),
+    });
+    await db.saveDailyLog(DAY, meals("mine"));
+    await sync.triggerSync(sb, USER_ID);
+
+    await sync.discardPendingChanges(sb, USER_ID);
+
+    expect(mealNames(await db.getDailyLog(DAY))).toEqual(["theirs"]);
+    expect(
+      mealNames(server.find("daily_logs", { date: DAY }) as { meals: Meal[] }),
+    ).toEqual(["theirs"]);
   });
 
   it("realtime: a peer's UPDATE does not overwrite a dirty local row", async () => {
@@ -404,6 +488,54 @@ describe("pull and realtime never overwrite a dirty local row", () => {
     const local = await db.getDailyLog(DAY);
     expect(local?.serverUpdatedAt).toBe(serverRow.updated_at);
     expect(local?.localUpdatedAt).toBe(serverRow.updated_at);
+  });
+});
+
+describe("a profile this device never synced", () => {
+  let env: Awaited<ReturnType<typeof setup>>;
+  beforeEach(async () => {
+    env = await setup();
+  });
+
+  it("replaces the placeholder row created with the account (payload {})", async () => {
+    const { db, sync, server, sb } = env;
+    server.seed("profiles", { user_id: USER_ID, payload: {} });
+    await db.saveProfile(PROFILE);
+
+    const result = await sync.triggerSync(sb, USER_ID);
+
+    expect(result?.conflicts).toBe(0);
+    expect(result?.pushed.profile).toBe(1);
+    const serverRow = server.find("profiles", { user_id: USER_ID }) as {
+      payload: PersonalInfo;
+      updated_at: string;
+    };
+    expect(serverRow.payload).toEqual(PROFILE);
+    expect((await db.getProfileRecord())?.serverUpdatedAt).toBe(
+      serverRow.updated_at,
+    );
+  });
+
+  it("does not overwrite a peer's real profile; reports a conflict until resolved", async () => {
+    const { db, sync, server, sb } = env;
+    const theirs = { ...PROFILE, weight: 90 };
+    server.seed("profiles", { user_id: USER_ID, payload: theirs });
+    await db.saveProfile(PROFILE);
+
+    const result = await sync.triggerSync(sb, USER_ID);
+
+    expect(result?.conflicts).toBe(1);
+    expect(server.find("profiles", { user_id: USER_ID })?.payload).toEqual(
+      theirs,
+    );
+    expect((await db.getProfile())?.weight).toBe(70);
+
+    const resolved = await sync.resolveConflictsKeepingLocal(sb, USER_ID);
+
+    expect(resolved?.conflicts).toBe(0);
+    expect(server.find("profiles", { user_id: USER_ID })?.payload).toEqual(
+      PROFILE,
+    );
   });
 });
 
@@ -553,22 +685,7 @@ describe("the echo of our own push is a no-op", () => {
 
   it("a sync right after pushing a row of every table pulls nothing back", async () => {
     const { db, sync, sb } = env;
-    await db.saveProfile({
-      gender: "male",
-      age: 30,
-      weight: 70,
-      height: 175,
-      activityLevel: "moderate",
-      goal: "maintain",
-      dietType: "balanced",
-      dietPreference: "omnivore",
-      cuisinePreferences: [],
-      allergies: [],
-      dislikedFoods: [],
-      weeklyRateKg: 0.5,
-      manualTdee: null,
-      units: "metric",
-    });
+    await db.saveProfile(PROFILE);
     await db.saveDailyLog(DAY, meals("eggs"));
     await db.saveWeightEntry(DAY, 80.4);
     await db.setWaterTotal(DAY, 1500);
@@ -650,7 +767,7 @@ describe("error isolation", () => {
   it("a server-rejected row doesn't stop the other rows or tables, and the run still fails", async () => {
     const { db, sync, status, server, sb } = env;
     server.fail = (table, op, row) =>
-      table === "weight_history" && op === "upsert" && Number(row?.kg) >= 500
+      table === "weight_history" && op === "insert" && Number(row?.kg) >= 500
         ? {
             code: "23514",
             message:

@@ -2325,7 +2325,7 @@ export async function markRecordSynced(
 async function rebaseVersionedRecord<S extends VersionedStore>(
   store: S,
   key: string,
-  expectedBase: string,
+  expectedBase: string | null,
   newBase: string | null,
 ): Promise<boolean> {
   const db = await getDB();
@@ -2336,7 +2336,7 @@ async function rebaseVersionedRecord<S extends VersionedStore>(
     !!row &&
     !!current &&
     isDirtyRecord(current) &&
-    current.serverUpdatedAt === expectedBase;
+    (current.serverUpdatedAt ?? null) === expectedBase;
   if (rebased) await tx.store.put({ ...row, serverUpdatedAt: newBase });
   await tx.done;
   return rebased;
@@ -2346,11 +2346,14 @@ async function rebaseVersionedRecord<S extends VersionedStore>(
  *  token from `expectedBase` to the server's current `newBase` (or `null`
  *  when the server row is gone, so the push re-creates it) WITHOUT touching
  *  its content, so the next push wins the optimistic-concurrency check.
+ *  `expectedBase` is `null` for a never-synced row whose INSERT found a
+ *  peer's row with the same natural key: it adopts that row's token, so
+ *  the next push is a versioned UPDATE replacing it.
  *  No-op (returns false) unless the row is still dirty on `expectedBase`. */
 export async function rebaseDirtyRecord(
   store: SyncStoreName,
   key: string,
-  expectedBase: string,
+  expectedBase: string | null,
   newBase: string | null,
 ): Promise<boolean> {
   return rebaseVersionedRecord(store, key, expectedBase, newBase);
@@ -2358,7 +2361,7 @@ export async function rebaseDirtyRecord(
 
 /** Profile flavour of {@link rebaseDirtyRecord}. */
 export async function rebaseDirtyProfile(
-  expectedBase: string,
+  expectedBase: string | null,
   newBase: string | null,
 ): Promise<boolean> {
   return rebaseVersionedRecord(
