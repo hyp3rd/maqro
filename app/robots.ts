@@ -21,8 +21,10 @@ import type { MetadataRoute } from "next";
  *         honors noindex; anything that doesn't ignores both.
  *       - `/api/*` — every route has an auth/role/BotID guard.
  *       - `/app/*` — auth middleware bounces unauthenticated callers.
- *       - Vercel BotID (see `app/instrumentation-client.ts`) gates
- *         the abuse-prone POST routes at the edge.
+ *       - Vercel BotID gates the routes listed in
+ *         `lib/botid-protected-routes.ts` (client init in the root
+ *         `instrumentation-client.ts`, server check in
+ *         `lib/bot-protection.ts`).
  *
  *  What this file still does: tells well-behaved crawlers that
  *  everything *they should reach* (marketing + legal pages) is fair

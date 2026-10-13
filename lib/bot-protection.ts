@@ -3,10 +3,14 @@ import { checkBotId } from "botid/server";
 import { NextResponse } from "next/server";
 
 /** Thin wrapper around Vercel BotID's `checkBotId()` for the
- *  deep-tier routes — checkout, delete-account, admin webhook
- *  replay, lost-email recovery. These are the only routes where
- *  a false negative is irrecoverable enough to justify the
- *  false-positive friction of BotID's classifier.
+ *  deep-tier routes — today only the admin webhook replay (checkout,
+ *  delete-account and lost-email recovery dropped their gates). Every
+ *  route that calls it must be listed in
+ *  `lib/botid-protected-routes.ts`, which the root
+ *  `instrumentation-client.ts` hands to `initBotId()`; without that
+ *  client entry the request carries no challenge headers and this
+ *  fail-closed gate rejects real users. `instrumentation-client.test.ts`
+ *  enforces the match.
  *
  *  History: this module previously exported a `requireHuman()`
  *  helper that gated the basic-tier routes (AI calls,
