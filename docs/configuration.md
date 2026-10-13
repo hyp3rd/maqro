@@ -5,11 +5,11 @@ feature it backs - the app stays runnable on a bare-minimum config.
 
 ## Required for auth, sync, billing, admin, email
 
-| Variable                               | Purpose                                                                              |
-| -------------------------------------- | ------------------------------------------------------------------------------------ |
-| `NEXT_PUBLIC_SUPABASE_URL`             | Supabase project URL                                                                 |
-| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Browser-safe publishable / anon key                                                  |
-| `SUPABASE_SECRET_KEY`                  | Service-role key (server-only). Used by delete-account, cron, webhooks, admin routes |
+| Variable                               | Purpose                                                                                                                                                  |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`             | Supabase project URL                                                                                                                                     |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Browser-safe publishable / anon key                                                                                                                      |
+| `SUPABASE_SECRET_KEY`                  | Service-role key (server-only). Used by delete-account, cron, webhooks, admin routes, and AI usage metering (Free / Plus AI calls return 503 without it) |
 
 ## Optional
 

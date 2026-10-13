@@ -1,4 +1,7 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { reportServerError } from "@/lib/error-reporter";
+import { getSupabaseSecretConfig } from "@/lib/supabase/env";
+import { z } from "zod";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { AI_CAPS, resolveTier, type Tier } from "./tiers";
 
 /** Read the user's complimentary (admin-granted) tier from `comp_grants`.
@@ -65,24 +68,38 @@ export async function loadUserTier(
  *  See [AI_CAPS](./tiers.ts) for the per-tier table. */
 export const FREE_AI_CAP_PER_MONTH = AI_CAPS.free ?? 25;
 
-/** Result of a usage check. `allowed = true` means the call is
- *  cleared to proceed (and was already counted toward the user's
- *  quota); `allowed = false` means the route must reject with 402. */
+/** Result of {@link checkAndIncrementAiUsage}.
+ *
+ *  - `allowed: true` — cleared to call the model. Metered tiers have
+ *    already been debited one credit for `debitedPeriod`; unmetered tiers
+ *    (Pro) debit nothing and carry `debitedPeriod: null`.
+ *  - `reason: "cap-reached"` — the month's cap is used up; reply 402.
+ *  - `reason: "metering-unavailable"` — the debit could not be recorded
+ *    (no service-role key, RPC or transport error, unexpected payload).
+ *    Metering fails CLOSED: the route must not call the model. The failure
+ *    has already been reported.
+ *
+ *  Routes turn a denial into a response with `aiUsageDeniedResponse`
+ *  ([usage-response.ts](./usage-response.ts)). */
 export type UsageCheckResult =
   | {
       allowed: true;
       tier: Tier;
-      isPremium: boolean;
-      used: number;
-      cap: number | null;
-    }
-  | {
-      allowed: false;
-      tier: "free" | "plus";
-      isPremium: false;
       used: number;
       cap: number;
-    };
+      debitedPeriod: string;
+    }
+  | { allowed: true; tier: Tier; used: null; cap: null; debitedPeriod: null }
+  | {
+      allowed: false;
+      reason: "cap-reached";
+      tier: Tier;
+      used: number;
+      cap: number;
+    }
+  | { allowed: false; reason: "metering-unavailable" };
+
+export type UsageDenial = Extract<UsageCheckResult, { allowed: false }>;
 
 /** Returns the first day of the current UTC month as `YYYY-MM-DD`,
  *  matching the `date` column type on `ai_usage_monthly.period_start`.
@@ -182,109 +199,139 @@ export async function getCurrentMonthUsage(
   };
 }
 
-/** Gate an AI route on the free-tier monthly cap. Pre-flight:
- *
- *    1. Read profile.is_premium — premium users are unmetered.
- *    2. Read current month's count — free users get `FREE_AI_CAP_PER_MONTH` per month.
- *    3. If under cap, upsert the count + 1 and return `allowed: true`.
- *    4. If at/over cap, return `allowed: false` with the values the
- *       client needs to render the paywall message.
- *
- *  Not strictly atomic — two concurrent calls in the tiny window
- *  between read and write could both pass and push the count
- *  slightly over. The cap is a soft business rule and small
- *  over-runs (one or two calls) cost cents at worst; we accept the
- *  race for the much simpler implementation. If exact-cap
- *  enforcement matters later, swap this for a SECURITY DEFINER
- *  Postgres function doing the upsert in a single transaction. */
-/** Bump the user's monthly AI usage counter by one. Pass the
- *  `currentUsed` you read just before deciding to fire the model call
- *  — the count is computed as `currentUsed + 1` so this stays plain
- *  PostgREST (no custom RPC for `count = count + 1`). Use this when
- *  you've already checked the cap via {@link getCurrentMonthUsage}
- *  and want to defer the debit until *after* the AI vendor call
- *  actually succeeds — that way a vendor error (which falls back to
- *  a non-AI result path) doesn't burn the caller's credit. Failure
- *  is logged but not surfaced; the user shouldn't be punished for a
- *  bookkeeping outage. */
-export async function incrementAiUsage(
-  supabase: SupabaseClient,
-  userId: string,
-  currentUsed: number,
-): Promise<void> {
-  const periodStart = currentPeriodStart();
-  const { error } = await supabase
-    .from("ai_usage_monthly")
-    .upsert(
-      {
-        user_id: userId,
-        period_start: periodStart,
-        count: currentUsed + 1,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "user_id,period_start" },
-    );
-  if (error) {
-    console.error("[ai-usage] increment failed:", error);
-  }
+/** The RPC's single result row (migration 0076, `consume_ai_credit`). */
+const ConsumeRow = z.object({
+  granted: z.boolean(),
+  used: z.number().int().nonnegative(),
+});
+
+/** Where metering failures land in `error_log`. Metering is shared by
+ *  every AI route, so the route column names the subsystem; the failing
+ *  step goes in the context bag. */
+const METERING_REPORT_ROUTE = "(ai-usage metering)";
+
+/** Service-role client for the metering RPCs. The counter is server-owned
+ *  (migration 0076): end users can read their own row, but only the
+ *  service role may execute `consume_ai_credit` / `refund_ai_credit`,
+ *  because the cap is an RPC argument and must never be caller-controlled.
+ *  `null` when the secret key isn't configured. */
+function meteringClient(): SupabaseClient | null {
+  const config = getSupabaseSecretConfig();
+  if (!config) return null;
+  return createClient(config.url, config.secretKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 }
 
+async function reportMeteringFailure(
+  step: "consume" | "refund",
+  err: unknown,
+  userId: string,
+): Promise<void> {
+  console.error(`[ai-usage] ${step} failed:`, err);
+  await reportServerError(err, {
+    route: METERING_REPORT_ROUTE,
+    context: { step },
+    userId,
+  });
+}
+
+const MISSING_SECRET_KEY = "SUPABASE_SECRET_KEY is not configured";
+
+/** Gate an AI call on the caller's monthly cap and debit one credit.
+ *
+ *    1. Resolve the tier from the caller's own profile / comp grant
+ *       (session client, RLS-scoped). Unmetered tiers (Pro) return
+ *       `allowed` without touching the counter.
+ *    2. Debit through `consume_ai_credit` with the service-role client.
+ *       The check and the increment are one SQL statement, so concurrent
+ *       calls serialize on the counter row and can never pass the cap.
+ *
+ *  Call this only after authenticating the user: `userId` must be the id
+ *  returned by `auth.getUser()`, because the service-role RPC trusts it.
+ *
+ *  Fails CLOSED. Any metering failure is reported and returned as
+ *  `reason: "metering-unavailable"`; the route must refuse the AI call
+ *  rather than run it unmetered. */
 export async function checkAndIncrementAiUsage(
   supabase: SupabaseClient,
   userId: string,
 ): Promise<UsageCheckResult> {
-  const { used, cap, tier, isPremium } = await getCurrentMonthUsage(
-    supabase,
-    userId,
-  );
-
   // Unmetered tiers (Pro, and any future unlimited tier) skip the
-  // counter entirely. We could still track usage for product
-  // analytics, but the row's only purpose here is enforcement —
-  // and that doesn't apply.
+  // counter entirely: the row exists only for enforcement.
+  const tier = await loadUserTier(supabase, userId);
+  const cap = AI_CAPS[tier];
   if (cap === null) {
-    return { allowed: true, tier, isPremium, used, cap: null };
+    return { allowed: true, tier, used: null, cap: null, debitedPeriod: null };
   }
 
-  if (used >= cap) {
-    // Narrow tier for the rejection path — only `free` and `plus`
-    // can hit a cap (`pro` is unmetered). The cast is safe because
-    // we just established cap !== null.
-    return {
-      allowed: false,
-      tier: tier as "free" | "plus",
-      isPremium: false,
-      used,
-      cap,
-    };
-  }
-
-  // Increment via upsert so the first call of the month creates
-  // the row and subsequent calls bump the counter. The `count`
-  // value is computed from the just-read `used` rather than relying
-  // on a Postgres-side increment expression so this stays plain
-  // PostgREST without a custom RPC.
-  const periodStart = currentPeriodStart();
-  const { error: upsertError } = await supabase
-    .from("ai_usage_monthly")
-    .upsert(
-      {
-        user_id: userId,
-        period_start: periodStart,
-        count: used + 1,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "user_id,period_start" },
+  const admin = meteringClient();
+  if (!admin) {
+    await reportMeteringFailure(
+      "consume",
+      new Error(MISSING_SECRET_KEY),
+      userId,
     );
-  if (upsertError) {
-    // Log loud so the operator catches it in the route handler's
-    // server logs. We still ALLOW the call rather than block on
-    // metering infra — the user shouldn't be punished by our
-    // bookkeeping outage. Downside: a real outage = unmetered AI
-    // until it's fixed. Acceptable cost given the alternative
-    // (blocking every user when ai_usage_monthly hiccups).
-    console.error("[ai-usage] increment failed:", upsertError);
+    return { allowed: false, reason: "metering-unavailable" };
   }
 
-  return { allowed: true, tier, isPremium, used: used + 1, cap };
+  const periodStart = currentPeriodStart();
+  let row: z.infer<typeof ConsumeRow>;
+  try {
+    const { data, error } = await admin
+      .rpc("consume_ai_credit", {
+        p_user_id: userId,
+        p_period_start: periodStart,
+        p_cap: cap,
+      })
+      .single();
+    if (error) throw error;
+    row = ConsumeRow.parse(data);
+  } catch (err) {
+    await reportMeteringFailure("consume", err, userId);
+    return { allowed: false, reason: "metering-unavailable" };
+  }
+
+  if (!row.granted) {
+    return { allowed: false, reason: "cap-reached", tier, used: row.used, cap };
+  }
+  return {
+    allowed: true,
+    tier,
+    used: row.used,
+    cap,
+    debitedPeriod: periodStart,
+  };
+}
+
+/** Give back the credit a {@link checkAndIncrementAiUsage} call debited,
+ *  for a route that does not bill a model call that produced nothing
+ *  (recipes/import-from-url falls back to JSON-LD). Pass the result's
+ *  `debitedPeriod` so a call that straddles a month boundary refunds the
+ *  month it was charged to.
+ *
+ *  A failed refund is reported, not thrown: the user still gets the
+ *  fallback result, and the operator sees the lost credit in `error_log`. */
+export async function refundAiUsage(
+  userId: string,
+  debitedPeriod: string,
+): Promise<void> {
+  const admin = meteringClient();
+  if (!admin) {
+    await reportMeteringFailure(
+      "refund",
+      new Error(MISSING_SECRET_KEY),
+      userId,
+    );
+    return;
+  }
+  try {
+    const { error } = await admin.rpc("refund_ai_credit", {
+      p_user_id: userId,
+      p_period_start: debitedPeriod,
+    });
+    if (error) throw error;
+  } catch (err) {
+    await reportMeteringFailure("refund", err, userId);
+  }
 }

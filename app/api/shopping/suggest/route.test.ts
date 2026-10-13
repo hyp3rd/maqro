@@ -122,7 +122,25 @@ describe("/api/shopping/suggest POST", () => {
   });
 
   it("falls back (not 402) when over the monthly cap", async () => {
-    mockUsage.mockResolvedValue({ allowed: false, used: 25, cap: 25 });
+    mockUsage.mockResolvedValue({
+      allowed: false,
+      reason: "cap-reached",
+      tier: "free",
+      used: 25,
+      cap: 25,
+    });
+    const res = await POST(makeRequest(BODY));
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as ShoppingSuggestion;
+    expect(json.ai).toBe(false);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("falls back without calling the model when metering is unavailable", async () => {
+    mockUsage.mockResolvedValue({
+      allowed: false,
+      reason: "metering-unavailable",
+    });
     const res = await POST(makeRequest(BODY));
     expect(res.status).toBe(200);
     const json = (await res.json()) as ShoppingSuggestion;

@@ -10,6 +10,7 @@ import { buildNormIndex, matchPick } from "@/lib/ai/plan";
 import { parseBody } from "@/lib/api/parse-body";
 import { assertAal2 } from "@/lib/auth/mfa-required";
 import { checkAndIncrementAiUsage } from "@/lib/billing/usage";
+import { aiUsageDeniedResponse } from "@/lib/billing/usage-response";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -147,17 +148,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   // 2b. Free-tier monthly cap (shared across all three AI routes).
   //     402 short-circuits before image decode / Anthropic call.
   const usage = await checkAndIncrementAiUsage(supabase, user.id);
-  if (!usage.allowed) {
-    return NextResponse.json(
-      {
-        error: "AI usage cap reached for this month.",
-        used: usage.used,
-        cap: usage.cap,
-        kind: "ai-cap-reached",
-      },
-      { status: 402 },
-    );
-  }
+  if (!usage.allowed) return aiUsageDeniedResponse(usage);
 
   // 3. Validate body. Schema enforces shape, MIME enum, and the
   //    presence of the base64 string; the image-size cap below stays

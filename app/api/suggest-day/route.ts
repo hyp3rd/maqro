@@ -2,6 +2,7 @@ import { getAnthropicConfig } from "@/lib/ai/env";
 import { parseBody } from "@/lib/api/parse-body";
 import { assertAal2 } from "@/lib/auth/mfa-required";
 import { checkAndIncrementAiUsage } from "@/lib/billing/usage";
+import { aiUsageDeniedResponse } from "@/lib/billing/usage-response";
 import { filterDayAssignments } from "@/lib/suggest-day";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -75,17 +76,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   // 2b. Free-tier monthly cap (shared across all AI routes). 402 short-circuits
   //     before the Anthropic call.
   const usage = await checkAndIncrementAiUsage(supabase, user.id);
-  if (!usage.allowed) {
-    return NextResponse.json(
-      {
-        error: "AI usage cap reached for this month.",
-        used: usage.used,
-        cap: usage.cap,
-        kind: "ai-cap-reached",
-      },
-      { status: 402 },
-    );
-  }
+  if (!usage.allowed) return aiUsageDeniedResponse(usage);
 
   // 3. Validate body.
   const parsed = await parseBody(req, BodySchema);

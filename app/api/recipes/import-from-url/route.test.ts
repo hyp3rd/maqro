@@ -7,8 +7,8 @@ const {
   mockRpc,
   mockIsHostAllowed,
   mockExtractRecipeWithAi,
-  mockGetCurrentMonthUsage,
-  mockIncrementAiUsage,
+  mockCheckAndIncrementAiUsage,
+  mockRefundAiUsage,
   mockLoadUserTier,
 } = vi.hoisted(() => ({
   mockGetSupabaseServer: vi.fn(),
@@ -20,8 +20,8 @@ const {
   })),
   mockIsHostAllowed: vi.fn() as ReturnType<typeof vi.fn>,
   mockExtractRecipeWithAi: vi.fn() as ReturnType<typeof vi.fn>,
-  mockGetCurrentMonthUsage: vi.fn() as ReturnType<typeof vi.fn>,
-  mockIncrementAiUsage: vi.fn() as ReturnType<typeof vi.fn>,
+  mockCheckAndIncrementAiUsage: vi.fn() as ReturnType<typeof vi.fn>,
+  mockRefundAiUsage: vi.fn() as ReturnType<typeof vi.fn>,
   mockLoadUserTier: vi.fn() as ReturnType<typeof vi.fn>,
 }));
 
@@ -47,8 +47,8 @@ vi.mock("@/lib/recipe-import/ai-extract", () => ({
   extractRecipeWithAi: mockExtractRecipeWithAi,
 }));
 vi.mock("@/lib/billing/usage", () => ({
-  getCurrentMonthUsage: mockGetCurrentMonthUsage,
-  incrementAiUsage: mockIncrementAiUsage,
+  checkAndIncrementAiUsage: mockCheckAndIncrementAiUsage,
+  refundAiUsage: mockRefundAiUsage,
   loadUserTier: mockLoadUserTier,
 }));
 vi.mock("@supabase/supabase-js", () => ({
@@ -98,15 +98,14 @@ beforeEach(() => {
   // that exercise the gate override to "free".
   mockLoadUserTier.mockResolvedValue("plus");
   // Defaults for the AI path. Specific tests override per-call.
-  mockGetCurrentMonthUsage.mockResolvedValue({
-    used: 1,
-    cap: 50,
+  mockCheckAndIncrementAiUsage.mockResolvedValue({
+    allowed: true,
     tier: "plus",
-    isPremium: true,
-    subscriptionStatus: "active",
-    currentPeriodEnd: null,
+    used: 2,
+    cap: 500,
+    debitedPeriod: "2026-10-01",
   });
-  mockIncrementAiUsage.mockResolvedValue(undefined);
+  mockRefundAiUsage.mockResolvedValue(undefined);
   mockExtractRecipeWithAi.mockResolvedValue({
     recipe: {
       name: "AI-extracted recipe",
@@ -251,13 +250,12 @@ describe("POST /api/recipes/import-from-url — happy path", () => {
 
 describe("POST /api/recipes/import-from-url — parseWithAi flag", () => {
   it("returns 402 when the user is over their AI usage cap", async () => {
-    mockGetCurrentMonthUsage.mockResolvedValueOnce({
-      used: 50,
-      cap: 50,
-      tier: "free",
-      isPremium: false,
-      subscriptionStatus: null,
-      currentPeriodEnd: null,
+    mockCheckAndIncrementAiUsage.mockResolvedValueOnce({
+      allowed: false,
+      reason: "cap-reached",
+      tier: "plus",
+      used: 500,
+      cap: 500,
     });
     const { POST } = await loadRoute();
     const res = await POST(
@@ -267,7 +265,43 @@ describe("POST /api/recipes/import-from-url — parseWithAi flag", () => {
     const body = (await res.json()) as { kind?: string };
     expect(body.kind).toBe("ai-cap-reached");
     expect(mockExtractRecipeWithAi).not.toHaveBeenCalled();
-    expect(mockIncrementAiUsage).not.toHaveBeenCalled();
+    expect(mockRefundAiUsage).not.toHaveBeenCalled();
+  });
+
+  it("returns 503 without calling the model when metering is unavailable", async () => {
+    mockCheckAndIncrementAiUsage.mockResolvedValueOnce({
+      allowed: false,
+      reason: "metering-unavailable",
+    });
+    const { POST } = await loadRoute();
+    const res = await POST(
+      req({ url: "https://example.com/recipe", parseWithAi: true }),
+    );
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { kind?: string };
+    expect(body.kind).toBe("ai-metering-unavailable");
+    expect(mockExtractRecipeWithAi).not.toHaveBeenCalled();
+  });
+
+  it("reserves the credit before calling the model", async () => {
+    const order: string[] = [];
+    mockCheckAndIncrementAiUsage.mockImplementationOnce(async () => {
+      order.push("reserve");
+      return {
+        allowed: true,
+        tier: "plus",
+        used: 2,
+        cap: 500,
+        debitedPeriod: "2026-10-01",
+      };
+    });
+    mockExtractRecipeWithAi.mockImplementationOnce(async () => {
+      order.push("model");
+      return null;
+    });
+    const { POST } = await loadRoute();
+    await POST(req({ url: "https://example.com/recipe", parseWithAi: true }));
+    expect(order).toEqual(["reserve", "model"]);
   });
 
   it("returns the AI-extracted recipe with source: 'ai' on success", async () => {
@@ -285,8 +319,9 @@ describe("POST /api/recipes/import-from-url — parseWithAi flag", () => {
     expect(body.source).toBe("ai");
     expect(body.recipe.name).toBe("AI-extracted recipe");
     expect(body.recipe.prepNotes).toBe("Best with butter.");
-    // AI succeeded → the debit lands.
-    expect(mockIncrementAiUsage).toHaveBeenCalledTimes(1);
+    // AI succeeded → the reserved credit stays debited.
+    expect(mockCheckAndIncrementAiUsage).toHaveBeenCalledTimes(1);
+    expect(mockRefundAiUsage).not.toHaveBeenCalled();
   });
 
   it("falls back to JSON-LD when AI extraction fails", async () => {
@@ -304,9 +339,26 @@ describe("POST /api/recipes/import-from-url — parseWithAi flag", () => {
     const body = (await res.json()) as { source: string };
     expect(body.source).toBe("jsonld");
     // Crucially: the AI extraction didn't return a recipe, so the
-    // user's quota is NOT debited. They paid for AI, got JSON-LD
-    // fallback — keep the credit.
-    expect(mockIncrementAiUsage).not.toHaveBeenCalled();
+    // reserved credit is refunded to the month it was charged to. They
+    // paid for AI, got JSON-LD fallback — keep the credit.
+    expect(mockRefundAiUsage).toHaveBeenCalledWith("user-1", "2026-10-01");
+  });
+
+  it("does not refund an unmetered (Pro) caller on AI failure", async () => {
+    mockCheckAndIncrementAiUsage.mockResolvedValueOnce({
+      allowed: true,
+      tier: "pro",
+      used: null,
+      cap: null,
+      debitedPeriod: null,
+    });
+    mockExtractRecipeWithAi.mockResolvedValueOnce(null);
+    const { POST } = await loadRoute();
+    const res = await POST(
+      req({ url: "https://example.com/recipe", parseWithAi: true }),
+    );
+    expect(res.status).toBe(200);
+    expect(mockRefundAiUsage).not.toHaveBeenCalled();
   });
 
   it("returns 422 when BOTH AI and JSON-LD fail to extract anything", async () => {
@@ -336,8 +388,8 @@ describe("POST /api/recipes/import-from-url — parseWithAi flag", () => {
   it("does not consume AI usage when parseWithAi is false", async () => {
     const { POST } = await loadRoute();
     await POST(req({ url: "https://example.com/recipe" }));
-    expect(mockGetCurrentMonthUsage).not.toHaveBeenCalled();
-    expect(mockIncrementAiUsage).not.toHaveBeenCalled();
+    expect(mockCheckAndIncrementAiUsage).not.toHaveBeenCalled();
+    expect(mockRefundAiUsage).not.toHaveBeenCalled();
     expect(mockExtractRecipeWithAi).not.toHaveBeenCalled();
   });
 });

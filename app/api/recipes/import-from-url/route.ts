@@ -2,10 +2,11 @@ import { parseBody } from "@/lib/api/parse-body";
 import { assertAal2 } from "@/lib/auth/mfa-required";
 import { FEATURES } from "@/lib/billing/tiers";
 import {
-  getCurrentMonthUsage,
-  incrementAiUsage,
+  checkAndIncrementAiUsage,
   loadUserTier,
+  refundAiUsage,
 } from "@/lib/billing/usage";
+import { aiUsageDeniedResponse } from "@/lib/billing/usage-response";
 import { checkAuthRateLimit, ipFromRequest } from "@/lib/rate-limit";
 import { extractRecipeWithAi } from "@/lib/recipe-import/ai-extract";
 import { fetchRecipePage } from "@/lib/recipe-import/fetch";
@@ -156,32 +157,17 @@ export async function POST(req: Request): Promise<NextResponse> {
   const jsonLdRecipe = parseRecipeJsonLd(fetchResult.html);
 
   if (parseWithAi) {
-    // AI path. Check the monthly cap first WITHOUT incrementing so
-    // an over-budget caller gets the right 402 instead of consuming
-    // Anthropic quota for no reason. The debit is deferred to *after*
-    // the model call actually succeeds — if the vendor errors and we
-    // fall back to JSON-LD, the user keeps their credit (they paid
-    // for AI extraction and got none).
-    const usage = await getCurrentMonthUsage(supabase, user.id);
-    if (usage.cap !== null && usage.used >= usage.cap) {
-      return NextResponse.json(
-        {
-          error: "AI usage cap reached for this month.",
-          used: usage.used,
-          cap: usage.cap,
-          kind: "ai-cap-reached",
-        },
-        { status: 402 },
-      );
-    }
+    // AI path. Reserve the credit atomically BEFORE the model call, so
+    // concurrent imports (or other AI routes running meanwhile) can't
+    // all pass the cap check. An over-budget caller gets 402, and a
+    // metering outage gets 503, without spending Anthropic quota.
+    const usage = await checkAndIncrementAiUsage(supabase, user.id);
+    if (!usage.allowed) return aiUsageDeniedResponse(usage);
     const ai = await extractRecipeWithAi({
       html: fetchResult.html,
       sourceUrl: fetchResult.finalUrl,
     });
     if (ai) {
-      if (usage.cap !== null) {
-        await incrementAiUsage(supabase, user.id, usage.used);
-      }
       return NextResponse.json({
         ok: true,
         recipe: ai.recipe,
@@ -191,9 +177,12 @@ export async function POST(req: Request): Promise<NextResponse> {
     }
     // AI extraction failed (no Anthropic config, tool error,
     // malformed payload). Fall through to whatever JSON-LD gave us
-    // so the user isn't left empty-handed after opting in. We
-    // deliberately do NOT debit `incrementAiUsage` here — the user
-    // didn't get the AI result they opted into.
+    // so the user isn't left empty-handed after opting in, and give
+    // the reserved credit back — the user didn't get the AI result
+    // they opted into.
+    if (usage.debitedPeriod !== null) {
+      await refundAiUsage(user.id, usage.debitedPeriod);
+    }
   }
 
   if (!jsonLdRecipe) {
