@@ -40,9 +40,11 @@ const KEY_COLUMNS: Record<string, string[]> = {
 
 /** In-memory stand-in for the PostgREST + Realtime surface the sync engine
  *  touches. Writes stamp a fresh, strictly increasing `updated_at` (like the
- *  `set_updated_at` trigger); reads honour `max_rows` like PostgREST and
- *  project the selected columns, so a pull that forgets a column really does
- *  get `undefined` back. */
+ *  `set_updated_at` trigger) and store the body as it crosses the wire
+ *  (JSON: `undefined` fields dropped); reads honour `max_rows` like PostgREST
+ *  and project the selected columns — a stored-but-unset column comes back
+ *  as `null`, and a pull that forgets a column really does get `undefined`
+ *  back. */
 class FakeSupabase {
   readonly tables: Record<string, Row[]> = {};
   maxRows = 1000;
@@ -111,6 +113,11 @@ class FakeSupabase {
   }
 }
 
+/** A request body as PostgREST receives it (supabase-js sends JSON). */
+function wire(row: Row): Row {
+  return JSON.parse(JSON.stringify(row)) as Row;
+}
+
 class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
   private op: Op = "select";
   private columns: string | undefined;
@@ -130,12 +137,12 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
   }
   upsert(row: Row) {
     this.op = "upsert";
-    this.payload = row;
+    this.payload = wire(row);
     return this;
   }
   update(row: Row) {
     this.op = "update";
-    this.payload = row;
+    this.payload = wire(row);
     return this;
   }
   delete() {
@@ -192,7 +199,7 @@ class FakeQuery implements PromiseLike<{ data: unknown; error: unknown }> {
     if (!this.columns || this.columns === "*") return { ...row };
     const out: Row = {};
     for (const c of this.columns.split(",").map((s) => s.trim())) {
-      out[c] = row[c];
+      out[c] = row[c] ?? null;
     }
     return out;
   }
@@ -256,9 +263,10 @@ async function setup() {
   const sync = await import("./index");
   const status = await import("@/lib/sync-status");
   const realtime = await import("./realtime");
+  const bus = await import("./data-bus");
   status.__resetSyncStatusForTests();
   const server = new FakeSupabase();
-  return { db, sync, status, realtime, server, sb: server.client() };
+  return { db, sync, status, realtime, bus, server, sb: server.client() };
 }
 
 function meals(...names: string[]): Meal[] {
@@ -471,6 +479,135 @@ describe("mark-synced is compare-and-set", () => {
       pending: 1,
       pendingSinceAttempt: 1,
     });
+  });
+});
+
+describe("the echo of our own push is a no-op", () => {
+  let env: Awaited<ReturnType<typeof setup>>;
+  beforeEach(async () => {
+    env = await setup();
+  });
+
+  it("realtime: the echo after mark-synced neither rewrites the row nor wakes the data bus", async () => {
+    const { db, sync, realtime, bus, server, sb } = env;
+    await db.saveDailyLog(DAY, meals("eggs"));
+    await sync.triggerSync(sb, USER_ID);
+    const echo = { ...(server.find("daily_logs", { date: DAY }) ?? {}) };
+    const before = await db.getDailyLog(DAY);
+    const handle = realtime.startRealtimeSubscription(sb, USER_ID);
+    const version = bus.getDataVersion("dailyLogs");
+
+    server.emit("daily_logs", { eventType: "UPDATE", new: echo, old: {} });
+    // Same-store marker: once it has landed, the echo's transaction has
+    // completed too (IDB runs them in creation order).
+    server.emit("daily_logs", {
+      eventType: "INSERT",
+      new: {
+        user_id: USER_ID,
+        date: "2026-05-17",
+        meals: meals("marker"),
+        updated_at: server.nextTimestamp(),
+      },
+      old: {},
+    });
+    await vi.waitFor(async () => {
+      expect(await db.getDailyLog("2026-05-17")).not.toBeNull();
+    });
+
+    // Only the marker notified. A notify for the echo would make
+    // useDailyLog reload and replace edits still in its save debounce.
+    expect(bus.getDataVersion("dailyLogs")).toBe(version + 1);
+    expect(await db.getDailyLog(DAY)).toEqual(before);
+    handle.unsubscribe();
+  });
+
+  it("a sync right after pushing a row of every table pulls nothing back", async () => {
+    const { db, sync, sb } = env;
+    await db.saveProfile({
+      gender: "male",
+      age: 30,
+      weight: 70,
+      height: 175,
+      activityLevel: "moderate",
+      goal: "maintain",
+      dietType: "balanced",
+      dietPreference: "omnivore",
+      cuisinePreferences: [],
+      allergies: [],
+      dislikedFoods: [],
+      weeklyRateKg: 0.5,
+      manualTdee: null,
+      units: "metric",
+    });
+    await db.saveDailyLog(DAY, meals("eggs"));
+    await db.saveWeightEntry(DAY, 80.4);
+    await db.setWaterTotal(DAY, 1500);
+    await db.saveSupplementIntake(DAY, [{ supplementId: "s", doses: 1 }]);
+    await db.saveBodyMeasurement(DAY, { waistCm: 82 });
+    await db.saveBloodPressure(DAY, { systolic: 120, diastolic: 80 });
+    await db.saveFastSession({
+      startedAt: Date.UTC(2026, 4, 15, 20),
+      endedAt: Date.UTC(2026, 4, 16, 12),
+      protocol: "16:8",
+      targetHours: 16,
+    });
+    await db.addCustomFood({
+      name: "Tofu",
+      protein: 8,
+      carbs: 2,
+      fat: 4,
+      calories: 76,
+    });
+    await db.saveMealTemplate({ name: "Breakfast", foods: [] });
+    const recipeId = await db.addRecipe({ name: "Chili", ingredients: [] });
+    await db.addMealSchedule({
+      recipeId,
+      recipeName: "Chili",
+      mealNames: ["Dinner"],
+      startDate: DAY,
+      endDate: DAY,
+      daysOfWeek: [1],
+      scale: 1,
+    });
+    await db.addSupplement({ name: "Vitamin D", doseLabel: "1", micros: {} });
+    await db.addPantryItem({ name: "Milk", quantity: 2, unit: "l" });
+    await db.addPantryNotification({
+      type: "low-stock",
+      itemId: "p",
+      itemName: "Milk",
+      quantity: 0.5,
+      unit: "l",
+      read: false,
+    });
+    await db.upsertFavoriteStore({
+      id: "node/1",
+      name: "Corner shop",
+      kind: "supermarket",
+      lat: 0,
+      lon: 0,
+    });
+    await db.addFavoriteFood(
+      {
+        id: "x",
+        source: "custom",
+        name: "Oats",
+        protein: 13,
+        carbs: 60,
+        fat: 7,
+        calories: 380,
+      },
+      40,
+    );
+    const first = await sync.triggerSync(sb, USER_ID);
+    const { micronutrientProfiles: _pullOnly, ...pushed } = first?.pushed ?? {};
+    void _pullOnly;
+    expect(Object.entries(pushed).filter(([, n]) => n !== 1)).toEqual([]);
+
+    const second = await sync.triggerSync(sb, USER_ID);
+
+    expect(
+      Object.entries(second?.pulled ?? {}).filter(([, n]) => n !== 0),
+    ).toEqual([]);
   });
 });
 

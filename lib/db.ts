@@ -2136,6 +2136,34 @@ function stableStringify(value: unknown): string {
   });
 }
 
+/** Fields of a stored row that are client bookkeeping rather than content
+ *  the server owns, so they never round-trip through a push and the pull
+ *  that follows it:
+ *   - the version tokens themselves;
+ *   - `updatedAt`, which a local save stamps with `Date.now()` while the
+ *     pull mappers derive it from the server's `updated_at`;
+ *   - `recordedAt`, which the `applyServerX` helpers of the date-keyed
+ *     stores derive from the server's `updated_at`, not its `recorded_at`;
+ *   - `_demoSeeded`, an IDB-only marker on the profile row.
+ *  Comparing them would make the echo of every successful push look like
+ *  new server content. */
+const CLIENT_BOOKKEEPING_FIELDS = [
+  "localUpdatedAt",
+  "serverUpdatedAt",
+  "updatedAt",
+  "recordedAt",
+  "_demoSeeded",
+] as const;
+
+/** The server-owned content of a stored row, serialized deterministically:
+ *  equal for a local row and the server row it was pushed as (or pulled
+ *  from), whatever their bookkeeping fields say. */
+function serverOwnedContent(row: object): string {
+  const content: Record<string, unknown> = { ...row };
+  for (const field of CLIENT_BOOKKEEPING_FIELDS) delete content[field];
+  return stableStringify(content);
+}
+
 /** What happened when a server row was offered to IDB. */
 export type ApplyServerOutcome =
   /** Written (new row, newer server version, or a clean local copy that had
@@ -2153,12 +2181,16 @@ export type ApplyServerOutcome =
  *  above. `record` carries `localUpdatedAt === serverUpdatedAt` (clean).
  *
  *  A clean local copy at the SAME version is still refreshed when its
- *  content differs from the server's: a clean row is by definition a mirror
- *  of that server version, so any difference is local corruption — e.g. a
- *  pantry row an older client pulled without its `category` / `density` /
- *  `low_threshold` columns, which would otherwise be pushed back as NULLs
- *  on the next local edit. Identical content is a no-op (own realtime echo,
- *  unchanged rows on every pull). */
+ *  server-owned content differs from the server's: a clean row is by
+ *  definition a mirror of that server version, so any difference is local
+ *  corruption — e.g. a pantry row an older client pulled without its
+ *  `category` / `density` / `low_threshold` columns, which would otherwise
+ *  be pushed back as NULLs on the next local edit. Identical content is a
+ *  no-op — in particular the realtime echo of our own push, which must not
+ *  rewrite the row or wake the data bus (a hook reloading on it would
+ *  replace edits still waiting in its save debounce with the pushed
+ *  snapshot). Client bookkeeping fields are ignored by the comparison
+ *  ({@link CLIENT_BOOKKEEPING_FIELDS}). */
 async function applyServerRecord<S extends VersionedStore>(
   store: S,
   key: string,
@@ -2186,7 +2218,8 @@ async function applyServerRecord<S extends VersionedStore>(
       );
       if (
         order < 0 ||
-        (order === 0 && stableStringify(existing) === stableStringify(record))
+        (order === 0 &&
+          serverOwnedContent(existing) === serverOwnedContent(record))
       ) {
         outcome = "not-newer";
       }
