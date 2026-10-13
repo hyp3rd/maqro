@@ -161,6 +161,56 @@ describe("useDailyLog", () => {
     expect(result.current.meals).toEqual(DEFAULT_MEALS);
   });
 
+  it("does not re-save a peer change pulled from the server", async () => {
+    // A hydration is not an edit: re-saving a pulled row would re-stamp
+    // localUpdatedAt and push the peer's change straight back as our own.
+    const { useDailyLog } = await freshHook();
+    const db = await import("@/lib/db");
+    const bus = await import("@/lib/sync/data-bus");
+    await db.saveDailyLog("2026-05-13", DEFAULT_MEALS);
+
+    const { result } = renderHook(() =>
+      useDailyLog("2026-05-13", DEFAULT_MEALS),
+    );
+    await waitFor(() => expect(result.current.isHydrated).toBe(true));
+    await new Promise((r) => setTimeout(r, 600));
+    const saveSpy = vi.spyOn(db, "saveDailyLog");
+
+    const serverStamp = "2026-05-13T09:00:00.000Z";
+    await db.applyServerDailyLog(
+      "2026-05-13",
+      [
+        {
+          id: 1,
+          name: "Breakfast",
+          foods: [
+            {
+              id: 1,
+              name: "Peer toast",
+              protein: 3,
+              carbs: 20,
+              fat: 1,
+              calories: 100,
+              portionSize: 40,
+            },
+          ],
+        },
+        ...DEFAULT_MEALS.slice(1),
+      ],
+      serverStamp,
+    );
+    act(() => bus.notifyDataChanged("dailyLogs"));
+    await waitFor(() =>
+      expect(result.current.meals[0]!.foods[0]?.name).toBe("Peer toast"),
+    );
+    await new Promise((r) => setTimeout(r, 600));
+
+    expect(saveSpy).not.toHaveBeenCalled();
+    expect((await db.getDailyLog("2026-05-13"))!.localUpdatedAt).toBe(
+      serverStamp,
+    );
+  });
+
   it("auto-saves once the user actually edits", async () => {
     const { useDailyLog } = await freshHook();
     const db = await import("@/lib/db");
@@ -278,6 +328,35 @@ describe("useDailyLog - identity changes", () => {
     expect(saveSpy).not.toHaveBeenCalled();
     expect(await db.getDailyLog(DATE)).toBeNull();
     await waitFor(() => expect(result.current.meals).toEqual(DEFAULT_MEALS));
+  });
+
+  it("does not re-dirty the previous account's synced day on a direct switch without a wipe", async () => {
+    // A passkey step-up that resolves to another account replaces the
+    // session A -> B with no sign-out in between, so A's rows are still in
+    // IndexedDB. Re-persisting A's displayed day would make it dirty, and
+    // B's first sync would upload it into B's account.
+    const { useDailyLog } = await freshHook();
+    const db = await import("@/lib/db");
+    const serverStamp = "2026-05-13T08:00:00.000Z";
+    await db.applyServerDailyLog(DATE, dayWith("A's oats"), serverStamp);
+    auth.user = asUser("user-a");
+
+    const { result, rerender } = renderHook(() =>
+      useDailyLog(DATE, DEFAULT_MEALS),
+    );
+    await waitFor(() => expect(result.current.isHydrated).toBe(true));
+    await pastDebounce();
+
+    const saveSpy = vi.spyOn(db, "saveDailyLog");
+    auth.user = asUser("user-b");
+    rerender();
+    await waitFor(() => expect(result.current.isHydrated).toBe(true));
+    await pastDebounce();
+
+    expect(saveSpy).not.toHaveBeenCalled();
+    const row = await db.getDailyLog(DATE);
+    expect(row!.localUpdatedAt).toBe(serverStamp);
+    expect(row!.serverUpdatedAt).toBe(serverStamp);
   });
 
   it("an auth change alone (guest -> signed in) does not trigger a write", async () => {

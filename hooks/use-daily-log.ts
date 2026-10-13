@@ -48,9 +48,10 @@ export type DailyLogState = {
  *
  * The same applies to identity: when a signed-in user goes away (sign-out
  * wipes IndexedDB, or an account switch), the in-memory day belongs to the
- * previous account. It is invalidated and reloaded from the (wiped) store,
- * and never written back — otherwise the next account to sign in on this
- * device would upload it as its own. A guest → signed-in transition keeps
+ * previous account. It is invalidated and reloaded from the store (wiped on
+ * sign-out), and a load is never written back — only a user edit is —
+ * otherwise the next account to sign in on this device would upload it as
+ * its own. A guest → signed-in transition keeps
  * the day: guest data is adopted by the account by design. */
 export function useDailyLog(date: string, defaultMeals: Meal[]): DailyLogState {
   const [meals, setMealsState] = useState<Meal[]>(defaultMeals);
@@ -81,16 +82,19 @@ export function useDailyLog(date: string, defaultMeals: Meal[]): DailyLogState {
   // re-read for the current day returns the same data and React
   // diffs it as a no-op.
   const dailyLogsRev = useDataRev("dailyLogs");
-  // Gate the auto-save on a *real* user edit. Without it, a fresh
-  // session (incognito window, freshly cleared IDB) would auto-save
-  // the synthetic `defaultMeals` to IDB before the initial sync runs,
-  // and the first push would upload an empty meals array — clobbering
-  // the user's actual logged meals on the server. Set true by the
-  // load effect when an actual saved row was loaded, and by `setMeals`
-  // when the user produces real data. Reset when the identity epoch
-  // changes, so the previous account's edits never unlock a write.
-  const hasRealLocalData = useRef(false);
-  const loadedEpoch = useRef(epoch);
+  // "Edited since the last load or write": the auto-save only ever
+  // persists a real user edit. Set by `setMeals` (and so `commitToDay`'s
+  // in-memory path); cleared whenever a load replaces the in-memory day
+  // and when the debounced write fires.
+  //
+  // A hydration is never an edit. Saving on one re-stamps `localUpdatedAt`
+  // and turns a clean, synced row dirty, which (a) on a fresh session
+  // (incognito, freshly cleared IDB) would push the synthetic
+  // `defaultMeals` and clobber the user's real server-side meals, (b) re-
+  // pushes every pulled peer change, and (c) on a direct account switch
+  // (A → B without a wipe) would re-persist A's day as a dirty row that
+  // B's first sync uploads into B's account.
+  const editedSinceLoad = useRef(false);
   // Latest values for the deferred paths (the debounced save's enrichment
   // call, `commitToDay`), which run after the render that scheduled them.
   // Synced in an effect because writing refs during render is disallowed.
@@ -115,10 +119,6 @@ export function useDailyLog(date: string, defaultMeals: Meal[]): DailyLogState {
 
   useEffect(() => {
     if (date === "") return; // SSR snapshot; skip until hydrate.
-    if (loadedEpoch.current !== epoch) {
-      loadedEpoch.current = epoch;
-      hasRealLocalData.current = false;
-    }
     let cancelled = false;
     getDailyLog(date)
       .then((log) => {
@@ -127,13 +127,14 @@ export function useDailyLog(date: string, defaultMeals: Meal[]): DailyLogState {
         // Keep the existing reference when nothing changed (our own save
         // echo), so the save effect's `meals` dep doesn't re-fire.
         setMealsState((prev) => (sameMeals(prev, next) ? prev : next));
-        if (log) hasRealLocalData.current = true;
+        editedSinceLoad.current = false;
         setLoadedFor(`${epoch}|${date}`);
       })
       .catch((err) => {
         if (cancelled) return;
         reportStorageError(err);
         setMealsState(defaultMeals);
+        editedSinceLoad.current = false;
         setLoadedFor(`${epoch}|${date}`);
       });
     return () => {
@@ -145,8 +146,12 @@ export function useDailyLog(date: string, defaultMeals: Meal[]): DailyLogState {
   // and must never schedule a write (see the hook doc for the sign-out case).
   useEffect(() => {
     if (!isHydrated) return;
-    if (!hasRealLocalData.current) return;
+    if (!editedSinceLoad.current) return;
     const t = window.setTimeout(() => {
+      // A load that resolved to identical meals keeps the `meals` reference,
+      // so this timer survives it; the load still superseded the edit.
+      if (!editedSinceLoad.current) return;
+      editedSinceLoad.current = false;
       saveDailyLog(date, meals).then(reportStorageOk).catch(reportStorageError);
       // Offer the day's foods for background micronutrient enrichment.
       // Fire-and-forget + Pro-gated server-side. Skip it entirely when
@@ -157,12 +162,11 @@ export function useDailyLog(date: string, defaultMeals: Meal[]): DailyLogState {
   }, [meals, date, isHydrated]);
 
   // Public setter — bumps the sync-pending counter so the topbar pill
-  // can signal "you have local changes." Also flips `hasRealLocalData`
-  // so the auto-save effect is unblocked even on a fresh session where
-  // nothing was loaded from IDB. Internal hydration uses setMealsState
-  // directly to avoid spurious pending signals.
+  // can signal "you have local changes", and marks the day edited so the
+  // auto-save persists it. Internal hydration uses setMealsState directly:
+  // it is neither a pending change nor an edit.
   const setMeals = useCallback((next: Meal[]) => {
-    hasRealLocalData.current = true;
+    editedSinceLoad.current = true;
     bumpPending();
     setMealsState(next);
   }, []);
