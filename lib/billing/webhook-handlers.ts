@@ -357,13 +357,14 @@ type SubscriptionProfile = {
 
 /** Find the profile a subscription event belongs to.
  *
- *  The customer id is the normal cross-reference. Before migration 0074
- *  checkout could never store it (its payload-less upsert always failed),
- *  so customers created then are on no profile; their subscriptions carry
- *  our `user_id` in metadata (set at checkout), which identifies the
- *  profile to link — but only one that has no customer yet, so a stray or
- *  forged metadata value can never move another customer's billing. Any
- *  other miss is loud: the event is recorded as an error and replayable. */
+ *  The customer id is the normal cross-reference. Before checkout stored
+ *  it with a checked UPDATE, it never could (its payload-less upsert
+ *  always failed with 23502), so customers created then are on no
+ *  profile; their subscriptions carry our `user_id` in metadata (set at
+ *  checkout), which identifies the profile to link — but only one that
+ *  has no customer yet, so a stray or forged metadata value can never
+ *  move another customer's billing. Any other miss is loud: the event is
+ *  recorded as an error and replayable. */
 async function resolveSubscriptionProfile(
   subscription: Stripe.Subscription,
   customerId: string,

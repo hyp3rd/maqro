@@ -39,8 +39,10 @@ import type {
 
 /** The payload of a server-created placeholder row. Migration 0074 inserts
  *  every user's profiles row at sign-up with `payload = '{}'` so billing and
- *  admin writes always have a row to update. `{}` means "no profile yet"; it
- *  is never a profile to show or keep. */
+ *  admin writes always have a row to update. It is applied to production
+ *  only after this handling has rolled out: an older client would apply the
+ *  `{}` row over a local profile that has never synced. `{}` means "no
+ *  profile yet"; it is never a profile to show or keep. */
 export type EmptyProfilePayload = Record<string, never>;
 
 export type ProfileRow = {

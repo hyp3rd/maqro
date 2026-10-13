@@ -205,8 +205,8 @@ export async function POST(
         });
         return NextResponse.json({ error: error.message }, { status: 500 });
       }
-      // A 0-row UPDATE is not an error. Every account gets a profiles row
-      // at sign-up (migration 0074), so none here means the user is gone.
+      // A 0-row UPDATE is not an error: the account has no profiles row
+      // (it's gone, or its profile has never synced), so nothing changed.
       if (!traced || traced.length === 0) {
         return NextResponse.json(
           { error: "User has no profile." },

@@ -19,9 +19,9 @@ const BodySchema = z.object({ role: z.enum(["user", "admin"]) });
  *    - Invalid roles and malformed user ids return 400 (CHECK
  *      constraint would also reject, but the explicit 400 reads
  *      better).
- *    - The role lives on the user's profiles row, which migration
- *      0074 creates at sign-up. The change is an UPDATE that must
- *      match that row; no row → 404, nothing audited. (A
+ *    - The role lives on the user's profiles row (created by the
+ *      account's first profile push). The change is an UPDATE that
+ *      must match that row; no row → 404, nothing audited. (A
  *      payload-less upsert can't create the row anyway: payload is
  *      NOT NULL, and Postgres checks that before ON CONFLICT.) */
 export async function PATCH(

@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /** PATCH /api/admin/users/[id]/role. The role lives on the user's profiles
- *  row, which migration 0074 creates at sign-up: the change is a checked
- *  UPDATE that must match that row. The old payload-less upsert failed
- *  with 23502 (payload NOT NULL) whenever it had to insert. */
+ *  row: the change is a checked UPDATE that must match that row. The old
+ *  payload-less upsert always failed with 23502 (payload is NOT NULL, and
+ *  Postgres checks that on the proposed row before ON CONFLICT). */
 
 const VALID_ID = "00000000-0000-4000-8000-000000000001";
 const ADMIN_ID = "00000000-0000-4000-8000-000000000099";
