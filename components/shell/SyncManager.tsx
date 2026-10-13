@@ -1,6 +1,11 @@
 "use client";
 
 import { useUser } from "@/hooks/use-user";
+import { requestMfaChallenge } from "@/lib/auth/mfa-challenge-bus";
+import {
+  assertDataApiAssurance,
+  MfaRequiredError,
+} from "@/lib/auth/session-assurance";
 import { clearDemoModeData } from "@/lib/demo-data";
 import {
   watchForForcedSignOut,
@@ -28,7 +33,15 @@ import { useEffect, useRef } from "react";
  *     reconnect after a network blip, we run a one-shot `triggerSync`
  *     to catch up on events missed during the gap.
  *
- *  Sign-out tears both down so the next sign-in starts fresh. */
+ *  Sign-out tears both down so the next sign-in starts fresh.
+ *
+ *  Second factor: none of this may reach the Data API while an MFA-enrolled
+ *  session still owes its second factor — RLS rejects it (migration 0079).
+ *  `triggerSync` refuses with `MfaRequiredError`, the chain re-asserts it
+ *  before device registration / realtime (triggerSync returns `null` without
+ *  checking when a sync is already running), and on that error we open the
+ *  in-app two-step prompt. Verifying it re-issues the session, `useUser`
+ *  emits a new user object, and this effect runs the chain again. */
 export function SyncManager() {
   const { user, isLoaded } = useUser();
   const lastSyncedFor = useRef<string | null>(null);
@@ -69,6 +82,7 @@ export function SyncManager() {
         // sync chain entirely would be worse.
       })
       .then(() => triggerSync(supabase, user.id))
+      .then(() => assertDataApiAssurance(supabase))
       .then(() => {
         // Register this device in user_devices. Runs after sync so a
         // first-ever sign-in has the user row in place (FK target).
@@ -94,10 +108,15 @@ export function SyncManager() {
           },
         });
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         // Clear the cache so a later retry actually runs. The error
         // has already been surfaced via sync-status by triggerSync().
         lastSyncedFor.current = null;
+        if (err instanceof MfaRequiredError) {
+          // Cancelled / dialog not mounted: stay unsynced; the next
+          // navigation hits the proxy, which sends the user to /login.
+          void requestMfaChallenge().catch(() => {});
+        }
       });
   }, [user, isLoaded]);
 

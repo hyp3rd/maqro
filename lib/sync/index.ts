@@ -1,6 +1,7 @@
 "use client";
 
 import type { Recipe } from "@/components/macro/types";
+import { assertDataApiAssurance } from "@/lib/auth/session-assurance";
 import { signOutAndClearLocal } from "@/lib/auth/sign-out";
 import {
   applyServerBloodPressure,
@@ -312,6 +313,11 @@ export async function triggerSync(
   if (getSyncStatus().state === "syncing") return null;
   setSyncing();
   try {
+    // An MFA-enrolled session that hasn't proved its second factor is
+    // rejected by RLS (migration 0079); stop before the first request —
+    // see `assertDataApiAssurance`. Its `MfaRequiredError` is NOT an auth
+    // error below: the session is fine, it just owes a factor.
+    await assertDataApiAssurance(supabase);
     const result = await runInitialSync(supabase, userId);
     // A successful sync can still leave dirty rows behind when the
     // server's version moved on between our pull and our push — those
@@ -357,6 +363,9 @@ export async function discardPendingChanges(
   if (getSyncStatus().state === "syncing") return null;
   setSyncing();
   try {
+    // Before the wipe: under an MFA-pending session the refill pull would
+    // come back empty (RLS filters), leaving the device with nothing.
+    await assertDataApiAssurance(supabase);
     // Wipe local first so the pending counter / dirty-row check can't
     // see anything to push. clearAllStores also wipes tombstones so
     // we don't end up server-deleting a row the user changed their
@@ -448,7 +457,13 @@ async function pushRow<Row extends object>(
     if (error) {
       // RLS row-owned-by-someone-else (UUID collision across users)
       // surfaces here as 42501. Caller can retry with a fresh UUID.
+      // The restrictive MFA policy (migration 0079) answers an insert from a
+      // session that owes its second factor with the SAME 42501, and
+      // re-minting would then retry forever. Re-check the session first:
+      // `assertDataApiAssurance` throws `MfaRequiredError` (or fails closed)
+      // instead of letting the caller re-mint.
       if ((error as { code?: string }).code === "42501") {
+        await assertDataApiAssurance(supabase);
         return { status: "uuid-collision" };
       }
       throw asError(error, label);
