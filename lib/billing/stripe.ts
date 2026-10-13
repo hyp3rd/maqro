@@ -61,6 +61,43 @@ export const STRIPE_PRICES = {
  *  rely on `canceled` to be the actual downgrade signal. */
 export const ENTITLED_STATUSES = new Set(["active", "trialing", "past_due"]);
 
+/** Subscription statuses that still bill the customer, or can start billing
+ *  again without a new checkout. A customer with one of these must not get a
+ *  second subscription: a plan change goes through the existing one. Only
+ *  `canceled` and `incomplete_expired` are terminal in Stripe. */
+const LIVE_SUBSCRIPTION_STATUSES: ReadonlySet<string> = new Set([
+  "trialing",
+  "active",
+  "past_due",
+  "unpaid",
+  "paused",
+  "incomplete",
+]);
+
+export function isLiveSubscription(
+  subscription: Pick<Stripe.Subscription, "status">,
+): boolean {
+  return LIVE_SUBSCRIPTION_STATUSES.has(subscription.status);
+}
+
+/** True for Stripe's "No such <object>" error (`resource_missing`): the
+ *  object was deleted or never existed under this key. */
+export function isStripeResourceMissing(err: unknown): boolean {
+  return (
+    err instanceof Stripe.errors.StripeError && err.code === "resource_missing"
+  );
+}
+
+/** The newest live subscription in a `subscriptions.list` page, or null.
+ *  Stripe lists newest first. Callers list with `status: "all"` so a
+ *  customer with an old canceled subscription next to a live one resolves to
+ *  the live one instead of whichever was created last. */
+export function pickLiveSubscription(
+  subscriptions: readonly Stripe.Subscription[],
+): Stripe.Subscription | null {
+  return subscriptions.find(isLiveSubscription) ?? null;
+}
+
 /** Map a Stripe price ID to a user-facing tier label ("AI Plus",
  *  "Pro"). Falls back to "subscription" for an unrecognized price
  *  (admin-created custom price, schema drift) so emails and UI still

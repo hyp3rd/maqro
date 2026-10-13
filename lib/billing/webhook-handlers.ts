@@ -7,7 +7,12 @@ import {
 } from "@/lib/email/templates";
 import type Stripe from "stripe";
 import { type SupabaseClient } from "@supabase/supabase-js";
-import { ENTITLED_STATUSES, tierLabelFromPriceId } from "./stripe";
+import {
+  ENTITLED_STATUSES,
+  isLiveSubscription,
+  isStripeResourceMissing,
+  tierLabelFromPriceId,
+} from "./stripe";
 
 /** Stripe-event dispatcher and per-event handlers.
  *
@@ -26,7 +31,15 @@ import { ENTITLED_STATUSES, tierLabelFromPriceId } from "./stripe";
  *  Transactional emails (subscription confirmed, cancelled, payment
  *  failed) are sent INSIDE the handlers with DB-stamp idempotency
  *  rather than at the dispatcher level. Each email type has its own
- *  stamp column on `profiles` so retried events don't double-send. */
+ *  stamp column on `profiles` so retried events don't double-send.
+ *
+ *  Every `profiles` write goes through `assertOneProfileUpdated`, which throws
+ *  unless the write succeeded AND matched exactly one row. supabase-js
+ *  returns PostgREST failures as values, and a 0-row UPDATE is not an
+ *  error at all, so an unchecked write let a lost entitlement change be
+ *  recorded as `success` — invisible in the admin viewer's error filter
+ *  and never replayed. Throwing turns it into an `error` outcome:
+ *  reported, listed, and replayable once the cause is fixed. */
 
 /** Per-item `current_period_end` is the canonical source of the
  *  current paid period under Stripe API 2026-04-22 — the top-level
@@ -46,6 +59,40 @@ function priceIdFromSubscription(
   subscription: Stripe.Subscription,
 ): string | null {
   return subscription.items.data[0]?.price.id ?? null;
+}
+
+/** Throw unless a `profiles` UPDATE (issued with `.select("user_id")`)
+ *  succeeded and changed exactly one row. */
+function assertOneProfileUpdated(
+  result: { data: unknown[] | null; error: { message: string } | null },
+  context: string,
+): void {
+  if (result.error) {
+    throw new Error(
+      `profiles update (${context}) failed: ${result.error.message}`,
+    );
+  }
+  const matched = result.data?.length ?? 0;
+  if (matched !== 1) {
+    throw new Error(`profiles update (${context}) matched ${matched} rows`);
+  }
+}
+
+/** UPDATE the user's `profiles` row; throws unless exactly one row changed. */
+async function updateProfileRow(
+  admin: SupabaseClient,
+  userId: string,
+  patch: Record<string, unknown>,
+  context: string,
+): Promise<void> {
+  assertOneProfileUpdated(
+    await admin
+      .from("profiles")
+      .update(patch)
+      .eq("user_id", userId)
+      .select("user_id"),
+    `${context}, user ${userId}`,
+  );
 }
 
 export type DispatchOutcome =
@@ -77,6 +124,7 @@ export async function dispatchStripeEvent(
         await handleSubscriptionChange(
           event.data.object as Stripe.Subscription,
           admin,
+          stripe,
         );
         break;
       }
@@ -146,9 +194,10 @@ async function handleCheckoutCompleted(
   const subscription = await stripe.subscriptions.retrieve(subscriptionId);
   const priceId = priceIdFromSubscription(subscription);
 
-  await admin
-    .from("profiles")
-    .update({
+  await updateProfileRow(
+    admin,
+    userId,
+    {
       stripe_customer_id:
         typeof session.customer === "string"
           ? session.customer
@@ -172,8 +221,9 @@ async function handleCheckoutCompleted(
       // stamp is cleared on `invoice.payment_succeeded` instead,
       // since that's the actual "we're caught up" signal.
       cancellation_email_sent_at: null,
-    })
-    .eq("user_id", userId);
+    },
+    `checkout ${session.id}`,
+  );
 
   // Send the subscription confirmation if we haven't already for
   // this billing cycle. We re-read the row to check the stamp; the
@@ -195,30 +245,38 @@ async function handleCheckoutCompleted(
 async function handleSubscriptionChange(
   subscription: Stripe.Subscription,
   admin: SupabaseClient,
+  stripe: Stripe,
 ): Promise<void> {
   const customerId =
     typeof subscription.customer === "string"
       ? subscription.customer
       : subscription.customer.id;
 
-  // Look up the profile by customer ID — that's our cross-
-  // reference from "this Stripe event" to "this user". If the
-  // lookup fails, the customer was created in Stripe but not
-  // tied to a profile (deleted user? schema drift?). Loud
-  // failure so the maintainer notices.
-  const { data: profile, error: lookupError } = await admin
-    .from("profiles")
-    .select(
-      "user_id, cancellation_email_sent_at, subscription_confirmed_email_sent_at",
-    )
-    .eq("stripe_customer_id", customerId)
-    .maybeSingle();
-  if (lookupError) throw lookupError;
-  if (!profile) {
-    throw new Error(`No profile found for Stripe customer ${customerId}`);
+  const target = await resolveSubscriptionProfile(
+    subscription,
+    customerId,
+    admin,
+  );
+  const { profile } = target;
+  const userId = profile.user_id;
+  const cancellationStamp = profile.cancellation_email_sent_at;
+
+  // One customer, several subscriptions: checkout now refuses a second
+  // live subscription, but older customers can still carry one. The
+  // profile tracks a single subscription, so an event for another one
+  // must not overwrite it while the tracked one is live — a Plus renewal
+  // would downgrade a Pro payer, a Plus cancellation would drop them to
+  // Free. Once the tracked subscription has ended, the event's
+  // subscription takes over (a re-subscribe after cancelling).
+  const trackedId = profile.stripe_subscription_id;
+  if (trackedId && trackedId !== subscription.id) {
+    if (await isTrackedSubscriptionLive(stripe, trackedId)) {
+      console.warn(
+        `[stripe/webhook] ignoring ${subscription.id} (${subscription.status}): customer ${customerId} is tracked on live ${trackedId}`,
+      );
+      return;
+    }
   }
-  const userId = profile.user_id as string;
-  const cancellationStamp = profile.cancellation_email_sent_at as string | null;
 
   const periodEndTs = periodEndFromSubscription(subscription);
   const willCancel = subscription.cancel_at_period_end === true;
@@ -244,13 +302,108 @@ async function handleSubscriptionChange(
     updatePayload.cancellation_email_sent_at = null;
   }
 
-  await admin.from("profiles").update(updatePayload).eq("user_id", userId);
+  if (target.linkCustomer) {
+    // First event to reach a profile that never stored its customer id.
+    // `stripe_customer_id IS NULL` keeps a concurrent link from being
+    // overwritten.
+    updatePayload.stripe_customer_id = customerId;
+    assertOneProfileUpdated(
+      await admin
+        .from("profiles")
+        .update(updatePayload)
+        .eq("user_id", userId)
+        .is("stripe_customer_id", null)
+        .select("user_id"),
+      `link ${customerId} via ${subscription.id}, user ${userId}`,
+    );
+  } else {
+    await updateProfileRow(
+      admin,
+      userId,
+      updatePayload,
+      `subscription ${subscription.id}`,
+    );
+  }
 
   // Cancellation email: send once per (cancel_at_period_end true)
   // transition. The stamp guards against re-sends.
   if (willCancel && !cancellationStamp) {
     await sendCancellationEmail({ admin, userId, subscription });
   }
+}
+
+/** Whether the subscription a profile tracks is still live in Stripe. One
+ *  that Stripe no longer has (`resource_missing`) is not; any other failure
+ *  throws so the event is recorded as an error and can be replayed. */
+async function isTrackedSubscriptionLive(
+  stripe: Stripe,
+  subscriptionId: string,
+): Promise<boolean> {
+  try {
+    return isLiveSubscription(
+      await stripe.subscriptions.retrieve(subscriptionId),
+    );
+  } catch (err) {
+    if (isStripeResourceMissing(err)) return false;
+    throw err;
+  }
+}
+
+type SubscriptionProfile = {
+  user_id: string;
+  stripe_subscription_id: string | null;
+  cancellation_email_sent_at: string | null;
+};
+
+/** Find the profile a subscription event belongs to.
+ *
+ *  The customer id is the normal cross-reference. Before migration 0074
+ *  checkout could never store it (its payload-less upsert always failed),
+ *  so customers created then are on no profile; their subscriptions carry
+ *  our `user_id` in metadata (set at checkout), which identifies the
+ *  profile to link — but only one that has no customer yet, so a stray or
+ *  forged metadata value can never move another customer's billing. Any
+ *  other miss is loud: the event is recorded as an error and replayable. */
+async function resolveSubscriptionProfile(
+  subscription: Stripe.Subscription,
+  customerId: string,
+  admin: SupabaseClient,
+): Promise<{ profile: SubscriptionProfile; linkCustomer: boolean }> {
+  const columns =
+    "user_id, stripe_customer_id, stripe_subscription_id, cancellation_email_sent_at";
+  const { data: byCustomer, error: lookupError } = await admin
+    .from("profiles")
+    .select(columns)
+    .eq("stripe_customer_id", customerId)
+    .maybeSingle();
+  if (lookupError) throw lookupError;
+  if (byCustomer) {
+    return { profile: byCustomer as SubscriptionProfile, linkCustomer: false };
+  }
+
+  const metadataUserId = subscription.metadata?.user_id;
+  if (!metadataUserId) {
+    throw new Error(`No profile found for Stripe customer ${customerId}`);
+  }
+  const { data: byUser, error: userLookupError } = await admin
+    .from("profiles")
+    .select(columns)
+    .eq("user_id", metadataUserId)
+    .maybeSingle();
+  if (userLookupError) throw userLookupError;
+  if (!byUser) {
+    throw new Error(
+      `No profile found for Stripe customer ${customerId} (metadata user ${metadataUserId})`,
+    );
+  }
+  const linked = (byUser as { stripe_customer_id: string | null })
+    .stripe_customer_id;
+  if (linked) {
+    throw new Error(
+      `Stripe customer ${customerId} names user ${metadataUserId}, whose profile is linked to ${linked}`,
+    );
+  }
+  return { profile: byUser as SubscriptionProfile, linkCustomer: true };
 }
 
 /** Stripe `invoice.payment_failed` — fires once per failed attempt.
@@ -302,10 +455,12 @@ async function handleInvoicePaymentFailed(
     text: template.text,
   });
   if ("ok" in result && result.ok) {
-    await admin
-      .from("profiles")
-      .update({ payment_failed_email_sent_at: new Date().toISOString() })
-      .eq("user_id", userId);
+    await updateProfileRow(
+      admin,
+      userId,
+      { payment_failed_email_sent_at: new Date().toISOString() },
+      `dunning stamp ${invoice.id}`,
+    );
   }
 }
 
@@ -330,16 +485,20 @@ async function handleInvoicePaymentSucceeded(
   if (lookupError) throw lookupError;
   if (!profile || !profile.payment_failed_email_sent_at) return;
 
-  await admin
-    .from("profiles")
-    .update({ payment_failed_email_sent_at: null })
-    .eq("user_id", profile.user_id as string);
+  await updateProfileRow(
+    admin,
+    profile.user_id as string,
+    { payment_failed_email_sent_at: null },
+    `clear dunning stamp ${invoice.id}`,
+  );
 }
 
 /** Send the cancellation email + stamp the profile. Best-effort:
  *  a send failure leaves the stamp unset so the next webhook
  *  delivery can retry. The webhook itself stays successful — the
- *  email is a side-effect, not the contract. */
+ *  email is a side-effect, not the contract. A stamp that fails to
+ *  land after a successful send does fail the event: left silent, the
+ *  next delivery would send the email again. */
 async function sendCancellationEmail(opts: {
   admin: SupabaseClient;
   userId: string;
@@ -366,10 +525,12 @@ async function sendCancellationEmail(opts: {
     text: template.text,
   });
   if ("ok" in result && result.ok) {
-    await opts.admin
-      .from("profiles")
-      .update({ cancellation_email_sent_at: new Date().toISOString() })
-      .eq("user_id", opts.userId);
+    await updateProfileRow(
+      opts.admin,
+      opts.userId,
+      { cancellation_email_sent_at: new Date().toISOString() },
+      `cancellation stamp ${opts.subscription.id}`,
+    );
   }
 }
 
@@ -391,11 +552,12 @@ async function maybeSendSubscriptionConfirmed(opts: {
   // webhook will follow shortly.
   if (!ENTITLED_STATUSES.has(opts.subscription.status)) return;
 
-  const { data: profile } = await opts.admin
+  const { data: profile, error: stampError } = await opts.admin
     .from("profiles")
     .select("subscription_confirmed_email_sent_at")
     .eq("user_id", opts.userId)
     .maybeSingle();
+  if (stampError) throw stampError;
   if (profile?.subscription_confirmed_email_sent_at) return;
 
   const email = await lookupUserEmail(opts.admin, opts.userId);
@@ -421,12 +583,12 @@ async function maybeSendSubscriptionConfirmed(opts: {
     text: template.text,
   });
   if ("ok" in result && result.ok) {
-    await opts.admin
-      .from("profiles")
-      .update({
-        subscription_confirmed_email_sent_at: new Date().toISOString(),
-      })
-      .eq("user_id", opts.userId);
+    await updateProfileRow(
+      opts.admin,
+      opts.userId,
+      { subscription_confirmed_email_sent_at: new Date().toISOString() },
+      `confirmation stamp ${opts.subscription.id}`,
+    );
   }
 }
 
