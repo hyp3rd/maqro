@@ -9,7 +9,7 @@ import {
 import { getOrCreateDeviceId, inferDeviceLabel } from "@/lib/devices/identity";
 import { registerCurrentDevice } from "@/lib/devices/registry";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
-import { triggerSync } from "@/lib/sync";
+import { SyncIncompleteError, triggerSync } from "@/lib/sync";
 import {
   startRealtimeSubscription,
   type RealtimeHandle,
@@ -22,12 +22,21 @@ import { useEffect, useRef } from "react";
  *     per `(user_id)` transition. Subsequent renders for the same user
  *     are no-ops so navigation doesn't re-trigger.
  *
- *  2. **Realtime subscription** - after the initial sync succeeds,
- *     subscribes to Supabase Realtime on every synced table so
+ *  2. **Realtime subscription** - once the initial sync has run to
+ *     completion, subscribes to Supabase Realtime on every synced table so
  *     server-side changes (typically from a peer device) flow into
  *     IDB and bump the data bus, which the hooks listen on. On
  *     reconnect after a network blip, we run a one-shot `triggerSync`
  *     to catch up on events missed during the gap.
+ *
+ *  "Run to completion" includes a run that ended in
+ *  {@link SyncIncompleteError}: every step was attempted and only some
+ *  rows/tables were rejected (already surfaced on the status pill). A
+ *  single permanently rejected row would otherwise keep this device from
+ *  ever registering itself, receiving peer changes, or honouring a remote
+ *  "disconnect this session". Only a run that could not complete (an auth
+ *  failure, which signs the user out anyway, or an unexpected error)
+ *  skips the lifecycle and re-arms the initial sync.
  *
  *  Sign-out tears both down so the next sign-in starts fresh. */
 export function SyncManager() {
@@ -70,6 +79,14 @@ export function SyncManager() {
         // sync chain entirely would be worse.
       })
       .then(() => triggerSync(supabase, user.id))
+      .catch((err: unknown) => {
+        // A run that attempted every step but had some rows or tables
+        // rejected has still completed - its failure is on the status
+        // pill and the rejected rows are retried on the next sync. Carry
+        // on with the post-sync lifecycle; anything else skips it.
+        if (err instanceof SyncIncompleteError) return;
+        throw err;
+      })
       .then(() => {
         // Register this device in user_devices. Runs after sync so a
         // first-ever sign-in has the user row in place (FK target).
@@ -109,8 +126,9 @@ export function SyncManager() {
         });
       })
       .catch(() => {
-        // Clear the cache so a later retry actually runs. The error
-        // has already been surfaced via sync-status by triggerSync().
+        // The sync could not complete. Clear the cache so a later retry
+        // actually runs. The error has already been surfaced via
+        // sync-status by triggerSync().
         lastSyncedFor.current = null;
       });
   }, [user, isLoaded]);
