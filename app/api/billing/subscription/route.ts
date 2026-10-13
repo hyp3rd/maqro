@@ -1,7 +1,7 @@
 import { parseBody } from "@/lib/api/parse-body";
 import { assertAal2 } from "@/lib/auth/mfa-required";
 import { trustedDeviceOption } from "@/lib/auth/trusted-device";
-import { getStripe } from "@/lib/billing/stripe";
+import { getStripe, pickLiveSubscription } from "@/lib/billing/stripe";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import type Stripe from "stripe";
@@ -23,9 +23,10 @@ const PatchBodySchema = z.object({ action: z.enum(["cancel", "resume"]) });
  *      complicate accounting and the at-period-end semantics
  *      match Stripe Portal's default.
  *
- *  All other surface area - plan switching, payment-method update,
- *  invoice PDFs - either lives in `/api/billing/portal` (Stripe-
- *  hosted Customer Portal) or in `/api/billing/invoices` (list).
+ *  All other surface area lives elsewhere: plan switching in
+ *  `/api/billing/change-plan` (a portal plan-change deep link),
+ *  payment-method update in `/api/billing/portal` (Stripe-hosted
+ *  Customer Portal), invoices in `/api/billing/invoices` (list).
  *
  *  Auth: cookie-bound server client, so the user can only ever
  *  read or mutate THEIR OWN subscription. We never look up a
@@ -182,20 +183,23 @@ export async function GET(): Promise<NextResponse> {
   const auth = await loadCustomerId();
   if (!auth.ok) return auth.response;
 
-  // List active subscriptions for the customer. `limit: 1` is
-  // enough - our checkout flow only ever creates one subscription
-  // per customer, and the webhook handler doesn't upgrade/swap;
-  // changes happen as updates to the existing subscription.
+  // Show the customer's live subscription. Checkout refuses a second
+  // live one and plan changes update the existing one, but a customer
+  // can still hold ended subscriptions next to it (or a duplicate from
+  // before checkout enforced that), and Stripe lists newest first — so
+  // pick the live one rather than whichever was created last. With
+  // nothing live, the latest ended one still tells the user when
+  // access ends.
   const subs = await stripe.subscriptions.list({
     customer: auth.customerId,
     status: "all",
-    limit: 1,
+    limit: 100,
     // `data.items.data.price` is 4 levels - at Stripe's expand
     // depth ceiling. Don't push deeper (e.g. `.product`) or the
     // list call 500s with "max expansion depth exceeded".
     expand: ["data.items.data.price"],
   });
-  const sub = subs.data[0];
+  const sub = pickLiveSubscription(subs.data) ?? subs.data[0];
   if (!sub) {
     return NextResponse.json({ error: "No subscription." }, { status: 404 });
   }
@@ -245,18 +249,18 @@ export async function PATCH(req: Request): Promise<NextResponse> {
   const subs = await stripe.subscriptions.list({
     customer: auth.customerId,
     status: "all",
-    limit: 1,
+    limit: 100,
   });
-  const sub = subs.data[0];
-  if (!sub) {
+  if (subs.data.length === 0) {
     return NextResponse.json({ error: "No subscription." }, { status: 404 });
   }
-  // Already-canceled (status="canceled") subscriptions can't be
-  // reanimated via PATCH - Stripe requires a brand-new Checkout
-  // Session. Surface a 409 so the client knows to send the user
-  // to the upgrade flow rather than confusing them with a
-  // generic 500.
-  if (sub.status === "canceled") {
+  // Act on the live subscription. Ended ones (canceled /
+  // incomplete_expired) can't be reanimated via PATCH - Stripe
+  // requires a brand-new Checkout Session. Surface a 409 so the
+  // client knows to send the user to the upgrade flow rather than
+  // confusing them with a generic 500.
+  const sub = pickLiveSubscription(subs.data);
+  if (!sub) {
     return NextResponse.json(
       {
         error:

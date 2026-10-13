@@ -109,8 +109,10 @@ export async function POST(req: Request): Promise<NextResponse> {
   const outcome = await dispatchStripeEvent(event, admin, stripe);
 
   // Record the dispatch result on the same row so the admin viewer
-  // can show success vs failure without joining error_log.
-  await admin
+  // can show success vs failure without joining error_log. If this
+  // write is lost the row keeps a NULL status — neither success nor
+  // error in the viewer — so report it rather than drop it.
+  const { error: recordError } = await admin
     .from("stripe_webhook_events")
     .update({
       processed_at: new Date().toISOString(),
@@ -119,6 +121,17 @@ export async function POST(req: Request): Promise<NextResponse> {
         outcome.status === "error" ? outcome.error.message : null,
     })
     .eq("id", event.id);
+  if (recordError) {
+    await reportServerError(recordError, {
+      route: "/api/billing/webhook",
+      context: {
+        event_id: event.id,
+        event_type: event.type,
+        step: "record-outcome",
+        outcome: outcome.status,
+      },
+    });
+  }
 
   if (outcome.status === "error") {
     // Don't let Stripe retry forever — return 200 but capture the

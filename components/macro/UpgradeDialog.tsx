@@ -9,7 +9,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useAiUsage } from "@/hooks/use-ai-usage";
 import { clientFetch } from "@/lib/auth/client-fetch";
+import { isLiveSubscriptionStatus } from "@/lib/billing/subscription-status";
 import { useState } from "react";
 import { Check, Sparkles, Zap } from "lucide-react";
 import { toast } from "sonner";
@@ -69,40 +71,96 @@ const PLAN_COPY: Record<Plan, PlanCopy> = {
   },
 };
 
+type BillingResponse = { url?: string; error?: string; code?: string };
+
+async function postBilling(
+  path: string,
+  body: { interval: Interval; plan: Plan },
+): Promise<{ ok: boolean; data: BillingResponse }> {
+  const res = await clientFetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  // A platform 5xx returns an HTML body; don't let json() mask the status.
+  const data = (await res.json().catch(() => ({}))) as BillingResponse;
+  return { ok: res.ok, data };
+}
+
 /** Upgrade prompt for either AI Plus or Pro. Shown when:
  *    - The user hits the free-tier AI cap → `reason="ai-cap"`
  *    - The user clicks Upgrade in Settings → `reason="settings"`
  *    - A Pro-gated feature shows a "Sync needs Pro" CTA → `reason="sync"`
  *
- *  Posts to [/api/billing/checkout](../../app/api/billing/checkout/route.ts)
- *  with `{ plan, interval }` and redirects to Stripe Checkout. */
+ *  A user without a live subscription goes to Stripe Checkout through
+ *  [/api/billing/checkout](../../app/api/billing/checkout/route.ts). A
+ *  subscriber (e.g. AI Plus clicking "Upgrade to Pro") must change the
+ *  subscription they have, never start a second one, so they go through
+ *  [/api/billing/change-plan](../../app/api/billing/change-plan/route.ts),
+ *  which opens Stripe's plan-change confirmation. The client's view of
+ *  the subscription is only a hint: checkout answers 409
+ *  `subscription_exists` for a subscriber, and the dialog then takes the
+ *  plan-change path. */
 export function UpgradeDialog({
   open,
   onOpenChange,
   reason = "settings",
   defaultPlan = "plus",
 }: Props) {
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+    >
+      <DialogContent>
+        {/* Mounted only while open, so the usage lookup below runs when the
+            dialog is shown, not once per closed dialog on the page. */}
+        <UpgradeDialogBody
+          onOpenChange={onOpenChange}
+          reason={reason}
+          defaultPlan={defaultPlan}
+        />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function UpgradeDialogBody({
+  onOpenChange,
+  reason,
+  defaultPlan,
+}: {
+  onOpenChange: (open: boolean) => void;
+  reason: NonNullable<Props["reason"]>;
+  defaultPlan: Plan;
+}) {
   const [interval, setInterval] = useState<Interval>("month");
   const [plan, setPlan] = useState<Plan>(defaultPlan);
   const [busy, setBusy] = useState(false);
+  const { state: usage } = useAiUsage();
+  const isSubscriber =
+    usage.status === "ok" &&
+    isLiveSubscriptionStatus(usage.data.subscriptionStatus);
 
-  async function startCheckout() {
+  async function startUpgrade() {
     setBusy(true);
     try {
-      const res = await clientFetch("/api/billing/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ interval, plan }),
-      });
-      const data = (await res.json()) as { url?: string; error?: string };
-      if (!res.ok || !data.url) {
+      const body = { interval, plan };
+      let result = isSubscriber
+        ? await postBilling("/api/billing/change-plan", body)
+        : await postBilling("/api/billing/checkout", body);
+      if (!result.ok && result.data.code === "subscription_exists") {
+        result = await postBilling("/api/billing/change-plan", body);
+      }
+      if (!result.ok || !result.data.url) {
         toast.error(
-          data.error ?? "Couldn't start checkout. Try again in a moment.",
+          result.data.error ??
+            "Couldn't start checkout. Try again in a moment.",
         );
         setBusy(false);
         return;
       }
-      window.location.assign(data.url);
+      window.location.assign(result.data.url);
     } catch {
       toast.error("Network error. Try again.");
       setBusy(false);
@@ -128,121 +186,122 @@ export function UpgradeDialog({
           : "Lift the monthly limits. Cancel any time from Settings.";
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={onOpenChange}
-    >
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-foreground" />
-            Upgrade Maqro
-          </DialogTitle>
-          <DialogDescription>{reasonCopy}</DialogDescription>
-        </DialogHeader>
+    <>
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-foreground" />
+          Upgrade Maqro
+        </DialogTitle>
+        <DialogDescription>{reasonCopy}</DialogDescription>
+      </DialogHeader>
 
-        <div className="space-y-3">
-          {/* Plan selector - Plus / Pro side-by-side. Selected
+      <div className="space-y-3">
+        {/* Plan selector - Plus / Pro side-by-side. Selected
               card is foreground-bordered; unselected is muted. */}
-          <div className="grid grid-cols-2 gap-2">
-            <PlanCard
-              plan="plus"
-              selected={plan === "plus"}
-              onClick={() => setPlan("plus")}
-            />
-            <PlanCard
-              plan="pro"
-              selected={plan === "pro"}
-              onClick={() => setPlan("pro")}
-            />
-          </div>
-
-          <div
-            role="tablist"
-            aria-label="Billing interval"
-            className="inline-flex w-full rounded-lg border border-border/60 bg-muted/40 p-1"
-          >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={interval === "month"}
-              onClick={() => setInterval("month")}
-              className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                interval === "month"
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground"
-              }`}
-            >
-              Monthly
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={interval === "year"}
-              onClick={() => setInterval("year")}
-              className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                interval === "year"
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground"
-              }`}
-            >
-              Yearly
-              <span className="ml-1.5 rounded bg-green-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-green-700 dark:text-green-400">
-                −20%
-              </span>
-            </button>
-          </div>
-
-          <div className="rounded-lg border border-border/60 bg-card p-4">
-            <p className="flex items-baseline gap-1">
-              <span className="text-3xl font-semibold tracking-tight">
-                €{monthlyEquivalent.toFixed(2)}
-              </span>
-              <span className="text-sm text-muted-foreground">/ month</span>
-            </p>
-            <p className="mt-0.5 text-xs text-muted-foreground">{billedAs}</p>
-            <p className="mt-2 text-xs text-muted-foreground">
-              7-day free trial - no card charged today.
-            </p>
-
-            <ul className="mt-4 space-y-2 text-sm">
-              {copy.features.map((f) => (
-                <li
-                  key={f}
-                  className="flex items-start gap-2"
-                >
-                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-foreground" />
-                  <span className="text-foreground">{f}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          <p className="text-[11px] leading-relaxed text-muted-foreground">
-            Payment processed by Stripe. Maqro never sees or stores card data.
-            Manage or cancel from Settings → Billing at any time.
-          </p>
+        <div className="grid grid-cols-2 gap-2">
+          <PlanCard
+            plan="plus"
+            selected={plan === "plus"}
+            onClick={() => setPlan("plus")}
+          />
+          <PlanCard
+            plan="pro"
+            selected={plan === "pro"}
+            onClick={() => setPlan("pro")}
+          />
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-2">
-          <Button
+        <div
+          role="tablist"
+          aria-label="Billing interval"
+          className="inline-flex w-full rounded-lg border border-border/60 bg-muted/40 p-1"
+        >
+          <button
             type="button"
-            variant="ghost"
-            onClick={() => onOpenChange(false)}
-            disabled={busy}
+            role="tab"
+            aria-selected={interval === "month"}
+            onClick={() => setInterval("month")}
+            className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+              interval === "month"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground"
+            }`}
           >
-            Not now
-          </Button>
-          <Button
+            Monthly
+          </button>
+          <button
             type="button"
-            onClick={startCheckout}
-            disabled={busy}
+            role="tab"
+            aria-selected={interval === "year"}
+            onClick={() => setInterval("year")}
+            className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+              interval === "year"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground"
+            }`}
           >
-            {busy ? "Redirecting…" : `Continue with ${copy.name}`}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+            Yearly
+            <span className="ml-1.5 rounded bg-green-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-green-700 dark:text-green-400">
+              −20%
+            </span>
+          </button>
+        </div>
+
+        <div className="rounded-lg border border-border/60 bg-card p-4">
+          <p className="flex items-baseline gap-1">
+            <span className="text-3xl font-semibold tracking-tight">
+              €{monthlyEquivalent.toFixed(2)}
+            </span>
+            <span className="text-sm text-muted-foreground">/ month</span>
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">{billedAs}</p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            {isSubscriber
+              ? "Changes your current subscription. Stripe shows any prorated charge before you confirm."
+              : "7-day free trial - no card charged today."}
+          </p>
+
+          <ul className="mt-4 space-y-2 text-sm">
+            {copy.features.map((f) => (
+              <li
+                key={f}
+                className="flex items-start gap-2"
+              >
+                <Check className="mt-0.5 h-4 w-4 shrink-0 text-foreground" />
+                <span className="text-foreground">{f}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          Payment processed by Stripe. Maqro never sees or stores card data.
+          Manage or cancel from Settings → Billing at any time.
+        </p>
+      </div>
+
+      <DialogFooter className="gap-2 sm:gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => onOpenChange(false)}
+          disabled={busy}
+        >
+          Not now
+        </Button>
+        <Button
+          type="button"
+          onClick={startUpgrade}
+          disabled={busy}
+        >
+          {busy
+            ? "Redirecting…"
+            : isSubscriber
+              ? `Switch to ${copy.name}`
+              : `Continue with ${copy.name}`}
+        </Button>
+      </DialogFooter>
+    </>
   );
 }
 

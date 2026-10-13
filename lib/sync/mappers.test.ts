@@ -38,6 +38,7 @@ import {
   pantryItemToRow,
   pantryNotificationFromRow,
   pantryNotificationToRow,
+  personalInfoFromPayload,
   profileFromRow,
   profileToRow,
   recipeFromRow,
@@ -89,8 +90,8 @@ describe("profile mappers", () => {
     };
     const row = profileToRow(USER, profile);
     const back = profileFromRow({ ...row, updated_at: "2026-05-13T10:00:00Z" });
-    expect(back.cuisinePreferences).toEqual(["Italian", "Japanese", "Korean"]);
-    expect(back.allergies).toEqual(["peanuts", "shellfish"]);
+    expect(back?.cuisinePreferences).toEqual(["Italian", "Japanese", "Korean"]);
+    expect(back?.allergies).toEqual(["peanuts", "shellfish"]);
   });
 
   it("preserves displayName, dislikedFoods, and macroSplit through the JSONB blob", () => {
@@ -106,9 +107,29 @@ describe("profile mappers", () => {
     };
     const row = profileToRow(USER, profile);
     const back = profileFromRow({ ...row, updated_at: "2026-05-13T10:00:00Z" });
-    expect(back.displayName).toBe("Alex");
-    expect(back.dislikedFoods).toEqual(["oats", "broccoli"]);
-    expect(back.macroSplit).toEqual({ protein: 40, carbs: 35, fat: 25 });
+    expect(back?.displayName).toBe("Alex");
+    expect(back?.dislikedFoods).toEqual(["oats", "broccoli"]);
+    expect(back?.macroSplit).toEqual({ protein: 40, carbs: 35, fat: 25 });
+  });
+});
+
+describe("server placeholder profile", () => {
+  it("maps an empty payload to null (no profile yet)", () => {
+    // Migration 0074 creates every profiles row at sign-up with `{}`.
+    expect(
+      profileFromRow({
+        user_id: USER,
+        payload: {},
+        updated_at: "2026-05-13T10:00:00Z",
+      }),
+    ).toBeNull();
+    expect(personalInfoFromPayload({})).toBeNull();
+    expect(personalInfoFromPayload(null)).toBeNull();
+    expect(personalInfoFromPayload([])).toBeNull();
+  });
+
+  it("passes a real payload through unchanged", () => {
+    expect(personalInfoFromPayload(PROFILE)).toEqual(PROFILE);
   });
 });
 

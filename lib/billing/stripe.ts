@@ -1,4 +1,5 @@
 import Stripe from "stripe";
+import { isLiveSubscriptionStatus } from "./subscription-status";
 
 /** Server-only Stripe client.
  *
@@ -53,6 +54,26 @@ export const STRIPE_PRICES = {
   proYearly: () => process.env.STRIPE_PRICE_PRO_YEARLY ?? null,
 };
 
+export type PaidPlan = "plus" | "pro";
+export type BillingInterval = "month" | "year";
+
+/** The configured price for a plan + interval, or null when its env var is
+ *  unset. Checkout and plan changes both resolve prices here so the two
+ *  can't drift. */
+export function priceIdForPlan(
+  plan: PaidPlan,
+  interval: BillingInterval,
+): string | null {
+  if (plan === "pro") {
+    return interval === "year"
+      ? STRIPE_PRICES.proYearly()
+      : STRIPE_PRICES.proMonthly();
+  }
+  return interval === "year"
+    ? STRIPE_PRICES.aiPlusYearly()
+    : STRIPE_PRICES.aiPlusMonthly();
+}
+
 /** Stripe statuses we treat as "entitled" — the user gets the
  *  benefits of a paid plan. `past_due` is debatable: the
  *  conservative read is "they failed to pay, downgrade now"; the
@@ -60,6 +81,32 @@ export const STRIPE_PRICES = {
  *  punish a transient card-network issue". We pick pragmatic and
  *  rely on `canceled` to be the actual downgrade signal. */
 export const ENTITLED_STATUSES = new Set(["active", "trialing", "past_due"]);
+
+/** Whether a subscription still bills, or can bill again without a new
+ *  checkout (see `isLiveSubscriptionStatus`). */
+export function isLiveSubscription(
+  subscription: Pick<Stripe.Subscription, "status">,
+): boolean {
+  return isLiveSubscriptionStatus(subscription.status);
+}
+
+/** True for Stripe's "No such <object>" error (`resource_missing`): the
+ *  object was deleted or never existed under this key. */
+export function isStripeResourceMissing(err: unknown): boolean {
+  return (
+    err instanceof Stripe.errors.StripeError && err.code === "resource_missing"
+  );
+}
+
+/** The newest live subscription in a `subscriptions.list` page, or null.
+ *  Stripe lists newest first. Callers list with `status: "all"` so a
+ *  customer with an old canceled subscription next to a live one resolves to
+ *  the live one instead of whichever was created last. */
+export function pickLiveSubscription(
+  subscriptions: readonly Stripe.Subscription[],
+): Stripe.Subscription | null {
+  return subscriptions.find(isLiveSubscription) ?? null;
+}
 
 /** Map a Stripe price ID to a user-facing tier label ("AI Plus",
  *  "Pro"). Falls back to "subscription" for an unrecognized price
