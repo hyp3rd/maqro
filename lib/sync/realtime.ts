@@ -296,8 +296,11 @@ async function handleProfile(payload: LoosePayload) {
   }
   const row = newRow<ProfileRow>(payload);
   if (!row) return;
+  // `{}` placeholder (migration 0074): no profile yet — keep the local one.
+  const profile = profileFromRow(row);
+  if (!profile) return;
   if (await isOwnEcho("profile", row.updated_at)) return;
-  await applyServerProfile(profileFromRow(row), row.updated_at);
+  await applyServerProfile(profile, row.updated_at);
   notifyDataChanged("profile");
 }
 
