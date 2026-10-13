@@ -8,6 +8,7 @@ import {
   type FavoriteFood,
 } from "@/lib/db";
 import { reportStorageError } from "@/lib/storage-status";
+import { bumpPending } from "@/lib/sync-status";
 import { useDataRev } from "@/lib/sync/data-bus";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -56,6 +57,7 @@ export function useFavoriteFoods(): {
         } else {
           await addFavoriteFood(food, portion);
         }
+        bumpPending();
       } catch (err) {
         reportStorageError(err);
       }

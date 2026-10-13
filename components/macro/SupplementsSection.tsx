@@ -20,6 +20,7 @@ import {
   type MicronutrientKey,
   type MicronutrientValues,
 } from "@/lib/rda";
+import { bumpPending } from "@/lib/sync-status";
 import { useDataRev } from "@/lib/sync/data-bus";
 import { cn } from "@/lib/utils";
 import { useEffect, useMemo, useState } from "react";
@@ -124,6 +125,7 @@ export function SupplementsSection() {
     });
     try {
       await saveSupplementIntake(today, next);
+      bumpPending();
     } catch {
       toast.error("Couldn't save what you took. Try again.");
     }
@@ -132,6 +134,7 @@ export function SupplementsSection() {
   async function remove(id: string) {
     try {
       await deleteSupplement(id);
+      bumpPending();
       // Drop it from today's intake so the totals don't reference a deleted
       // supplement. `setDoses(id, 0)` reads the latest state, so this is safe
       // even if it wasn't logged today (a no-op rewrite).
@@ -382,6 +385,7 @@ function SupplementForm({
           schedule,
         });
       }
+      bumpPending();
       onClose();
     } catch {
       toast.error("Couldn't save the supplement. Try again.");
