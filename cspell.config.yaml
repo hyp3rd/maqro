@@ -314,6 +314,7 @@ words:
   - prolang
   - pronamespace
   - prorettype
+  - prosecdef
   - protonpass
   - psyllium
   - pubname
