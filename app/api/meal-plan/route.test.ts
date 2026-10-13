@@ -1,4 +1,5 @@
 import * as offSearch from "@/lib/ai/off-search";
+import * as usage from "@/lib/billing/usage";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { POST } from "./route";
 
@@ -478,5 +479,40 @@ describe("/api/meal-plan POST — agent-loop hardening", () => {
     ).text;
     expect(firstUserText).toMatch(/Previously suggested plan/);
     expect(firstUserText).toMatch(/Sugary cereal/);
+  });
+});
+
+describe("/api/meal-plan POST — metering", () => {
+  beforeEach(() => {
+    mockCreate.mockReset();
+  });
+
+  it("returns 503 and never calls the model when metering is unavailable", async () => {
+    vi.mocked(usage.checkAndIncrementAiUsage).mockResolvedValueOnce({
+      allowed: false,
+      reason: "metering-unavailable",
+    });
+
+    const res = await POST(makeRequest(SAMPLE_BODY));
+
+    expect(res.status).toBe(503);
+    const body = (await res.json()) as { kind?: string };
+    expect(body.kind).toBe("ai-metering-unavailable");
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("returns 402 and never calls the model at the cap", async () => {
+    vi.mocked(usage.checkAndIncrementAiUsage).mockResolvedValueOnce({
+      allowed: false,
+      reason: "cap-reached",
+      tier: "free",
+      used: 25,
+      cap: 25,
+    });
+
+    const res = await POST(makeRequest(SAMPLE_BODY));
+
+    expect(res.status).toBe(402);
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 });
