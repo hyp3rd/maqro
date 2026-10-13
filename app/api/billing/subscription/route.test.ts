@@ -25,7 +25,10 @@ const {
   mockSubsUpdate: vi.fn(),
 }));
 
-vi.mock("@/lib/billing/stripe", () => ({ getStripe: mockGetStripe }));
+vi.mock("@/lib/billing/stripe", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/billing/stripe")>()),
+  getStripe: mockGetStripe,
+}));
 vi.mock("@/lib/supabase/server", () => ({
   getSupabaseServer: mockGetSupabaseServer,
 }));
@@ -195,6 +198,36 @@ describe("GET /api/billing/subscription", () => {
     expect(mockInvoicePreview).not.toHaveBeenCalled();
   });
 
+  it("shows the live subscription, not a newer canceled one", async () => {
+    // A customer who re-subscribed after cancelling, or one left with a
+    // duplicate: Stripe lists newest first, so `limit: 1` showed whichever
+    // was created last.
+    mockSubsList.mockResolvedValueOnce({
+      data: [
+        buildSub({ id: "sub_new", status: "canceled" }),
+        buildSub({ id: "sub_live", status: "active" }),
+      ],
+    });
+    const { GET } = await loadRoute();
+    const res = await GET();
+    const body = (await res.json()) as { subscription: { id: string } };
+    expect(body.subscription.id).toBe("sub_live");
+    expect(mockSubsList).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "all", limit: 100 }),
+    );
+  });
+
+  it("still shows the latest ended subscription when nothing is live", async () => {
+    mockSubsList.mockResolvedValueOnce({
+      data: [buildSub({ id: "sub_old", status: "canceled" })],
+    });
+    const { GET } = await loadRoute();
+    const res = await GET();
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { subscription: { status: string } };
+    expect(body.subscription.status).toBe("canceled");
+  });
+
   it("treats 'no upcoming invoice' as null (not an error)", async () => {
     // Stripe throws when the subscription has no upcoming invoice
     // (e.g. trialing, mid-billing-cycle weirdness). Must not 500.
@@ -258,6 +291,29 @@ describe("PATCH /api/billing/subscription", () => {
     expect(mockSubsUpdate).toHaveBeenCalledWith("sub_1", {
       cancel_at_period_end: false,
     });
+  });
+
+  it("cancels the live subscription, not a newer canceled one", async () => {
+    mockSubsList.mockResolvedValueOnce({
+      data: [
+        buildSub({ id: "sub_new", status: "canceled" }),
+        buildSub({ id: "sub_live", status: "trialing" }),
+      ],
+    });
+    const { PATCH } = await loadRoute();
+    const res = await PATCH(req({ action: "cancel" }));
+    expect(res.status).toBe(200);
+    expect(mockSubsUpdate).toHaveBeenCalledWith("sub_live", {
+      cancel_at_period_end: true,
+    });
+  });
+
+  it("returns 404 when the customer has no subscription at all", async () => {
+    mockSubsList.mockResolvedValueOnce({ data: [] });
+    const { PATCH } = await loadRoute();
+    const res = await PATCH(req({ action: "cancel" }));
+    expect(res.status).toBe(404);
+    expect(mockSubsUpdate).not.toHaveBeenCalled();
   });
 
   it("returns 409 on an already-canceled subscription", async () => {

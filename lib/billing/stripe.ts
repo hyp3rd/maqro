@@ -1,4 +1,5 @@
 import Stripe from "stripe";
+import { isLiveSubscriptionStatus } from "./subscription-status";
 
 /** Server-only Stripe client.
  *
@@ -53,6 +54,26 @@ export const STRIPE_PRICES = {
   proYearly: () => process.env.STRIPE_PRICE_PRO_YEARLY ?? null,
 };
 
+export type PaidPlan = "plus" | "pro";
+export type BillingInterval = "month" | "year";
+
+/** The configured price for a plan + interval, or null when its env var is
+ *  unset. Checkout and plan changes both resolve prices here so the two
+ *  can't drift. */
+export function priceIdForPlan(
+  plan: PaidPlan,
+  interval: BillingInterval,
+): string | null {
+  if (plan === "pro") {
+    return interval === "year"
+      ? STRIPE_PRICES.proYearly()
+      : STRIPE_PRICES.proMonthly();
+  }
+  return interval === "year"
+    ? STRIPE_PRICES.aiPlusYearly()
+    : STRIPE_PRICES.aiPlusMonthly();
+}
+
 /** Stripe statuses we treat as "entitled" — the user gets the
  *  benefits of a paid plan. `past_due` is debatable: the
  *  conservative read is "they failed to pay, downgrade now"; the
@@ -61,23 +82,12 @@ export const STRIPE_PRICES = {
  *  rely on `canceled` to be the actual downgrade signal. */
 export const ENTITLED_STATUSES = new Set(["active", "trialing", "past_due"]);
 
-/** Subscription statuses that still bill the customer, or can start billing
- *  again without a new checkout. A customer with one of these must not get a
- *  second subscription: a plan change goes through the existing one. Only
- *  `canceled` and `incomplete_expired` are terminal in Stripe. */
-const LIVE_SUBSCRIPTION_STATUSES: ReadonlySet<string> = new Set([
-  "trialing",
-  "active",
-  "past_due",
-  "unpaid",
-  "paused",
-  "incomplete",
-]);
-
+/** Whether a subscription still bills, or can bill again without a new
+ *  checkout (see `isLiveSubscriptionStatus`). */
 export function isLiveSubscription(
   subscription: Pick<Stripe.Subscription, "status">,
 ): boolean {
-  return LIVE_SUBSCRIPTION_STATUSES.has(subscription.status);
+  return isLiveSubscriptionStatus(subscription.status);
 }
 
 /** True for Stripe's "No such <object>" error (`resource_missing`): the
