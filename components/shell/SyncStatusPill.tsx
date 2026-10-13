@@ -12,7 +12,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useUser } from "@/hooks/use-user";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
-import { discardPendingChanges, triggerSync } from "@/lib/sync";
+import {
+  discardPendingChanges,
+  resolveConflictsKeepingLocal,
+  triggerSync,
+} from "@/lib/sync";
 import { useSyncSnapshot } from "@/lib/sync-status";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -54,6 +58,17 @@ export function SyncStatusPill() {
     void triggerSync(supabase, user.id);
   }
 
+  // Conflict resolution "keep this device's version". A failure is already
+  // recorded on sync-status (the pill flips to "Sync error") before the
+  // promise rejects; the catch only keeps it from becoming an unhandled
+  // rejection.
+  function onKeepLocal() {
+    if (!user) return;
+    const supabase = getSupabaseBrowser();
+    if (!supabase) return;
+    void resolveConflictsKeepingLocal(supabase, user.id).catch(() => {});
+  }
+
   async function onConfirmDiscard() {
     setDiscardConfirmOpen(false);
     if (!user) return;
@@ -89,8 +104,9 @@ export function SyncStatusPill() {
   // Conflict wins over "Pending" — the user *needs* to see that one or
   // more writes were rejected by a peer device's prior edit, otherwise
   // they'd just see "Pending" and assume the sync hasn't run yet. The
-  // dirty rows that triggered the conflict are still in pending; the
-  // retry will pull fresh + re-push them.
+  // dirty rows that triggered the conflict are kept as-is (a sync never
+  // overwrites them); the user picks a side: tapping the pill keeps this
+  // device's version, Discard accepts the other device's.
   if (status.state === "conflict") {
     const n = status.count;
     return (
@@ -98,9 +114,9 @@ export function SyncStatusPill() {
         <div className="flex items-center gap-0.5">
           <button
             type="button"
-            onClick={onClick}
+            onClick={onKeepLocal}
             className={cn(styles, "text-amber-700 dark:text-amber-400")}
-            title={`${n} change${n === 1 ? "" : "s"} couldn't be saved because another device changed the same thing first. Tap to try again.`}
+            title={`${n} change${n === 1 ? "" : "s"} couldn't be saved because another device changed the same thing first. Tap to save this device's version instead, or discard to keep the other device's.`}
           >
             <AlertTriangle className="h-3 w-3" />
             Needs review ({n})
