@@ -21,9 +21,6 @@ vi.mock("@/lib/billing/stripe", async (importOriginal) => ({
 vi.mock("@/lib/auth/mfa-required", () => ({
   assertAal2: vi.fn(async () => ({ ok: true })),
 }));
-vi.mock("@/lib/auth/trusted-device", () => ({
-  trustedDeviceOption: vi.fn(async () => ({})),
-}));
 vi.mock("@/lib/app-url", () => ({ getAppUrl: () => "https://maqro.app" }));
 vi.mock("@/lib/error-reporter", () => ({
   reportServerError: h.reportServerError,

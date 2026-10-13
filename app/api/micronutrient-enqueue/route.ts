@@ -1,6 +1,5 @@
 import { parseBody } from "@/lib/api/parse-body";
 import { assertAal2 } from "@/lib/auth/mfa-required";
-import { trustedDeviceOption } from "@/lib/auth/trusted-device";
 import { FEATURES } from "@/lib/billing/tiers";
 import { loadUserTier } from "@/lib/billing/usage";
 import { reportServerError } from "@/lib/error-reporter";
@@ -58,11 +57,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   // ok); for an MFA-enrolled user it ensures the session is promoted,
   // honouring the trust-this-device escape hatch. Consistent with every
   // other authenticated route per the require-aal2-gate lint rule.
-  const gate = await assertAal2(
-    supabase,
-    user,
-    await trustedDeviceOption(supabase, user.id),
-  );
+  const gate = await assertAal2(supabase, user);
   if (!gate.ok) return gate.response;
 
   // Pro gate — re-checked server-side. Non-Pro is a no-op, not an

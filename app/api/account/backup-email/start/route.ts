@@ -61,7 +61,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
   // Strict AAL2: setting a NEW recovery channel could let an
   // attacker reroute future account-recovery flows to their own
-  // address. The trusted-device escape hatch doesn't apply here.
+  // address, so an MFA-enrolled user must have proved the second factor.
   const gate = await assertFreshAal2(supabase, user);
   if (!gate.ok) return gate.response;
 

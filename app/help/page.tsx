@@ -309,8 +309,8 @@ export default function HelpPage() {
             With two-step verification on, access to your email alone isn&apos;t
             enough to get into your account. Settings → Two-step verification
             walks you through adding an authenticator app (1Password, Authy,
-            Google Authenticator). On trusted devices you can opt to skip the
-            extra step for 7 days at a time.
+            Google Authenticator). Once it&apos;s on, every new sign-in asks for
+            the code — or for a passkey, which counts as the second step.
           </Topic>
           <Topic
             icon={LifeBuoy}

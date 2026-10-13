@@ -1,6 +1,5 @@
 import type { RecipeIngredient } from "@/components/macro/types";
 import { assertAal2 } from "@/lib/auth/mfa-required";
-import { trustedDeviceOption } from "@/lib/auth/trusted-device";
 import { isValidShareSlug } from "@/lib/share-slug";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -41,11 +40,7 @@ export async function POST(
       { status: 401 },
     );
   }
-  const gate = await assertAal2(
-    supabase,
-    user,
-    await trustedDeviceOption(supabase, user.id),
-  );
+  const gate = await assertAal2(supabase, user);
   if (!gate.ok) return gate.response;
 
   // Fetch the shared recipe. RLS allows this for any signed-in user.

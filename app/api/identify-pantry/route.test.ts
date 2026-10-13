@@ -22,19 +22,8 @@ vi.mock("@/lib/supabase/server", () => ({
       getUser: vi.fn(async () => ({
         data: { user: { id: "user-1", email: "u@example.com" } },
       })),
-      // assertAal2 reads the AAL level; no MFA enrolled → no upgrade.
-      mfa: {
-        getAuthenticatorAssuranceLevel: vi.fn(async () => ({
-          data: { currentLevel: "aal1", nextLevel: "aal1" },
-        })),
-        listFactors: vi.fn(async () => ({ data: { totp: [], all: [] } })),
-      },
     },
   })),
-}));
-
-vi.mock("@/lib/auth/trusted-device", () => ({
-  trustedDeviceOption: vi.fn(async () => ({})),
 }));
 
 vi.mock("@/lib/billing/usage", () => ({

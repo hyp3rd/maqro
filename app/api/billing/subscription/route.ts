@@ -1,6 +1,5 @@
 import { parseBody } from "@/lib/api/parse-body";
 import { assertAal2 } from "@/lib/auth/mfa-required";
-import { trustedDeviceOption } from "@/lib/auth/trusted-device";
 import { getStripe, pickLiveSubscription } from "@/lib/billing/stripe";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -83,11 +82,7 @@ async function loadCustomerId(): Promise<
   }
   // AAL2 gate wrapped in the Result shape this helper returns,
   // not the bare `return gate.response` other routes use.
-  const gate = await assertAal2(
-    supabase,
-    user,
-    await trustedDeviceOption(supabase, user.id),
-  );
+  const gate = await assertAal2(supabase, user);
   if (!gate.ok) return { ok: false, response: gate.response };
   const { data: profile } = await supabase
     .from("profiles")

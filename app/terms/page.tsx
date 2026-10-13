@@ -208,9 +208,9 @@ export default async function TermsPage() {
             means the email account tied to your sign-in, any authenticator app
             used for two-factor authentication, and any passkey-bearing device
             you&apos;ve enrolled (a phone, a laptop, a hardware key). Remove a
-            passkey from Settings → Passkeys if the device is lost or sold;
-            remove a trusted device from Settings → Trusted devices if the
-            browser was on a shared or public machine.
+            passkey from Settings → Passkeys if the device is lost or sold, and
+            disconnect a browser from Settings → Signed-in devices if it was a
+            shared or public machine.
           </p>
           <p className="text-sm leading-relaxed text-muted-foreground">
             Maqro never asks you for a passkey, a TOTP code, or a sign-in link

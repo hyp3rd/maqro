@@ -30,9 +30,8 @@ export async function DELETE(): Promise<NextResponse> {
   }
   // Strict AAL2: removing or changing the recovery channel is a
   // classic first-step in account-takeover (lock the legitimate
-  // owner out before pivoting). The trusted-device escape hatch
-  // would let a temporarily-compromised browser strip the backup
-  // address without prompting for TOTP — we require it fresh.
+  // owner out before pivoting), so an MFA-enrolled user must hold a
+  // session that has proved the second factor.
   const gate = await assertFreshAal2(supabase, user);
   if (!gate.ok) return gate.response;
 

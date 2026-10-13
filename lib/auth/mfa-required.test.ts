@@ -178,52 +178,6 @@ describe("requiresMfaUpgrade", () => {
       reason: "assurance-unverifiable",
     });
   });
-
-  describe("with isTrustedDevice predicate", () => {
-    it("bypasses the upgrade when isTrustedDevice resolves true", async () => {
-      const { client } = fakeSupabase({ aal: "aal1" });
-      const isTrustedDevice = vi.fn().mockResolvedValue(true);
-      await expect(
-        requiresMfaUpgrade(client, verifiedUser(["verified"]), {
-          isTrustedDevice,
-        }),
-      ).resolves.toEqual({ needsUpgrade: false });
-      expect(isTrustedDevice).toHaveBeenCalledOnce();
-    });
-
-    it("still demands upgrade when isTrustedDevice resolves false", async () => {
-      const { client } = fakeSupabase({ aal: "aal1" });
-      const isTrustedDevice = vi.fn().mockResolvedValue(false);
-      await expect(
-        requiresMfaUpgrade(client, verifiedUser(["verified"]), {
-          isTrustedDevice,
-        }),
-      ).resolves.toEqual({
-        needsUpgrade: true,
-        reason: "second-factor-pending",
-      });
-    });
-
-    it("falls back to needsUpgrade when isTrustedDevice throws (strict)", async () => {
-      const { client } = fakeSupabase({ aal: "aal1" });
-      const isTrustedDevice = vi.fn().mockRejectedValue(new Error("kaboom"));
-      await expect(
-        requiresMfaUpgrade(client, verifiedUser(["verified"]), {
-          isTrustedDevice,
-        }),
-      ).resolves.toEqual({
-        needsUpgrade: true,
-        reason: "second-factor-pending",
-      });
-    });
-
-    it("does not call isTrustedDevice on non-MFA users (cheap fast path)", async () => {
-      const { client } = fakeSupabase({ aal: "aal1" });
-      const isTrustedDevice = vi.fn().mockResolvedValue(true);
-      await requiresMfaUpgrade(client, verifiedUser(), { isTrustedDevice });
-      expect(isTrustedDevice).not.toHaveBeenCalled();
-    });
-  });
 });
 
 describe("isMfaProtectedPath", () => {

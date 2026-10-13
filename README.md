@@ -202,8 +202,7 @@ ships with privacy-respecting operational logging.
   Generate recipe, Cancel subscription, …) hits the AAL2 gate
   mid-session, an **in-app TOTP prompt** opens, you enter your
   code, and the original action retries automatically — no bounce
-  to `/login`. Optional "Trust this device for 7 days" lets you skip
-  TOTP from a remembered browser.
+  to `/login`.
 - **Backup email (optional)** - secondary recovery address verified
   via a code round-trip. If the primary email is lost (account
   closed, employer-managed inbox revoked) the backup keeps the

@@ -1,5 +1,4 @@
 import { assertAal2 } from "@/lib/auth/mfa-required";
-import { trustedDeviceOption } from "@/lib/auth/trusted-device";
 import type { CapturePollResponse } from "@/lib/capture/types";
 import { getSupabaseSecretConfig } from "@/lib/supabase/env";
 import { getSupabaseServer } from "@/lib/supabase/server";
@@ -91,11 +90,7 @@ export async function DELETE(
   if (!user) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
-  const gate = await assertAal2(
-    supabase,
-    user,
-    await trustedDeviceOption(supabase, user.id),
-  );
+  const gate = await assertAal2(supabase, user);
   if (!gate.ok) return gate.response;
 
   // Fetch first so we know what to clean up in Storage. RLS limits us

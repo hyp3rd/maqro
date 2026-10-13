@@ -6,7 +6,6 @@ import {
   watchForForcedSignOut,
   type ForcedSignOutHandle,
 } from "@/lib/devices/forced-signout";
-import { getOrCreateDeviceId, inferDeviceLabel } from "@/lib/devices/identity";
 import { registerCurrentDevice } from "@/lib/devices/registry";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { triggerSync } from "@/lib/sync";
@@ -78,19 +77,6 @@ export function SyncManager() {
         // sync registers it; nothing user-blocking.
         void registerCurrentDevice(supabase).catch(() => {});
 
-        // Commit a pending "Trust this device for 7 days" intent
-        // stashed by /login → verifyMfa. Doing it from inside that
-        // handler races the AAL2 cookie write (Supabase chunks long
-        // session cookies; the chunks haven't fully landed in the
-        // browser cookie jar when an immediate same-origin fetch
-        // goes out, so proxy.ts sees half-written chunks and the
-        // route 401s). By the time SyncManager fires we're a full
-        // page navigation past challengeAndVerify so cookies have
-        // settled. Best-effort: any failure here is "you'll have to
-        // pass MFA next time", not a sign-in failure, so we don't
-        // surface it.
-        void commitPendingTrust();
-
         // Subscribe to "I've been kicked" events - if a sibling
         // device disconnects this session from Settings, this watcher
         // wipes IDB + signs out locally so the data doesn't leak.
@@ -116,53 +102,4 @@ export function SyncManager() {
   }, [user, isLoaded]);
 
   return null;
-}
-
-const PENDING_TRUST_KEY = "maqro:pending-trust";
-
-/** Send the deferred "Trust this device for 7 days" record. Called
- *  by SyncManager after the post-sign-in sync chain settles, which
- *  is at least one full navigation past the MFA verify - by then
- *  the AAL2 cookies are fully committed and the server route can
- *  authenticate normally.
- *
- *  No-ops if the sentinel isn't set (the common case: user signed
- *  in without checking the trust box, or signed in via Google /
- *  no-MFA path). */
-async function commitPendingTrust(): Promise<void> {
-  let pending: string | null = null;
-  try {
-    pending = window.sessionStorage.getItem(PENDING_TRUST_KEY);
-  } catch {
-    // Restricted storage - nothing to commit.
-    return;
-  }
-  if (pending !== "1") return;
-
-  // Always clear the sentinel FIRST so a network failure doesn't
-  // leave the intent persisted across reloads (which would re-record
-  // the trust on every page refresh until the network recovered).
-  try {
-    window.sessionStorage.removeItem(PENDING_TRUST_KEY);
-  } catch {
-    // Best-effort.
-  }
-
-  const deviceId = getOrCreateDeviceId();
-  if (!deviceId) return;
-  const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";
-  try {
-    await fetch("/api/auth/mfa/trusted-devices", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        deviceId,
-        deviceLabel: inferDeviceLabel(ua),
-        userAgent: ua,
-      }),
-    });
-  } catch {
-    // Best-effort. If the trust write fails, the next sign-in just
-    // takes the normal MFA path.
-  }
 }

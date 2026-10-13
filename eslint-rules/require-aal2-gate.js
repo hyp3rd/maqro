@@ -34,11 +34,6 @@
  */
 
 const ALLOWLIST = [
-  // Called DURING MFA verification to decide whether this device
-  // can skip the prompt. Asserting AAL2 here would create a
-  // chicken-and-egg loop (you need AAL2 to check whether you can
-  // skip the AAL2 prompt).
-  "auth/mfa/trusted-devices/check/route.ts",
   // Public contact form — accepts anonymous submissions; an
   // authenticated user attaches their email for context only.
   // Blocking AAL1 here would be hostile to users trying to ask
@@ -46,7 +41,7 @@ const ALLOWLIST = [
   "support/route.ts",
   // Lost-authenticator step-down. By definition the caller CAN'T reach
   // AAL2 (their authenticator is gone), so assertAal2 would make recovery
-  // impossible — the same chicken-and-egg as the trusted-devices check.
+  // impossible.
   // Authorization here is the single-use recovery grant (`consumeRecoveryGrant`),
   // which proves backup-inbox control; see the route's SECURITY note and
   // migration 0067.

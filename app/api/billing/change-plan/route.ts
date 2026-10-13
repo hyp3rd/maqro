@@ -1,7 +1,6 @@
 import { parseBody } from "@/lib/api/parse-body";
 import { getAppUrl } from "@/lib/app-url";
 import { assertAal2 } from "@/lib/auth/mfa-required";
-import { trustedDeviceOption } from "@/lib/auth/trusted-device";
 import {
   getStripe,
   pickLiveSubscription,
@@ -63,11 +62,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (!user) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
-  const gate = await assertAal2(
-    supabase,
-    user,
-    await trustedDeviceOption(supabase, user.id),
-  );
+  const gate = await assertAal2(supabase, user);
   if (!gate.ok) return gate.response;
 
   const parsed = await parseBody(req, BodySchema);

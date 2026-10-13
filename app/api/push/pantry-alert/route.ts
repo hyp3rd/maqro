@@ -1,7 +1,6 @@
 import { parseBody } from "@/lib/api/parse-body";
 import { getAppUrl } from "@/lib/app-url";
 import { assertAal2 } from "@/lib/auth/mfa-required";
-import { trustedDeviceOption } from "@/lib/auth/trusted-device";
 import { sendPush } from "@/lib/push/send";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -20,7 +19,7 @@ const BodySchema = z.object({
  *  best-effort "nudge the user who isn't currently looking at the app"
  *  layer, mirroring the daily-reminder cron's send loop.
  *
- *  Posted via `clientFetch` so the MFA / trusted-device flow applies —
+ *  Posted via `clientFetch` so the in-app MFA challenge flow applies —
  *  hence the `assertAal2` gate that the `require-aal2-gate` lint rule
  *  enforces on every authenticated mutating route. */
 export async function POST(req: Request): Promise<NextResponse> {
@@ -37,11 +36,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (!user) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
-  const gate = await assertAal2(
-    supabase,
-    user,
-    await trustedDeviceOption(supabase, user.id),
-  );
+  const gate = await assertAal2(supabase, user);
   if (!gate.ok) return gate.response;
 
   const parsed = await parseBody(req, BodySchema);

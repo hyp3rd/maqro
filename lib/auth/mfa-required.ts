@@ -23,19 +23,6 @@ export type MfaUpgradeDecision =
  *  copy is client-controlled. */
 export type MfaGateUser = Pick<User, "id" | "factors">;
 
-/** Options accepted by both `requiresMfaUpgrade` and `assertAal2`.
- *
- *  `isTrustedDevice` is the trust-this-device escape hatch: when
- *  the AAL1+verified-TOTP case would otherwise demand an upgrade,
- *  the caller can supply a predicate that resolves to `true` for
- *  browsers carrying an unexpired `mfa_trusted_devices` grant. The
- *  predicate is only invoked on the narrow code path where it
- *  matters (AAL1, MFA enrolled, would-redirect) so the DB read is
- *  paid only when relevant. */
-export interface MfaUpgradeOptions {
-  isTrustedDevice?: () => Promise<boolean>;
-}
-
 /** Determines whether the caller's session must be promoted before a
  *  protected page renders or a gated route runs. The policy itself lives in
  *  `lib/auth/mfa-policy.ts`:
@@ -65,7 +52,6 @@ export async function requiresMfaUpgrade(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: SupabaseClient<any, any, any>,
   user: MfaGateUser,
-  opts: MfaUpgradeOptions = {},
 ): Promise<MfaUpgradeDecision> {
   if (!hasVerifiedFactor(user)) return { needsUpgrade: false };
 
@@ -86,19 +72,6 @@ export async function requiresMfaUpgrade(
     return { needsUpgrade: true, reason: "assurance-unverifiable" };
   }
   if (sessionProvedSecondFactor(claims)) return { needsUpgrade: false };
-
-  // Trusted-device escape hatch. The DB row in `mfa_trusted_devices` is
-  // authoritative; the deviceId cookie just identifies WHICH device.
-  // Failure / missing check resolves to needsUpgrade (default-deny).
-  if (opts.isTrustedDevice) {
-    try {
-      if (await opts.isTrustedDevice()) {
-        return { needsUpgrade: false };
-      }
-    } catch {
-      // Trust check threw — be strict, demand the upgrade.
-    }
-  }
   return { needsUpgrade: true, reason: "second-factor-pending" };
 }
 
@@ -135,9 +108,8 @@ export async function assertAal2(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: SupabaseClient<any, any, any>,
   user: MfaGateUser,
-  opts: MfaUpgradeOptions = {},
 ): Promise<{ ok: true } | { ok: false; response: NextResponse }> {
-  const decision = await requiresMfaUpgrade(supabase, user, opts);
+  const decision = await requiresMfaUpgrade(supabase, user);
   if (!decision.needsUpgrade) return { ok: true };
   return {
     ok: false,
@@ -151,27 +123,17 @@ export async function assertAal2(
   };
 }
 
-/** Strict-AAL2 gate that intentionally ignores the trusted-device
- *  escape hatch. Use this in place of `assertAal2(..., trustedDeviceOption(...))`
- *  for operations where a temporarily-compromised trusted device must
- *  not be allowed to escalate to account takeover:
+/** The gate for irreversible / account-takeover-grade operations:
  *
  *  - account deletion
  *  - recovery / backup-email change
- *  - role grant
+ *  - admin access (`requireAdmin`)
  *  - password / primary-email change (when those land)
  *
- *  The trusted-device grant ("don't ask me for TOTP again on this
- *  browser for 7 days") is fine for routine reads and most mutations —
- *  it's a convenience tradeoff. For irreversible ops, the second factor
- *  must be presented fresh. A stolen-laptop / shoulder-surf / unlocked-
- *  device scenario shouldn't let an attacker delete the account or
- *  swap the recovery email without re-entering the TOTP code.
- *
- *  Behaviorally equivalent to `assertAal2(supabase, user)` with no
- *  options — the named helper makes the intent explicit at the route site
- *  and prevents a future refactor from reflexively threading the trust
- *  option back in. */
+ *  Today it is exactly `assertAal2(supabase, user)` — there is no
+ *  "remembered device" bypass any more (retired with migration 0078). The
+ *  separate name marks these call sites so a future relaxation of the
+ *  routine gate can never silently reach them. */
 export async function assertFreshAal2(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: SupabaseClient<any, any, any>,
