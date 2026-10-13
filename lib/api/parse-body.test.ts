@@ -90,3 +90,77 @@ describe("parseBody", () => {
     }
   });
 });
+
+describe("parseBody - maxBytes", () => {
+  const Schema = z.object({ note: z.string() });
+
+  /** A streamed request with no Content-Length, the way a chunked upload
+   *  arrives, so the cap must be enforced while reading. */
+  function chunkedRequest(text: string): Request {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(text));
+        controller.close();
+      },
+    });
+    const init: RequestInit & { duplex: "half" } = {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body,
+      duplex: "half",
+    };
+    return new Request("http://localhost/test", init);
+  }
+
+  it("parses a body within the limit", async () => {
+    const result = await parseBody(jsonRequest({ note: "hi" }), Schema, {
+      maxBytes: 64,
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects a declared Content-Length over the limit with 413 before reading", async () => {
+    const req = new Request("http://localhost/test", {
+      method: "POST",
+      headers: { "content-type": "application/json", "content-length": "5000" },
+      body: JSON.stringify({ note: "x".repeat(100) }),
+    });
+    const result = await parseBody(req, Schema, { maxBytes: 64 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.response.status).toBe(413);
+      const body = (await result.response.json()) as { error: string };
+      expect(body.error).toMatch(/too large/i);
+    }
+    // The body was never consumed.
+    expect(req.bodyUsed).toBe(false);
+  });
+
+  it("rejects an undeclared oversized body with 413 while streaming", async () => {
+    const result = await parseBody(
+      chunkedRequest(JSON.stringify({ note: "x".repeat(100) })),
+      Schema,
+      { maxBytes: 64 },
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.response.status).toBe(413);
+  });
+
+  it("measures bytes, not characters", async () => {
+    // 30 two-byte characters: the JSON is 41 chars but 71 bytes.
+    const text = JSON.stringify({ note: "é".repeat(30) });
+    const result = await parseBody(chunkedRequest(text), Schema, {
+      maxBytes: text.length + 5,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.response.status).toBe(413);
+  });
+
+  it("still returns 400 for malformed JSON under the limit", async () => {
+    const result = await parseBody(chunkedRequest("not-json{"), Schema, {
+      maxBytes: 64,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.response.status).toBe(400);
+  });
+});
