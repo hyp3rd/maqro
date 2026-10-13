@@ -5,7 +5,20 @@ import type { Meal } from "@/components/macro/types";
 import { IDBFactory } from "fake-indexeddb";
 import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { User } from "@supabase/supabase-js";
 import { act, renderHook, waitFor } from "@testing-library/react";
+
+/** Controllable auth state. Defaults to signed-out (what `useUser` reports
+ *  when Supabase isn't configured) so the original suites keep their
+ *  guest-mode behaviour; the identity suites flip it per test. */
+const auth = vi.hoisted(() => ({ user: null as User | null }));
+vi.mock("@/hooks/use-user", () => ({
+  useUser: () => ({ user: auth.user, isLoaded: true, isUnconfigured: false }),
+}));
+
+function asUser(id: string): User {
+  return { id } as User;
+}
 
 const DEFAULT_MEALS: Meal[] = [
   { id: 1, name: "Breakfast", foods: [] },
@@ -25,6 +38,7 @@ async function freshHook() {
 
 describe("useDailyLog", () => {
   beforeEach(async () => {
+    auth.user = null;
     await freshHook();
   });
 
@@ -178,5 +192,112 @@ describe("useDailyLog", () => {
     });
 
     await waitFor(() => expect(saveSpy).toHaveBeenCalled());
+  });
+});
+
+const DATE = "2026-05-13";
+
+function dayWith(name: string): Meal[] {
+  return [
+    {
+      id: 1,
+      name: "Breakfast",
+      foods: [
+        {
+          id: 1,
+          name,
+          protein: 13,
+          carbs: 67,
+          fat: 7,
+          calories: 389,
+          portionSize: 100,
+        },
+      ],
+    },
+    ...DEFAULT_MEALS.slice(1),
+  ];
+}
+
+/** Lets any pending 500 ms debounced write fire (or proves none was queued). */
+function pastDebounce() {
+  return new Promise((r) => setTimeout(r, 700));
+}
+
+describe("useDailyLog - identity changes", () => {
+  beforeEach(() => {
+    auth.user = null;
+  });
+
+  it("does not re-persist the signed-out user's day into the wiped store", async () => {
+    const { useDailyLog } = await freshHook();
+    const db = await import("@/lib/db");
+    auth.user = asUser("user-a");
+    await db.saveDailyLog(DATE, dayWith("A's oats"));
+
+    const { result, rerender } = renderHook(() =>
+      useDailyLog(DATE, DEFAULT_MEALS),
+    );
+    await waitFor(() => expect(result.current.isHydrated).toBe(true));
+    expect(result.current.meals[0]!.foods[0]!.name).toBe("A's oats");
+    await pastDebounce();
+
+    const saveSpy = vi.spyOn(db, "saveDailyLog");
+    // signOutAndClearLocal: wipe first, then the auth change lands.
+    await db.clearAllStores();
+    auth.user = null;
+    rerender();
+    await pastDebounce();
+
+    expect(saveSpy).not.toHaveBeenCalled();
+    expect(await db.getDailyLog(DATE)).toBeNull();
+    // The guest UI no longer shows the previous account's meals.
+    await waitFor(() => expect(result.current.isHydrated).toBe(true));
+    expect(result.current.meals).toEqual(DEFAULT_MEALS);
+  });
+
+  it("does not carry one account's day into the next on an account switch", async () => {
+    const { useDailyLog } = await freshHook();
+    const db = await import("@/lib/db");
+    auth.user = asUser("user-a");
+    await db.saveDailyLog(DATE, dayWith("A's oats"));
+
+    const { result, rerender } = renderHook(() =>
+      useDailyLog(DATE, DEFAULT_MEALS),
+    );
+    await waitFor(() => expect(result.current.isHydrated).toBe(true));
+    await pastDebounce();
+
+    const saveSpy = vi.spyOn(db, "saveDailyLog");
+    await db.clearAllStores();
+    auth.user = asUser("user-b");
+    rerender();
+    await pastDebounce();
+
+    expect(saveSpy).not.toHaveBeenCalled();
+    expect(await db.getDailyLog(DATE)).toBeNull();
+    await waitFor(() => expect(result.current.meals).toEqual(DEFAULT_MEALS));
+  });
+
+  it("an auth change alone (guest -> signed in) does not trigger a write", async () => {
+    const { useDailyLog } = await freshHook();
+    const db = await import("@/lib/db");
+    await db.saveDailyLog(DATE, dayWith("Guest oats"));
+
+    const { result, rerender } = renderHook(() =>
+      useDailyLog(DATE, DEFAULT_MEALS),
+    );
+    await waitFor(() => expect(result.current.isHydrated).toBe(true));
+    await pastDebounce();
+
+    const saveSpy = vi.spyOn(db, "saveDailyLog");
+    auth.user = asUser("user-a");
+    rerender();
+    await pastDebounce();
+
+    expect(saveSpy).not.toHaveBeenCalled();
+    // Guest data is adopted by the signed-in user (it syncs up by design),
+    // so the day stays hydrated with the same meals.
+    expect(result.current.isHydrated).toBe(true);
+    expect(result.current.meals[0]!.foods[0]!.name).toBe("Guest oats");
   });
 });
