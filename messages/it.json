@@ -237,9 +237,9 @@
     },
     "accountMismatch": {
       "title": "Disconnesso: account diverso",
-      "body": "La passkey che hai usato appartiene a un altro account, quindi sei stato disconnesso. Conserva le modifiche su questo dispositivo e accedi di nuovo al tuo account originale per sincronizzarle, oppure eliminale.",
-      "keep": "Conserva modifiche",
-      "discard": "Elimina modifiche"
+      "body": "La passkey che hai usato appartiene a un altro account, quindi sei stato disconnesso e la copia dei tuoi dati su questo dispositivo è stata eliminata per tenerla fuori da quell'account.",
+      "discarded": "{count, plural, =0 {Alcune modifiche su questo dispositivo, di cui non è stato possibile verificare la sincronizzazione, sono andate perse.} one {# modifica non ancora sincronizzata con il tuo account originale è andata persa.} other {# modifiche non ancora sincronizzate con il tuo account originale sono andate perse.}}",
+      "acknowledge": "Continua all'accesso"
     }
   },
   "aboutPage": {

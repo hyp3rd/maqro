@@ -80,7 +80,6 @@ export function useSafeSignOut(signOut: () => Promise<void>): SafeSignOut {
     dialog: {
       open: atRiskCount !== null,
       count: atRiskCount ?? 0,
-      reason: "sign-out",
       busy,
       onCancel: () => setAtRiskCount(null),
       onConfirm: () => {
