@@ -1,5 +1,5 @@
 import { parseBody } from "@/lib/api/parse-body";
-import { getStripe } from "@/lib/billing/stripe";
+import { getStripe, pickLiveSubscription } from "@/lib/billing/stripe";
 import { reportServerError } from "@/lib/error-reporter";
 import { requireAdmin, writeAuditLog } from "@/lib/rbac";
 import { getSupabaseSecretConfig } from "@/lib/supabase/env";
@@ -193,16 +193,25 @@ export async function POST(
       // when true, the proxy auto-logs API requests from this
       // user and the error reporter enriches their events.
       const next = action === "trace";
-      const { error } = await admin
+      const { data: traced, error } = await admin
         .from("profiles")
         .update({ traced: next })
-        .eq("user_id", targetUserId);
+        .eq("user_id", targetUserId)
+        .select("user_id");
       if (error) {
         await reportServerError(error, {
           route: "/api/admin/users/[id]/action",
           context: { action, targetUserId },
         });
         return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+      // A 0-row UPDATE is not an error. Every account gets a profiles row
+      // at sign-up (migration 0074), so none here means the user is gone.
+      if (!traced || traced.length === 0) {
+        return NextResponse.json(
+          { error: "User has no profile." },
+          { status: 404 },
+        );
       }
       // Invalidate the per-process cache so the next request from
       // this user picks up the flip without waiting for the 60s
@@ -238,7 +247,10 @@ export async function POST(
         callerRoute: "/api/admin/users/[id]/action",
       });
       if (!result.ok) {
-        return NextResponse.json({ error: result.error }, { status: 500 });
+        return NextResponse.json(
+          { error: result.error },
+          { status: result.status },
+        );
       }
       return NextResponse.json({ ok: true });
     }
@@ -263,19 +275,21 @@ export async function POST(
           { status: 404 },
         );
       }
+      // Act on the live subscription, not whichever was created last
+      // (Stripe lists newest first; ended ones can sit next to it).
       const subs = await stripe.subscriptions.list({
         customer: customerId,
         status: "all",
-        limit: 1,
+        limit: 100,
       });
-      const sub = subs.data[0];
-      if (!sub) {
+      if (subs.data.length === 0) {
         return NextResponse.json(
           { error: "User has no subscription." },
           { status: 404 },
         );
       }
-      if (sub.status === "canceled") {
+      const sub = pickLiveSubscription(subs.data);
+      if (!sub) {
         return NextResponse.json(
           { error: "Subscription is already cancelled." },
           { status: 409 },
