@@ -20,17 +20,6 @@ insert into auth.users (id, email, aud, role) values
   ('a0000000-0000-4000-8000-000000000002', 'attacker@example.test', 'authenticated', 'authenticated'),
   ('a0000000-0000-4000-8000-000000000003', 'member@example.test', 'authenticated', 'authenticated');
 
--- Since 0074 sign-up creates every profiles row server-side. The guard's
--- INSERT branch still has to hold for a row that is missing (an account from
--- before the backfill, a row removed by hand), so start these accounts
--- without one.
-delete from public.profiles
- where user_id in (
-   'a0000000-0000-4000-8000-000000000001',
-   'a0000000-0000-4000-8000-000000000002',
-   'a0000000-0000-4000-8000-000000000003'
- );
-
 insert into public.profiles (user_id, payload, role, is_premium, stripe_customer_id)
 values ('a0000000-0000-4000-8000-000000000003', '{"age": 40}', 'admin', true, 'cus_test_member');
 
@@ -183,9 +172,6 @@ declare
 begin
   insert into auth.users (id, email, aud, role)
   values (baseline_id, 'baseline@example.test', 'authenticated', 'authenticated');
-  -- Drop the row sign-up created (0074) so the INSERT below takes the guard's
-  -- INSERT branch.
-  delete from public.profiles where user_id = baseline_id;
 
   begin
     perform set_config('request.jwt.claims', json_build_object('sub', baseline_id, 'role', 'authenticated')::text, true);
@@ -230,7 +216,6 @@ begin
     probe_id := gen_random_uuid();
     insert into auth.users (id, email, aud, role)
     values (probe_id, probe_id::text || '@example.test', 'authenticated', 'authenticated');
-    delete from public.profiles where user_id = probe_id;
 
     begin
       perform set_config('request.jwt.claims', json_build_object('sub', probe_id, 'role', 'authenticated')::text, true);
