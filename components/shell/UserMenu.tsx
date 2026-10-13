@@ -1,5 +1,6 @@
 "use client";
 
+import { UnsyncedChangesDialog } from "@/components/auth/UnsyncedChangesDialog";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -10,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useNotificationDrawer } from "@/hooks/use-notification-drawer";
+import { useSafeSignOut } from "@/hooks/use-safe-sign-out";
 import { useUser } from "@/hooks/use-user";
 import { signOutAndClearLocal } from "@/lib/auth/sign-out";
 import { getProfile } from "@/lib/db";
@@ -63,6 +65,15 @@ export function UserMenu({
   // always called to keep hook order stable across renders.
   const drawer = useNotificationDrawer(onSelectView);
   const mobileExtras = compact && Boolean(onSelectView);
+  // Sync first, confirm before discarding anything unsynced, then wipe + sign
+  // out and hard-navigate so no in-memory copy of this account's data (the
+  // displayed day, the profile form) survives into the signed-out session.
+  const safeSignOut = useSafeSignOut(async () => {
+    const supabase = getSupabaseBrowser();
+    if (!supabase) return;
+    await signOutAndClearLocal(supabase);
+    window.location.assign("/login");
+  });
 
   if (!isLoaded) {
     return (
@@ -126,12 +137,6 @@ export function UserMenu({
   const email = user.email ?? "Signed in";
   const primary = displayName ?? email;
   const initial = (displayName?.[0] ?? user.email?.[0] ?? "?").toUpperCase();
-
-  async function signOut() {
-    const supabase = getSupabaseBrowser();
-    if (!supabase) return;
-    await signOutAndClearLocal(supabase);
-  }
 
   return (
     <>
@@ -287,7 +292,8 @@ export function UserMenu({
           )}
           <DropdownMenuSeparator />
           <DropdownMenuItem
-            onClick={signOut}
+            onClick={() => void safeSignOut.requestSignOut()}
+            disabled={safeSignOut.busy}
             className="gap-2"
           >
             <LogOut className="h-3.5 w-3.5 text-muted-foreground" />
@@ -295,8 +301,9 @@ export function UserMenu({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      {/* Sibling of the menu (not nested in its content) so it survives
-          the dropdown closing when the Notifications item is selected. */}
+      {/* Siblings of the menu (not nested in its content) so they survive
+          the dropdown closing when their item is selected. */}
+      <UnsyncedChangesDialog {...safeSignOut.dialog} />
       {mobileExtras && (
         <NotificationsSheet
           open={drawer.open}
