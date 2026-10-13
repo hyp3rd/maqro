@@ -4,6 +4,8 @@
 # On `pull_request`: dry-run (lists pending migrations) so reviewers can
 # see exactly what will be applied at merge time without touching the
 # remote database.
+# Both wait for the `test` job: every migration is applied to a throwaway
+# local Postgres and the pgTAP suite in supabase/tests must pass first.
 #
 # Required GitHub secrets (Settings → Secrets and variables → Actions):
 #   - SUPABASE_ACCESS_TOKEN  — personal token from
@@ -24,11 +26,13 @@ on:
             - main
         paths:
             - "supabase/migrations/**"
+            - "supabase/tests/**"
             - "supabase/config.toml"
             - ".github/workflows/supabase-migrations.yml"
     pull_request:
         paths:
             - "supabase/migrations/**"
+            - "supabase/tests/**"
             - "supabase/config.toml"
     workflow_dispatch:
 
@@ -37,7 +41,29 @@ concurrency:
     cancel-in-progress: false
 
 jobs:
+    # Database tests gate the production push. PL/pgSQL only resolves
+    # NEW/OLD fields at run time, so a broken trigger applies cleanly and
+    # fails on the first matching write (0068 broke every new user's sync
+    # this way). Needs no secrets, so it also runs for fork PRs.
+    test:
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        steps:
+            - uses: actions/checkout@v7
+
+            - name: Install Supabase CLI
+              uses: supabase/setup-cli@v3
+              with:
+                  version: latest
+
+            - name: Start local database (applies every migration)
+              run: supabase db start
+
+            - name: Run database tests (pgTAP)
+              run: supabase test db
+
     push:
+        needs: test
         runs-on: ubuntu-latest
         timeout-minutes: 10
         # Don't try to push from forks — they don't have access to the

@@ -49,6 +49,14 @@ test: ## Vitest unit + component tests.
 test-watch: ## Vitest in watch mode (interactive).
 	$(NPX) vitest
 
+# Needs Docker + the Supabase CLI. `db start` is a no-op when the local DB is
+# already up and `migration up` applies only pending migrations, so local data
+# survives. An edited, already-applied migration needs `supabase db reset`.
+test-db: ## Database tests (pgTAP, supabase/tests) against the local Supabase DB.
+	supabase db start
+	supabase migration up --local
+	$(NPM) run db:test
+
 e2e: ## Playwright end-to-end suite (auto-starts the dev server).
 	$(NPX) playwright test
 
@@ -85,4 +93,4 @@ patch-version:
 ci: pre-commit fmt-check lint typecheck test sec check-budget build ## Run every quality gate.
 
 .PHONY: build ci dev e2e fmt fmt-check help lint lint-fix \
-	pre-commit sec start test test-watch typecheck patch-version
+	pre-commit sec start test test-db test-watch typecheck patch-version
