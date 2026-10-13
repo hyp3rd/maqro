@@ -302,6 +302,7 @@ npm run db:new <descriptive_name>   # scaffolds the next-numbered file
 # Edit the SQL...
 npm run db:push                     # applies pending migrations to the linked project
 npm run db:status                   # shows what's been applied
+make test-db                        # pgTAP tests against the local DB (Docker)
 ```
 
 **Rules of the road:**
@@ -323,11 +324,22 @@ exists` + `create policy`. See `0014_welcome_sent_at.sql` for
 - **PG-15 compatible.** Production may run an older Postgres than
   your local dev DB. `create policy if not exists` is PG-16 only —
   use `drop policy if exists` + `create policy` instead.
+- **Test what the database enforces.** Triggers, RLS policies, and
+  functions get pgTAP tests in `supabase/tests/<name>_test.sql`
+  (`supabase test new <name>` scaffolds one; see
+  `profiles_guard_server_columns_test.sql`). PL/pgSQL resolves
+  `NEW`/`OLD` fields only at run time, so a trigger naming a
+  missing column applies cleanly and passes `supabase db lint`,
+  then fails on the first matching write — exercise every branch
+  as the role that hits it (`set local role authenticated` plus
+  `request.jwt.claims`).
 
 The GitHub Actions workflow at
 [`.github/workflows/supabase-migrations.yml`](.github/workflows/supabase-migrations.yml)
-runs `supabase migration list` (dry run) on every PR that touches
-`supabase/`, and `supabase db push` on merges to `main`.
+applies every migration to a throwaway local database and runs
+`supabase test db` first; only when that passes does it run
+`supabase migration list` (dry run) on PRs that touch `supabase/`
+and `supabase db push` on merges to `main`.
 
 ---
 

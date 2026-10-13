@@ -33,6 +33,12 @@ words:
   - artefacts
   - asdfqwerzxcv
   - atilde
+  - attisdropped
+  - attname
+  - attnum
+  - attrelid
+  - atttypid
+  - atttypmod
   - Atwater
   - auml
   - Authy
@@ -195,6 +201,7 @@ words:
   - kombucha
   - komoot
   - laggy
+  - lanname
   - laquo
   - lastpass
   - Licence
@@ -245,6 +252,7 @@ words:
   - notificationclose
   - notifs
   - notmailinator
+  - nspname
   - ntilde
   - nums
   - Nutella
@@ -278,6 +286,7 @@ words:
   - pgcrypto
   - pgdelta
   - PGRST
+  - pgtap
   - PKCE
   - playsinline
   - plpgsql
@@ -293,6 +302,9 @@ words:
   - preheader
   - pressable
   - prioritise
+  - prolang
+  - pronamespace
+  - prorettype
   - protonpass
   - psyllium
   - pubname
@@ -310,7 +322,10 @@ words:
   - Reco
   - rects
   - refeed
+  - regclass
   - regen
+  - regprocedure
+  - regtype
   - remoteip
   - renderable
   - replayable
@@ -340,6 +355,7 @@ words:
   - sparkline
   - sparklines
   - spoofable
+  - sqlerrm
   - squircle
   - staticcheck
   - stdlib
@@ -349,6 +365,7 @@ words:
   - subtag
   - subtags
   - subtests
+  - subtransaction
   - sulfonylureas
   - summarise
   - supabase
@@ -358,6 +375,10 @@ words:
   - tabbables
   - TDEE
   - textlocal
+  - tgfoid
+  - tgisinternal
+  - tgname
+  - tgrelid
   - timebox
   - timeboxed
   - timestamptz
