@@ -132,6 +132,8 @@ export async function PATCH(
   if (!user) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  const gate = await assertAal2(supabase, user);
+  if (!gate.ok) return gate.response;
 
   // Refuse to set visibility on a row that isn't shared yet — the UI
   // shouldn't let this happen, but a 404 here is clearer than silently
@@ -188,6 +190,8 @@ export async function DELETE(
   if (!user) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  const gate = await assertAal2(supabase, user);
+  if (!gate.ok) return gate.response;
 
   const { error } = await supabase
     .from("recipes")
