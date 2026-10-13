@@ -41,6 +41,9 @@ import {
  * are independent: a user can have pending writes while the engine is
  * idle, synced, or errored — they all surface the "Pending" label.
  *
+ * In the conflict state the pill instead opens a dialog where the user
+ * chooses which version to keep (this device's or the other device's).
+ *
  * When pending > 0 (or in the conflict state) a small companion
  * "Discard" button is shown next to the pill — for users who want to
  * throw away unsaved local edits and accept the server's state. */
@@ -48,6 +51,7 @@ export function SyncStatusPill() {
   const { user } = useUser();
   const { status, pending } = useSyncSnapshot();
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
+  const [resolveOpen, setResolveOpen] = useState(false);
 
   if (!user) return null;
 
@@ -58,11 +62,14 @@ export function SyncStatusPill() {
     void triggerSync(supabase, user.id);
   }
 
-  // Conflict resolution "keep this device's version". A failure is already
+  // Conflict resolution "keep this device's version" — only ever reached
+  // from the confirm button of the resolve dialog, never from the pill
+  // itself: it overwrites the other device's version. A failure is already
   // recorded on sync-status (the pill flips to "Sync error") before the
   // promise rejects; the catch only keeps it from becoming an unhandled
   // rejection.
-  function onKeepLocal() {
+  function onConfirmKeepLocal() {
+    setResolveOpen(false);
     if (!user) return;
     const supabase = getSupabaseBrowser();
     if (!supabase) return;
@@ -71,6 +78,7 @@ export function SyncStatusPill() {
 
   async function onConfirmDiscard() {
     setDiscardConfirmOpen(false);
+    setResolveOpen(false);
     if (!user) return;
     const supabase = getSupabaseBrowser();
     if (!supabase) return;
@@ -105,8 +113,9 @@ export function SyncStatusPill() {
   // more writes were rejected by a peer device's prior edit, otherwise
   // they'd just see "Pending" and assume the sync hasn't run yet. The
   // dirty rows that triggered the conflict are kept as-is (a sync never
-  // overwrites them); the user picks a side: tapping the pill keeps this
-  // device's version, Discard accepts the other device's.
+  // overwrites them). Tapping the pill opens a dialog where the user picks
+  // a side; both choices destroy the other version, so neither runs
+  // without that explicit confirmation.
   if (status.state === "conflict") {
     const n = status.count;
     return (
@@ -114,15 +123,23 @@ export function SyncStatusPill() {
         <div className="flex items-center gap-0.5">
           <button
             type="button"
-            onClick={onKeepLocal}
+            onClick={() => setResolveOpen(true)}
             className={cn(styles, "text-amber-700 dark:text-amber-400")}
-            title={`${n} change${n === 1 ? "" : "s"} couldn't be saved because another device changed the same thing first. Tap to save this device's version instead, or discard to keep the other device's.`}
+            title={`${n} change${n === 1 ? "" : "s"} couldn't be saved because another device changed the same thing first. Tap to choose which version to keep.`}
           >
             <AlertTriangle className="h-3 w-3" />
             Needs review ({n})
           </button>
           <DiscardButton onClick={() => setDiscardConfirmOpen(true)} />
         </div>
+        <ConflictResolveDialog
+          open={resolveOpen}
+          onOpenChange={setResolveOpen}
+          onKeepLocal={onConfirmKeepLocal}
+          onKeepOther={onConfirmDiscard}
+          conflicts={n}
+          pending={pending}
+        />
         <DiscardConfirmDialog
           open={discardConfirmOpen}
           onOpenChange={setDiscardConfirmOpen}
@@ -224,6 +241,85 @@ function DiscardButton({ onClick }: { onClick: () => void }) {
     >
       <Trash2 className="h-3.5 w-3.5" />
     </button>
+  );
+}
+
+/** The "Needs review" choice. Both outcomes are destructive and final, so
+ *  the copy spells out what each one loses; nothing runs until the user
+ *  picks one of the two action buttons. "Keep the other device's" is the
+ *  same wipe-and-reload as Discard (`discardPendingChanges`), so it says so:
+ *  it drops every unsaved change on this device, not only the conflicted
+ *  ones. */
+function ConflictResolveDialog({
+  open,
+  onOpenChange,
+  onKeepLocal,
+  onKeepOther,
+  conflicts,
+  pending,
+}: {
+  open: boolean;
+  onOpenChange: (next: boolean) => void;
+  onKeepLocal: () => void;
+  onKeepOther: () => void;
+  conflicts: number;
+  pending: number;
+}) {
+  const items = conflicts === 1 ? "this item" : `these ${conflicts} items`;
+  const unsaved =
+    pending > 1
+      ? `all ${pending} unsaved changes`
+      : pending === 1
+        ? "the 1 unsaved change"
+        : "every unsaved change";
+  return (
+    <AlertDialog
+      open={open}
+      onOpenChange={onOpenChange}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Which version should be kept?</AlertDialogTitle>
+          <AlertDialogDescription>
+            {conflicts} change{conflicts === 1 ? "" : "s"} on this device
+            couldn&apos;t be saved because another device changed the same data
+            first. Whichever version you don&apos;t keep is lost. This
+            can&apos;t be undone.
+          </AlertDialogDescription>
+          <ul className="list-disc space-y-1 pl-5 text-left text-sm text-muted-foreground">
+            <li>
+              <span className="font-medium text-foreground">
+                Keep this device&apos;s:
+              </span>{" "}
+              this device&apos;s version replaces the other device&apos;s for{" "}
+              {items}.
+            </li>
+            <li>
+              <span className="font-medium text-foreground">
+                Keep the other device&apos;s:
+              </span>{" "}
+              {unsaved} on this device {pending > 1 ? "are" : "is"} thrown away
+              and your latest synced data is loaded.
+            </li>
+          </ul>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={onKeepOther}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            Keep the other device&apos;s
+          </AlertDialogAction>
+          <AlertDialogAction
+            onClick={onKeepLocal}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          >
+            Keep this device&apos;s
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

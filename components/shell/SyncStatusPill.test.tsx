@@ -37,18 +37,63 @@ afterEach(() => {
   __resetSyncStatusForTests();
 });
 
+function renderConflict(count: number) {
+  bumpPending();
+  setSyncConflict(count);
+  render(<SyncStatusPill />);
+}
+
 describe("SyncStatusPill — conflict state", () => {
-  it("tapping 'Needs review' keeps this device's version instead of re-running a plain sync", () => {
-    bumpPending();
-    setSyncConflict(1);
-    render(<SyncStatusPill />);
+  it("tapping 'Needs review' only opens the choice — nothing is overwritten yet", () => {
+    renderConflict(2);
 
     fireEvent.click(screen.getByRole("button", { name: /needs review/i }));
+
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog.textContent).toMatch(/can't be undone/i);
+    expect(dialog.textContent).toMatch(
+      /replaces the other device's for these 2 items/i,
+    );
+    expect(mocks.resolveConflictsKeepingLocal).not.toHaveBeenCalled();
+    expect(mocks.discardPendingChanges).not.toHaveBeenCalled();
+    expect(mocks.triggerSync).not.toHaveBeenCalled();
+  });
+
+  it("keeps this device's version only after the user confirms it", () => {
+    renderConflict(1);
+    fireEvent.click(screen.getByRole("button", { name: /needs review/i }));
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /keep this device's/i }),
+    );
 
     expect(mocks.resolveConflictsKeepingLocal).toHaveBeenCalledWith(
       supabase,
       USER_ID,
     );
-    expect(mocks.triggerSync).not.toHaveBeenCalled();
+    expect(mocks.discardPendingChanges).not.toHaveBeenCalled();
+  });
+
+  it("keeps the other device's version through the discard path", () => {
+    renderConflict(1);
+    fireEvent.click(screen.getByRole("button", { name: /needs review/i }));
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /keep the other device's/i }),
+    );
+
+    expect(mocks.discardPendingChanges).toHaveBeenCalledWith(supabase, USER_ID);
+    expect(mocks.resolveConflictsKeepingLocal).not.toHaveBeenCalled();
+  });
+
+  it("cancel resolves nothing", () => {
+    renderConflict(1);
+    fireEvent.click(screen.getByRole("button", { name: /needs review/i }));
+
+    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(mocks.resolveConflictsKeepingLocal).not.toHaveBeenCalled();
+    expect(mocks.discardPendingChanges).not.toHaveBeenCalled();
   });
 });
