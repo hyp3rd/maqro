@@ -185,11 +185,13 @@ words:
   - infobar
   - ings
   - initialiser
+  - initplan
   - inlines
   - instacart
   - interactable
   - intolerances
   - iquest
+  - isnt
   - Italiano
   - iuml
   - Jaccard
@@ -302,6 +304,7 @@ words:
   - preheader
   - pressable
   - prioritise
+  - proconfig
   - prolang
   - pronamespace
   - prorettype
@@ -332,6 +335,7 @@ words:
   - Reshare
   - restli
   - roledescription
+  - rowsecurity
   - rowtype
   - rsquo
   - sandboxed

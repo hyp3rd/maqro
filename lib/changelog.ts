@@ -42,7 +42,7 @@ export const CHANGELOG: ChangelogEntry[] = [
     id: "2026-10-13-two-step-always-on",
     date: "2026-10-13",
     title: "Two-step verification, every time",
-    body: `If you've turned on two-step verification, Maqro now asks for your authenticator code (or a passkey) on every new sign-in.
+    body: `If you've turned on two-step verification, Maqro now asks for your authenticator code (or a passkey) on every new sign-in, and your data itself refuses access until you've given it — not just the app's screens.
 
 - **"Trust this device for 7 days" is gone.** A remembered browser could be used to skip the second step, so we retired it. Any trust you'd set up no longer applies; your next sign-in on that browser asks for the code once.
 - **Passkeys still count.** Signing in with a passkey covers the second step on its own, exactly as before.`,
