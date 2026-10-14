@@ -117,7 +117,7 @@ export function SyncStatusPill() {
   // a side; both choices destroy the other version, so neither runs
   // without that explicit confirmation.
   if (status.state === "conflict") {
-    const n = status.count;
+    const n = status.rows.length;
     return (
       <>
         <div className="flex items-center gap-0.5">

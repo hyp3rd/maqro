@@ -55,7 +55,7 @@ describe("SyncModeController — remote-only", () => {
     // conflicted rows keep `pending` above zero.
     act(() => bumpPending());
     act(() => setSyncing());
-    act(() => setSyncConflict(1));
+    act(() => setSyncConflict([{ table: "daily_logs", key: "2026-05-16" }]));
     act(() => vi.advanceTimersByTime(REMOTE_DEBOUNCE_MS * 5));
     expect(mockTriggerSync).not.toHaveBeenCalled();
 

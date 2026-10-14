@@ -2,6 +2,11 @@
 
 import { useSyncExternalStore } from "react";
 
+/** One row whose push the last sync run rejected as a conflict: the server
+ *  table and the row's key within the user's rows (a date, an id, or the
+ *  user id for the profile). */
+export type SyncConflict = { table: string; key: string };
+
 export type SyncStatus =
   | { state: "idle" }
   | { state: "syncing" }
@@ -11,8 +16,9 @@ export type SyncStatus =
    *  on since our last pull — another device edited the same row(s)
    *  first. The local rows stay dirty (no sync overwrites them); the UI
    *  surfaces this so the user can keep this device's version or
-   *  discard it in favour of the other device's. */
-  | { state: "conflict"; count: number };
+   *  discard it in favour of the other device's. `rows` are exactly the
+   *  rows the run reported, which is all "keep this device's" touches. */
+  | { state: "conflict"; rows: readonly SyncConflict[] };
 
 /** Combined view: the lifecycle state plus a "writes since last successful
  * sync" counter. Pending is independent of state — a user can have pending
@@ -66,9 +72,9 @@ export function setSynced(): void {
 /** Marks a sync that completed *successfully at the protocol level*
  *  but had one or more push rejections (peer device beat us to the
  *  punch). The pending counter is preserved — those rows are still
- *  dirty and need a retry. */
-export function setSyncConflict(count: number): void {
-  setSnapshot({ ...snapshot, status: { state: "conflict", count } });
+ *  dirty and need a retry. `rows` are the rejected rows themselves. */
+export function setSyncConflict(rows: readonly SyncConflict[]): void {
+  setSnapshot({ ...snapshot, status: { state: "conflict", rows } });
 }
 
 export function setSyncError(err: unknown): void {

@@ -39,7 +39,12 @@ afterEach(() => {
 
 function renderConflict(count: number) {
   bumpPending();
-  setSyncConflict(count);
+  setSyncConflict(
+    Array.from({ length: count }, (_, i) => ({
+      table: "daily_logs",
+      key: `2026-05-1${i}`,
+    })),
+  );
   render(<SyncStatusPill />);
 }
 

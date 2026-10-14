@@ -157,7 +157,7 @@ function newResult(): SyncResult {
       favoriteFoods: 0,
       micronutrientProfiles: 0,
     },
-    conflicts: 0,
+    conflicts: [],
     deletionsPushed: 0,
   };
 }
@@ -295,7 +295,7 @@ describe("pushCustomFoods — per-row push with optimistic concurrency", () => {
     await pushCustomFoods(sb, USER_ID, result);
 
     expect(result.pushed.customFoods).toBe(2);
-    expect(result.conflicts).toBe(0);
+    expect(result.conflicts).toEqual([]);
     expect(upsertCalls).toHaveLength(2);
     expect(vi.mocked(db.markRecordSynced)).toHaveBeenCalledTimes(2);
   });
@@ -350,7 +350,7 @@ describe("pushCustomFoods — per-row push with optimistic concurrency", () => {
     await pushCustomFoods(sb, USER_ID, result);
 
     expect(result.pushed.customFoods).toBe(0);
-    expect(result.conflicts).toBe(1);
+    expect(result.conflicts).toHaveLength(1);
     expect(vi.mocked(db.markRecordSynced)).not.toHaveBeenCalled();
   });
 
@@ -531,12 +531,12 @@ describe("triggerSync — conflict status flip", () => {
     });
 
     const result = await triggerSync(sb, USER_ID);
-    expect(result?.conflicts).toBe(1);
+    expect(result?.conflicts).toHaveLength(1);
 
     const status = getSyncStatus();
     expect(status.state).toBe("conflict");
     if (status.state === "conflict") {
-      expect(status.count).toBe(1);
+      expect(status.rows).toHaveLength(1);
     }
   });
 

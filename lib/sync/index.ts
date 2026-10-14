@@ -60,6 +60,7 @@ import {
   setSyncError,
   setSynced,
   setSyncing,
+  type SyncConflict,
 } from "@/lib/sync-status";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isAuthError } from "./auth-error";
@@ -162,10 +163,10 @@ export type SyncResult = {
     micronutrientProfiles: number;
   };
   /** Rows whose push was rejected because another device had already
-   *  changed them since we last pulled. The conflict UI (Pass 2) reads
-   *  this to tell the user what didn't sync; for now sync-status pill
-   *  surfaces the count. */
-  conflicts: number;
+   *  changed them since we last pulled. Recorded on the status pill's
+   *  "Needs review" state; "keep this device's version"
+   *  ({@link resolveConflictsKeepingLocal}) acts on exactly these rows. */
+  conflicts: SyncConflict[];
   /** Tombstones successfully propagated to the server this run. Used
    *  by the sync-status pill so users know their delete *did* land
    *  (otherwise the silent "I just deleted this — is it really gone
@@ -296,7 +297,7 @@ export async function runInitialSync(
     result: {
       pushed: { ...ZERO_COUNTS },
       pulled: { ...ZERO_COUNTS },
-      conflicts: 0,
+      conflicts: [],
       deletionsPushed: 0,
     },
     errors: [],
@@ -326,7 +327,7 @@ export async function runInitialSync(
  *  are real conflicts the user needs to know about, so surface them
  *  instead of silently flipping to "synced". */
 function settleSyncStatus(result: SyncResult): void {
-  if (result.conflicts > 0) {
+  if (result.conflicts.length > 0) {
     setSyncConflict(result.conflicts);
   } else {
     setSynced();
@@ -367,28 +368,43 @@ export async function triggerSync(
 
 /** Conflict resolution "keep this device's version" — the action behind the
  *  status pill's "Needs review" state, reached only through its
- *  confirmation dialog. For every dirty row whose base version is stale —
- *  or, on a natural-key table, that was never synced but whose key a peer
- *  already created — adopt the server's CURRENT version token as the new
- *  base without touching the row's content (or clear it when the server row
- *  is gone), then run a normal sync: the push is now a versioned UPDATE
- *  that passes the optimistic-concurrency check, and this device's version
- *  replaces the other device's. Only ever run on an explicit user choice —
- *  automatic syncs keep surfacing the conflict instead of silently picking
- *  a side.
+ *  confirmation dialog. For each row the LAST run reported as a conflict
+ *  (the rows recorded on that state, which the dialog counts) that is still
+ *  dirty — a stale base, or, on a natural-key table, a never-synced row
+ *  whose key a peer already created — adopt the server's CURRENT version
+ *  token as the new base without touching the row's content (or clear it
+ *  when the server row is gone), then run a normal sync: the push is now a
+ *  versioned UPDATE that passes the optimistic-concurrency check, and this
+ *  device's version replaces the other device's. Any other dirty row is
+ *  left alone, so a row the user didn't review is never forced over a
+ *  peer's newer version; if it is stale too, this run reports it as a new
+ *  conflict. Only ever run on an explicit user choice — automatic syncs
+ *  keep surfacing the conflict instead of silently picking a side.
  *
  *  Non-reentrant on the sync-status state like {@link triggerSync}. */
 export async function resolveConflictsKeepingLocal(
   supabase: SupabaseClient,
   userId: string,
 ): Promise<SyncResult | null> {
-  if (getSyncStatus().state === "syncing") return null;
+  const status = getSyncStatus();
+  if (status.state === "syncing") return null;
+  const reviewed = status.state === "conflict" ? status.rows : [];
   setSyncing();
   try {
+    const keysByTable = new Map<string, string[]>();
+    for (const { table, key } of reviewed) {
+      keysByTable.set(table, [...(keysByTable.get(table) ?? []), key]);
+    }
     const rebaseErrors: unknown[] = [];
-    await isolate(rebaseErrors, () => rebaseProfileConflict(supabase, userId));
+    if (keysByTable.has(PROFILE_TABLE)) {
+      await isolate(rebaseErrors, () =>
+        rebaseProfileConflict(supabase, userId),
+      );
+    }
     for (const table of SYNC_TABLES) {
-      await isolate(rebaseErrors, () => table.rebase(supabase, userId));
+      const keys = keysByTable.get(table.table);
+      if (!keys) continue;
+      await isolate(rebaseErrors, () => table.rebase(supabase, userId, keys));
     }
     let result: SyncResult;
     try {
@@ -626,6 +642,9 @@ async function pushDeletions(run: SyncRun) {
 // The profile is a single row with its own push/pull below; every other
 // table goes through the generic per-table sync further down.
 
+/** The profile's server table, as recorded in a {@link SyncConflict}. */
+const PROFILE_TABLE = "profiles";
+
 async function pushProfile(
   supabase: SupabaseClient,
   userId: string,
@@ -657,7 +676,7 @@ async function pushProfile(
     if (placeholder) outcome = await push(placeholder);
   }
   if (outcome.status === "conflict" || outcome.status === "duplicate-key") {
-    result.conflicts++;
+    result.conflicts.push({ table: PROFILE_TABLE, key: userId });
     return;
   }
   if (outcome.status === "uuid-collision") {
@@ -820,7 +839,11 @@ type SyncTable = {
   columns: readonly string[];
   pull: (run: SyncRun) => Promise<void>;
   push: (run: SyncRun) => Promise<void>;
-  rebase: (supabase: SupabaseClient, userId: string) => Promise<void>;
+  rebase: (
+    supabase: SupabaseClient,
+    userId: string,
+    keys: readonly string[],
+  ) => Promise<void>;
 };
 
 function defineTable<R extends { updated_at: string }, L extends LocalRecord>(
@@ -831,7 +854,8 @@ function defineTable<R extends { updated_at: string }, L extends LocalRecord>(
     columns: spec.columns,
     pull: (run) => pullTable(run, spec),
     push: (run) => pushTable(run, spec),
-    rebase: (supabase, userId) => rebaseTable(supabase, userId, spec),
+    rebase: (supabase, userId, keys) =>
+      rebaseTable(supabase, userId, spec, keys),
   };
 }
 
@@ -936,13 +960,14 @@ async function pushOne<R extends { updated_at: string }, L extends LocalRecord>(
     label,
     push.create,
   );
+  const conflict = { table: spec.table, key: spec.localKey(local) };
   if (outcome.status === "conflict" || outcome.status === "duplicate-key") {
-    run.result.conflicts++;
+    run.result.conflicts.push(conflict);
     return;
   }
   if (outcome.status === "uuid-collision") {
     if (push.collision === "conflict") {
-      run.result.conflicts++;
+      run.result.conflicts.push(conflict);
       return;
     }
     if (!push.collision || reassignmentsLeft <= 0) {
@@ -983,16 +1008,17 @@ async function rebaseTable<
   supabase: SupabaseClient,
   userId: string,
   spec: TableSpec<R, L>,
+  keys: readonly string[],
 ): Promise<void> {
-  const push = spec.push;
-  if (!push) return;
-  // Dirty rows on a base the server may have moved past — and, on
-  // natural-key tables, never-synced rows whose INSERT may have hit a
-  // peer's row for the same key (they adopt that row's token, so the next
-  // push is a versioned UPDATE that replaces it).
+  if (!spec.push) return;
+  // The rows the last run reported as conflicts (`keys`) that are still
+  // dirty: on a base the server moved past, or — on natural-key tables —
+  // never synced, whose INSERT hit a peer's row for the same key (they
+  // adopt that row's token, so the next push is a versioned UPDATE that
+  // replaces it).
+  const reviewed = new Set(keys);
   const stale = (await spec.list()).filter(
-    (l) =>
-      isDirtyRecord(l) && (!!l.serverUpdatedAt || push.create === "insert"),
+    (l) => reviewed.has(spec.localKey(l)) && isDirtyRecord(l),
   );
   if (stale.length === 0) return;
   const label = `rebase ${spec.table}`;

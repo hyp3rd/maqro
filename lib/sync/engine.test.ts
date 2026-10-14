@@ -347,8 +347,11 @@ describe("pull and realtime never overwrite a dirty local row", () => {
     const result = await sync.triggerSync(sb, USER_ID);
 
     expect(mealNames(await db.getDailyLog(DAY))).toEqual(["eggs", "snack"]);
-    expect(result?.conflicts).toBe(1);
-    expect(status.getSyncStatus()).toEqual({ state: "conflict", count: 1 });
+    expect(result?.conflicts).toEqual([{ table: "daily_logs", key: DAY }]);
+    expect(status.getSyncStatus()).toEqual({
+      state: "conflict",
+      rows: [{ table: "daily_logs", key: DAY }],
+    });
     // Neither side was silently overwritten.
     expect(
       mealNames(server.find("daily_logs", { date: DAY }) as { meals: Meal[] }),
@@ -371,8 +374,11 @@ describe("pull and realtime never overwrite a dirty local row", () => {
     expect(
       mealNames(server.find("daily_logs", { date: DAY }) as { meals: Meal[] }),
     ).toEqual(["theirs"]);
-    expect(result?.conflicts).toBe(1);
-    expect(status.getSyncStatus()).toEqual({ state: "conflict", count: 1 });
+    expect(result?.conflicts).toEqual([{ table: "daily_logs", key: DAY }]);
+    expect(status.getSyncStatus()).toEqual({
+      state: "conflict",
+      rows: [{ table: "daily_logs", key: DAY }],
+    });
     expect(await db.getDailyLog(DAY)).toMatchObject({ serverUpdatedAt: null });
   });
 
@@ -390,7 +396,7 @@ describe("pull and realtime never overwrite a dirty local row", () => {
 
     const result = await sync.resolveConflictsKeepingLocal(sb, USER_ID);
 
-    expect(result?.conflicts).toBe(0);
+    expect(result?.conflicts).toEqual([]);
     expect(status.getSyncStatus().state).toBe("synced");
     const serverRow = server.find("water_intake", { date: DAY }) as {
       ml: number;
@@ -477,7 +483,7 @@ describe("pull and realtime never overwrite a dirty local row", () => {
 
     const result = await sync.resolveConflictsKeepingLocal(sb, USER_ID);
 
-    expect(result?.conflicts).toBe(0);
+    expect(result?.conflicts).toEqual([]);
     expect(status.getSyncStatus().state).toBe("synced");
     const serverRow = server.find("daily_logs", { date: DAY }) as {
       meals: Meal[];
@@ -487,6 +493,83 @@ describe("pull and realtime never overwrite a dirty local row", () => {
     const local = await db.getDailyLog(DAY);
     expect(local?.serverUpdatedAt).toBe(serverRow.updated_at);
     expect(local?.localUpdatedAt).toBe(serverRow.updated_at);
+  });
+});
+
+describe("'keep this device's version' only touches the reviewed conflicts", () => {
+  let env: Awaited<ReturnType<typeof setup>>;
+  beforeEach(async () => {
+    env = await setup();
+  });
+
+  const LATER = "2026-05-17";
+
+  /** Another device saves `names` on `date` (no realtime delivery). */
+  function peerSave(date: string, names: string[]): void {
+    Object.assign(env.server.find("daily_logs", { date }) ?? {}, {
+      meals: meals(...names),
+      updated_at: env.server.nextTimestamp(),
+    });
+  }
+
+  it("leaves a dirty row that wasn't in the last run's conflicts to be reported, not forced", async () => {
+    const { db, sync, status, server, sb } = env;
+    server.seed("daily_logs", {
+      user_id: USER_ID,
+      date: DAY,
+      meals: meals("eggs"),
+    });
+    server.seed("daily_logs", {
+      user_id: USER_ID,
+      date: LATER,
+      meals: meals("lunch"),
+    });
+    await sync.triggerSync(sb, USER_ID);
+    // The run the dialog reviews: one conflict, on DAY.
+    await db.saveDailyLog(DAY, meals("eggs", "snack"));
+    peerSave(DAY, ["phone breakfast"]);
+    await sync.triggerSync(sb, USER_ID);
+    expect(status.getSyncStatus()).toEqual({
+      state: "conflict",
+      rows: [{ table: "daily_logs", key: DAY }],
+    });
+    // Before the user answers the dialog, another row goes stale too.
+    await db.saveDailyLog(LATER, meals("lunch", "cake"));
+    peerSave(LATER, ["phone dinner"]);
+
+    const result = await sync.resolveConflictsKeepingLocal(sb, USER_ID);
+
+    // The other device's newer version of the row nobody reviewed survives...
+    expect(
+      mealNames(
+        server.find("daily_logs", { date: LATER }) as { meals: Meal[] },
+      ),
+    ).toEqual(["phone dinner"]);
+    // ...and is reported for review, while the reviewed one was kept.
+    expect(result?.conflicts).toEqual([{ table: "daily_logs", key: LATER }]);
+    expect(
+      mealNames(server.find("daily_logs", { date: DAY }) as { meals: Meal[] }),
+    ).toEqual(["eggs", "snack"]);
+    expect(mealNames(await db.getDailyLog(LATER))).toEqual(["lunch", "cake"]);
+  });
+
+  it("rebases nothing when there is no recorded conflict", async () => {
+    const { db, sync, server, sb } = env;
+    server.seed("daily_logs", {
+      user_id: USER_ID,
+      date: DAY,
+      meals: meals("eggs"),
+    });
+    await sync.triggerSync(sb, USER_ID);
+    await db.saveDailyLog(DAY, meals("eggs", "snack"));
+    peerSave(DAY, ["phone breakfast"]);
+
+    const result = await sync.resolveConflictsKeepingLocal(sb, USER_ID);
+
+    expect(
+      mealNames(server.find("daily_logs", { date: DAY }) as { meals: Meal[] }),
+    ).toEqual(["phone breakfast"]);
+    expect(result?.conflicts).toEqual([{ table: "daily_logs", key: DAY }]);
   });
 });
 
@@ -503,7 +586,7 @@ describe("a profile this device never synced", () => {
 
     const result = await sync.triggerSync(sb, USER_ID);
 
-    expect(result?.conflicts).toBe(0);
+    expect(result?.conflicts).toEqual([]);
     expect(result?.pushed.profile).toBe(1);
     const serverRow = server.find("profiles", { user_id: USER_ID }) as {
       payload: PersonalInfo;
@@ -523,7 +606,7 @@ describe("a profile this device never synced", () => {
 
     const result = await sync.triggerSync(sb, USER_ID);
 
-    expect(result?.conflicts).toBe(1);
+    expect(result?.conflicts).toEqual([{ table: "profiles", key: USER_ID }]);
     expect(server.find("profiles", { user_id: USER_ID })?.payload).toEqual(
       theirs,
     );
@@ -531,7 +614,7 @@ describe("a profile this device never synced", () => {
 
     const resolved = await sync.resolveConflictsKeepingLocal(sb, USER_ID);
 
-    expect(resolved?.conflicts).toBe(0);
+    expect(resolved?.conflicts).toEqual([]);
     expect(server.find("profiles", { user_id: USER_ID })?.payload).toEqual(
       PROFILE,
     );
@@ -670,7 +753,7 @@ describe("the echo of our own push is a no-op", () => {
 
     const result = await sync.triggerSync(sb, USER_ID);
 
-    expect(result?.conflicts).toBe(0);
+    expect(result?.conflicts).toEqual([]);
     expect(result?.pushed.dailyLogs).toBe(0);
     expect(
       server.attempts.slice(writes).filter((a) => a.op !== "select"),
@@ -806,7 +889,7 @@ describe("hooks showing peer updates never dirty the rows they load", () => {
 
     const next = await sync.triggerSync(sb, USER_ID);
 
-    expect(next?.conflicts).toBe(0);
+    expect(next?.conflicts).toEqual([]);
     expect(
       mealNames(server.find("daily_logs", { date: DAY }) as { meals: Meal[] }),
     ).toEqual(["phone", "tea"]);
@@ -841,7 +924,7 @@ describe("hooks showing peer updates never dirty the rows they load", () => {
 
     const next = await sync.triggerSync(sb, USER_ID);
 
-    expect(next?.conflicts).toBe(0);
+    expect(next?.conflicts).toEqual([]);
     expect(
       (
         server.find("profiles", { user_id: USER_ID }) as {
@@ -886,7 +969,7 @@ describe("hooks showing peer updates never dirty the rows they load", () => {
     const stored = await db.getProfileRecord();
     expect(stored && db.isDirtyRecord(stored)).toBe(false);
     const next = await sync.triggerSync(sb, USER_ID);
-    expect(next?.conflicts).toBe(0);
+    expect(next?.conflicts).toEqual([]);
     unmount();
     handle.unsubscribe();
   });
@@ -1064,7 +1147,7 @@ describe("remote delete reconciliation", () => {
 
     const result = await sync.triggerSync(sb, USER_ID);
 
-    expect(result?.conflicts).toBe(0);
+    expect(result?.conflicts).toEqual([]);
     expect(server.find("supplements", { id: "s-1" })?.name).toBe("Vitamin D3");
     const [kept] = await db.listSupplements();
     expect(kept?.name).toBe("Vitamin D3");
