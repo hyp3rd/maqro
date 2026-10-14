@@ -5,6 +5,7 @@ import type { DailyLog, WeightEntry } from "@/lib/db";
 import { sendEmail } from "@/lib/email/resend";
 import { weeklyRecapEmail } from "@/lib/email/templates";
 import { computeMacros } from "@/lib/macros";
+import { emailsById, listAllAuthUsers } from "@/lib/supabase/admin-users";
 import { getSupabaseSecretConfig } from "@/lib/supabase/env";
 import { personalInfoFromPayload } from "@/lib/sync/mappers";
 import { computeWeeklyRecap } from "@/lib/weekly-recap";
@@ -50,17 +51,14 @@ export async function GET(req: Request): Promise<NextResponse> {
     return NextResponse.json({ sent: 0, skipped: 0, errors: 0 });
   }
 
-  // 2. Email map.
-  const { data: usersData, error: usersErr } =
-    await admin.auth.admin.listUsers();
+  // 2. Email map over every auth user (paged — a bare listUsers()
+  //    returns only the first 50).
+  const { users, error: usersErr } = await listAllAuthUsers(admin.auth.admin);
   if (usersErr) {
     console.error("[cron/weekly-recap] listUsers failed:", usersErr);
     return NextResponse.json({ error: usersErr.message }, { status: 500 });
   }
-  const emailById = new Map<string, string>();
-  for (const u of usersData?.users ?? []) {
-    if (u.email) emailById.set(u.id, u.email);
-  }
+  const emailById = emailsById(users);
 
   const todayUtc = currentDateUtc();
   const weekStart = subtractDaysUtc(todayUtc, 6);

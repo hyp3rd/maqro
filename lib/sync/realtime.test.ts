@@ -213,6 +213,57 @@ describe("startRealtimeSubscription — payload dispatch", () => {
     unsub();
   });
 
+  // favorite_stores ids are shared OSM keys and Realtime applies neither the
+  // user_id filter nor RLS to DELETE events, so another user's unfavourite of
+  // the same store arrives here with the same `old.id`.
+  it("applies a favorite_stores DELETE only when old.user_id is the caller", async () => {
+    const { sb, channels } = makeFakeSupabase();
+    startRealtimeSubscription(sb, USER_ID);
+    const channel = channels.find((c) => c.table === "favorite_stores");
+    if (!channel) throw new Error("missing favorite_stores channel");
+
+    const busCb = vi.fn();
+    const unsub = subscribeDataChanged("favoriteStores", busCb);
+
+    channel.onCallback({
+      eventType: "DELETE",
+      new: {},
+      old: { user_id: USER_ID, id: "node/123" },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(vi.mocked(db.applyServerDeletion)).toHaveBeenCalledWith(
+      "favoriteStores",
+      "node/123",
+    );
+    expect(busCb).toHaveBeenCalledTimes(1);
+    unsub();
+  });
+
+  it("ignores a favorite_stores DELETE for another user's row with the same OSM key", async () => {
+    const { sb, channels } = makeFakeSupabase();
+    startRealtimeSubscription(sb, USER_ID);
+    const channel = channels.find((c) => c.table === "favorite_stores");
+    if (!channel) throw new Error("missing favorite_stores channel");
+
+    const busCb = vi.fn();
+    const unsub = subscribeDataChanged("favoriteStores", busCb);
+
+    channel.onCallback({
+      eventType: "DELETE",
+      new: {},
+      old: { user_id: "22222222-2222-4222-8222-222222222222", id: "node/123" },
+    });
+    channel.onCallback({ eventType: "DELETE", new: {}, old: { id: "way/9" } });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(vi.mocked(db.applyServerDeletion)).not.toHaveBeenCalled();
+    expect(busCb).not.toHaveBeenCalled();
+    unsub();
+  });
+
   it("routes a failed IDB apply to reportStorageError instead of dropping it", async () => {
     const { sb, channels } = makeFakeSupabase();
     startRealtimeSubscription(sb, USER_ID);

@@ -1,4 +1,5 @@
 import { requireAdmin } from "@/lib/rbac";
+import { listAllAuthUsers } from "@/lib/supabase/admin-users";
 import { getSupabaseSecretConfig } from "@/lib/supabase/env";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -53,17 +54,15 @@ export async function GET(req: Request): Promise<NextResponse> {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  // Pull a wide page from auth.admin.listUsers, then in-memory
-  // filter + paginate. Works fine up to a few thousand users; if
-  // we grow past that we'll need a proper SQL view that joins
-  // auth.users with profiles.
-  const { data: usersData, error: usersErr } = await admin.auth.admin.listUsers(
-    { page: 1, perPage: 1000 },
+  // Page through every auth user, then in-memory filter + paginate.
+  // Works fine up to a few thousand users; if we grow past that we'll
+  // need a proper SQL view that joins auth.users with profiles.
+  const { users: allUsers, error: usersErr } = await listAllAuthUsers(
+    admin.auth.admin,
   );
   if (usersErr) {
     return NextResponse.json({ error: usersErr.message }, { status: 500 });
   }
-  const allUsers = usersData?.users ?? [];
 
   // Pre-fetch profile rows for EVERY user we might keep, so the
   // status filter (premium / traced) can run against profile

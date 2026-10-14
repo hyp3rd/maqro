@@ -7,6 +7,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   discardPendingChanges,
   pushCustomFoods,
+  pushFavoriteStores,
   pushMealTemplates,
   triggerSync,
   type SyncResult,

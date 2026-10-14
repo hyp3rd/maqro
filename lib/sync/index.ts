@@ -1211,12 +1211,13 @@ export async function pushFavoriteStores(
   const stores = await listFavoriteStores();
   for (const store of stores) {
     if (!isDirty(store)) continue;
-    // Favourite PKs are OSM keys (text), not UUIDs — no re-mint path.
+    // The id is a shared OSM key (text), so the server key is per user —
+    // (user_id, id), migration 0077 — and there is no re-mint path.
     const outcome = await pushRow(
       supabase,
       "favorite_stores",
       favoriteStoreToRow(userId, store),
-      { id: store.id },
+      { user_id: userId, id: store.id },
       store.serverUpdatedAt,
       "push favorite store",
     );
