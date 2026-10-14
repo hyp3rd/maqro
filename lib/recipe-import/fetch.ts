@@ -1,3 +1,4 @@
+import { readWithCap } from "@/lib/http/read-with-cap";
 import { isPrivateOrSpecialIp } from "./ip-ranges";
 
 /** Safe URL fetcher for recipe-import.
@@ -170,7 +171,12 @@ export async function fetchRecipePage(url: string): Promise<FetchResult> {
 
       // Stream-read with a byte cap so a huge body can't OOM us.
       const html = await readWithCap(res.body, MAX_BYTES);
-      if (!html.ok) return { ok: false, error: html.error };
+      if (!html.ok) {
+        return {
+          ok: false,
+          error: `Page is larger than the ${MAX_BYTES / 1024 / 1024} MB limit.`,
+        };
+      }
 
       // Surface the final URL as a string for the caller's convenience —
       // they're going to render it, not fetch it. Internal flow stays
@@ -210,39 +216,6 @@ export async function fetchRecipePage(url: string): Promise<FetchResult> {
   } finally {
     clearTimeout(timer);
   }
-}
-
-/** Read a ReadableStream of bytes into a string, abandoning if the
- *  total exceeds `cap`. Returns the decoded UTF-8 text. */
-async function readWithCap(
-  body: ReadableStream<Uint8Array> | null,
-  cap: number,
-): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
-  if (!body) return { ok: true, text: "" };
-  const reader = body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    if (!value) continue;
-    total += value.byteLength;
-    if (total > cap) {
-      await reader.cancel().catch(() => {});
-      return {
-        ok: false,
-        error: `Page is larger than the ${cap / 1024 / 1024} MB limit.`,
-      };
-    }
-    chunks.push(value);
-  }
-  const merged = new Uint8Array(total);
-  let offset = 0;
-  for (const c of chunks) {
-    merged.set(c, offset);
-    offset += c.byteLength;
-  }
-  return { ok: true, text: new TextDecoder("utf-8").decode(merged) };
 }
 
 /** Validate the URL against SSRF + scheme rules. Returns a parsed

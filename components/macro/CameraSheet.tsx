@@ -5,6 +5,7 @@ import { CameraView } from "@/components/capture/CameraView";
 import type { DietPreference, Food } from "@/components/macro/types";
 import { Button } from "@/components/ui/button";
 import { useModalOverlay } from "@/hooks/use-modal-overlay";
+import { toAiCustomFoods } from "@/lib/ai/request-payload";
 import { clientFetch } from "@/lib/auth/client-fetch";
 import { listCustomFoods } from "@/lib/db";
 import { useRef, useState } from "react";
@@ -240,17 +241,7 @@ function CameraSheetBody({
           imageBase64: base64,
           mediaType: "image/jpeg",
           dietPreference,
-          customFoods: customs.map((c) => ({
-            name: c.name,
-            protein: c.protein,
-            carbs: c.carbs,
-            fat: c.fat,
-            calories: c.calories,
-            category: c.category,
-            subCategory: c.subCategory,
-            brand: c.brand,
-            dietKind: c.dietKind,
-          })),
+          customFoods: toAiCustomFoods(customs),
         }),
       });
       if (!res.ok) {

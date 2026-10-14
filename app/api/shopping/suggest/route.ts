@@ -1,4 +1,5 @@
 import { getAnthropicConfig } from "@/lib/ai/env";
+import { AI_MAX_JSON_BODY_BYTES } from "@/lib/ai/request-limits";
 import { parseBody } from "@/lib/api/parse-body";
 import { assertAal2 } from "@/lib/auth/mfa-required";
 import { checkAndIncrementAiUsage } from "@/lib/billing/usage";
@@ -83,14 +84,17 @@ export async function POST(req: Request): Promise<NextResponse> {
   const gate = await assertAal2(supabase, user);
   if (!gate.ok) return gate.response;
 
-  const parsed = await parseBody(req, BodySchema);
+  const parsed = await parseBody(req, BodySchema, {
+    maxBytes: AI_MAX_JSON_BODY_BYTES,
+  });
   if (!parsed.ok) return parsed.response;
   const body = parsed.data;
 
   // Decide whether to spend an AI call: only when configured AND the
-  // user is within their monthly cap. Over the cap (or unconfigured) we
-  // fall back rather than 402, because the deterministic list is still
-  // useful — the cap meters AI smarts, it doesn't lock the feature.
+  // user is within their monthly cap. Over the cap, unconfigured, or with
+  // metering unavailable (which fails closed: no AI call) we fall back
+  // rather than 402/503, because the deterministic list is still useful —
+  // the cap meters AI smarts, it doesn't lock the feature.
   const ai = getAnthropicConfig();
   let useAi = false;
   if (ai) {

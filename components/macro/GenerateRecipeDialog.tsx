@@ -12,6 +12,12 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  toAiCustomFoods,
+  toAiPantryBias,
+  toAiPreferenceTags,
+  toAiRecentlyEaten,
+} from "@/lib/ai/request-payload";
 import { clientFetch } from "@/lib/auth/client-fetch";
 import {
   listCustomFoods,
@@ -118,30 +124,23 @@ function GenerateRecipeDialogBody({
         // Proceed with no pantry bias.
       }
 
+      // Stored data is fitted to the route's size limits before sending
+      // (lib/ai/request-payload.ts) so a long name never turns into a 400.
       const res = await clientFetch("/api/recipes/generate", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           dietPreference: profile.dietPreference,
-          cuisinePreferences: profile.cuisinePreferences,
-          allergies: profile.allergies,
-          dislikedFoods: profile.dislikedFoods,
-          // The route expects Food shape - map CustomFood by copying the
-          // fields it uses. id is dropped server-side so we don't bother.
-          customFoods: customs.map((c) => ({
-            name: c.name,
-            protein: c.protein,
-            carbs: c.carbs,
-            fat: c.fat,
-            calories: c.calories,
-            category: c.category,
-            subCategory: c.subCategory,
-            brand: c.brand,
-            dietKind: c.dietKind,
-          })),
+          cuisinePreferences:
+            profile.cuisinePreferences &&
+            toAiPreferenceTags(profile.cuisinePreferences),
+          allergies: profile.allergies && toAiPreferenceTags(profile.allergies),
+          dislikedFoods:
+            profile.dislikedFoods && toAiPreferenceTags(profile.dislikedFoods),
+          customFoods: toAiCustomFoods(customs),
           hint: hint.trim() || undefined,
-          recentlyEatenFoods,
-          pantryItems,
+          recentlyEatenFoods: toAiRecentlyEaten(recentlyEatenFoods),
+          pantryItems: toAiPantryBias(pantryItems),
         }),
       });
 

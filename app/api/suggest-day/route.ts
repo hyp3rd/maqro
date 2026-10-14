@@ -1,7 +1,14 @@
 import { getAnthropicConfig } from "@/lib/ai/env";
+import {
+  AI_MAX_JSON_BODY_BYTES,
+  AI_MAX_LABEL_CHARS,
+  AI_MAX_MEAL_SLOTS,
+  AI_MAX_NAME_CHARS,
+} from "@/lib/ai/request-limits";
 import { parseBody } from "@/lib/api/parse-body";
 import { assertAal2 } from "@/lib/auth/mfa-required";
 import { checkAndIncrementAiUsage } from "@/lib/billing/usage";
+import { aiUsageDeniedResponse } from "@/lib/billing/usage-response";
 import { filterDayAssignments } from "@/lib/suggest-day";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -15,16 +22,18 @@ const MAX_TOKENS = 1024;
  *  needs to pick a coherent, macro-fitting day. The id is opaque — the client
  *  resolves it back to the full recipe. */
 const RecipeWire = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
+  id: z.string().min(1).max(AI_MAX_LABEL_CHARS),
+  name: z.string().min(1).max(AI_MAX_NAME_CHARS),
   protein: z.number(),
   carbs: z.number(),
   fat: z.number(),
   calories: z.number(),
-  cuisine: z.string().optional(),
-  diet: z.string().optional(),
+  cuisine: z.string().max(AI_MAX_LABEL_CHARS).optional(),
+  diet: z.string().max(AI_MAX_LABEL_CHARS).optional(),
 });
 
+/** Every string that reaches the prompt is size-capped
+ *  (lib/ai/request-limits.ts). */
 const BodySchema = z.object({
   targets: z.object({
     protein: z.number(),
@@ -32,7 +41,10 @@ const BodySchema = z.object({
     fat: z.number(),
     calories: z.number(),
   }),
-  mealSlots: z.array(z.string().min(1)).min(1).max(8),
+  mealSlots: z
+    .array(z.string().min(1).max(AI_MAX_LABEL_CHARS))
+    .min(1)
+    .max(AI_MAX_MEAL_SLOTS),
   recipes: z.array(RecipeWire).min(1).max(200),
 });
 
@@ -72,25 +84,19 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  // 2b. Free-tier monthly cap (shared across all AI routes). 402 short-circuits
-  //     before the Anthropic call.
-  const usage = await checkAndIncrementAiUsage(supabase, user.id);
-  if (!usage.allowed) {
-    return NextResponse.json(
-      {
-        error: "AI usage cap reached for this month.",
-        used: usage.used,
-        cap: usage.cap,
-        kind: "ai-cap-reached",
-      },
-      { status: 402 },
-    );
-  }
-
-  // 3. Validate body.
-  const parsed = await parseBody(req, BodySchema);
+  // 3. Validate body. Runs BEFORE metering so a rejected body (400/413)
+  //    is never charged a credit.
+  const parsed = await parseBody(req, BodySchema, {
+    maxBytes: AI_MAX_JSON_BODY_BYTES,
+  });
   if (!parsed.ok) return parsed.response;
   const { targets, mealSlots, recipes } = parsed.data;
+
+  // 3b. Monthly AI quota (shared by every metered AI route): debited
+  //     atomically after every request-level rejection and before the
+  //     Anthropic call. 402 at the cap, 503 when metering is unavailable.
+  const usage = await checkAndIncrementAiUsage(supabase, user.id);
+  if (!usage.allowed) return aiUsageDeniedResponse(usage);
 
   const recipeIds = new Set(recipes.map((r) => r.id));
   const slotSet = new Set(mealSlots);

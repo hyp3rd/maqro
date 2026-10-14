@@ -6,9 +6,12 @@ import type { Food } from "@/components/macro/types";
 import { foodDatabase } from "@/data/food-database";
 import { getAnthropicConfig } from "@/lib/ai/env";
 import { buildNormIndex, matchPick } from "@/lib/ai/plan";
+import { AI_MAX_JSON_BODY_BYTES } from "@/lib/ai/request-limits";
+import { CustomFoodsWire } from "@/lib/ai/request-schemas";
 import { parseBody } from "@/lib/api/parse-body";
 import { assertAal2 } from "@/lib/auth/mfa-required";
 import { checkAndIncrementAiUsage } from "@/lib/billing/usage";
+import { aiUsageDeniedResponse } from "@/lib/billing/usage-response";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -46,26 +49,17 @@ export const maxDuration = 30;
 const MAX_TOKENS = 1024;
 const MAX_TRANSCRIPT_CHARS = 1000;
 
-const FoodWire = z
-  .object({
-    name: z.string().min(1),
-    protein: z.number(),
-    carbs: z.number(),
-    fat: z.number(),
-    calories: z.number(),
-  })
-  .loose();
-
-/** Wire shape for the voice-log endpoint. Transcript length is
- *  bounded both at the Zod layer (cheap reject for absurd payloads)
- *  and inline below (project-specific MAX_TRANSCRIPT_CHARS, which is
- *  the friendlier ceiling). */
+/** Wire shape for the voice-log endpoint. Absurd payloads are refused
+ *  by the request body cap before parsing; the transcript is then
+ *  bounded inline below (MAX_TRANSCRIPT_CHARS, measured after trimming,
+ *  with a specific 413). The custom-food catalog that lands in the
+ *  system prompt is size-capped (lib/ai/request-limits.ts). */
 const BodySchema = z.object({
   transcript: z.string(),
   dietPreference: z
     .enum(["omnivore", "vegetarian", "vegan", "pescatarian", "carnivore"])
     .optional(),
-  customFoods: z.array(FoodWire).optional(),
+  customFoods: CustomFoodsWire.optional(),
 });
 
 type BodyForRoute = Omit<z.infer<typeof BodySchema>, "customFoods"> & {
@@ -116,25 +110,14 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  // 2b. Free-tier monthly cap (shared across all AI routes).
-  const usage = await checkAndIncrementAiUsage(supabase, user.id);
-  if (!usage.allowed) {
-    return NextResponse.json(
-      {
-        error: "AI usage cap reached for this month.",
-        used: usage.used,
-        cap: usage.cap,
-        kind: "ai-cap-reached",
-      },
-      { status: 402 },
-    );
-  }
-
   // 3. Validate body. Schema guarantees `transcript` is a string;
   //    we still trim + non-empty-check inline because the project
   //    treats whitespace-only as "missing", and Zod's `.min(1)`
-  //    couldn't express that without a custom refinement.
-  const parsed = await parseBody(req, BodySchema);
+  //    couldn't express that without a custom refinement. Runs BEFORE
+  //    metering so a rejected body (400/413) is never charged a credit.
+  const parsed = await parseBody(req, BodySchema, {
+    maxBytes: AI_MAX_JSON_BODY_BYTES,
+  });
   if (!parsed.ok) return parsed.response;
   const body = parsed.data as BodyForRoute;
   const transcript = body.transcript.trim();
@@ -149,6 +132,12 @@ export async function POST(req: Request): Promise<NextResponse> {
       { status: 413 },
     );
   }
+
+  // 3b. Monthly AI quota (shared by every metered AI route): debited
+  //     atomically after every request-level rejection and before the
+  //     Anthropic call. 402 at the cap, 503 when metering is unavailable.
+  const usage = await checkAndIncrementAiUsage(supabase, user.id);
+  if (!usage.allowed) return aiUsageDeniedResponse(usage);
 
   // 4. Build the catalog.
   const catalog: Food[] = [...foodDatabase, ...(body.customFoods ?? [])];

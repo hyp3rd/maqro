@@ -7,9 +7,15 @@ import {
   validatePhotoMacros,
 } from "@/lib/ai/photo-validator";
 import { buildNormIndex, matchPick } from "@/lib/ai/plan";
+import {
+  AI_MAX_IMAGE_BODY_BYTES,
+  AI_MAX_IMAGE_BYTES,
+} from "@/lib/ai/request-limits";
+import { CustomFoodsWire } from "@/lib/ai/request-schemas";
 import { parseBody } from "@/lib/api/parse-body";
 import { assertAal2 } from "@/lib/auth/mfa-required";
 import { checkAndIncrementAiUsage } from "@/lib/billing/usage";
+import { aiUsageDeniedResponse } from "@/lib/billing/usage-response";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -33,7 +39,6 @@ const MAX_ITERATIONS = 3;
 /** Per-iteration response cap. The model returns a small JSON payload
  *  plus optional preamble - 1024 tokens is plenty. */
 const MAX_TOKENS_PER_ITERATION = 1024;
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // Anthropic's documented limit.
 
 /** A single food identified in the photo. The client uses per-100g +
  *  portionGrams so the user can edit grams in the review dialog and
@@ -63,24 +68,16 @@ export type ResolvedMealPhoto = { foods: ResolvedMealPhotoFood[] };
 /** Wire shape for the camera-identify endpoint. Schema enforces the
  *  enum for the MIME type up front (the model only accepts these
  *  three) and gates the base64 string to non-empty. The image-size
- *  check stays inline since it depends on a runtime constant. */
-const FoodWire = z
-  .object({
-    name: z.string().min(1),
-    protein: z.number(),
-    carbs: z.number(),
-    fat: z.number(),
-    calories: z.number(),
-  })
-  .loose();
-
+ *  check stays inline so an oversized photo gets a specific 413; the
+ *  custom-food catalog that lands in the system prompt is size-capped
+ *  (lib/ai/request-limits.ts). */
 const BodySchema = z.object({
   imageBase64: z.string().min(1),
   mediaType: z.enum(["image/jpeg", "image/png", "image/webp"]),
   dietPreference: z
     .enum(["omnivore", "vegetarian", "vegan", "pescatarian", "carnivore"])
     .optional(),
-  customFoods: z.array(FoodWire).optional(),
+  customFoods: CustomFoodsWire.optional(),
 });
 
 type BodyForRoute = Omit<z.infer<typeof BodySchema>, "customFoods"> & {
@@ -144,37 +141,32 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  // 2b. Free-tier monthly cap (shared across all three AI routes).
-  //     402 short-circuits before image decode / Anthropic call.
-  const usage = await checkAndIncrementAiUsage(supabase, user.id);
-  if (!usage.allowed) {
-    return NextResponse.json(
-      {
-        error: "AI usage cap reached for this month.",
-        used: usage.used,
-        cap: usage.cap,
-        kind: "ai-cap-reached",
-      },
-      { status: 402 },
-    );
-  }
-
   // 3. Validate body. Schema enforces shape, MIME enum, and the
   //    presence of the base64 string; the image-size cap below stays
-  //    inline because it depends on the runtime MAX_IMAGE_BYTES.
-  const parsed = await parseBody(req, BodySchema);
+  //    inline because it depends on the runtime AI_MAX_IMAGE_BYTES.
+  //    Runs BEFORE metering so a rejected body (400/413) is never
+  //    charged a credit.
+  const parsed = await parseBody(req, BodySchema, {
+    maxBytes: AI_MAX_IMAGE_BODY_BYTES,
+  });
   if (!parsed.ok) return parsed.response;
   const body = parsed.data as BodyForRoute;
   // Rough byte estimate - base64 inflates by ~33% so multiply back.
   const approxBytes = Math.floor((body.imageBase64.length * 3) / 4);
-  if (approxBytes > MAX_IMAGE_BYTES) {
+  if (approxBytes > AI_MAX_IMAGE_BYTES) {
     return NextResponse.json(
       {
-        error: `Image too large (${Math.round(approxBytes / 1024)} KB). Max ${MAX_IMAGE_BYTES / 1024} KB.`,
+        error: `Image too large (${Math.round(approxBytes / 1024)} KB). Max ${AI_MAX_IMAGE_BYTES / 1024} KB.`,
       },
       { status: 413 },
     );
   }
+
+  // 3b. Monthly AI quota (shared by every metered AI route): debited
+  //     atomically after every request-level rejection and before the
+  //     Anthropic call. 402 at the cap, 503 when metering is unavailable.
+  const usage = await checkAndIncrementAiUsage(supabase, user.id);
+  if (!usage.allowed) return aiUsageDeniedResponse(usage);
 
   // 4. Build the catalog. NB: no diet filter here - the user is
   //    identifying what's already on the plate, not asking for

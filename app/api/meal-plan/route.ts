@@ -12,9 +12,24 @@ import {
   type CoherenceIssue,
   validatePlanCoherence,
 } from "@/lib/ai/plan-coherence";
+import {
+  AI_MAX_FOODS_PER_MEAL,
+  AI_MAX_JSON_BODY_BYTES,
+  AI_MAX_LABEL_CHARS,
+  AI_MAX_MEAL_SLOTS,
+  AI_MAX_REFINEMENT_CHARS,
+} from "@/lib/ai/request-limits";
+import {
+  AiFoodName,
+  CustomFoodsWire,
+  PantryBiasWire,
+  PreferenceTagsWire,
+  RecentlyEatenWire,
+} from "@/lib/ai/request-schemas";
 import { parseBody } from "@/lib/api/parse-body";
 import { assertAal2 } from "@/lib/auth/mfa-required";
 import { checkAndIncrementAiUsage } from "@/lib/billing/usage";
+import { aiUsageDeniedResponse } from "@/lib/billing/usage-response";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -57,21 +72,15 @@ const MAX_TOKENS_PER_ITERATION = 1024;
  *  the Zod schema to mirror every optional field exactly. The runtime
  *  validation here catches the genuinely-bad shapes (missing targets,
  *  malformed numbers, invalid diet enum); the static types keep the
- *  downstream code honest. */
-const FoodWire = z
-  .object({
-    name: z.string().min(1),
-    protein: z.number(),
-    carbs: z.number(),
-    fat: z.number(),
-    calories: z.number(),
-  })
-  .loose();
-
+ *  downstream code honest.
+ *
+ *  Every string and list that reaches the prompt is size-capped (see
+ *  lib/ai/request-limits.ts) so one metered credit can't carry an
+ *  unbounded prompt. */
 const FoodItemWire = z
   .object({
     id: z.number(),
-    name: z.string().min(1),
+    name: AiFoodName,
     protein: z.number(),
     carbs: z.number(),
     fat: z.number(),
@@ -80,10 +89,12 @@ const FoodItemWire = z
   })
   .loose();
 
+const MealSlotName = z.string().min(1).max(AI_MAX_LABEL_CHARS);
+
 const MealWire = z.object({
   id: z.number(),
-  name: z.string().min(1),
-  foods: z.array(FoodItemWire),
+  name: MealSlotName,
+  foods: z.array(FoodItemWire).max(AI_MAX_FOODS_PER_MEAL),
 });
 
 const BodySchema = z.object({
@@ -100,22 +111,16 @@ const BodySchema = z.object({
     "pescatarian",
     "carnivore",
   ]),
-  mealNames: z.array(z.string().min(1)).min(1),
-  customFoods: z.array(FoodWire).optional(),
-  cuisinePreferences: z.array(z.string()).optional(),
-  allergies: z.array(z.string()).optional(),
-  dislikedFoods: z.array(z.string()).optional(),
-  refinement: z.string().optional(),
-  previousMeals: z.array(MealWire).optional(),
-  targetMealName: z.string().optional(),
-  recentlyEatenFoods: z
-    .array(z.object({ name: z.string(), count: z.number() }))
-    .optional(),
-  pantryItems: z
-    .array(
-      z.object({ name: z.string(), quantity: z.number(), unit: z.string() }),
-    )
-    .optional(),
+  mealNames: z.array(MealSlotName).min(1).max(AI_MAX_MEAL_SLOTS),
+  customFoods: CustomFoodsWire.optional(),
+  cuisinePreferences: PreferenceTagsWire.optional(),
+  allergies: PreferenceTagsWire.optional(),
+  dislikedFoods: PreferenceTagsWire.optional(),
+  refinement: z.string().max(AI_MAX_REFINEMENT_CHARS).optional(),
+  previousMeals: z.array(MealWire).max(AI_MAX_MEAL_SLOTS).optional(),
+  targetMealName: z.string().max(AI_MAX_LABEL_CHARS).optional(),
+  recentlyEatenFoods: RecentlyEatenWire.optional(),
+  pantryItems: PantryBiasWire.optional(),
   /** ISO shopping-market code that biases the AI's Open Food Facts lookups
    *  toward that country (matches the manual search). Absent → global. */
   market: z.string().max(8).optional(),
@@ -180,33 +185,21 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  // 2b. Free-tier monthly cap. Premium users skip the meter; free
-  //     users get FREE_AI_CAP_PER_MONTH calls across all three AI
-  //     routes combined. Increment happens here so a 402 short-
-  //     circuits before we burn any Anthropic budget.
-  const usage = await checkAndIncrementAiUsage(supabase, user.id);
-  if (!usage.allowed) {
-    return NextResponse.json(
-      {
-        error: "AI usage cap reached for this month.",
-        used: usage.used,
-        cap: usage.cap,
-        kind: "ai-cap-reached",
-      },
-      { status: 402 },
-    );
-  }
-
   // 3. Validate body. The schema enforces shape + numeric ranges +
   //    the diet enum; the cast to `BodyForRoute` re-attaches the
   //    richer Food/FoodItem TypeScript types so downstream catalog /
   //    plan helpers stay type-checked. Runtime guard, static type.
-  const parsed = await parseBody(req, BodySchema);
+  //    Runs BEFORE metering so a rejected body (400/413) is never
+  //    charged a credit.
+  const parsed = await parseBody(req, BodySchema, {
+    maxBytes: AI_MAX_JSON_BODY_BYTES,
+  });
   if (!parsed.ok) return parsed.response;
   const body = parsed.data as BodyForRoute;
 
   // 4. Pre-build the diet-filtered seed catalog. The AI sees this in the
-  //    system prompt + can expand it via search_open_food_facts.
+  //    system prompt + can expand it via search_open_food_facts. Also
+  //    ahead of metering: an empty catalog is a 400, not a model call.
   const seedCatalog = buildSeedCatalog(body.dietPreference, body.customFoods);
   if (!seedCatalog) {
     return NextResponse.json(
@@ -216,6 +209,13 @@ export async function POST(req: Request): Promise<NextResponse> {
       { status: 400 },
     );
   }
+
+  // 4b. Monthly AI quota, shared by every metered AI route. Premium
+  //     users skip the meter; capped users are debited atomically here,
+  //     after every request-level rejection and before any Anthropic
+  //     spend: 402 at the cap, 503 when metering itself is unavailable.
+  const usage = await checkAndIncrementAiUsage(supabase, user.id);
+  if (!usage.allowed) return aiUsageDeniedResponse(usage);
 
   // 5. Build the system prompt + agent instructions.
   const cuisines = (body.cuisinePreferences ?? []).filter(Boolean);

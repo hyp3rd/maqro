@@ -8,9 +8,17 @@ import {
   unmatchedIngredientNames,
   type AiRecipeSubmit,
 } from "@/lib/ai/recipe";
+import { AI_MAX_JSON_BODY_BYTES } from "@/lib/ai/request-limits";
+import {
+  CustomFoodsWire,
+  PantryBiasWire,
+  PreferenceTagsWire,
+  RecentlyEatenWire,
+} from "@/lib/ai/request-schemas";
 import { parseBody } from "@/lib/api/parse-body";
 import { assertAal2 } from "@/lib/auth/mfa-required";
 import { checkAndIncrementAiUsage } from "@/lib/billing/usage";
+import { aiUsageDeniedResponse } from "@/lib/billing/usage-response";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -28,18 +36,10 @@ const HINT_MAX_LEN = 200;
 /** Wire shape for recipe-generation requests. Same loose-on-extras
  *  pattern as meal-plan: validate the must-have fields (diet enum,
  *  array shapes), let optional metadata on `customFoods` pass
- *  through. Hint is capped here by Zod's `.max(HINT_MAX_LEN)` so a
- *  client sending a 100KB string doesn't reach the model. */
-const FoodWire = z
-  .object({
-    name: z.string().min(1),
-    protein: z.number(),
-    carbs: z.number(),
-    fat: z.number(),
-    calories: z.number(),
-  })
-  .loose();
-
+ *  through. Every string and list that reaches the prompt is size-capped
+ *  (lib/ai/request-limits.ts); the hint is capped at HINT_MAX_LEN, the
+ *  same limit the dialog's textarea enforces, so a client sending a 100KB
+ *  string doesn't reach the model. */
 const BodySchema = z.object({
   dietPreference: z.enum([
     "omnivore",
@@ -48,19 +48,13 @@ const BodySchema = z.object({
     "pescatarian",
     "carnivore",
   ]),
-  cuisinePreferences: z.array(z.string()).optional(),
-  allergies: z.array(z.string()).optional(),
-  dislikedFoods: z.array(z.string()).optional(),
-  customFoods: z.array(FoodWire).optional(),
-  hint: z.string().max(2000).optional(),
-  recentlyEatenFoods: z
-    .array(z.object({ name: z.string(), count: z.number() }))
-    .optional(),
-  pantryItems: z
-    .array(
-      z.object({ name: z.string(), quantity: z.number(), unit: z.string() }),
-    )
-    .optional(),
+  cuisinePreferences: PreferenceTagsWire.optional(),
+  allergies: PreferenceTagsWire.optional(),
+  dislikedFoods: PreferenceTagsWire.optional(),
+  customFoods: CustomFoodsWire.optional(),
+  hint: z.string().max(HINT_MAX_LEN).optional(),
+  recentlyEatenFoods: RecentlyEatenWire.optional(),
+  pantryItems: PantryBiasWire.optional(),
 });
 
 /** Reattach the project-wide Food shape onto the loose-validated
@@ -105,29 +99,18 @@ export async function POST(req: Request): Promise<NextResponse> {
     );
   }
 
-  // 2b. Free-tier monthly cap (shared across all three AI routes).
-  //     402 short-circuits before the Anthropic call.
-  const usage = await checkAndIncrementAiUsage(supabase, user.id);
-  if (!usage.allowed) {
-    return NextResponse.json(
-      {
-        error: "AI usage cap reached for this month.",
-        used: usage.used,
-        cap: usage.cap,
-        kind: "ai-cap-reached",
-      },
-      { status: 402 },
-    );
-  }
-
   // 3. Validate body. The schema enforces the diet enum + array
   //    shapes + hint length; the cast re-attaches the project-wide
-  //    Food type for downstream catalog helpers.
-  const parsed = await parseBody(req, BodySchema);
+  //    Food type for downstream catalog helpers. Runs BEFORE metering
+  //    so a rejected body (400/413) is never charged a credit.
+  const parsed = await parseBody(req, BodySchema, {
+    maxBytes: AI_MAX_JSON_BODY_BYTES,
+  });
   if (!parsed.ok) return parsed.response;
   const body = parsed.data as BodyForRoute;
 
-  // 4. Pre-build the diet-filtered seed catalog.
+  // 4. Pre-build the diet-filtered seed catalog. Also ahead of metering:
+  //    an empty catalog is a 400, not a model call.
   const seedCatalog = buildSeedCatalog(body.dietPreference, body.customFoods);
   if (!seedCatalog) {
     return NextResponse.json(
@@ -137,6 +120,12 @@ export async function POST(req: Request): Promise<NextResponse> {
       { status: 400 },
     );
   }
+
+  // 4b. Monthly AI quota (shared by every metered AI route): debited
+  //     atomically after every request-level rejection and before the
+  //     Anthropic call. 402 at the cap, 503 when metering is unavailable.
+  const usage = await checkAndIncrementAiUsage(supabase, user.id);
+  if (!usage.allowed) return aiUsageDeniedResponse(usage);
 
   // 5. Build prompt context.
   const cuisines = (body.cuisinePreferences ?? []).filter(Boolean);

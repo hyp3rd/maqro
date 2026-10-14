@@ -13,6 +13,8 @@ import {
   requestDaySuggestion,
   type SuggestDayResult,
 } from "@/lib/ai-suggest-day";
+import { AI_MAX_LABEL_CHARS, AI_MAX_NAME_CHARS } from "@/lib/ai/request-limits";
+import { clampAiText } from "@/lib/ai/request-payload";
 import { listRecipes } from "@/lib/db";
 import { recipePerServingMacros } from "@/lib/recipe-ranking";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -111,16 +113,21 @@ export function SuggestDayDialog({
     const result = await requestDaySuggestion({
       targets: remaining,
       mealSlots: meals.map((m) => m.name),
+      // Imported recipe names and free-text cuisines are unbounded; fit
+      // them to the route's limits (the result maps back by id).
       recipes: recipes.map((r) => {
         const m = recipePerServingMacros(r);
         return {
           id: r.id,
-          name: r.name,
+          name: clampAiText(r.name, AI_MAX_NAME_CHARS),
           protein: m.protein,
           carbs: m.carbs,
           fat: m.fat,
           calories: m.calories,
-          cuisine: r.cuisine,
+          cuisine:
+            typeof r.cuisine === "string"
+              ? clampAiText(r.cuisine, AI_MAX_LABEL_CHARS)
+              : undefined,
         };
       }),
     });
