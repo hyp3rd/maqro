@@ -750,11 +750,12 @@ async function rebaseProfileConflict(supabase: SupabaseClient, userId: string) {
 
 // ─── Per-table sync ────────────────────────────────────────────────────────
 
-/** Rows per pull request. MUST NOT exceed PostgREST's `max_rows`
- *  (`[api] max_rows` in supabase/config.toml, and the hosted project's API
- *  setting — both 1000): a page shorter than this is how a pull knows it
- *  has read the whole table, which remote-delete reconciliation relies on.
- *  A test pins this against config.toml. */
+/** Rows requested per pull page. PostgREST silently caps a response at
+ *  its `max_rows` (`[api] max_rows` in supabase/config.toml, and the hosted
+ *  project's API setting, which the client can't see), so a page may come
+ *  back shorter than this without the table being exhausted. The pull
+ *  therefore never infers completeness from a short page — see
+ *  {@link fetchAllRows}. */
 export const PULL_PAGE_SIZE = 1000;
 
 /** Keys passed per `.in(...)` filter in the keep-local rebase, keeping the
@@ -829,7 +830,12 @@ function defineTable<R extends { updated_at: string }, L extends LocalRecord>(
 
 /** Read every row the user has in `spec.table`, keyset-paginated on the
  *  key column so concurrent inserts/deletes can't shift a page boundary.
- *  Only returns once a short page proves the read is complete. */
+ *  Only returns once a page comes back EMPTY: that, not a short page, is
+ *  what proves the read complete, because a short page may just be the
+ *  server's `max_rows` cap (see {@link PULL_PAGE_SIZE}). Remote-delete
+ *  reconciliation deletes every clean local row missing from the result,
+ *  so an incomplete read must never be returned. Costs one extra request
+ *  per table per pull. */
 async function fetchAllRows<
   R extends { updated_at: string },
   L extends LocalRecord,
@@ -854,9 +860,10 @@ async function fetchAllRows<
     // and delete every clean local row — refuse rather than guess.
     if (!Array.isArray(data)) throw new Error(`${label}: no data returned`);
     const page: R[] = data;
+    const last = page.at(-1);
+    if (!last) return rows;
     rows.push(...page);
-    if (page.length < PULL_PAGE_SIZE) return rows;
-    after = spec.rowKey(page[page.length - 1]);
+    after = spec.rowKey(last);
   }
 }
 

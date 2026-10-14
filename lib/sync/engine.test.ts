@@ -11,8 +11,6 @@
 import type { Meal, PersonalInfo } from "@/components/macro/types";
 import { IDBFactory } from "fake-indexeddb";
 import "fake-indexeddb/auto";
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { act, renderHook, waitFor } from "@testing-library/react";
@@ -1332,16 +1330,60 @@ describe("pulls select every column their push writes", () => {
   });
 });
 
-describe("pull page size vs. PostgREST max_rows", () => {
-  it("never exceeds the max_rows configured for the API", async () => {
-    const { PULL_PAGE_SIZE } = await import("./index");
-    // vitest runs from the repo root (see vitest.config.ts).
-    const config = readFileSync(
-      path.join(process.cwd(), "supabase", "config.toml"),
-      "utf8",
-    );
-    const maxRows = Number(/^\s*max_rows\s*=\s*(\d+)/m.exec(config)?.[1]);
-    expect(maxRows).toBeGreaterThanOrEqual(PULL_PAGE_SIZE);
+// The hosted API's `max_rows` is a project setting the client can't see.
+// When it is below the page size, PostgREST silently returns a short page,
+// which must not be mistaken for the end of the table.
+describe("pull completeness when PostgREST max_rows is below the page size", () => {
+  let env: Awaited<ReturnType<typeof setup>>;
+  beforeEach(async () => {
+    env = await setup();
+  });
+
+  function seedSupplements(count: number): void {
+    for (let i = 0; i < count; i++) {
+      env.server.seed(
+        "supplements",
+        supplementRow(`s-${String(i).padStart(2, "0")}`, `Supplement ${i}`),
+      );
+    }
+  }
+
+  it("reads every row of a table larger than max_rows", async () => {
+    const { db, sync, server, sb } = env;
+    server.maxRows = 3;
+    seedSupplements(7);
+
+    await sync.triggerSync(sb, USER_ID);
+
+    expect(await db.listSupplements()).toHaveLength(7);
+  });
+
+  it("does not delete clean local rows past the first server page", async () => {
+    const { db, sync, server, sb } = env;
+    seedSupplements(7);
+    await sync.triggerSync(sb, USER_ID);
+    expect(await db.listSupplements()).toHaveLength(7);
+
+    server.maxRows = 3;
+    await sync.triggerSync(sb, USER_ID);
+
+    expect(await db.listSupplements()).toHaveLength(7);
+  });
+
+  it("still removes a row that really is gone from the server", async () => {
+    const { db, sync, server, sb } = env;
+    seedSupplements(7);
+    await sync.triggerSync(sb, USER_ID);
+    server.maxRows = 3;
+    server.tables.supplements = server
+      .rows("supplements")
+      .filter((r) => r.id !== "s-05");
+
+    await sync.triggerSync(sb, USER_ID);
+
+    const ids = (await db.listSupplements()).map((s) => s.id);
+    expect(ids).toHaveLength(6);
+    expect(ids).not.toContain("s-05");
   });
 });
 
