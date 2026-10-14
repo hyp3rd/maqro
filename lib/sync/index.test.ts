@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   pushCustomFoods,
+  pushFavoriteStores,
   pushMealTemplates,
   triggerSync,
   type SyncResult,
@@ -755,5 +756,63 @@ describe("runInitialSync — pull-then-push order (incognito-clobber fix)", () =
     expect(vi.mocked(db.markProfileSynced)).toHaveBeenCalledWith(
       "2026-05-16T12:05:00Z",
     );
+  });
+});
+
+describe("pushFavoriteStores — per-user key (migration 0077)", () => {
+  // The id is a shared OSM key ("node/123"): two users may favourite the same
+  // store, so the server row is keyed (user_id, id) and every push must
+  // address the caller's row by both columns.
+  const STORE = {
+    id: "node/123",
+    name: "Corner Market",
+    kind: "supermarket",
+    lat: 45.1,
+    lon: 9.2,
+    createdAt: 0,
+    updatedAt: 0,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("upserts a new favourite with the caller's user_id in the row", async () => {
+    vi.mocked(db.listFavoriteStores).mockResolvedValue([STORE]);
+    const { sb, upsertCalls } = makeSupabase({});
+    const result = newResult();
+
+    await pushFavoriteStores(sb, USER_ID, result);
+
+    expect(upsertCalls).toEqual([
+      expect.objectContaining({ id: "node/123", user_id: USER_ID }),
+    ]);
+    expect(result.pushed.favoriteStores).toBe(1);
+    expect(vi.mocked(db.markFavoriteStoreSynced)).toHaveBeenCalledWith(
+      "node/123",
+      "2026-05-16T12:00:00Z",
+    );
+  });
+
+  it("filters an update on (user_id, id), not the shared OSM key alone", async () => {
+    vi.mocked(db.listFavoriteStores).mockResolvedValue([
+      {
+        ...STORE,
+        localUpdatedAt: "2026-05-16T13:00:00Z",
+        serverUpdatedAt: "2026-05-16T12:00:00Z",
+      },
+    ]);
+    const { sb, updateCalls } = makeSupabase({});
+    const result = newResult();
+
+    await pushFavoriteStores(sb, USER_ID, result);
+
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0].pkFields).toEqual({
+      user_id: USER_ID,
+      id: "node/123",
+    });
+    expect(updateCalls[0].base).toBe("2026-05-16T12:00:00Z");
+    expect(result.pushed.favoriteStores).toBe(1);
   });
 });
