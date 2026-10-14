@@ -660,10 +660,17 @@ async function pushProfile(
     result.conflicts++;
     return;
   }
-  if (outcome.status === "inserted" || outcome.status === "updated") {
-    await markProfileSynced(outcome.serverUpdatedAt, profile.localUpdatedAt);
-    result.pushed.profile = 1;
+  if (outcome.status === "uuid-collision") {
+    // The row is keyed by the user's own id, so a 42501 can't be an id
+    // collision to re-mint around: row-level security rejected the write
+    // outright. Surface it like any other rejected row (the profile stays
+    // dirty and is retried next sync) rather than reporting "Synced".
+    throw new Error(
+      "push profile: row-level security rejected the insert (42501)",
+    );
   }
+  await markProfileSynced(outcome.serverUpdatedAt, profile.localUpdatedAt);
+  result.pushed.profile = 1;
 }
 
 // ─── Pull ──────────────────────────────────────────────────────────────────

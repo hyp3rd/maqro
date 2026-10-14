@@ -984,6 +984,26 @@ describe("error isolation", () => {
     expect(server.rows("custom_foods")).toHaveLength(1);
   });
 
+  it("a profile insert rejected by row-level security (42501) is reported as a failure, not dropped", async () => {
+    const { db, sync, status, server, sb } = env;
+    server.fail = (table, op) =>
+      table === "profiles" && op === "insert"
+        ? { code: "42501", message: "new row violates row-level security" }
+        : null;
+    await db.saveProfile(PROFILE);
+    await db.setWaterTotal(DAY, 1500);
+
+    await expect(sync.triggerSync(sb, USER_ID)).rejects.toThrow(
+      /push profile.*42501/,
+    );
+
+    expect(status.getSyncStatus().state).toBe("error");
+    // The rest of the run still synced; the profile stays dirty for a retry.
+    expect(server.find("water_intake", { date: DAY })?.ml).toBe(1500);
+    const profile = await db.getProfileRecord();
+    expect(profile?.serverUpdatedAt).toBeNull();
+  });
+
   it("re-mints a 42501-rejected UUID at most once, then reports the failure", async () => {
     const { db, sync, server, sb } = env;
     let rejected = 0;
