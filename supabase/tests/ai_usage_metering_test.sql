@@ -1,5 +1,5 @@
 -- Security + behaviour tests for the server-owned AI usage counter
--- (`public.ai_usage_monthly`, migration 0076).
+-- (`public.ai_usage_monthly`, migration 0080).
 --
 -- End-user requests are simulated the way PostgREST runs them: `set local
 -- role authenticated` (or anon) plus `request.jwt.claims`, which auth.uid()
@@ -145,7 +145,7 @@ select throws_ok(
   'an end user cannot insert a counter row'
 );
 
--- What the pre-0076 app sent with the session client (supabase-js upsert).
+-- What the pre-0080 app sent with the session client (supabase-js upsert).
 select throws_ok(
   $$
     insert into public.ai_usage_monthly (user_id, period_start, count)

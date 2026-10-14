@@ -56,7 +56,7 @@
 -- Its cap check still reads the counter (owner SELECT is kept), so users
 -- already at their cap stay blocked, and nobody can reset the counter any
 -- more. The new app debits through `consume_ai_credit` and fails CLOSED
--- (503) when metering is unavailable. Rolling the app back to a pre-0076
+-- (503) when metering is unavailable. Rolling the app back to a pre-0080
 -- version while this migration stays would reopen that fail-open window
 -- indefinitely, so fix forward instead.
 --

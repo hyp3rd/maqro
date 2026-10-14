@@ -199,7 +199,7 @@ export async function getCurrentMonthUsage(
   };
 }
 
-/** The RPC's single result row (migration 0076, `consume_ai_credit`). */
+/** The RPC's single result row (migration 0080, `consume_ai_credit`). */
 const ConsumeRow = z.object({
   granted: z.boolean(),
   used: z.number().int().nonnegative(),
@@ -211,7 +211,7 @@ const ConsumeRow = z.object({
 const METERING_REPORT_ROUTE = "(ai-usage metering)";
 
 /** Service-role client for the metering RPCs. The counter is server-owned
- *  (migration 0076): end users can read their own row, but only the
+ *  (migration 0080): end users can read their own row, but only the
  *  service role may execute `consume_ai_credit` / `refund_ai_credit`,
  *  because the cap is an RPC argument and must never be caller-controlled.
  *  `null` when the secret key isn't configured. */
