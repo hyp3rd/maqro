@@ -15,6 +15,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { renderHook, waitFor } from "@testing-library/react";
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_USER_ID = "22222222-2222-4222-8222-222222222222";
@@ -755,6 +756,103 @@ describe("the echo of our own push is a no-op", () => {
     expect(
       Object.entries(second?.pulled ?? {}).filter(([, n]) => n !== 0),
     ).toEqual([]);
+  });
+});
+
+describe("hooks showing peer updates never dirty the rows they load", () => {
+  let env: Awaited<ReturnType<typeof setup>>;
+  beforeEach(async () => {
+    env = await setup();
+  });
+
+  const NO_MEALS: Meal[] = [];
+  const DEFAULT_PROFILE: PersonalInfo = { ...PROFILE, age: 25 };
+
+  /** Outlasts the hooks' 500 ms save debounce, so any save a load
+   *  scheduled has run before the next step. */
+  const outlastSaveDebounce = () =>
+    new Promise((resolve) => setTimeout(resolve, 700));
+
+  /** Another device saves `patch` on the row matching `match`: the server
+   *  row moves to a new version and realtime delivers it. */
+  function peerUpdate(table: string, match: Row, patch: Row): void {
+    const { server } = env;
+    const row = server.find(table, match);
+    if (!row) throw new Error(`no ${table} row to update`);
+    Object.assign(row, patch, { updated_at: server.nextTimestamp() });
+    server.emit(table, { eventType: "UPDATE", new: { ...row }, old: {} });
+  }
+
+  it("useDailyLog shows two successive peer updates and the next sync reports no conflict", async () => {
+    const { sync, realtime, server, sb } = env;
+    server.seed("daily_logs", {
+      user_id: USER_ID,
+      date: DAY,
+      meals: meals("eggs"),
+    });
+    await sync.triggerSync(sb, USER_ID);
+    const handle = realtime.startRealtimeSubscription(sb, USER_ID);
+    const { useDailyLog } = await import("@/hooks/use-daily-log");
+    const { result, unmount } = renderHook(() => useDailyLog(DAY, NO_MEALS));
+    await waitFor(() => expect(mealNames(result.current)).toEqual(["eggs"]));
+    await outlastSaveDebounce();
+
+    peerUpdate("daily_logs", { date: DAY }, { meals: meals("phone") });
+    await waitFor(() => expect(mealNames(result.current)).toEqual(["phone"]));
+    await outlastSaveDebounce();
+    peerUpdate("daily_logs", { date: DAY }, { meals: meals("phone", "tea") });
+    await waitFor(() =>
+      expect(mealNames(result.current)).toEqual(["phone", "tea"]),
+    );
+    await outlastSaveDebounce();
+
+    const next = await sync.triggerSync(sb, USER_ID);
+
+    expect(next?.conflicts).toBe(0);
+    expect(
+      mealNames(server.find("daily_logs", { date: DAY }) as { meals: Meal[] }),
+    ).toEqual(["phone", "tea"]);
+    unmount();
+    handle.unsubscribe();
+  });
+
+  it("useProfile shows two successive peer updates and the next sync reports no conflict", async () => {
+    const { sync, realtime, server, sb } = env;
+    server.seed("profiles", { user_id: USER_ID, payload: PROFILE });
+    await sync.triggerSync(sb, USER_ID);
+    const handle = realtime.startRealtimeSubscription(sb, USER_ID);
+    const { useProfile } = await import("@/hooks/use-profile");
+    const { result, unmount } = renderHook(() => useProfile(DEFAULT_PROFILE));
+    await waitFor(() => expect(result.current.profile.age).toBe(30));
+    await outlastSaveDebounce();
+
+    peerUpdate(
+      "profiles",
+      { user_id: USER_ID },
+      { payload: { ...PROFILE, age: 31 } },
+    );
+    await waitFor(() => expect(result.current.profile.age).toBe(31));
+    await outlastSaveDebounce();
+    peerUpdate(
+      "profiles",
+      { user_id: USER_ID },
+      { payload: { ...PROFILE, age: 32 } },
+    );
+    await waitFor(() => expect(result.current.profile.age).toBe(32));
+    await outlastSaveDebounce();
+
+    const next = await sync.triggerSync(sb, USER_ID);
+
+    expect(next?.conflicts).toBe(0);
+    expect(
+      (
+        server.find("profiles", { user_id: USER_ID }) as {
+          payload: PersonalInfo;
+        }
+      ).payload.age,
+    ).toBe(32);
+    unmount();
+    handle.unsubscribe();
   });
 });
 

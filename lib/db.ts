@@ -616,13 +616,11 @@ export async function addCustomFood(
 export async function upsertCustomFood(
   food: Omit<CustomFood, keyof Versioned> & Partial<Versioned>,
 ): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_CUSTOM_FOODS, food.id);
-  await db.put(STORE_CUSTOM_FOODS, {
+  await saveLocalRecord(STORE_CUSTOM_FOODS, food.id, (existing) => ({
     ...food,
     localUpdatedAt: nowIso(),
     serverUpdatedAt: food.serverUpdatedAt ?? existing?.serverUpdatedAt ?? null,
-  });
+  }));
 }
 
 /** Sync-layer hook: write a server-pulled custom food. */
@@ -719,9 +717,7 @@ export async function getProfileRecord(): Promise<
  *  existing `serverUpdatedAt` token so the push knows which server
  *  version it's branching from. */
 export async function saveProfile(profile: PersonalInfo): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_PROFILE, PROFILE_KEY);
-  await db.put(STORE_PROFILE, {
+  await saveLocalRecord(STORE_PROFILE, PROFILE_KEY, (existing) => ({
     ...profile,
     _key: PROFILE_KEY,
     localUpdatedAt: nowIso(),
@@ -729,7 +725,7 @@ export async function saveProfile(profile: PersonalInfo): Promise<void> {
     // Preserve the demo marker across edits so a user tweaking their
     // sample profile doesn't accidentally un-mark the dataset.
     ...(existing?._demoSeeded ? { _demoSeeded: true as const } : {}),
-  });
+  }));
 }
 
 /** Save a profile **and** mark it as demo-seeded in IDB. Used by the
@@ -737,15 +733,13 @@ export async function saveProfile(profile: PersonalInfo): Promise<void> {
  *  rather than only in localStorage (can fail silently in private
  *  windows / quota-exceeded). Read back via `isProfileMarkedAsDemo`. */
 export async function saveDemoProfile(profile: PersonalInfo): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_PROFILE, PROFILE_KEY);
-  await db.put(STORE_PROFILE, {
+  await saveLocalRecord(STORE_PROFILE, PROFILE_KEY, (existing) => ({
     ...profile,
     _key: PROFILE_KEY,
     localUpdatedAt: nowIso(),
     serverUpdatedAt: existing?.serverUpdatedAt ?? null,
     _demoSeeded: true,
-  });
+  }));
 }
 
 /** True when the locally-stored profile is marked as demo-seeded.
@@ -848,16 +842,13 @@ export async function getDailyLog(date: string): Promise<DailyLog | null> {
 }
 
 export async function saveDailyLog(date: string, meals: Meal[]): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_DAILY_LOGS, date);
-  const now = nowIso();
-  await db.put(STORE_DAILY_LOGS, {
+  await saveLocalRecord(STORE_DAILY_LOGS, date, (existing) => ({
     date,
     meals,
     updatedAt: Date.now(),
-    localUpdatedAt: now,
+    localUpdatedAt: nowIso(),
     serverUpdatedAt: existing?.serverUpdatedAt ?? null,
-  });
+  }));
   // Wake the data-bus so IDB-reading consumers (the fasting card + Topbar
   // chip, the streak chip, the Progress charts) refresh on a local log —
   // not only on a peer realtime arrival. `useDailyLog` reloads on this rev
@@ -931,14 +922,12 @@ export async function saveMealTemplate(
 export async function upsertMealTemplate(
   template: Omit<MealTemplate, keyof Versioned> & Partial<Versioned>,
 ): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_MEAL_TEMPLATES, template.id);
-  await db.put(STORE_MEAL_TEMPLATES, {
+  await saveLocalRecord(STORE_MEAL_TEMPLATES, template.id, (existing) => ({
     ...template,
     localUpdatedAt: nowIso(),
     serverUpdatedAt:
       template.serverUpdatedAt ?? existing?.serverUpdatedAt ?? null,
-  });
+  }));
 }
 
 /** Sync-layer hook: write a server-pulled template. */
@@ -972,15 +961,13 @@ export async function deleteMealTemplate(id: string): Promise<void> {
  * the same day collapse to the most recent value. Preserves the row's
  * existing `serverUpdatedAt` so the push knows the right base version. */
 export async function saveWeightEntry(date: string, kg: number): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_WEIGHT_HISTORY, date);
-  await db.put(STORE_WEIGHT_HISTORY, {
+  await saveLocalRecord(STORE_WEIGHT_HISTORY, date, (existing) => ({
     date,
     kg,
     recordedAt: Date.now(),
     localUpdatedAt: nowIso(),
     serverUpdatedAt: existing?.serverUpdatedAt ?? null,
-  });
+  }));
 }
 
 /** Sync-layer hook: write a server-pulled weight entry. */
@@ -1036,34 +1023,31 @@ const MAX_WATER_ML = 20000;
  *  [0, MAX_WATER_ML] and preserves the row's `serverUpdatedAt` so the push
  *  knows the right base version. */
 export async function addWater(date: string, deltaMl: number): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_WATER_INTAKE, date);
-  const ml = Math.max(
-    0,
-    Math.min(MAX_WATER_ML, Math.round((existing?.ml ?? 0) + deltaMl)),
-  );
-  await db.put(STORE_WATER_INTAKE, {
+  // The read and the accumulate-and-write share one transaction, so two
+  // quick taps can't both add to the same stale total.
+  await saveLocalRecord(STORE_WATER_INTAKE, date, (existing) => ({
     date,
-    ml,
+    ml: Math.max(
+      0,
+      Math.min(MAX_WATER_ML, Math.round((existing?.ml ?? 0) + deltaMl)),
+    ),
     recordedAt: Date.now(),
     localUpdatedAt: nowIso(),
     serverUpdatedAt: existing?.serverUpdatedAt ?? null,
-  });
+  }));
   notifyDataChanged("waterIntake");
 }
 
 /** Set a day's water total to an absolute value (the inline "edit total"
  *  affordance), as opposed to `addWater`'s relative delta. */
 export async function setWaterTotal(date: string, ml: number): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_WATER_INTAKE, date);
-  await db.put(STORE_WATER_INTAKE, {
+  await saveLocalRecord(STORE_WATER_INTAKE, date, (existing) => ({
     date,
     ml: Math.max(0, Math.min(MAX_WATER_ML, Math.round(ml))),
     recordedAt: Date.now(),
     localUpdatedAt: nowIso(),
     serverUpdatedAt: existing?.serverUpdatedAt ?? null,
-  });
+  }));
   notifyDataChanged("waterIntake");
 }
 
@@ -1111,15 +1095,13 @@ export async function saveSupplementIntake(
   date: string,
   taken: SupplementIntakeEntry[],
 ): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_SUPPLEMENT_INTAKE, date);
-  await db.put(STORE_SUPPLEMENT_INTAKE, {
+  await saveLocalRecord(STORE_SUPPLEMENT_INTAKE, date, (existing) => ({
     date,
     taken,
     recordedAt: Date.now(),
     localUpdatedAt: nowIso(),
     serverUpdatedAt: existing?.serverUpdatedAt ?? null,
-  });
+  }));
   notifyDataChanged("supplementIntake");
 }
 
@@ -1169,9 +1151,7 @@ export async function saveBodyMeasurement(
   date: string,
   values: Pick<BodyMeasurement, "waistCm" | "neckCm" | "hipsCm" | "notes">,
 ): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_BODY_MEASUREMENTS, date);
-  await db.put(STORE_BODY_MEASUREMENTS, {
+  await saveLocalRecord(STORE_BODY_MEASUREMENTS, date, (existing) => ({
     date,
     waistCm: values.waistCm,
     neckCm: values.neckCm,
@@ -1180,7 +1160,7 @@ export async function saveBodyMeasurement(
     recordedAt: Date.now(),
     localUpdatedAt: nowIso(),
     serverUpdatedAt: existing?.serverUpdatedAt ?? null,
-  });
+  }));
 }
 
 /** All body measurements, oldest first - chart-natural order. */
@@ -1236,9 +1216,7 @@ export async function saveBloodPressure(
   date: string,
   values: Pick<BloodPressure, "systolic" | "diastolic" | "pulse" | "notes">,
 ): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_BLOOD_PRESSURE, date);
-  await db.put(STORE_BLOOD_PRESSURE, {
+  await saveLocalRecord(STORE_BLOOD_PRESSURE, date, (existing) => ({
     date,
     systolic: values.systolic,
     diastolic: values.diastolic,
@@ -1247,7 +1225,7 @@ export async function saveBloodPressure(
     recordedAt: Date.now(),
     localUpdatedAt: nowIso(),
     serverUpdatedAt: existing?.serverUpdatedAt ?? null,
-  });
+  }));
 }
 
 /** All blood-pressure readings, oldest first - chart-natural order. */
@@ -1381,14 +1359,12 @@ export async function addRecipe(
 export async function upsertRecipe(
   recipe: Recipe & Partial<Versioned>,
 ): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_RECIPES, recipe.id);
-  await db.put(STORE_RECIPES, {
+  await saveLocalRecord(STORE_RECIPES, recipe.id, (existing) => ({
     ...recipe,
     localUpdatedAt: nowIso(),
     serverUpdatedAt:
       recipe.serverUpdatedAt ?? existing?.serverUpdatedAt ?? null,
-  });
+  }));
 }
 
 /** Sync-layer hook: write a server-pulled recipe. */
@@ -1451,15 +1427,13 @@ export async function addMealSchedule(
 export async function upsertMealSchedule(
   schedule: MealSchedule & Partial<Versioned>,
 ): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_MEAL_SCHEDULES, schedule.id);
-  await db.put(STORE_MEAL_SCHEDULES, {
+  await saveLocalRecord(STORE_MEAL_SCHEDULES, schedule.id, (existing) => ({
     ...schedule,
     updatedAt: Date.now(),
     localUpdatedAt: nowIso(),
     serverUpdatedAt:
       schedule.serverUpdatedAt ?? existing?.serverUpdatedAt ?? null,
-  });
+  }));
   notifyDataChanged("mealSchedules");
 }
 
@@ -1515,15 +1489,13 @@ export async function addSupplement(
 export async function upsertSupplement(
   supplement: Supplement & Partial<Versioned>,
 ): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_SUPPLEMENTS, supplement.id);
-  await db.put(STORE_SUPPLEMENTS, {
+  await saveLocalRecord(STORE_SUPPLEMENTS, supplement.id, (existing) => ({
     ...supplement,
     updatedAt: Date.now(),
     localUpdatedAt: nowIso(),
     serverUpdatedAt:
       supplement.serverUpdatedAt ?? existing?.serverUpdatedAt ?? null,
-  });
+  }));
   notifyDataChanged("supplements");
 }
 
@@ -1583,14 +1555,12 @@ export async function addPantryItem(
 export async function upsertPantryItem(
   item: PantryItem & Partial<Versioned>,
 ): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_PANTRY_ITEMS, item.id);
-  await db.put(STORE_PANTRY_ITEMS, {
+  await saveLocalRecord(STORE_PANTRY_ITEMS, item.id, (existing) => ({
     ...item,
     updatedAt: Date.now(),
     localUpdatedAt: nowIso(),
     serverUpdatedAt: item.serverUpdatedAt ?? existing?.serverUpdatedAt ?? null,
-  });
+  }));
   notifyDataChanged("pantryItems");
 }
 
@@ -1652,26 +1622,34 @@ export async function addPantryNotification(
 export async function upsertPantryNotification(
   notif: PantryNotification & Partial<Versioned>,
 ): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_PANTRY_NOTIFICATIONS, notif.id);
-  await db.put(STORE_PANTRY_NOTIFICATIONS, {
+  await saveLocalRecord(STORE_PANTRY_NOTIFICATIONS, notif.id, (existing) => ({
     ...notif,
     updatedAt: Date.now(),
     localUpdatedAt: nowIso(),
     serverUpdatedAt: notif.serverUpdatedAt ?? existing?.serverUpdatedAt ?? null,
-  });
+  }));
   notifyDataChanged("pantryNotifications");
 }
 
-/** Mark a notification read (or unread). No-op when the id is gone. */
+/** Mark a notification read (or unread). No-op when the id is gone. Reads
+ *  and writes in one transaction, so a server version applied in between
+ *  can't be overwritten with the stale copy read before it. */
 export async function setPantryNotificationRead(
   id: string,
   read: boolean,
 ): Promise<void> {
-  const db = await getDB();
-  const row = await db.get(STORE_PANTRY_NOTIFICATIONS, id);
-  if (!row) return;
-  await upsertPantryNotification({ ...row, read });
+  await saveLocalRecord(
+    STORE_PANTRY_NOTIFICATIONS,
+    id,
+    (existing) =>
+      existing && {
+        ...existing,
+        read,
+        updatedAt: Date.now(),
+        localUpdatedAt: nowIso(),
+      },
+  );
+  notifyDataChanged("pantryNotifications");
 }
 
 /** Sync-layer hook: write a server-pulled notification. */
@@ -1711,15 +1689,16 @@ export async function upsertFavoriteStore(
   store: Omit<FavoriteStore, "createdAt" | "updatedAt" | keyof Versioned> &
     Partial<FavoriteStore>,
 ): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_FAVORITE_STORES, store.id);
-  const now = Date.now();
-  await db.put(STORE_FAVORITE_STORES, {
-    ...store,
-    createdAt: existing?.createdAt ?? store.createdAt ?? now,
-    updatedAt: now,
-    localUpdatedAt: nowIso(),
-    serverUpdatedAt: store.serverUpdatedAt ?? existing?.serverUpdatedAt ?? null,
+  await saveLocalRecord(STORE_FAVORITE_STORES, store.id, (existing) => {
+    const now = Date.now();
+    return {
+      ...store,
+      createdAt: existing?.createdAt ?? store.createdAt ?? now,
+      updatedAt: now,
+      localUpdatedAt: nowIso(),
+      serverUpdatedAt:
+        store.serverUpdatedAt ?? existing?.serverUpdatedAt ?? null,
+    };
   });
   notifyDataChanged("favoriteStores");
 }
@@ -1791,13 +1770,11 @@ export async function addFavoriteFood(
 export async function upsertFavoriteFood(
   fav: Omit<FavoriteFood, keyof Versioned> & Partial<Versioned>,
 ): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_FAVORITE_FOODS, fav.id);
-  await db.put(STORE_FAVORITE_FOODS, {
+  await saveLocalRecord(STORE_FAVORITE_FOODS, fav.id, (existing) => ({
     ...fav,
     localUpdatedAt: nowIso(),
     serverUpdatedAt: fav.serverUpdatedAt ?? existing?.serverUpdatedAt ?? null,
-  });
+  }));
   notifyDataChanged("favoriteFoods");
 }
 
@@ -1846,14 +1823,16 @@ export async function deleteFavoriteFoodByName(name: string): Promise<void> {
 export async function saveMicronutrientProfile(
   profile: MicronutrientProfile,
 ): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_MICRONUTRIENT_PROFILES, profile.nameKey);
-  await db.put(STORE_MICRONUTRIENT_PROFILES, {
-    ...profile,
-    localUpdatedAt: nowIso(),
-    serverUpdatedAt:
-      profile.serverUpdatedAt ?? existing?.serverUpdatedAt ?? null,
-  });
+  await saveLocalRecord(
+    STORE_MICRONUTRIENT_PROFILES,
+    profile.nameKey,
+    (existing) => ({
+      ...profile,
+      localUpdatedAt: nowIso(),
+      serverUpdatedAt:
+        profile.serverUpdatedAt ?? existing?.serverUpdatedAt ?? null,
+    }),
+  );
   notifyDataChanged("micronutrientProfiles");
 }
 
@@ -1964,15 +1943,17 @@ export async function setSortOrder(
   id: string,
   sortOrder: number,
 ): Promise<void> {
-  const db = await getDB();
-  const row = await db.get(store, id);
-  if (!row) return;
-  await db.put(store, {
-    ...row,
-    sortOrder,
-    localUpdatedAt: nowIso(),
-    serverUpdatedAt: row.serverUpdatedAt ?? null,
-  });
+  await saveLocalRecord(
+    store,
+    id,
+    (existing) =>
+      existing && {
+        ...existing,
+        sortOrder,
+        localUpdatedAt: nowIso(),
+        serverUpdatedAt: existing.serverUpdatedAt ?? null,
+      },
+  );
 }
 
 /** Compute a fractional sort key that sits between `prev` and `next`.
@@ -2164,6 +2145,50 @@ function serverOwnedContent(row: object): string {
   const content: Record<string, unknown> = { ...row };
   for (const field of CLIENT_BOOKKEEPING_FIELDS) delete content[field];
   return stableStringify(content);
+}
+
+/** Write a row authored on this device (every `saveX` / `upsertX` /
+ *  `setX` of a synced store goes through here). The read of the stored row
+ *  and the write share ONE readwrite transaction, so a server version
+ *  applied — or a push acknowledged — in between can't be overwritten with
+ *  a stale base token.
+ *
+ *  `build` receives the stored row (if any) and returns the row to store,
+ *  stamped dirty (`localUpdatedAt` = now, `serverUpdatedAt` = the base it
+ *  branches from), or `undefined` to write nothing.
+ *
+ *  A save whose server-owned content equals the stored row's is not an
+ *  edit: the row keeps its stored version tokens, so a clean row stays
+ *  clean (and a dirty one keeps its base). Without this, a component that
+ *  re-saves what it just loaded would turn every server-mirrored row dirty;
+ *  a dirty row is never overwritten by server data (invariant 1), so every
+ *  later peer update would be held back and the next sync would report a
+ *  conflict the user never caused. Client bookkeeping fields still take
+ *  the new values ({@link CLIENT_BOOKKEEPING_FIELDS}). */
+async function saveLocalRecord<S extends VersionedStore>(
+  store: S,
+  key: string,
+  build: (
+    existing: MacroDB[S]["value"] | undefined,
+  ) => MacroDB[S]["value"] | undefined,
+): Promise<void> {
+  const db = await getDB();
+  const tx = db.transaction(store, "readwrite");
+  const existing = await tx.store.get(key);
+  const next = build(existing);
+  if (next) {
+    if (existing && serverOwnedContent(existing) === serverOwnedContent(next)) {
+      const stored = existing as VersionFields;
+      await tx.store.put({
+        ...next,
+        localUpdatedAt: stored.localUpdatedAt,
+        serverUpdatedAt: stored.serverUpdatedAt,
+      });
+    } else {
+      await tx.store.put(next);
+    }
+  }
+  await tx.done;
 }
 
 /** What happened when a server row was offered to IDB. */

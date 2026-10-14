@@ -857,3 +857,180 @@ describe("shoppingListMeta", () => {
     expect(await db.listShoppingListMeta()).toHaveLength(0);
   });
 });
+
+// A load-then-save round trip (a hook re-saving what it just read) must not
+// turn a clean, server-mirrored row dirty: a dirty row is never overwritten
+// by server data, so every later peer update would be kept out ("kept-dirty")
+// and the next sync would report a false conflict.
+describe("a save that changes no server-owned content leaves the row clean", () => {
+  const DAY = "2026-05-16";
+  const V2 = "2026-05-16T12:00:02.000000+00:00";
+  const V3 = "2026-05-16T12:00:03.000000+00:00";
+  type Db = Awaited<ReturnType<typeof freshDb>>;
+  const PANTRY = {
+    id: "33333333-3333-4333-8333-333333333333",
+    name: "Rice",
+    quantity: 500,
+    unit: "g",
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const STORE = {
+    id: "node/123",
+    name: "Corner shop",
+    kind: "grocery",
+    lat: 45,
+    lon: 9,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const FOOD = {
+    id: "44444444-4444-4444-8444-444444444444",
+    name: "Whey",
+    protein: 80,
+    carbs: 8,
+    fat: 2,
+    calories: 370,
+    createdAt: 1,
+  };
+
+  const cases: Array<{
+    name: string;
+    applyV2: (db: Db) => Promise<unknown>;
+    resave: (db: Db) => Promise<void>;
+    applyV3: (db: Db) => Promise<unknown>;
+    read: (db: Db) => Promise<unknown>;
+    expected: unknown;
+  }> = [
+    {
+      name: "saveDailyLog",
+      applyV2: (db) => db.applyServerDailyLog(DAY, SAMPLE_MEALS, V2),
+      resave: (db) => db.saveDailyLog(DAY, structuredClone(SAMPLE_MEALS)),
+      applyV3: (db) => db.applyServerDailyLog(DAY, [], V3),
+      read: async (db) => (await db.getDailyLog(DAY))?.meals,
+      expected: [],
+    },
+    {
+      name: "saveProfile",
+      applyV2: (db) => db.applyServerProfile(BASELINE_PROFILE, V2),
+      resave: (db) => db.saveProfile({ ...BASELINE_PROFILE }),
+      applyV3: (db) =>
+        db.applyServerProfile({ ...BASELINE_PROFILE, age: 31 }, V3),
+      read: async (db) => (await db.getProfile())?.age,
+      expected: 31,
+    },
+    {
+      name: "saveWeightEntry",
+      applyV2: (db) => db.applyServerWeightEntry(DAY, 70, V2),
+      resave: (db) => db.saveWeightEntry(DAY, 70),
+      applyV3: (db) => db.applyServerWeightEntry(DAY, 71, V3),
+      read: async (db) => (await db.getWeightEntry(DAY))?.kg,
+      expected: 71,
+    },
+    {
+      name: "setWaterTotal / addWater(0)",
+      applyV2: (db) => db.applyServerWaterIntake(DAY, 500, V2),
+      resave: async (db) => {
+        await db.setWaterTotal(DAY, 500);
+        await db.addWater(DAY, 0);
+      },
+      applyV3: (db) => db.applyServerWaterIntake(DAY, 750, V3),
+      read: async (db) => (await db.getWaterIntake(DAY))?.ml,
+      expected: 750,
+    },
+    {
+      name: "upsertPantryItem",
+      applyV2: (db) => db.applyServerPantryItem(PANTRY, V2),
+      resave: (db) => db.upsertPantryItem({ ...PANTRY }),
+      applyV3: (db) =>
+        db.applyServerPantryItem({ ...PANTRY, quantity: 250 }, V3),
+      read: async (db) => (await db.listPantryItems())[0]?.quantity,
+      expected: 250,
+    },
+    {
+      name: "upsertFavoriteStore",
+      applyV2: (db) => db.applyServerFavoriteStore(STORE, V2),
+      resave: (db) => db.upsertFavoriteStore({ ...STORE }),
+      applyV3: (db) =>
+        db.applyServerFavoriteStore({ ...STORE, name: "Renamed" }, V3),
+      read: async (db) => (await db.listFavoriteStores())[0]?.name,
+      expected: "Renamed",
+    },
+    {
+      name: "upsertCustomFood / setSortOrder to the same value",
+      applyV2: (db) => db.applyServerCustomFood({ ...FOOD, sortOrder: 5 }, V2),
+      resave: async (db) => {
+        await db.upsertCustomFood({ ...FOOD, sortOrder: 5 });
+        await db.setSortOrder("customFoods", FOOD.id, 5);
+      },
+      applyV3: (db) =>
+        db.applyServerCustomFood({ ...FOOD, sortOrder: 5, name: "Casein" }, V3),
+      read: async (db) => (await db.listCustomFoods())[0]?.name,
+      expected: "Casein",
+    },
+  ];
+
+  it.each(cases)(
+    "$name: apply v2, re-save the same content, apply v3 → applied",
+    async ({ applyV2, resave, applyV3, read, expected }) => {
+      const db = await freshDb();
+      expect(await applyV2(db)).toBe("applied");
+
+      await resave(db);
+
+      expect(await applyV3(db)).toBe("applied");
+      expect(await read(db)).toEqual(expected);
+    },
+  );
+
+  it("a re-save keeps the row's version tokens, so it stays clean", async () => {
+    const db = await freshDb();
+    await db.applyServerDailyLog(DAY, SAMPLE_MEALS, V2);
+
+    await db.saveDailyLog(DAY, structuredClone(SAMPLE_MEALS));
+
+    const row = await db.getDailyLog(DAY);
+    expect(row?.localUpdatedAt).toBe(V2);
+    expect(row?.serverUpdatedAt).toBe(V2);
+    expect(row && db.isDirtyRecord(row)).toBe(false);
+  });
+
+  it("a real edit still dirties the row and keeps its base", async () => {
+    const db = await freshDb();
+    await db.applyServerDailyLog(DAY, SAMPLE_MEALS, V2);
+
+    await db.saveDailyLog(DAY, []);
+
+    const row = await db.getDailyLog(DAY);
+    expect(row?.serverUpdatedAt).toBe(V2);
+    expect(row && db.isDirtyRecord(row)).toBe(true);
+    expect(await db.applyServerDailyLog(DAY, SAMPLE_MEALS, V3)).toBe(
+      "kept-dirty",
+    );
+  });
+
+  it("re-saving a dirty row's own content keeps it dirty on the same base", async () => {
+    const db = await freshDb();
+    await db.applyServerDailyLog(DAY, SAMPLE_MEALS, V2);
+    await db.saveDailyLog(DAY, []);
+    const edited = await db.getDailyLog(DAY);
+
+    await db.saveDailyLog(DAY, []);
+
+    const row = await db.getDailyLog(DAY);
+    expect(row?.localUpdatedAt).toBe(edited?.localUpdatedAt);
+    expect(row?.serverUpdatedAt).toBe(V2);
+    expect(row && db.isDirtyRecord(row)).toBe(true);
+  });
+
+  it("saveDemoProfile still marks an unchanged profile as demo-seeded without dirtying it", async () => {
+    const db = await freshDb();
+    await db.applyServerProfile(BASELINE_PROFILE, V2);
+
+    await db.saveDemoProfile({ ...BASELINE_PROFILE });
+
+    expect(await db.isProfileMarkedAsDemo()).toBe(true);
+    const row = await db.getProfileRecord();
+    expect(row && db.isDirtyRecord(row)).toBe(false);
+  });
+});
