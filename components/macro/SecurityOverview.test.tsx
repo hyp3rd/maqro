@@ -39,7 +39,7 @@ describe("SecurityOverview", () => {
       <SecurityStatusProvider>
         <SecurityOverview />
         <Reporter
-          k="trustedDevices"
+          k="passkeys"
           stat={{ value: "None", tone: "muted" }}
         />
         <Reporter
@@ -59,18 +59,16 @@ describe("SecurityOverview", () => {
     expect(screen.getByText("Set")).not.toBeNull();
     expect(screen.getByText("None")).not.toBeNull();
 
-    // …and the labels follow the canonical ORDER (twoStep → backupEmail →
-    // trustedDevices), not the order they reported in.
+    // …and the labels follow the canonical ORDER (twoStep → passkeys →
+    // backupEmail), not the order they reported in.
     const pills = Array.from(document.querySelectorAll("li")).map(
       (li) => li.textContent ?? "",
     );
     expect(pills).toHaveLength(3);
     expect(pills[0]).toContain("Two-step");
     expect(pills[0]).toContain("On");
-    expect(pills[1]).toContain("Backup email");
-    expect(pills[2]).toContain("Trusted devices");
-    // Passkeys never reported → no pill.
-    expect(screen.queryByText(/^Passkeys$/)).toBeNull();
+    expect(pills[1]).toContain("Passkeys");
+    expect(pills[2]).toContain("Backup email");
   });
 
   it("a later report for the same key replaces the earlier value", () => {

@@ -148,6 +148,18 @@ present, so you can focus on what's actually unique:
 
 - **Row-Level Security** on every Postgres table. Policies are in
   `supabase/migrations/`.
+- **Two-step verification enforced server-side and in RLS.** For a
+  user with a verified MFA factor, a session that passed only the
+  first factor (email code, magic link, OAuth, recovery link) is
+  refused by the `/app` and `/admin` proxy redirect, by every
+  authenticated API route (`assertAal2` / `assertFreshAal2` /
+  `requireAdmin`), and by restrictive RLS policies on every user-data
+  table and `storage.objects` (migration 0079). The gates decide
+  enrollment from the GoTrue-verified user and the verified JWT
+  claims, never from the client-writable session cookie. A passkey
+  sign-in counts as the second factor. There is no "remember this
+  device" bypass. A path that reaches user data with such a session
+  is a critical issue.
 - **Service-role key never reaches the browser**. Used only in
   server routes (`/api/admin/*`, `/api/billing/webhook`,
   `/api/cron/*`, `/api/delete-account`, etc.).

@@ -1,11 +1,20 @@
 import { getAppUrl } from "@/lib/app-url";
 import { assertAal2 } from "@/lib/auth/mfa-required";
-import { trustedDeviceOption } from "@/lib/auth/trusted-device";
-import { STRIPE_PRICES, getStripe } from "@/lib/billing/stripe";
+import {
+  type BillingInterval,
+  type PaidPlan,
+  getStripe,
+  pickLiveSubscription,
+  priceIdForPlan,
+} from "@/lib/billing/stripe";
+import { reportServerError } from "@/lib/error-reporter";
 import { getSupabaseSecretConfig } from "@/lib/supabase/env";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import type Stripe from "stripe";
+import { type SupabaseClient, createClient } from "@supabase/supabase-js";
+
+const ROUTE = "/api/billing/checkout";
 
 /** Create a Stripe Checkout Session for the AI Plus subscription
  *  and return the URL the client should redirect to.
@@ -17,14 +26,27 @@ import { createClient } from "@supabase/supabase-js";
  *  right profile row.
  *
  *  Flow:
- *    1. Look up the caller's profile row.
+ *    1. Look up the caller's profile row. No row (the profile has
+ *       never synced) refuses with 409 `profile_missing` before any
+ *       Stripe object exists: there would be nothing to link the
+ *       customer to.
  *    2. If they already have a stripe_customer_id, reuse it.
  *       Otherwise, create a new Stripe Customer with our user_id
- *       in metadata and save the customer ID.
- *    3. Create a Checkout Session for the configured price,
+ *       in metadata and store its ID with a checked UPDATE of the
+ *       profiles row. If the ID can't be stored, no Checkout
+ *       Session is created: a subscription on a customer no profile
+ *       knows bills the user without ever entitling them.
+ *    3. Refuse (409 `subscription_exists`) when the customer already
+ *       has a live subscription. A second subscription double-bills,
+ *       and the webhook can track only one; a plan change goes
+ *       through `/api/billing/change-plan`, which updates the
+ *       existing subscription.
+ *    4. Expire the customer's other open Checkout Sessions, so two
+ *       tabs can't each complete a subscription.
+ *    5. Create a Checkout Session for the configured price,
  *       passing the customer and our user_id so the webhook can
  *       cross-reference both ways.
- *    4. Return { url }. The client does `window.location = url`.
+ *    6. Return { url }. The client does `window.location = url`.
  *
  *  Note on bot protection: this route used to gate behind
  *  `requireHumanDeep()` because of the "card-test / abuse vector"
@@ -62,18 +84,15 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (!user) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
-  const gate = await assertAal2(
-    supabase,
-    await trustedDeviceOption(supabase, user.id),
-  );
+  const gate = await assertAal2(supabase, user);
   if (!gate.ok) return gate.response;
 
-  let interval: "month" | "year" = "month";
-  let plan: "plus" | "pro" = "plus";
+  let interval: BillingInterval = "month";
+  let plan: PaidPlan = "plus";
   try {
     const body = (await req.json()) as {
-      interval?: "month" | "year";
-      plan?: "plus" | "pro";
+      interval?: BillingInterval;
+      plan?: PaidPlan;
     };
     if (body.interval === "year") interval = "year";
     if (body.plan === "pro") plan = "pro";
@@ -81,15 +100,7 @@ export async function POST(req: Request): Promise<NextResponse> {
     // Empty body is fine — fall through with defaults (monthly Plus).
   }
 
-  const priceLookup =
-    plan === "pro"
-      ? interval === "year"
-        ? STRIPE_PRICES.proYearly
-        : STRIPE_PRICES.proMonthly
-      : interval === "year"
-        ? STRIPE_PRICES.aiPlusYearly
-        : STRIPE_PRICES.aiPlusMonthly;
-  const priceId = priceLookup();
+  const priceId = priceIdForPlan(plan, interval);
   if (!priceId) {
     return NextResponse.json(
       { error: `Stripe price for ${plan} ${interval}ly is not configured.` },
@@ -98,45 +109,86 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   // 1. Fetch profile to read (or initialize) the Stripe customer.
-  const { data: profile } = await supabase
+  const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select("stripe_customer_id")
     .eq("user_id", user.id)
     .maybeSingle();
-
-  let customerId = profile?.stripe_customer_id as string | null;
-
-  if (!customerId) {
-    // First-time upgrade — create a Stripe customer. `metadata`
-    // carries our user_id both ways: the webhook reads
-    // `customer.metadata.user_id` as a fallback when the
-    // subscription event doesn't carry it directly.
-    const customer = await stripe.customers.create({
-      email: user.email ?? undefined,
-      metadata: { user_id: user.id },
+  if (profileError) {
+    await reportServerError(profileError, {
+      route: ROUTE,
+      context: { step: "profile-read" },
     });
-    customerId = customer.id;
+    return NextResponse.json(
+      { error: "Couldn't load your account. Try again in a moment." },
+      { status: 500 },
+    );
+  }
 
-    // Persist the customer ID so future checkouts reuse it.
-    // Service-role insert because the user might not yet have a
-    // profile row (new sign-ups have one, but defense in depth)
-    // and the upsert needs RLS-bypass to handle either case
-    // cleanly.
-    const adminConfig = getSupabaseSecretConfig();
-    if (adminConfig) {
-      const admin = createClient(adminConfig.url, adminConfig.secretKey, {
-        auth: { autoRefreshToken: false, persistSession: false },
+  // The row is created by the account's first profile push (and, once
+  // migration 0074 ships, at sign-up). Without it a new customer can't be
+  // stored, so refuse before creating one that would only be orphaned.
+  if (!profile) {
+    return NextResponse.json(
+      {
+        error:
+          "Your profile hasn't synced to your account yet. Set it up, then try again in a moment.",
+        code: "profile_missing",
+      },
+      { status: 409 },
+    );
+  }
+
+  // 2. First-time subscriber: create the customer and link it.
+  let customerId = (profile.stripe_customer_id ?? null) as string | null;
+  if (!customerId) {
+    const linked = await createAndLinkCustomer(stripe, supabase, user);
+    if (!linked.ok) return linked.response;
+    customerId = linked.customerId;
+  }
+
+  // 3. One live subscription per customer.
+  const subscriptions = await stripe.subscriptions.list({
+    customer: customerId,
+    status: "all",
+    limit: 100,
+  });
+  const live = pickLiveSubscription(subscriptions.data);
+  if (live) {
+    return NextResponse.json(
+      {
+        error:
+          "You already have a subscription. Change your plan instead of starting a new one.",
+        code: "subscription_exists",
+      },
+      { status: 409 },
+    );
+  }
+
+  // 4. Only the newest Checkout Session may complete.
+  const openSessions = await stripe.checkout.sessions.list({
+    customer: customerId,
+    status: "open",
+    limit: 100,
+  });
+  for (const open of openSessions.data) {
+    try {
+      await stripe.checkout.sessions.expire(open.id);
+    } catch (err) {
+      // It completed (or expired) in the meantime. Don't race it with a
+      // second session; a retry sees the outcome.
+      await reportServerError(err, {
+        route: ROUTE,
+        context: { step: "expire-open-session", sessionId: open.id },
       });
-      await admin
-        .from("profiles")
-        .upsert(
-          { user_id: user.id, stripe_customer_id: customerId },
-          { onConflict: "user_id" },
-        );
+      return NextResponse.json(
+        { error: "Couldn't start checkout. Try again in a moment." },
+        { status: 502 },
+      );
     }
   }
 
-  // 2. Create the Checkout Session. `subscription` mode is the
+  // 5. Create the Checkout Session. `subscription` mode is the
   // right one for recurring; `payment` is for one-shots. We pass
   // `client_reference_id` AND embed user_id in `metadata` —
   // belt-and-suspenders for the webhook handler.
@@ -184,4 +236,85 @@ export async function POST(req: Request): Promise<NextResponse> {
   }
 
   return NextResponse.json({ url: session.url });
+}
+
+type CheckoutUser = { id: string; email?: string };
+
+async function billingSetupFailed(
+  step: string,
+  err: unknown,
+): Promise<{ ok: false; response: NextResponse }> {
+  await reportServerError(err, { route: ROUTE, context: { step } });
+  return {
+    ok: false,
+    response: NextResponse.json(
+      {
+        error:
+          "We couldn't set up billing for your account. Try again in a moment.",
+      },
+      { status: 503 },
+    ),
+  };
+}
+
+/** Create a Stripe customer for a first-time subscriber and store its ID on
+ *  their profiles row.
+ *
+ *  The write is a service-role UPDATE (end users can't write billing
+ *  columns) that must match the row, and only while the row has no
+ *  customer yet: a concurrent checkout that linked first wins, and we
+ *  continue with its customer — the one we just created stays unused and
+ *  never bills. Anything else refuses the checkout. */
+async function createAndLinkCustomer(
+  stripe: Stripe,
+  supabase: SupabaseClient,
+  user: CheckoutUser,
+): Promise<
+  { ok: true; customerId: string } | { ok: false; response: NextResponse }
+> {
+  const adminConfig = getSupabaseSecretConfig();
+  if (!adminConfig) {
+    return billingSetupFailed(
+      "customer-link",
+      new Error("SUPABASE_SECRET_KEY is not configured"),
+    );
+  }
+  const admin = createClient(adminConfig.url, adminConfig.secretKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  // `metadata` carries our user_id both ways: the webhook reads
+  // `subscription.metadata.user_id` to link a customer no profile
+  // carries yet.
+  const customer = await stripe.customers.create({
+    email: user.email ?? undefined,
+    metadata: { user_id: user.id },
+  });
+
+  const { data: updated, error: updateError } = await admin
+    .from("profiles")
+    .update({ stripe_customer_id: customer.id })
+    .eq("user_id", user.id)
+    .is("stripe_customer_id", null)
+    .select("user_id");
+  if (updateError) return billingSetupFailed("customer-link", updateError);
+  if (updated && updated.length === 1) {
+    return { ok: true, customerId: customer.id };
+  }
+
+  // 0 rows: either a concurrent checkout linked its customer first, or
+  // the profiles row was deleted since the caller read it.
+  const { data: current, error: rereadError } = await supabase
+    .from("profiles")
+    .select("stripe_customer_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (rereadError)
+    return billingSetupFailed("customer-link-reread", rereadError);
+  const existing = (current?.stripe_customer_id ?? null) as string | null;
+  if (existing) return { ok: true, customerId: existing };
+  return billingSetupFailed(
+    "customer-link",
+    new Error(`no profiles row to link ${customer.id} to`),
+  );
 }

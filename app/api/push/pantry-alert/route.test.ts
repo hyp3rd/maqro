@@ -10,21 +10,9 @@ const { mockSendPush, mockGetUser, mockFrom, deleteCalls } = vi.hoisted(() => ({
 
 vi.mock("@/lib/push/send", () => ({ sendPush: mockSendPush }));
 vi.mock("@/lib/app-url", () => ({ getAppUrl: () => "https://app.test" }));
-vi.mock("@/lib/auth/trusted-device", () => ({
-  trustedDeviceOption: vi.fn(async () => ({})),
-}));
 vi.mock("@/lib/supabase/server", () => ({
   getSupabaseServer: vi.fn(async () => ({
-    auth: {
-      getUser: mockGetUser,
-      // assertAal2: no MFA enrolled → aal1/aal1, no upgrade required.
-      mfa: {
-        getAuthenticatorAssuranceLevel: vi.fn(async () => ({
-          data: { currentLevel: "aal1", nextLevel: "aal1" },
-        })),
-        listFactors: vi.fn(async () => ({ data: { totp: [], all: [] } })),
-      },
-    },
+    auth: { getUser: mockGetUser },
     from: mockFrom,
   })),
 }));

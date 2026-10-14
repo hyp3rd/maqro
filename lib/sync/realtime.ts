@@ -300,10 +300,10 @@ async function handleProfile(payload: LoosePayload) {
   }
   const row = newRow<ProfileRow>(payload);
   if (!row) return;
-  if (
-    (await applyServerProfile(profileFromRow(row), row.updated_at)) ===
-    "applied"
-  ) {
+  // `{}` placeholder (migration 0074): no profile yet — keep the local one.
+  const profile = profileFromRow(row);
+  if (!profile) return;
+  if ((await applyServerProfile(profile, row.updated_at)) === "applied") {
     notifyDataChanged("profile");
   }
 }
@@ -515,26 +515,38 @@ async function handleMicronutrientProfile(payload: LoosePayload) {
 // mark-synced, or the user edited mid-push) is never overwritten, and a
 // clean copy already at that version with the same content is a no-op.
 
+/** Stores whose server primary key includes `user_id`, because the key
+ *  alone is shared across users: the date-keyed tables are
+ *  `(user_id, date)`, and favorite_stores is `(user_id, id)` since migration
+ *  0077 (its id is a shared OSM key such as `node/123`). A DELETE's `old`
+ *  for these always carries the owner. */
+const OWNER_KEYED_STORES: ReadonlySet<DeletableStore> = new Set([
+  "dailyLogs",
+  "weightHistory",
+  "favoriteStores",
+]);
+
 /** The local key a realtime DELETE refers to, or `null` when the event
  *  isn't provably about this user's row. Supabase Realtime cannot filter
  *  DELETE events and does not apply RLS to them ("Delete events are not
  *  filterable", https://supabase.com/docs/guides/realtime/postgres-changes),
  *  so every subscriber receives every user's deletes and `old` carries only
- *  the primary key. For date-keyed tables the primary key is
- *  `(user_id, date)` — without the owner check another user deleting their
- *  log for the same date would delete ours. Id-keyed tables use globally
- *  unique UUID / OSM keys; their `old` has no `user_id`, and a key we hold
- *  locally is ours. */
+ *  the primary key. For an owner-keyed store (see `OWNER_KEYED_STORES`)
+ *  another user deleting their row with the same date or OSM key would
+ *  delete ours without the owner check, so the event must name this user.
+ *  The other id-keyed tables use globally unique UUID keys; their `old` has
+ *  no `user_id`, and a key we hold locally is ours. */
 function deletedKey(
   payload: LoosePayload,
   userId: string,
+  store: DeletableStore,
   keyField: "date" | "id",
 ): string | null {
   const old = payload.old as Record<string, unknown> | undefined;
   const key = old?.[keyField];
   if (typeof key !== "string" || key === "") return null;
   const owner = old?.user_id;
-  if (keyField === "date") return owner === userId ? key : null;
+  if (OWNER_KEYED_STORES.has(store)) return owner === userId ? key : null;
   return owner === undefined || owner === userId ? key : null;
 }
 
@@ -544,7 +556,7 @@ async function handleDeletion(
   store: DeletableStore,
   keyField: "date" | "id",
 ): Promise<void> {
-  const key = deletedKey(payload, userId, keyField);
+  const key = deletedKey(payload, userId, store, keyField);
   if (!key) return;
   if ((await applyServerDeletion(store, key)) === "deleted") {
     notifyDataChanged(store);

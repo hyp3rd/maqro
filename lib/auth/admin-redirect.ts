@@ -1,10 +1,16 @@
+import { requiresMfaUpgrade } from "@/lib/auth/mfa-required";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 /** Admin gate for GET route handlers that should REDIRECT a non-admin (back to
  *  the app / login) rather than return a JSON error like `requireAdmin` does.
  *  Returns a redirect Response to bounce the caller, or null when they're an
- *  admin and the route may proceed. */
+ *  admin and the route may proceed.
+ *
+ *  Same order as `requireAdmin`: the second factor is enforced BEFORE the role
+ *  lookup, so an AAL1 session for an enrolled user is sent to the two-step
+ *  prompt (`/login?mfa=required`, which returns to `returnTo` afterwards) and
+ *  never learns whether the account is an admin. */
 export async function adminRedirectGuard(
   request: Request,
   returnTo = "/admin",
@@ -18,6 +24,13 @@ export async function adminRedirectGuard(
     return NextResponse.redirect(
       new URL(`/login?next=${encodeURIComponent(returnTo)}`, request.url),
     );
+  }
+  const decision = await requiresMfaUpgrade(supabase, user);
+  if (decision.needsUpgrade) {
+    const login = new URL("/login", request.url);
+    login.searchParams.set("mfa", "required");
+    login.searchParams.set("next", returnTo);
+    return NextResponse.redirect(login);
   }
   const { data: profile } = await supabase
     .from("profiles")

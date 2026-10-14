@@ -15,8 +15,15 @@
  * catches the next one at lint time.
  *
  * What triggers it:
- *   - Route file calls `<anything>.auth.getUser()`
- *   - AND does NOT call any of: `assertAal2`, `requireAdmin`
+ *   - A handler calls `<anything>.auth.getUser()`
+ *   - AND that SAME handler does NOT call any of: `assertAal2`,
+ *     `assertFreshAal2`, `requireAdmin`
+ *
+ * "Handler" is the outermost function enclosing the call — in practice
+ * each exported `GET` / `POST` / `PATCH` / `DELETE`. The check is per
+ * handler, not per file: a gate in `POST` used to satisfy the rule for a
+ * sibling `PATCH` / `DELETE` that never called it, which is how
+ * `recipes/[id]/share` shipped PATCH and DELETE without the gate.
  *
  * What does NOT trigger it:
  *   - Public routes that don't authenticate (no `getUser` call).
@@ -34,11 +41,6 @@
  */
 
 const ALLOWLIST = [
-  // Called DURING MFA verification to decide whether this device
-  // can skip the prompt. Asserting AAL2 here would create a
-  // chicken-and-egg loop (you need AAL2 to check whether you can
-  // skip the AAL2 prompt).
-  "auth/mfa/trusted-devices/check/route.ts",
   // Public contact form — accepts anonymous submissions; an
   // authenticated user attaches their email for context only.
   // Blocking AAL1 here would be hostile to users trying to ask
@@ -46,7 +48,7 @@ const ALLOWLIST = [
   "support/route.ts",
   // Lost-authenticator step-down. By definition the caller CAN'T reach
   // AAL2 (their authenticator is gone), so assertAal2 would make recovery
-  // impossible — the same chicken-and-egg as the trusted-devices check.
+  // impossible.
   // Authorization here is the single-use recovery grant (`consumeRecoveryGrant`),
   // which proves backup-inbox control; see the route's SECURITY note and
   // migration 0067.
@@ -93,6 +95,20 @@ function isGateCall(node) {
   );
 }
 
+/** The outermost function that encloses `node` — the route handler it
+ *  belongs to — or the Program for module-level code. */
+function handlerScopeOf(context, node) {
+  const ancestors = context.sourceCode.getAncestors(node);
+  const outermostFn = ancestors.find(
+    (a) =>
+      a.type === "FunctionDeclaration" ||
+      a.type === "FunctionExpression" ||
+      a.type === "ArrowFunctionExpression",
+  );
+  return outermostFn ?? ancestors[0] ?? node;
+}
+
+/** @type {import("eslint").Rule.RuleModule} */
 const rule = {
   meta: {
     type: "problem",
@@ -103,7 +119,7 @@ const rule = {
     schema: [],
     messages: {
       missingGate:
-        "This route calls `auth.getUser()` but never calls `assertAal2()`, `assertFreshAal2()`, or `requireAdmin()`. Add a gate check immediately after the user lookup — otherwise an AAL1-only session can call this route. See lib/auth/mfa-required.ts.",
+        "This handler calls `auth.getUser()` but never calls `assertAal2()`, `assertFreshAal2()`, or `requireAdmin()`. Add a gate check immediately after the user lookup — otherwise an AAL1-only session can call this handler. See lib/auth/mfa-required.ts.",
     },
   },
   create(context) {
@@ -116,22 +132,27 @@ const rule = {
     }
     if (isOnAllowlist(filename)) return {};
 
-    let getUserNode = null;
-    let hasGate = false;
+    /** First `getUser()` call per handler scope. */
+    const getUserByScope = new Map();
+    /** Handler scopes that call a gate helper. */
+    const gatedScopes = new Set();
 
     return {
       CallExpression(node) {
-        if (!getUserNode && isAuthGetUserCall(node)) {
-          getUserNode = node;
+        if (isAuthGetUserCall(node)) {
+          const scope = handlerScopeOf(context, node);
+          if (!getUserByScope.has(scope)) getUserByScope.set(scope, node);
           return;
         }
-        if (!hasGate && isGateCall(node)) {
-          hasGate = true;
+        if (isGateCall(node)) {
+          gatedScopes.add(handlerScopeOf(context, node));
         }
       },
       "Program:exit"() {
-        if (getUserNode && !hasGate) {
-          context.report({ node: getUserNode, messageId: "missingGate" });
+        for (const [scope, getUserNode] of getUserByScope) {
+          if (!gatedScopes.has(scope)) {
+            context.report({ node: getUserNode, messageId: "missingGate" });
+          }
         }
       },
     };

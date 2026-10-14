@@ -14,7 +14,6 @@ import {
 } from "@/lib/ai/plan-coherence";
 import { parseBody } from "@/lib/api/parse-body";
 import { assertAal2 } from "@/lib/auth/mfa-required";
-import { trustedDeviceOption } from "@/lib/auth/trusted-device";
 import { checkAndIncrementAiUsage } from "@/lib/billing/usage";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -166,10 +165,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (!user) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
-  const gate = await assertAal2(
-    supabase,
-    await trustedDeviceOption(supabase, user.id),
-  );
+  const gate = await assertAal2(supabase, user);
   if (!gate.ok) return gate.response;
 
   // 2. AI feature gate.

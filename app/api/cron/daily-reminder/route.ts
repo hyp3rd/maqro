@@ -7,6 +7,7 @@ import { dailyReminderEmail } from "@/lib/email/templates";
 import { shouldSendReminder } from "@/lib/local-time";
 import { sendPush } from "@/lib/push/send";
 import { computeStreak } from "@/lib/streaks";
+import { emailsById, listAllAuthUsers } from "@/lib/supabase/admin-users";
 import { getSupabaseSecretConfig } from "@/lib/supabase/env";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -69,18 +70,14 @@ export async function GET(req: Request): Promise<NextResponse> {
     return NextResponse.json({ sent: 0, skipped: 0, errors: 0 });
   }
 
-  // 2. Email map (single listUsers call; paginate if we ever cross
-  //    the 1000-user default page size).
-  const { data: usersData, error: usersErr } =
-    await admin.auth.admin.listUsers();
+  // 2. Email map over every auth user (paged — a bare listUsers()
+  //    returns only the first 50).
+  const { users, error: usersErr } = await listAllAuthUsers(admin.auth.admin);
   if (usersErr) {
     console.error("[cron/daily-reminder] listUsers failed:", usersErr);
     return NextResponse.json({ error: usersErr.message }, { status: 500 });
   }
-  const emailById = new Map<string, string>();
-  for (const u of usersData?.users ?? []) {
-    if (u.email) emailById.set(u.id, u.email);
-  }
+  const emailById = emailsById(users);
 
   const appUrl = getAppUrl();
   const now = new Date();

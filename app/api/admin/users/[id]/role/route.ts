@@ -15,9 +15,15 @@ const BodySchema = z.object({ role: z.enum(["user", "admin"]) });
  *      prevent the single-admin-bricks-the-app foot-gun. To
  *      remove the last admin, an operator must edit the DB
  *      directly.
- *    - Every call writes an audit log row.
- *    - Invalid roles return 400 (CHECK constraint would also
- *      reject, but the explicit 400 reads better). */
+ *    - Every successful change writes an audit log row.
+ *    - Invalid roles and malformed user ids return 400 (CHECK
+ *      constraint would also reject, but the explicit 400 reads
+ *      better).
+ *    - The role lives on the user's profiles row (created by the
+ *      account's first profile push). The change is an UPDATE that
+ *      must match that row; no row → 404, nothing audited. (A
+ *      payload-less upsert can't create the row anyway: payload is
+ *      NOT NULL, and Postgres checks that before ON CONFLICT.) */
 export async function PATCH(
   req: Request,
   ctx: { params: Promise<{ id: string }> },
@@ -25,6 +31,15 @@ export async function PATCH(
   const guard = await requireAdmin();
   if (!guard.ok) return guard.response;
   const { id: targetUserId } = await ctx.params;
+  // Same shape check as the sibling admin user routes: Supabase user ids
+  // are UUIDs, and a malformed one would otherwise surface as a 500.
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      targetUserId,
+    )
+  ) {
+    return NextResponse.json({ error: "Invalid user id." }, { status: 400 });
+  }
 
   const parsed = await parseBody(req, BodySchema);
   if (!parsed.ok) return parsed.response;
@@ -48,24 +63,30 @@ export async function PATCH(
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  // Read the prior role so the audit row captures the diff. We
-  // don't fail if there's no profile row - the upsert below
-  // creates it.
-  const { data: existing } = await admin
+  // Read the prior role so the audit row captures the diff.
+  const { data: existing, error: readError } = await admin
     .from("profiles")
     .select("role")
     .eq("user_id", targetUserId)
     .maybeSingle();
+  if (readError) {
+    return NextResponse.json({ error: readError.message }, { status: 500 });
+  }
   const previousRole = (existing?.role as string | undefined) ?? "user";
 
-  const { error: updateError } = await admin
+  const { data: updated, error: updateError } = await admin
     .from("profiles")
-    .upsert(
-      { user_id: targetUserId, role: newRole },
-      { onConflict: "user_id" },
-    );
+    .update({ role: newRole })
+    .eq("user_id", targetUserId)
+    .select("user_id");
   if (updateError) {
     return NextResponse.json({ error: updateError.message }, { status: 500 });
+  }
+  if (!updated || updated.length === 0) {
+    return NextResponse.json(
+      { error: "User has no profile." },
+      { status: 404 },
+    );
   }
 
   await writeAuditLog({

@@ -11,20 +11,6 @@
  *  the old `user_devices` rows linger until disconnected manually. */
 export const DEVICE_ID_KEY = "maqro:device-id:v1";
 
-/** Cookie name mirror of `DEVICE_ID_KEY`. The proxy and API
- *  gates can't read localStorage — only cookies travel with
- *  requests — so we mirror the same UUID into a `Lax`, non-HttpOnly
- *  cookie. Not HttpOnly because: (a) the value is also in
- *  localStorage anyway, so making the cookie unreadable doesn't
- *  raise the bar against XSS, and (b) being readable makes
- *  reconciliation between the two stores debuggable. The cookie's
- *  *meaning* is just "which UUID identifies this browser"; the
- *  authoritative trust grant lives in `mfa_trusted_devices` and is
- *  bound to the user_id, so a stolen cookie alone grants nothing
- *  beyond the device identity. */
-export const DEVICE_ID_COOKIE = "maqro_device_id";
-const DEVICE_ID_COOKIE_MAX_AGE = 60 * 60 * 24 * 90; // 90 days
-
 /** UUID-v4 shape (8-4-4-4-12 hex chars). We re-validate retrieved
  *  values against this so a corrupted / hand-edited localStorage
  *  entry regenerates cleanly instead of silently sending junk to
@@ -40,14 +26,6 @@ const UUID_RE =
  *  of this module). Callers treat null as "skip device registration"
  *  the same way they treat a missing session_id.
  *
- *  Side effect: when running in the browser, mirrors the UUID into
- *  the `DEVICE_ID_COOKIE` so the proxy / API gates can read it on
- *  the next navigation. The cookie write is best-effort — if it
- *  fails (very locked-down embedded webviews), the localStorage
- *  value still works for the client-side UI; the trusted-device
- *  bypass just won't activate server-side until the cookie can be
- *  set. Acceptable degraded mode.
- *
  *  Incognito caveat: localStorage in private/incognito windows is
  *  scoped to the window's lifetime, so each incognito session gets
  *  a fresh ID - correct, since incognito is meant to be ephemeral.
@@ -61,45 +39,12 @@ export function getOrCreateDeviceId(): string | null {
   if (typeof window === "undefined") return null;
   try {
     const existing = window.localStorage.getItem(DEVICE_ID_KEY);
-    if (existing && UUID_RE.test(existing)) {
-      writeDeviceIdCookie(existing);
-      return existing;
-    }
+    if (existing && UUID_RE.test(existing)) return existing;
     const fresh = crypto.randomUUID();
     window.localStorage.setItem(DEVICE_ID_KEY, fresh);
-    writeDeviceIdCookie(fresh);
     return fresh;
   } catch {
     return null;
-  }
-}
-
-/** Validate + return a deviceId pulled from a cookie source. Used
- *  by the server-side trust check in `proxy.ts` and `assertAal2`.
- *  Returns null on any shape problem so a tampered cookie value
- *  collapses to "no trust" rather than a stack trace. */
-export function validateDeviceId(value: string | undefined): string | null {
-  if (!value) return null;
-  return UUID_RE.test(value) ? value : null;
-}
-
-function writeDeviceIdCookie(id: string): void {
-  if (typeof document === "undefined") return;
-  try {
-    // Built up piecemeal so it's obvious what each attribute does.
-    // `Secure` only sticks on https origins; localhost http works
-    // because browsers allow Secure-flagged cookies on localhost.
-    const attrs = [
-      `${DEVICE_ID_COOKIE}=${id}`,
-      "Path=/",
-      `Max-Age=${DEVICE_ID_COOKIE_MAX_AGE}`,
-      "SameSite=Lax",
-      ...(window.location.protocol === "https:" ? ["Secure"] : []),
-    ];
-    document.cookie = attrs.join("; ");
-  } catch {
-    // Best-effort. Localstorage value still works for client UI;
-    // server-side trusted-device bypass just won't activate.
   }
 }
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { UnsyncedChangesDialog } from "@/components/auth/UnsyncedChangesDialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { SkeletonSettingRows } from "@/components/ui/skeleton";
 import { Slider } from "@/components/ui/slider";
 import { useNotificationPrefs } from "@/hooks/use-notification-prefs";
+import { useSafeSignOut } from "@/hooks/use-safe-sign-out";
 import { useUser } from "@/hooks/use-user";
 import { isLikelyEmail } from "@/lib/account/backup-email";
 import { clientFetch } from "@/lib/auth/client-fetch";
@@ -81,7 +83,6 @@ import { PassphraseDialog } from "./PassphraseDialog";
 import { SecurityIntro } from "./SecurityIntro";
 import { SecurityOverview } from "./SecurityOverview";
 import { SignedInDevicesSection } from "./SignedInDevicesSection";
-import { TrustedDevicesSection } from "./TrustedDevicesSection";
 import { SecurityStatusProvider } from "./security-status";
 
 function formatDate(iso: string | undefined): string {
@@ -230,7 +231,9 @@ export function SettingsView({
     return parsed;
   }
 
-  async function signOut() {
+  // Sync first and confirm before discarding anything unsynced (see
+  // useSafeSignOut); the teardown below only runs once that's settled.
+  const safeSignOut = useSafeSignOut(async () => {
     const supabase = getSupabaseBrowser();
     if (!supabase) return;
     // Best-effort: drop this device from the user_devices list before
@@ -242,7 +245,11 @@ export function SettingsView({
       await unregisterCurrentDevice(supabase, user.id).catch(() => {});
     }
     await signOutAndClearLocal(supabase);
-  }
+    // Hard navigation, like reset / delete-account: drops every in-memory
+    // copy of this account's data (the displayed day, the profile form) so
+    // nothing is written back into the freshly wiped store.
+    window.location.assign("/login");
+  });
 
   /** Build a fresh export bundle, emitting progress events as each store
    *  is read. Returns the bundle so the two save paths (disk, cloud) can
@@ -421,19 +428,25 @@ export function SettingsView({
               />
               <div className="flex items-center justify-between border-t border-border/60 pt-4">
                 <div className="text-xs text-muted-foreground">
-                  Sign out clears the session on this device. Your data stays
-                  saved on this device and re-syncs when you sign back in.
+                  Sign out syncs your changes, then removes your data from this
+                  device. It downloads again when you sign back in.
                 </div>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={signOut}
+                  onClick={() => void safeSignOut.requestSignOut()}
+                  disabled={safeSignOut.busy}
                   className="h-8 gap-1.5"
                 >
-                  <LogOut className="h-3.5 w-3.5" />
+                  {safeSignOut.busy ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <LogOut className="h-3.5 w-3.5" />
+                  )}
                   Sign out
                 </Button>
+                <UnsyncedChangesDialog {...safeSignOut.dialog} />
               </div>
             </div>
           ) : (
@@ -471,7 +484,6 @@ export function SettingsView({
           <MfaSection signedIn={Boolean(user)} />
           <PasskeysSection signedIn={Boolean(user)} />
           <BackupEmailSection signedIn={Boolean(user)} />
-          <TrustedDevicesSection signedIn={Boolean(user)} />
           <ConnectedAccountsSection signedIn={Boolean(user)} />
           <SignedInDevicesSection signedIn={Boolean(user)} />
         </SecurityStatusProvider>

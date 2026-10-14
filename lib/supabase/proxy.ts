@@ -3,7 +3,6 @@ import {
   isMfaProtectedPath,
   requiresMfaUpgrade,
 } from "@/lib/auth/mfa-required";
-import { isCurrentDeviceTrusted } from "@/lib/auth/trusted-device";
 import { type NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { SUPABASE_CONFIG } from "./env";
@@ -72,16 +71,9 @@ export async function updateSession(
   // public endpoints (/api/share/*, /api/off-*, /api/health, etc.)
   // for users mid-MFA.
   if (user && isMfaProtectedPath(request.nextUrl.pathname)) {
-    // Trusted-device escape hatch — if the user has previously
-    // checked "Trust this device for 7 days" and the grant hasn't
-    // expired, requiresMfaUpgrade short-circuits to needsUpgrade=
-    // false before triggering the redirect. The cookie source is
-    // the deviceId mirror written by `getOrCreateDeviceId`; the DB
-    // row in `mfa_trusted_devices` is the authoritative grant.
-    const decision = await requiresMfaUpgrade(supabase, {
-      isTrustedDevice: () =>
-        isCurrentDeviceTrusted(supabase, user.id, request.cookies),
-    });
+    // `user` is the GoTrue `/user` response, so enrollment is decided
+    // from server data, not from the user copy inside the auth cookie.
+    const decision = await requiresMfaUpgrade(supabase, user);
     if (decision.needsUpgrade) {
       const next = request.nextUrl.pathname + request.nextUrl.search;
       const redirect = new URL("/login", request.url);

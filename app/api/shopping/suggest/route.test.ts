@@ -19,21 +19,8 @@ vi.mock("@anthropic-ai/sdk", () => {
 
 vi.mock("@/lib/ai/env", () => ({ getAnthropicConfig: mockGetAnthropicConfig }));
 vi.mock("@/lib/billing/usage", () => ({ checkAndIncrementAiUsage: mockUsage }));
-vi.mock("@/lib/auth/trusted-device", () => ({
-  trustedDeviceOption: vi.fn(async () => ({})),
-}));
 vi.mock("@/lib/supabase/server", () => ({
-  getSupabaseServer: vi.fn(async () => ({
-    auth: {
-      getUser: mockGetUser,
-      mfa: {
-        getAuthenticatorAssuranceLevel: vi.fn(async () => ({
-          data: { currentLevel: "aal1", nextLevel: "aal1" },
-        })),
-        listFactors: vi.fn(async () => ({ data: { totp: [], all: [] } })),
-      },
-    },
-  })),
+  getSupabaseServer: vi.fn(async () => ({ auth: { getUser: mockGetUser } })),
 }));
 
 function makeRequest(body: unknown): Request {

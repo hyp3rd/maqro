@@ -15,7 +15,6 @@ import { useWebAuthnSupported } from "@/hooks/use-webauthn-supported";
 import { isLikelyEmail } from "@/lib/account/backup-email";
 import { getVerifiedTotpFactorId } from "@/lib/auth/mfa-factors";
 import { humanizePasskeyError } from "@/lib/auth/passkey-errors";
-import { getOrCreateDeviceId } from "@/lib/devices/identity";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/env";
 import { Suspense, useEffect, useState } from "react";
@@ -359,9 +358,9 @@ function LoginPageInner() {
       // OTP succeeded → session exists at AAL1. If the user
       // enrolled a TOTP factor we need to promote the session to
       // AAL2 before letting them past /login. The check is cheap
-      // (a single GET) and falls back to "no MFA" silently on any
-      // error so a Supabase outage on this endpoint doesn't lock
-      // a non-MFA user out.
+      // (a single GET). On an error we navigate anyway: this is only
+      // the UX shortcut — the proxy re-decides server-side and bounces
+      // an enrolled user back here with `?mfa=required`.
       try {
         const verifiedTotpId = await getVerifiedTotpFactorId(supabase);
         if (verifiedTotpId) {
@@ -371,39 +370,6 @@ function LoginPageInner() {
             aalResp.data?.currentLevel === "aal1" &&
             aalResp.data?.nextLevel === "aal2"
           ) {
-            // Trusted-device bypass. If the user previously
-            // checked "Trust this device for 7 days" on this
-            // browser and that window hasn't expired, skip the
-            // MFA challenge and proceed with the AAL1 session.
-            // Default-deny on any error (the server returns
-            // `trusted: false` for outages too) - we never want
-            // a failed trust check to AUTO-skip MFA.
-            const deviceId = getOrCreateDeviceId();
-            if (deviceId) {
-              try {
-                const checkRes = await fetch(
-                  "/api/auth/mfa/trusted-devices/check",
-                  {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ deviceId }),
-                  },
-                );
-                if (checkRes.ok) {
-                  const checkBody = (await checkRes.json()) as {
-                    trusted?: boolean;
-                  };
-                  if (checkBody.trusted) {
-                    window.location.assign(next);
-                    return;
-                  }
-                }
-              } catch {
-                // Network error on the trust check - fall through
-                // to the MFA stage. Better to ask for the second
-                // factor than to silently skip it.
-              }
-            }
             setStage({ kind: "mfa", factorId: verifiedTotpId });
             setCode("");
             setBusy(false);
@@ -462,24 +428,7 @@ function LoginPageInner() {
           {stage.kind === "mfa" ? (
             <LoginMfaStage
               factorId={stage.factorId}
-              onVerified={({ trustDevice }) => {
-                // Session is now AAL2. If the user opted in, stash a sentinel in
-                // sessionStorage so `SyncManager` records the trust on the NEXT
-                // page after navigation. Doing the POST from here races the AAL2
-                // cookie write — Supabase chunks long session cookies and the
-                // chunks haven't fully propagated to the browser jar when an
-                // immediate same-origin fetch fires, so proxy.ts sees half-
-                // written chunks → "chunked cookie decoded to invalid JSON" → 401.
-                // Deferring one navigation lets cookies settle; sessionStorage is
-                // per-tab and survives window.location.assign.
-                if (trustDevice) {
-                  try {
-                    window.sessionStorage.setItem("maqro:pending-trust", "1");
-                  } catch {
-                    // Restricted storage — the user just won't get the trust
-                    // recorded this cycle. They can opt in again on next sign-in.
-                  }
-                }
+              onVerified={() => {
                 window.location.assign(next);
               }}
               onUseDifferentEmail={() => {

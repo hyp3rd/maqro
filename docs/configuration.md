@@ -164,6 +164,17 @@ Existing users at launch are auto-grandfathered to Pro for 12 months
    Billing → Customer portal): allow cancel, update payment method,
    download invoices. The "Manage subscription" button in Settings →
    Billing redirects users here.
+
+   Also enable **Customers can switch plans** and add both products
+   with all four prices (AI Plus and Pro, monthly and yearly), with
+   proration on. Upgrades for existing subscribers (e.g. "Upgrade to
+   Pro" from AI Plus) go through `/api/billing/change-plan`, which
+   opens a portal `subscription_update_confirm` deep link for the
+   new price on the existing subscription; Stripe rejects that link
+   for any price the portal configuration doesn't list, and the
+   upgrade fails with a 502. Checkout refuses a customer who already
+   has a live subscription, so this is the only plan-change path.
+
 1. **Enable Stripe Tax** (Dashboard → More → Tax → Get started) if
    you're selling to the EU / UK / any jurisdiction that requires
    VAT / GST / sales-tax collection. The Checkout Session is

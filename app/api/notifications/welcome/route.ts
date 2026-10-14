@@ -1,6 +1,5 @@
 import { getAppUrl } from "@/lib/app-url";
 import { assertAal2 } from "@/lib/auth/mfa-required";
-import { trustedDeviceOption } from "@/lib/auth/trusted-device";
 import { sendEmail } from "@/lib/email/resend";
 import { welcomeEmail } from "@/lib/email/templates";
 import { checkAuthRateLimit, ipFromRequest } from "@/lib/rate-limit";
@@ -36,10 +35,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (!user) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
-  const gate = await assertAal2(
-    supabase,
-    await trustedDeviceOption(supabase, user.id),
-  );
+  const gate = await assertAal2(supabase, user);
   if (!gate.ok) return gate.response;
   if (!user.email) {
     return NextResponse.json(

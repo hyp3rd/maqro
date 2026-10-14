@@ -22,7 +22,7 @@ const {
   mockGetStripe,
   mockGetSupabaseSecretConfig,
   mockUpdateUserById,
-  mockProfileUpdateEq,
+  mockProfileUpdateSelect,
   mockProfileSelectMaybeSingle,
   mockSubsList,
   mockSubsUpdate,
@@ -42,10 +42,14 @@ const {
       } | null,
   ),
   mockUpdateUserById: vi.fn(),
-  // Cast widens so the error-branch test can override with
-  // `{ error: { message } }`.
-  mockProfileUpdateEq: vi.fn(
-    async () => ({ error: null }) as { error: { message: string } | null },
+  // trace/untrace: update(...).eq(...).select("user_id"). Cast widens so
+  // the error / no-row tests can override the default one-row result.
+  mockProfileUpdateSelect: vi.fn(
+    async () =>
+      ({ data: [{ user_id: "row" }], error: null }) as {
+        data: unknown[] | null;
+        error: { message: string } | null;
+      },
   ),
   mockProfileSelectMaybeSingle: vi.fn(),
   mockSubsList: vi.fn(),
@@ -61,9 +65,11 @@ const {
   // Mocking the cascade helper here keeps the route test scoped
   // to dispatch + audit-log behaviour. The helper itself has its
   // own coverage in lib/user-deletion.test.ts. Widened return so
-  // the error-branch test can override with `{ ok: false, error }`.
+  // the error-branch test can override with `{ ok: false, status, error }`.
   mockCascadeDelete: vi.fn(
-    async () => ({ ok: true }) as { ok: true } | { ok: false; error: string },
+    async () =>
+      ({ ok: true }) as
+        { ok: true } | { ok: false; status: number; error: string },
   ),
 }));
 
@@ -74,7 +80,10 @@ vi.mock("@/lib/rbac", () => ({
 vi.mock("@/lib/error-reporter", () => ({
   reportServerError: mockReportServerError,
 }));
-vi.mock("@/lib/billing/stripe", () => ({ getStripe: mockGetStripe }));
+vi.mock("@/lib/billing/stripe", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/billing/stripe")>()),
+  getStripe: mockGetStripe,
+}));
 vi.mock("@/lib/supabase/env", () => ({
   getSupabaseSecretConfig: mockGetSupabaseSecretConfig,
 }));
@@ -90,7 +99,7 @@ vi.mock("@supabase/supabase-js", () => ({
         eq: () => ({ maybeSingle: mockProfileSelectMaybeSingle }),
       }),
       // profile update chain (for trace/untrace)
-      update: () => ({ eq: mockProfileUpdateEq }),
+      update: () => ({ eq: () => ({ select: mockProfileUpdateSelect }) }),
       // comp_grants upsert (grant_comp) + delete().eq() (revoke_comp)
       upsert: mockCompUpsert,
       delete: () => ({ eq: mockCompDeleteEq }),
@@ -197,7 +206,7 @@ describe("POST /api/admin/users/[id]/action — guards", () => {
       params: Promise.resolve({ id: VALID_ID }),
     });
     expect(res.status).toBe(400);
-    expect(mockProfileUpdateEq).not.toHaveBeenCalled();
+    expect(mockProfileUpdateSelect).not.toHaveBeenCalled();
   });
 });
 
@@ -287,6 +296,18 @@ describe("POST /api/admin/users/[id]/action — happy paths", () => {
     expect(body.traced).toBe(true);
   });
 
+  it("trace returns 404 without auditing when the user has no profile row", async () => {
+    // A 0-row UPDATE is not an error; reporting success would leave an
+    // audit row saying tracing is on while nothing is ever captured.
+    mockProfileUpdateSelect.mockResolvedValueOnce({ data: [], error: null });
+    const { POST } = await loadRoute();
+    const res = await POST(req({ action: "trace", reason: "sync issue" }), {
+      params: Promise.resolve({ id: VALID_ID }),
+    });
+    expect(res.status).toBe(404);
+    expect(mockWriteAuditLog).not.toHaveBeenCalled();
+  });
+
   it("untrace flips profiles.traced=false (no reason required)", async () => {
     const { POST } = await loadRoute();
     const res = await POST(req({ action: "untrace" }), {
@@ -348,6 +369,23 @@ describe("POST /api/admin/users/[id]/action — cancel_subscription error branch
       params: Promise.resolve({ id: VALID_ID }),
     });
     expect(res.status).toBe(404);
+  });
+
+  it("cancels the live subscription, not a newer ended one", async () => {
+    mockSubsList.mockResolvedValueOnce({
+      data: [
+        { id: "sub_new", status: "canceled", cancel_at_period_end: false },
+        { id: "sub_live", status: "active", cancel_at_period_end: false },
+      ],
+    });
+    const { POST } = await loadRoute();
+    const res = await POST(req({ action: "cancel_subscription" }), {
+      params: Promise.resolve({ id: VALID_ID }),
+    });
+    expect(res.status).toBe(200);
+    expect(mockSubsUpdate).toHaveBeenCalledWith("sub_live", {
+      cancel_at_period_end: true,
+    });
   });
 
   it("returns 409 when the subscription is already cancelled", async () => {
@@ -413,9 +451,24 @@ describe("POST /api/admin/users/[id]/action — delete_user", () => {
     );
   });
 
+  it("passes on the cascade's refusal when Stripe can't cancel the subscription", async () => {
+    mockCascadeDelete.mockResolvedValueOnce({
+      ok: false,
+      status: 502,
+      error: "the account was not deleted",
+    });
+    const { POST } = await loadRoute();
+    const res = await POST(
+      req({ action: "delete_user", reason: "GDPR erasure ticket #99" }),
+      { params: Promise.resolve({ id: VALID_ID }) },
+    );
+    expect(res.status).toBe(502);
+  });
+
   it("returns 500 + preserves audit row when the cascade fails", async () => {
     mockCascadeDelete.mockResolvedValueOnce({
       ok: false,
+      status: 500,
       error: "auth.admin.deleteUser denied",
     });
     const { POST } = await loadRoute();
@@ -553,7 +606,8 @@ describe("POST /api/admin/users/[id]/action — Supabase error propagation", () 
   });
 
   it("returns 500 + reports when profile update fails on trace", async () => {
-    mockProfileUpdateEq.mockResolvedValueOnce({
+    mockProfileUpdateSelect.mockResolvedValueOnce({
+      data: null,
       error: { message: "RLS denied" },
     });
     const { POST } = await loadRoute();

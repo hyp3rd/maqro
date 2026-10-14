@@ -35,6 +35,8 @@ const KEY_COLUMNS: Record<string, string[]> = {
   body_measurements: ["user_id", "date"],
   blood_pressure: ["user_id", "date"],
   fast_sessions: ["user_id", "id"],
+  // The id is a shared OSM key; per-user since migration 0077.
+  favorite_stores: ["user_id", "id"],
   micronutrient_profiles: ["user_id", "name_key"],
 };
 
@@ -109,6 +111,26 @@ class FakeSupabase {
         return channel;
       },
       removeChannel: () => Promise.resolve("ok"),
+      // The session the sync engine's second-factor check reads: a user with
+      // no MFA factor at aal1, whom RLS lets through (migration 0079).
+      auth: {
+        mfa: {
+          getAuthenticatorAssuranceLevel: () =>
+            Promise.resolve({
+              data: {
+                currentLevel: "aal1",
+                nextLevel: "aal1",
+                currentAuthenticationMethods: [],
+              },
+              error: null,
+            }),
+        },
+        getUser: () =>
+          Promise.resolve({
+            data: { user: { id: USER_ID, factors: [] } },
+            error: null,
+          }),
+      },
     } as unknown as SupabaseClient;
   }
 }
@@ -1222,6 +1244,116 @@ describe("remote delete reconciliation", () => {
     });
 
     expect(mealNames(await db.getDailyLog(DAY))).toEqual(["eggs"]);
+    handle.unsubscribe();
+  });
+});
+
+// favorite_stores ids are shared OSM keys; since migration 0077 the server
+// key is (user_id, id), so many users can hold the same id, and within one
+// user it is a natural key two devices can create independently.
+describe("favorite_stores is keyed per user", () => {
+  let env: Awaited<ReturnType<typeof setup>>;
+  beforeEach(async () => {
+    env = await setup();
+  });
+
+  const STORE = {
+    id: "node/123",
+    name: "Corner Market",
+    kind: "supermarket",
+    lat: 45.1,
+    lon: 9.2,
+  };
+
+  function storeRow(userId: string, name: string): Row {
+    return {
+      user_id: userId,
+      id: STORE.id,
+      name,
+      kind: STORE.kind,
+      lat: STORE.lat,
+      lon: STORE.lon,
+      address: null,
+      created_at: "2026-05-01T00:00:00.000+00:00",
+    };
+  }
+
+  it("syncs a favourite another user already holds under the same OSM key", async () => {
+    const { db, sync, server, sb } = env;
+    server.seed("favorite_stores", storeRow(OTHER_USER_ID, "their name"));
+    await db.upsertFavoriteStore(STORE);
+
+    const result = await sync.triggerSync(sb, USER_ID);
+
+    expect(result?.conflicts).toEqual([]);
+    expect(result?.pushed.favoriteStores).toBe(1);
+    expect(server.rows("favorite_stores")).toHaveLength(2);
+    expect(
+      server.find("favorite_stores", { user_id: OTHER_USER_ID }),
+    ).toMatchObject({ name: "their name" });
+    const [local] = await db.listFavoriteStores();
+    expect(local && db.isDirtyRecord(local)).toBe(false);
+  });
+
+  it("reports this user's other device holding the same key as a conflict instead of overwriting it", async () => {
+    const { db, sync, server, sb } = env;
+    server.seed("favorite_stores", storeRow(USER_ID, "phone"));
+    await db.upsertFavoriteStore({ ...STORE, name: "laptop" });
+
+    const result = await sync.triggerSync(sb, USER_ID);
+
+    expect(result?.conflicts).toEqual([
+      { table: "favorite_stores", key: STORE.id },
+    ]);
+    expect(server.find("favorite_stores", { user_id: USER_ID })).toMatchObject({
+      name: "phone",
+    });
+    expect((await db.listFavoriteStores())[0]?.name).toBe("laptop");
+
+    // "Keep this device's version" adopts the peer's token and replaces it.
+    const resolved = await sync.resolveConflictsKeepingLocal(sb, USER_ID);
+    expect(resolved?.conflicts).toEqual([]);
+    expect(server.rows("favorite_stores")).toHaveLength(1);
+    expect(server.find("favorite_stores", { user_id: USER_ID })).toMatchObject({
+      name: "laptop",
+    });
+  });
+
+  it("realtime: ignores another user's DELETE of the same OSM key", async () => {
+    const { db, realtime, server, sb } = env;
+    await db.applyServerFavoriteStore(
+      { ...STORE, createdAt: 0, updatedAt: 0 },
+      server.nextTimestamp(),
+    );
+    const handle = realtime.startRealtimeSubscription(sb, USER_ID);
+
+    server.emit("favorite_stores", {
+      eventType: "DELETE",
+      new: {},
+      old: { user_id: OTHER_USER_ID, id: STORE.id },
+    });
+    server.emit("favorite_stores", {
+      eventType: "DELETE",
+      new: {},
+      old: { id: STORE.id },
+    });
+    server.emit("favorite_stores", {
+      eventType: "INSERT",
+      new: {
+        ...storeRow(USER_ID, "marker"),
+        id: "way/9",
+        updated_at: server.nextTimestamp(),
+      },
+      old: {},
+    });
+    await vi.waitFor(async () => {
+      expect(await db.listFavoriteStores()).toHaveLength(2);
+    });
+
+    expect((await db.listFavoriteStores()).map((s) => s.id).sort()).toEqual([
+      STORE.id,
+      "way/9",
+    ]);
     handle.unsubscribe();
   });
 });

@@ -53,12 +53,10 @@ export async function POST(): Promise<NextResponse> {
     const reason = userError?.message ?? "Not authenticated.";
     return NextResponse.json({ error: reason }, { status: 401 });
   }
-  // Strict AAL2 gate — irreversible operation. We deliberately
-  // SKIP the trusted-device escape hatch here: a 7-day trust grant
-  // is meant to spare the user a TOTP prompt on routine actions, not
-  // permit account deletion from a temporarily-compromised browser.
-  // The user must present their second factor fresh.
-  const gate = await assertFreshAal2(cookieClient);
+  // Strict AAL2 gate — irreversible operation. An MFA-enrolled user
+  // must hold a session that has proved the second factor before the
+  // account can be deleted.
+  const gate = await assertFreshAal2(cookieClient, user);
   if (!gate.ok) return gate.response;
 
   const secret = getSupabaseSecretConfig();
@@ -86,7 +84,10 @@ export async function POST(): Promise<NextResponse> {
     callerRoute: "/api/delete-account",
   });
   if (!result.ok) {
-    return NextResponse.json({ error: result.error }, { status: 500 });
+    return NextResponse.json(
+      { error: result.error },
+      { status: result.status },
+    );
   }
 
   // Confirmation email. Best-effort, sent AFTER the destructive op

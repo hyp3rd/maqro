@@ -134,8 +134,8 @@ export default async function AdminLayout({
       </header>
       <main className="mx-auto max-w-6xl px-safe-or-5 py-8">{children}</main>
       {/* Global MFA challenge dialog. Admin routes are gated by
-       *  `requireAdmin` → `assertFreshAal2` (no trusted-device
-       *  escape), so any privileged action by an AAL1 admin will
+       *  `requireAdmin` → `assertFreshAal2`, so any privileged
+       *  action by an AAL1 admin will
        *  return a 403 with `kind: "mfa-required"`. Without this
        *  mount the `clientFetch` wrapper has nothing to call and
        *  rejects with "MFA dialog not mounted", surfacing the raw

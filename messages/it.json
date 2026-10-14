@@ -227,6 +227,21 @@
     },
     "actions": { "cancel": "Annulla", "openIssue": "Apri issue su GitHub" }
   },
+  "signOutGuard": {
+    "changes": "{count, plural, =0 {Non è stato possibile verificare che alcune modifiche su questo dispositivo siano sincronizzate con il tuo account.} one {# modifica su questo dispositivo non è ancora sincronizzata con il tuo account.} other {# modifiche su questo dispositivo non sono ancora sincronizzate con il tuo account.}}",
+    "signOut": {
+      "title": "Uscire con modifiche non sincronizzate?",
+      "body": "Uscendo, la copia dei tuoi dati su questo dispositivo viene eliminata e queste modifiche andranno perse. Annulla per restare connesso e sincronizzare quando torni online.",
+      "cancel": "Annulla",
+      "confirm": "Esci comunque"
+    },
+    "accountMismatch": {
+      "title": "Disconnesso: account diverso",
+      "body": "La passkey che hai usato appartiene a un altro account, quindi sei stato disconnesso e la copia dei tuoi dati su questo dispositivo è stata eliminata per tenerla fuori da quell'account.",
+      "discarded": "{count, plural, =0 {Alcune modifiche su questo dispositivo, di cui non è stato possibile verificare la sincronizzazione, sono andate perse.} one {# modifica non ancora sincronizzata con il tuo account originale è andata persa.} other {# modifiche non ancora sincronizzate con il tuo account originale sono andate perse.}}",
+      "acknowledge": "Continua all'accesso"
+    }
+  },
   "aboutPage": {
     "title": "Chi è Maqro",
     "tagline": "Un calcolatore di macro e pianificatore pasti personale che rispetta il tuo tempo e la tua privacy. Open source, niente tracciamento, e i tuoi dati restano sul tuo dispositivo.",

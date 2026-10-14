@@ -1,6 +1,10 @@
 "use client";
 
 import type { Recipe } from "@/components/macro/types";
+import {
+  assertDataApiAssurance,
+  MfaRequiredError,
+} from "@/lib/auth/session-assurance";
 import { signOutAndClearLocal } from "@/lib/auth/sign-out";
 import {
   applyServerBloodPressure,
@@ -233,9 +237,11 @@ function errorMessage(err: unknown): string {
 }
 
 /** Run one isolated sync step. A failure is collected into `errors` and the
- *  run carries on — except an auth failure (expired JWT, revoked session),
- *  which every later request would hit too: that one aborts the run
- *  immediately so `triggerSync` can sign the user out. */
+ *  run carries on — except a failure every later request would hit too,
+ *  which aborts the run immediately: an auth failure (expired JWT, revoked
+ *  session), so `triggerSync` can sign the user out, and a session that
+ *  owes its second factor (`MfaRequiredError`, raised by `pushRow`'s 42501
+ *  re-check), which RLS rejects on every table (migration 0079). */
 async function isolate(
   errors: unknown[],
   step: () => Promise<void>,
@@ -243,7 +249,7 @@ async function isolate(
   try {
     await step();
   } catch (err) {
-    if (isAuthError(err)) throw err;
+    if (isAuthError(err) || err instanceof MfaRequiredError) throw err;
     errors.push(err);
   }
 }
@@ -357,6 +363,11 @@ export async function triggerSync(
   if (getSyncStatus().state === "syncing") return null;
   setSyncing();
   try {
+    // An MFA-enrolled session that hasn't proved its second factor is
+    // rejected by RLS (migration 0079); stop before the first request —
+    // see `assertDataApiAssurance`. Its `MfaRequiredError` is NOT an auth
+    // error below: the session is fine, it just owes a factor.
+    await assertDataApiAssurance(supabase);
     const result = await runInitialSync(supabase, userId);
     settleSyncStatus(result);
     return result;
@@ -391,6 +402,10 @@ export async function resolveConflictsKeepingLocal(
   const reviewed = status.state === "conflict" ? status.rows : [];
   setSyncing();
   try {
+    // Before the rebase reads: under an MFA-pending session RLS filters
+    // them to nothing (migration 0079), which would read as "the server row
+    // is gone" and clear the bases this resolution is meant to adopt.
+    await assertDataApiAssurance(supabase);
     const keysByTable = new Map<string, string[]>();
     for (const { table, key } of reviewed) {
       keysByTable.set(table, [...(keysByTable.get(table) ?? []), key]);
@@ -442,6 +457,9 @@ export async function discardPendingChanges(
   if (getSyncStatus().state === "syncing") return null;
   setSyncing();
   try {
+    // Before the wipe: under an MFA-pending session the refill pull would
+    // come back empty (RLS filters), leaving the device with nothing.
+    await assertDataApiAssurance(supabase);
     // Wipe local first so the pending counter / dirty-row check can't
     // see anything to push. clearAllStores also wipes tombstones so
     // we don't end up server-deleting a row the user changed their
@@ -504,7 +522,8 @@ type PushResult =
 
 /** How a never-synced row is created on the server.
  *  - `"insert"`: a plain INSERT, for rows identified by a NATURAL key (a
- *    date, the user id) that two devices can create independently. An
+ *    date, the user id, a favourite store's OSM key) that two devices can
+ *    create independently. An
  *    existing server row is reported as `duplicate-key` and left alone —
  *    never overwritten.
  *  - `"upsert"`: for rows keyed by a client-minted UUID, where an existing
@@ -543,7 +562,15 @@ async function pushRow<Row extends object>(
       const code = (error as { code?: string }).code;
       // RLS row-owned-by-someone-else (UUID collision across users)
       // surfaces here as 42501. Caller can retry with a fresh UUID.
-      if (code === "42501") return { status: "uuid-collision" };
+      // The restrictive MFA policy (migration 0079) answers an insert from a
+      // session that owes its second factor with the SAME 42501, and
+      // re-minting would then retry forever. Re-check the session first:
+      // `assertDataApiAssurance` throws `MfaRequiredError` (or fails closed)
+      // instead of letting the caller re-mint.
+      if (code === "42501") {
+        await assertDataApiAssurance(supabase);
+        return { status: "uuid-collision" };
+      }
       if (code === "23505" && create === "insert") {
         return { status: "duplicate-key" };
       }
@@ -714,6 +741,10 @@ async function pullProfile(
   if (!data) return;
   const row = data as ProfileRow;
   const profile = profileFromRow(row);
+  // A `{}` placeholder (migration 0074) is "no profile yet": never let it
+  // replace the local profile. A local one stays dirty and the push below
+  // replaces the placeholder row (see `placeholderProfileToken`).
+  if (!profile) return;
   // `applyServerProfile` only writes when the server is strictly newer
   // than what we last saw AND the local copy isn't a dirty, unpushed edit.
   if ((await applyServerProfile(profile, row.updated_at)) === "applied") {
@@ -1529,10 +1560,13 @@ const SYNC_TABLES: readonly SyncTable[] = [
       applyServerFavoriteStore(favoriteStoreFromRow(r), r.updated_at),
     push: {
       toRow: favoriteStoreToRow,
-      pk: (_userId, l) => ({ id: l.id }),
-      create: "upsert",
-      // Favourite PKs are OSM keys (text), not UUIDs — no re-mint path.
-      collision: "conflict",
+      // The id is a shared OSM key (text), so the server key is per user —
+      // (user_id, id), migration 0077. That makes it a natural key two of the
+      // user's devices can create independently, hence INSERT; and with
+      // user_id in the key a 42501 can't be a cross-user collision, so it is
+      // a hard RLS rejection (no `collision`, no re-mint path).
+      pk: (userId, l) => ({ user_id: userId, id: l.id }),
+      create: "insert",
     },
   }),
   defineTable({
