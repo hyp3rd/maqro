@@ -54,7 +54,7 @@ import { AppShell } from "./components/shell/AppShell";
 import type { ViewKey } from "./components/shell/Sidebar";
 import { foodDatabase } from "./data/food-database";
 import { useAiUsage } from "./hooks/use-ai-usage";
-import { useDailyLog } from "./hooks/use-daily-log";
+import { type DayTarget, useDailyLog } from "./hooks/use-daily-log";
 import { useFoodSearch } from "./hooks/use-food-search";
 import { useIsMobile } from "./hooks/use-mobile";
 import { useProfile } from "./hooks/use-profile";
@@ -66,16 +66,18 @@ import type { CoherenceIssue } from "./lib/ai/plan-coherence";
 import { clientFetch } from "./lib/auth/client-fetch";
 import { FEATURES } from "./lib/billing/tiers";
 import {
+  replaceDayIfUnchanged,
+  replaceMealIfUnchanged,
+} from "./lib/daily-log-cas";
+import {
   addCustomFood,
   customToFood,
-  getDailyLog,
   listCustomFoods,
   listDailyLogs,
   listMealSchedules,
   listMicronutrientProfiles,
   listPantryItems,
   listRecipes,
-  saveDailyLog,
   todayKey,
   type MealSchedule,
   type MealTemplate,
@@ -137,6 +139,11 @@ const DEFAULT_MEALS: Meal[] = [
   { id: 3, name: "Dinner", foods: [] },
   { id: 4, name: "Snacks", foods: [] },
 ];
+
+/** Shown when a whole-day plan is dropped because the day changed while the
+ *  request was in flight (see `applyDayPlan`). */
+const STALE_PLAN_MESSAGE =
+  "Your day changed while the plan was being generated, so it wasn't applied. Try again.";
 
 /** Convert a Blob to a bare base64 string (no data: prefix), as
  *  /api/identify-meal expects. Shared by the in-sheet photo flow and
@@ -331,23 +338,18 @@ const MacroCalculator = () => {
   const [explicitDate, setExplicitDate] = useState<string | null>(null);
   const selectedDate = explicitDate ?? today;
 
+  // `day` + `commitToDay` serve the deferred writers (Undo toasts, AI plan
+  // results) that resolve seconds after the render that started them,
+  // possibly after the user navigated to another day or signed out —
+  // setMeals isn't a functional updater, and a bare setMeals would land on
+  // whichever day is displayed at that moment.
   const {
     meals,
     setMeals,
     isHydrated: dayHydrated,
+    day,
+    commitToDay,
   } = useDailyLog(selectedDate, DEFAULT_MEALS);
-  // Latest meals / selected date / hydration for deferred callbacks (the Undo
-  // toasts fire seconds after the removing render, possibly after the user
-  // navigated to another day) — setMeals isn't a functional updater. Synced in
-  // an effect because writing refs during render is disallowed.
-  const mealsRef = useRef(meals);
-  const selectedDateRef = useRef(selectedDate);
-  const dayHydratedRef = useRef(dayHydrated);
-  useEffect(() => {
-    mealsRef.current = meals;
-    selectedDateRef.current = selectedDate;
-    dayHydratedRef.current = dayHydrated;
-  }, [meals, selectedDate, dayHydrated]);
 
   // State for new food being added
   const [newFood, setNewFood] = useState<FoodItem>({
@@ -1402,50 +1404,39 @@ const MacroCalculator = () => {
   /** Shared Undo-restore plumbing. The toast outlives day navigation and meal
    *  ids repeat across days (DEFAULT_MEALS 1–4), so a bare setMeals would land
    *  the foods on whichever day is selected when Undo is tapped — or be
-   *  clobbered mid day-switch by the hook's load effect. While the captured
-   *  day is still displayed AND hydrated, restore in memory (keeps edits the
-   *  500 ms write debounce hasn't flushed); otherwise write straight to that
-   *  date's IDB row — saveDailyLog's data-bus notify re-hydrates the hook if
-   *  the user switches back. Pantry re-draws only after the restore lands. */
+   *  clobbered mid day-switch by the hook's load effect. `commitToDay` routes
+   *  the patch to the captured day (in memory while it is still displayed
+   *  and hydrated, else its IDB row) and drops it if the user signed out in
+   *  between. Pantry re-draws only after the restore lands. */
   const restoreIntoDay = (
-    date: string,
+    target: DayTarget,
     patch: (meals: Meal[]) => Meal[],
     pantryDraws: FoodItem[],
   ) => {
-    const redraw = () => {
-      for (const f of pantryDraws) {
-        if (f.pantrySource) {
-          applyPantryDelta(f.pantrySource.itemId, f.pantrySource.consumedQty);
+    commitToDay(target, patch)
+      .then((applied) => {
+        if (!applied) return;
+        for (const f of pantryDraws) {
+          if (f.pantrySource) {
+            applyPantryDelta(f.pantrySource.itemId, f.pantrySource.consumedQty);
+          }
         }
-      }
-    };
-    if (date === selectedDateRef.current && dayHydratedRef.current) {
-      setMeals(patch(mealsRef.current));
-      redraw();
-      return;
-    }
-    void (async () => {
-      try {
-        const log = await getDailyLog(date);
-        await saveDailyLog(date, patch(log?.meals ?? DEFAULT_MEALS));
-        bumpPending();
-        redraw();
-      } catch (err) {
+      })
+      .catch((err: unknown) => {
         reportStorageError(err);
         toast.error("Couldn't undo. Try again.");
-      }
-    })();
+      });
   };
 
   /** Re-add every food cleared from a meal and re-draw their pantry links —
    *  the Undo path for `clearMeal`. */
   const restoreClearedMeal = (
-    date: string,
+    target: DayTarget,
     mealId: number,
     foods: FoodItem[],
   ) => {
     restoreIntoDay(
-      date,
+      target,
       (ms) =>
         ms.map((m) =>
           m.id === mealId ? { ...m, foods: [...m.foods, ...foods] } : m,
@@ -1471,7 +1462,7 @@ const MacroCalculator = () => {
     toast(`Cleared ${meal.name}`, {
       action: {
         label: "Undo",
-        onClick: () => restoreClearedMeal(selectedDate, mealId, cleared),
+        onClick: () => restoreClearedMeal(day, mealId, cleared),
       },
     });
   };
@@ -1479,13 +1470,13 @@ const MacroCalculator = () => {
   /** Re-insert an undone food at its original position (clamped) on the day
    *  it was removed from — the Undo path for `removeFood`. */
   const restoreRemovedFood = (
-    date: string,
+    target: DayTarget,
     mealId: number,
     food: FoodItem,
     index: number,
   ) => {
     restoreIntoDay(
-      date,
+      target,
       (ms) =>
         ms.map((m) => {
           if (m.id !== mealId) return m;
@@ -1525,7 +1516,7 @@ const MacroCalculator = () => {
     toast(`Removed ${removed.name}`, {
       action: {
         label: "Undo",
-        onClick: () => restoreRemovedFood(selectedDate, mealId, removed, index),
+        onClick: () => restoreRemovedFood(day, mealId, removed, index),
       },
     });
   };
@@ -1821,11 +1812,37 @@ const MacroCalculator = () => {
     cancelReplacing();
   };
 
+  /** Commit a whole-day plan computed from `baseMeals` onto `forDay` — only
+   *  if that day still holds exactly `baseMeals`. The AI request takes
+   *  seconds; in that window the user can log a food or switch days, and a
+   *  plan built from the click-time snapshot must never overwrite those
+   *  edits or land on another day's log. Pantry deltas are netted against
+   *  the verified day and the pantry as it is now. Resolves `false` when the
+   *  plan was dropped as stale. */
+  const applyDayPlan = async (
+    forDay: DayTarget,
+    baseMeals: Meal[],
+    plan: Meal[],
+  ): Promise<boolean> => {
+    const pantry = await listPantryItems();
+    let netByItem = new Map<string, number>();
+    const applied = await commitToDay(forDay, (latest) => {
+      const next = replaceDayIfUnchanged(latest, baseMeals, plan);
+      if (next) netByItem = replanPantryDeltas(latest, next, pantry);
+      return next;
+    });
+    if (applied) for (const [id, net] of netByItem) applyPantryDelta(id, net);
+    return applied;
+  };
+
   // Generate a full day meal plan that hits the daily macro targets.
   // Try the AI route first (when configured + user signed in) for more
   // coherent food combinations; fall back to the deterministic 3×3
   // Cramer-based planner on any failure path - see lib/meal-planner.ts.
   const generateMealPlan = async () => {
+    // Pin the day + meals the plan is computed from (see applyDayPlan).
+    const forDay = day;
+    const baseMeals = meals;
     setIsGeneratingMealPlan(true);
     setCoherenceIssues([]);
     setMealPlanMessage("Generating your personalized meal plan...");
@@ -1858,7 +1875,7 @@ const MacroCalculator = () => {
       const ai = await requestAiMealPlan({
         targets: daily,
         dietPreference: personalInfo.dietPreference,
-        mealNames: meals.map((m) => m.name),
+        mealNames: baseMeals.map((m) => m.name),
         customFoods,
         cuisinePreferences: personalInfo.cuisinePreferences ?? [],
         allergies: personalInfo.allergies ?? [],
@@ -1874,9 +1891,11 @@ const MacroCalculator = () => {
         // recipe, so editing or removing an auto-filled food restores
         // its share, and replacing a logged plan doesn't leak its old
         // draws.
-        const netByItem = replanPantryDeltas(meals, ai.meals, pantryItems);
-        setMeals(ai.meals);
-        for (const [id, net] of netByItem) applyPantryDelta(id, net);
+        if (!(await applyDayPlan(forDay, baseMeals, ai.meals))) {
+          setMealPlanMessage(STALE_PLAN_MESSAGE);
+          setTimeout(() => setMealPlanMessage(""), 6000);
+          return;
+        }
         setCoherenceIssues(ai.coherenceIssues ?? []);
         const summary = summarisePlan(ai.meals, daily);
         const fmt = (n: number) => `${Math.round(n)}%`;
@@ -1911,15 +1930,17 @@ const MacroCalculator = () => {
       // Yield once so the spinner paints before the synchronous solve.
       await new Promise((resolve) => setTimeout(resolve, 50));
 
-      const planned = planDay(meals, foodDatabase, daily, {
+      const planned = planDay(baseMeals, foodDatabase, daily, {
         customFoods,
         dietPreference: personalInfo.dietPreference,
       });
       const summary = summarisePlan(planned, daily);
 
-      const fallbackNet = replanPantryDeltas(meals, planned, pantryItems);
-      setMeals(planned);
-      for (const [id, net] of fallbackNet) applyPantryDelta(id, net);
+      if (!(await applyDayPlan(forDay, baseMeals, planned))) {
+        setMealPlanMessage(STALE_PLAN_MESSAGE);
+        setTimeout(() => setMealPlanMessage(""), 6000);
+        return;
+      }
 
       const fmt = (n: number) => `${Math.round(n)}%`;
       // Lead the message with the *reason* AI was skipped - silent
@@ -1953,6 +1974,9 @@ const MacroCalculator = () => {
    *  error. */
   const handleRefineMealPlan = async (refinement: string) => {
     if (isGeneratingMealPlan) return;
+    // Pin the day + meals being refined (see applyDayPlan).
+    const forDay = day;
+    const baseMeals = meals;
     setIsGeneratingMealPlan(true);
     setCoherenceIssues([]);
     setMealPlanMessage("Refining your meal plan…");
@@ -1975,21 +1999,23 @@ const MacroCalculator = () => {
       const ai = await requestAiMealPlan({
         targets: daily,
         dietPreference: personalInfo.dietPreference,
-        mealNames: meals.map((m) => m.name),
+        mealNames: baseMeals.map((m) => m.name),
         customFoods,
         cuisinePreferences: personalInfo.cuisinePreferences ?? [],
         allergies: personalInfo.allergies ?? [],
         dislikedFoods: personalInfo.dislikedFoods ?? [],
         refinement,
-        previousMeals: meals,
+        previousMeals: baseMeals,
         recentlyEatenFoods,
         pantryItems: aiPantryBias,
         market: getMarket(),
       });
       if (ai.kind === "ok") {
-        const netByItem = replanPantryDeltas(meals, ai.meals, pantryItems);
-        setMeals(ai.meals);
-        for (const [id, net] of netByItem) applyPantryDelta(id, net);
+        if (!(await applyDayPlan(forDay, baseMeals, ai.meals))) {
+          setMealPlanMessage(STALE_PLAN_MESSAGE);
+          setTimeout(() => setMealPlanMessage(""), 6000);
+          return;
+        }
         setCoherenceIssues(ai.coherenceIssues ?? []);
         const summary = summarisePlan(ai.meals, daily);
         const fmt = (n: number) => `${Math.round(n)}%`;
@@ -2037,7 +2063,11 @@ const MacroCalculator = () => {
    *  something culinarily clashing with what's around it. */
   const handleRegenerateMeal = async (mealId: number) => {
     if (isGeneratingMealPlan) return;
-    const target = meals.find((m) => m.id === mealId);
+    // Pin the day + slot being regenerated: the result replaces ONLY that
+    // slot, on THAT day, and only if the slot is still what it was built from.
+    const forDay = day;
+    const baseMeals = meals;
+    const target = baseMeals.find((m) => m.id === mealId);
     if (!target) return;
     setIsGeneratingMealPlan(true);
     setGeneratingMealId(mealId);
@@ -2066,12 +2096,12 @@ const MacroCalculator = () => {
       const ai = await requestAiMealPlan({
         targets: daily,
         dietPreference: personalInfo.dietPreference,
-        mealNames: meals.map((m) => m.name),
+        mealNames: baseMeals.map((m) => m.name),
         customFoods,
         cuisinePreferences: personalInfo.cuisinePreferences ?? [],
         allergies: personalInfo.allergies ?? [],
         dislikedFoods: personalInfo.dislikedFoods ?? [],
-        previousMeals: meals,
+        previousMeals: baseMeals,
         targetMealName: target.name,
         recentlyEatenFoods,
         pantryItems: aiPantryBias,
@@ -2096,12 +2126,25 @@ const MacroCalculator = () => {
             name: target.name,
             foods: replacement.foods,
           };
-          const netByItem = replanPantryDeltas(
-            [target],
-            [newSlot],
-            pantryItems,
-          );
-          setMeals(meals.map((m) => (m.id === target.id ? newSlot : m)));
+          // Applied against the day's LATEST meals, so edits to other
+          // slots made while the request was in flight survive; dropped if
+          // this slot itself changed meanwhile.
+          const pantry = await listPantryItems();
+          let netByItem = new Map<string, number>();
+          const applied = await commitToDay(forDay, (latest) => {
+            const next = replaceMealIfUnchanged(latest, target, newSlot);
+            if (next) {
+              netByItem = replanPantryDeltas([target], [newSlot], pantry);
+            }
+            return next;
+          });
+          if (!applied) {
+            setMealPlanMessage(
+              `${target.name} changed while it was being generated, so the new one wasn't applied. Try again.`,
+            );
+            setTimeout(() => setMealPlanMessage(""), 6000);
+            return;
+          }
           for (const [id, net] of netByItem) applyPantryDelta(id, net);
           // The route skips coherence validation on single-meal mode
           // (low-day-protein and friends would always fire on a single

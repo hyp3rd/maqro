@@ -1265,6 +1265,10 @@ async function pullProfile(
   if (!data) return;
   const row = data as ProfileRow;
   const profile = profileFromRow(row);
+  // A `{}` placeholder (migration 0074) is "no profile yet": never let it
+  // replace the local profile. A local one stays dirty and the push below
+  // upserts it onto the placeholder row.
+  if (!profile) return;
   // Only overwrite locally if the server is strictly newer than what
   // we last saw. Otherwise leave the local copy alone — it may be a
   // dirty local edit that hasn't been pushed yet.

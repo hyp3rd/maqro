@@ -5,14 +5,36 @@ import {
   forceCloseMfaChallenge,
   requestMfaChallenge,
 } from "@/lib/auth/mfa-challenge-bus";
+import {
+  __resetSyncStatusForTests,
+  bumpPending,
+  setSynced,
+} from "@/lib/sync-status";
+import en from "@/messages/en.json";
+import type { ReactElement } from "react";
+import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cleanup,
   fireEvent,
-  render,
+  render as rtlRender,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
+
+/** The dialog renders the (translated) unsynced-changes confirm, so every
+ *  render needs the intl provider the root layout supplies in the app. */
+function render(ui: ReactElement) {
+  return rtlRender(
+    <NextIntlClientProvider
+      locale="en"
+      messages={en}
+    >
+      {ui}
+    </NextIntlClientProvider>,
+  );
+}
 
 /** Behaviour tests for the global MFA challenge dialog.
  *
@@ -41,6 +63,7 @@ const mockPasskeyList = vi.hoisted(() => vi.fn());
 const mockGetUser = vi.hoisted(() => vi.fn());
 const mockSignInWithPasskey = vi.hoisted(() => vi.fn());
 const mockSignOutAndClearLocal = vi.hoisted(() => vi.fn());
+const mockAuthSignOut = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/supabase/client", () => ({
   getSupabaseBrowser: mockGetSupabaseBrowser,
@@ -59,6 +82,7 @@ function fakeSupabase() {
       passkey: { list: mockPasskeyList },
       getUser: mockGetUser,
       signInWithPasskey: mockSignInWithPasskey,
+      signOut: mockAuthSignOut,
     },
   };
 }
@@ -75,6 +99,10 @@ beforeEach(() => {
   // lookup is skipped entirely in the TOTP-only suites above.
   mockPasskeyList.mockResolvedValue({ data: [], error: null });
   mockSignOutAndClearLocal.mockResolvedValue(undefined);
+  mockAuthSignOut.mockResolvedValue({ error: null });
+  // Default: this page load synced cleanly, nothing pending.
+  __resetSyncStatusForTests();
+  setSynced();
 });
 
 afterEach(() => {
@@ -332,6 +360,51 @@ describe("MfaChallengeDialog - passkey escape", () => {
     // navigates to /login; jsdom no-ops that, which is fine — the security-
     // critical parts are the reject + the sign-out.
     await expect(awaiter).rejects.toThrow(/MFA challenge failed/i);
+    await waitFor(() =>
+      expect(mockSignOutAndClearLocal).toHaveBeenCalledTimes(1),
+    );
+    // Nothing unsynced → nothing lost, no notice.
+    expect(screen.queryByText(/were lost/i)).toBeNull();
+  });
+
+  async function bailWithUnsyncedChanges() {
+    bumpPending();
+    bumpPending();
+    mockPasskeyList.mockResolvedValue({ data: [{ id: "pk1" }], error: null });
+    mockGetUser
+      .mockResolvedValueOnce({ data: { user: { id: "alice" } } })
+      .mockResolvedValueOnce({ data: { user: { id: "bob" } } });
+    mockSignInWithPasskey.mockResolvedValue({ error: null });
+    const { MfaChallengeDialog } = await import("./MfaChallengeDialog");
+    render(<MfaChallengeDialog />);
+    const awaiter = requestMfaChallenge();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /use a passkey/i }),
+    );
+    await expect(awaiter).rejects.toThrow(/MFA challenge failed/i);
+    await screen.findByText(
+      /2 changes that hadn't synced to your original account were lost/i,
+    );
+  }
+
+  it("wipes before ending the wrong session, even with unsynced changes", async () => {
+    await bailWithUnsyncedChanges();
+    // The original account's changes can't be kept: the data has no owner,
+    // so the next sign-in (most likely the passkey's account) would adopt
+    // and upload them. The wipe-then-sign-out runs before the notice shows.
     expect(mockSignOutAndClearLocal).toHaveBeenCalledTimes(1);
+    // The session is never ended on its own, leaving the data behind.
+    expect(mockAuthSignOut).not.toHaveBeenCalled();
+  });
+
+  it("only acknowledges: there is no way to keep the changes", async () => {
+    await bailWithUnsyncedChanges();
+    const dialog = screen.getByRole("alertdialog");
+    expect(
+      within(dialog)
+        .getAllByRole("button")
+        .map((b) => b.textContent),
+    ).toEqual(["Continue to sign in"]);
+    expect(screen.queryByRole("button", { name: /keep/i })).toBeNull();
   });
 });

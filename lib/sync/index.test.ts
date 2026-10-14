@@ -685,6 +685,78 @@ describe("runInitialSync — pull-then-push order (incognito-clobber fix)", () =
 
     unsub();
   });
+
+  it("treats a server placeholder profile ({} payload) as no profile and still pushes the local one", async () => {
+    // Migration 0074 guarantees a profiles row from sign-up on, created
+    // with an empty payload. A guest who filled in their profile before
+    // signing up has a local profile with no server token: the pull must
+    // not overwrite it with `{}`, and the push must upsert it onto the
+    // placeholder row.
+    vi.mocked(db.listCustomFoods).mockResolvedValue([]);
+    vi.mocked(db.listDailyLogs).mockResolvedValue([]);
+    vi.mocked(db.listWeightEntries).mockResolvedValue([]);
+    vi.mocked(db.listMealTemplates).mockResolvedValue([]);
+    vi.mocked(db.listRecipes).mockResolvedValue([]);
+    vi.mocked(db.getProfileRecord).mockResolvedValue({
+      weight: 72,
+      localUpdatedAt: "2026-05-16T11:00:00Z",
+      serverUpdatedAt: null,
+    } as unknown as Awaited<ReturnType<typeof db.getProfileRecord>>);
+
+    const placeholder = {
+      user_id: USER_ID,
+      payload: {},
+      updated_at: "2026-05-16T12:00:00Z",
+    };
+    const upserts: Array<{ table: string; row: unknown }> = [];
+    const sb = {
+      from: (table: string) => ({
+        select: () => {
+          const builder = {
+            eq: () => builder,
+            abortSignal: () => {
+              const rows = table === "profiles" ? [placeholder] : [];
+              return Object.assign(
+                Promise.resolve({ data: rows, error: null }),
+                {
+                  maybeSingle: () =>
+                    Promise.resolve({
+                      data: table === "profiles" ? placeholder : null,
+                      error: null,
+                    }),
+                },
+              );
+            },
+          };
+          return builder;
+        },
+        upsert: (row: unknown) => {
+          upserts.push({ table, row });
+          return {
+            select: () => ({
+              abortSignal: () => ({
+                single: () =>
+                  Promise.resolve({
+                    data: { updated_at: "2026-05-16T12:05:00Z" },
+                    error: null,
+                  }),
+              }),
+            }),
+          };
+        },
+      }),
+    } as unknown as SupabaseClient;
+
+    await triggerSync(sb, USER_ID);
+
+    expect(vi.mocked(db.applyServerProfile)).not.toHaveBeenCalled();
+    expect(upserts).toEqual([
+      { table: "profiles", row: { user_id: USER_ID, payload: { weight: 72 } } },
+    ]);
+    expect(vi.mocked(db.markProfileSynced)).toHaveBeenCalledWith(
+      "2026-05-16T12:05:00Z",
+    );
+  });
 });
 
 describe("pushFavoriteStores — per-user key (migration 0077)", () => {

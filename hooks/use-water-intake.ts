@@ -2,10 +2,12 @@
 
 import { addWater, getWaterIntake, setWaterTotal } from "@/lib/db";
 import { reportStorageError } from "@/lib/storage-status";
+import { bumpPending } from "@/lib/sync-status";
 import { useDataRev } from "@/lib/sync/data-bus";
 import { useCallback, useEffect, useState } from "react";
 
-/** A single day's water total in millilitres + tap-to-log mutators.
+/** A single day's water total in millilitres + tap-to-log mutators. Each
+ *  mutation bumps the sync-pending counter, like every user-facing write.
  *  Re-reads on every `waterIntake` data-bus bump (local taps and realtime
  *  arrivals) and whenever `date` changes. The daily goal lives on the
  *  profile (the caller computes it via `waterGoalMl`), so this hook owns
@@ -44,6 +46,7 @@ export function useWaterIntake(date: string): {
     async (deltaMl: number) => {
       try {
         await addWater(date, deltaMl);
+        bumpPending();
       } catch (err) {
         reportStorageError(err);
       }
@@ -55,6 +58,7 @@ export function useWaterIntake(date: string): {
     async (next: number) => {
       try {
         await setWaterTotal(date, next);
+        bumpPending();
       } catch (err) {
         reportStorageError(err);
       }

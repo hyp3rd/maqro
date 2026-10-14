@@ -1,3 +1,4 @@
+import Stripe from "stripe";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /** Hoisted mocks. Vitest hoists `vi.mock()` calls above imports, so
@@ -15,6 +16,7 @@ const {
   mockStorageRemove,
   mockSubscriptionsList,
   mockSubscriptionsCancel,
+  mockSubscriptionsRetrieve,
   mockSendEmail,
 } = vi.hoisted(() => ({
   mockAuthGetUser: vi.fn(),
@@ -28,6 +30,7 @@ const {
   mockStorageRemove: vi.fn(),
   mockSubscriptionsList: vi.fn(),
   mockSubscriptionsCancel: vi.fn(),
+  mockSubscriptionsRetrieve: vi.fn(),
   // Widened return type so per-test overrides can return the
   // error or skip shapes from lib/email/resend without TS narrowing
   // the mock to the happy-path-only signature.
@@ -54,7 +57,18 @@ vi.mock("@/lib/supabase/env", () => ({
   getSupabaseSecretConfig: mockGetSupabaseSecretConfig,
 }));
 
-vi.mock("@/lib/billing/stripe", () => ({ getStripe: mockGetStripe }));
+vi.mock("@/lib/billing/stripe", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/billing/stripe")>()),
+  getStripe: mockGetStripe,
+}));
+
+function resourceMissing(message: string) {
+  return new Stripe.errors.StripeInvalidRequestError({
+    type: "invalid_request_error",
+    code: "resource_missing",
+    message,
+  });
+}
 
 vi.mock("@/lib/error-reporter", () => ({
   reportServerError: mockReportServerError,
@@ -158,6 +172,7 @@ describe("POST /api/delete-account — Stripe cascade", () => {
       subscriptions: {
         list: mockSubscriptionsList,
         cancel: mockSubscriptionsCancel,
+        retrieve: mockSubscriptionsRetrieve,
       },
     });
     mockProfileSingle.mockResolvedValue({
@@ -194,7 +209,10 @@ describe("POST /api/delete-account — Stripe cascade", () => {
     });
   });
 
-  it("logs and continues when a single cancel fails", async () => {
+  it("refuses to delete the account when a cancel fails, after trying every subscription", async () => {
+    // Deleting the account erases the only link from the Stripe customer
+    // to the user; a subscription left active would keep billing a user
+    // who was just told "no further charges".
     mockSubscriptionsList.mockResolvedValue({
       data: [
         { id: "sub_a", status: "active" },
@@ -204,24 +222,95 @@ describe("POST /api/delete-account — Stripe cascade", () => {
     mockSubscriptionsCancel
       .mockRejectedValueOnce(new Error("Stripe down"))
       .mockResolvedValueOnce({});
+    mockSubscriptionsRetrieve.mockResolvedValue({
+      id: "sub_a",
+      status: "active",
+    });
 
     const { POST } = await loadRoute();
     const res = await POST();
 
-    expect(res.status).toBe(204);
+    expect(res.status).toBe(502);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/not deleted/i);
     expect(mockSubscriptionsCancel).toHaveBeenCalledTimes(2);
     expect(mockReportServerError).toHaveBeenCalled();
-    expect(mockAdminDeleteUser).toHaveBeenCalled(); // still ran
+    expect(mockAdminDeleteUser).not.toHaveBeenCalled();
+    expect(mockSendEmail).not.toHaveBeenCalled();
   });
 
-  it("does not block deletion when Stripe.list itself fails", async () => {
+  it("refuses to delete the account when listing subscriptions fails", async () => {
     mockSubscriptionsList.mockRejectedValue(new Error("network"));
     const { POST } = await loadRoute();
     const res = await POST();
-    expect(res.status).toBe(204);
+    expect(res.status).toBe(502);
     expect(mockSubscriptionsCancel).not.toHaveBeenCalled();
     expect(mockReportServerError).toHaveBeenCalled();
-    expect(mockAdminDeleteUser).toHaveBeenCalled();
+    expect(mockAdminDeleteUser).not.toHaveBeenCalled();
+  });
+
+  it("refuses to delete the account when the profile lookup fails", async () => {
+    mockProfileSingle.mockResolvedValue({
+      data: null,
+      error: { message: "connection reset" },
+    });
+    const { POST } = await loadRoute();
+    const res = await POST();
+    expect(res.status).toBe(503);
+    expect(mockSubscriptionsList).not.toHaveBeenCalled();
+    expect(mockAdminDeleteUser).not.toHaveBeenCalled();
+  });
+
+  it("refuses to delete a customer's account when Stripe isn't configured", async () => {
+    mockGetStripe.mockReturnValue(null);
+    const { POST } = await loadRoute();
+    const res = await POST();
+    expect(res.status).toBe(503);
+    expect(mockAdminDeleteUser).not.toHaveBeenCalled();
+  });
+
+  it("treats a subscription Stripe no longer has as cancelled", async () => {
+    mockSubscriptionsList.mockResolvedValue({
+      data: [{ id: "sub_gone", status: "active" }],
+    });
+    mockSubscriptionsCancel.mockRejectedValue(
+      resourceMissing("No such subscription: 'sub_gone'"),
+    );
+    const { POST } = await loadRoute();
+    const res = await POST();
+    expect(res.status).toBe(204);
+    expect(mockAdminDeleteUser).toHaveBeenCalledWith("user-1");
+  });
+
+  it("treats a subscription that ended concurrently as cancelled", async () => {
+    mockSubscriptionsList.mockResolvedValue({
+      data: [{ id: "sub_a", status: "active" }],
+    });
+    mockSubscriptionsCancel.mockRejectedValue(
+      new Stripe.errors.StripeInvalidRequestError({
+        type: "invalid_request_error",
+        message: "This subscription has already been canceled.",
+      }),
+    );
+    mockSubscriptionsRetrieve.mockResolvedValue({
+      id: "sub_a",
+      status: "canceled",
+    });
+    const { POST } = await loadRoute();
+    const res = await POST();
+    expect(res.status).toBe(204);
+    expect(mockSubscriptionsRetrieve).toHaveBeenCalledWith("sub_a");
+    expect(mockAdminDeleteUser).toHaveBeenCalledWith("user-1");
+  });
+
+  it("proceeds when Stripe no longer has the customer", async () => {
+    mockSubscriptionsList.mockRejectedValue(
+      resourceMissing("No such customer: 'cus_abc'"),
+    );
+    const { POST } = await loadRoute();
+    const res = await POST();
+    expect(res.status).toBe(204);
+    expect(mockAdminDeleteUser).toHaveBeenCalledWith("user-1");
   });
 });
 

@@ -333,6 +333,34 @@ describe("startRealtimeSubscription — payload dispatch", () => {
     expect(vi.mocked(db.applyServerProfile)).not.toHaveBeenCalled();
   });
 
+  it("does not apply a server placeholder profile ({} payload) over the local one", async () => {
+    // Migration 0074 creates every profiles row at sign-up with an empty
+    // payload; webhook/admin writes to that row emit UPDATE events that
+    // still carry it. `{}` means "no profile yet" and must never replace
+    // the profile the user is editing locally.
+    vi.mocked(db.getProfileRecord).mockResolvedValue(null);
+    const { sb, channels } = makeFakeSupabase();
+    startRealtimeSubscription(sb, USER_ID);
+
+    const profileChannel = channels.find((c) => c.table === "profiles");
+    if (!profileChannel) throw new Error("missing profile channel");
+
+    profileChannel.onCallback({
+      eventType: "UPDATE",
+      new: {
+        user_id: USER_ID,
+        payload: {},
+        updated_at: "2026-05-16T12:00:00Z",
+      },
+      old: {},
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(vi.mocked(db.applyServerProfile)).not.toHaveBeenCalled();
+  });
+
   it("ignores empty {} payload (REPLICA IDENTITY not FULL artifact)", async () => {
     const { sb, channels } = makeFakeSupabase();
     startRealtimeSubscription(sb, USER_ID);

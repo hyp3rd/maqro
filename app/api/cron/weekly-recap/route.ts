@@ -1,4 +1,4 @@
-import type { Meal, PersonalInfo } from "@/components/macro/types";
+import type { Meal } from "@/components/macro/types";
 import { getAppUrl } from "@/lib/app-url";
 import { assertCronSecret } from "@/lib/auth/cron-secret";
 import type { DailyLog, WeightEntry } from "@/lib/db";
@@ -7,6 +7,7 @@ import { weeklyRecapEmail } from "@/lib/email/templates";
 import { computeMacros } from "@/lib/macros";
 import { emailsById, listAllAuthUsers } from "@/lib/supabase/admin-users";
 import { getSupabaseSecretConfig } from "@/lib/supabase/env";
+import { personalInfoFromPayload } from "@/lib/sync/mappers";
 import { computeWeeklyRecap } from "@/lib/weekly-recap";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -75,15 +76,16 @@ export async function GET(req: Request): Promise<NextResponse> {
     }
 
     // Profile — needed for target calories used in the
-    // adherence-days calculation. If the profile row is missing,
-    // we still send a recap; we just pass target=0 and the
+    // adherence-days calculation. If the user has no profile yet
+    // (no row, or the `{}` placeholder migration 0074 creates at
+    // sign-up), we still send a recap; we just pass target=0 and the
     // template adjusts ("On-target days: —").
     const { data: profile } = await admin
       .from("profiles")
       .select("payload")
       .eq("user_id", userId)
       .maybeSingle();
-    const personalInfo = (profile?.payload as PersonalInfo | undefined) ?? null;
+    const personalInfo = personalInfoFromPayload(profile?.payload);
     const targetCalories = personalInfo
       ? Math.round(computeMacros(personalInfo).targetCalories)
       : 0;

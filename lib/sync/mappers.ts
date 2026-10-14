@@ -37,9 +37,17 @@ import type {
 
 // ─── Profile ───────────────────────────────────────────────────────────────
 
+/** The payload of a server-created placeholder row. Migration 0074 inserts
+ *  every user's profiles row at sign-up with `payload = '{}'` so billing and
+ *  admin writes always have a row to update. It is applied to production
+ *  only after this handling has rolled out: an older client would apply the
+ *  `{}` row over a local profile that has never synced. `{}` means "no
+ *  profile yet"; it is never a profile to show or keep. */
+export type EmptyProfilePayload = Record<string, never>;
+
 export type ProfileRow = {
   user_id: string;
-  payload: PersonalInfo;
+  payload: PersonalInfo | EmptyProfilePayload;
   updated_at: string;
 };
 
@@ -50,8 +58,25 @@ export function profileToRow(
   return { user_id: userId, payload: profile };
 }
 
-export function profileFromRow(row: ProfileRow): PersonalInfo {
-  return row.payload;
+/** A stored payload as a profile, or `null` when the row holds no profile
+ *  yet (the `{}` placeholder, or anything that isn't a JSON object). Server
+ *  readers of `profiles.payload` and the sync pull both go through this, so a
+ *  placeholder can never overwrite a real local profile or feed `{}` into
+ *  macro math. */
+export function personalInfoFromPayload(payload: unknown): PersonalInfo | null {
+  if (
+    payload === null ||
+    typeof payload !== "object" ||
+    Array.isArray(payload) ||
+    Object.keys(payload).length === 0
+  ) {
+    return null;
+  }
+  return payload as PersonalInfo;
+}
+
+export function profileFromRow(row: ProfileRow): PersonalInfo | null {
+  return personalInfoFromPayload(row.payload);
 }
 
 // ─── Daily logs ────────────────────────────────────────────────────────────
