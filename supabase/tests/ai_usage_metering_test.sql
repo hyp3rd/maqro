@@ -9,7 +9,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(30);
+select plan(31);
 
 -- ── Fixtures (as postgres: bypasses RLS) ────────────────────────────────────
 -- owner: a free user with a counter row this month.
@@ -40,10 +40,20 @@ select throws_ok(
   'a negative count is rejected even for privileged writers'
 );
 
+-- The only permissive policy is the owner read; 0079's restrictive
+-- second-factor policy narrows it further and must stay.
 select policies_are(
   'public', 'ai_usage_monthly',
-  array['ai_usage_owner_read'],
-  'the only policy on ai_usage_monthly is the owner read policy'
+  array['ai_usage_owner_read', 'mfa_second_factor_required'],
+  'ai_usage_monthly has only the owner read policy plus the MFA restriction'
+);
+
+select is(
+  (select permissive from pg_policies
+    where schemaname = 'public' and tablename = 'ai_usage_monthly'
+      and policyname = 'mfa_second_factor_required'),
+  'RESTRICTIVE',
+  'the MFA policy on ai_usage_monthly is restrictive, so it grants nothing'
 );
 
 select is(
