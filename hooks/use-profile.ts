@@ -44,11 +44,10 @@ export function useProfile(defaultProfile: PersonalInfo): ProfileState {
   // session (incognito window, freshly cleared IDB) would auto-save
   // the synthetic `defaultProfile` to IDB before the initial sync
   // runs, and the first push would upload those defaults - clobbering
-  // the user's real profile on the server. Set to true only by the
-  // setProfile / patchProfile callbacks below; the load effect bumps
-  // it implicitly by writing back whatever it loaded from IDB (a
-  // saved row from a prior session) - that's the "an actual profile
-  // exists" signal.
+  // the user's real profile on the server. Set to true by the
+  // setProfile / patchProfile callbacks below, and by the load effect
+  // when it finds a saved row - that's the "an actual profile exists"
+  // signal.
   const hasRealLocalData = useRef(false);
   // Refs holding the LATEST debounced write that hasn't been flushed
   // to IDB yet. Used by the unmount-only effect at the bottom to fire
@@ -67,6 +66,12 @@ export function useProfile(defaultProfile: PersonalInfo): ProfileState {
   // - so realtime / load-path mutations of `profile.weight` never
   // turn into phantom weigh-in writes.
   const userIntendedWeight = useRef<number | null>(null);
+  // The profile state the LOAD path produced (the stored row with defaults
+  // merged behind it). The auto-save skips it: it isn't a user edit, and
+  // writing the merged defaults back would dirty the row, holding back
+  // every later update from another device behind a false conflict. A user
+  // edit always produces a new object, so it is saved.
+  const loadedProfile = useRef<PersonalInfo | null>(null);
 
   // Load on mount and on every realtime arrival.
   useEffect(() => {
@@ -95,6 +100,7 @@ export function useProfile(defaultProfile: PersonalInfo): ProfileState {
             // chose explicitly" and apply the locale default.
             units: loaded.units ?? localeDefault,
           };
+          loadedProfile.current = withUnits;
           setProfileState(withUnits);
           // We loaded a real row from IDB - auto-saves are now safe.
           hasRealLocalData.current = true;
@@ -118,12 +124,20 @@ export function useProfile(defaultProfile: PersonalInfo): ProfileState {
   }, [defaultProfile, profileRev]);
 
   // Debounced write. Gated on `isHydrated` (so we don't write before
-  // load resolves) and on `hasRealLocalData` (so a fresh session that
+  // load resolves), on `hasRealLocalData` (so a fresh session that
   // had nothing to load doesn't write synthetic defaults to IDB - see
-  // the ref's declaration for the data-loss scenario this guards).
+  // the ref's declaration for the data-loss scenario this guards) and
+  // on the state not being the one the load just produced (see
+  // `loadedProfile`).
   useEffect(() => {
     if (!isHydrated) return;
     if (!hasRealLocalData.current) return;
+    if (profile === loadedProfile.current) {
+      // A reload replaced any edit still waiting in the debounce; the
+      // unmount flush must not write that superseded edit back.
+      pendingProfileRef.current = null;
+      return;
+    }
     pendingProfileRef.current = profile;
     const t = window.setTimeout(() => {
       saveProfile(profile)

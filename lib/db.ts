@@ -616,41 +616,24 @@ export async function addCustomFood(
 export async function upsertCustomFood(
   food: Omit<CustomFood, keyof Versioned> & Partial<Versioned>,
 ): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_CUSTOM_FOODS, food.id);
-  await db.put(STORE_CUSTOM_FOODS, {
+  await saveLocalRecord(STORE_CUSTOM_FOODS, food.id, (existing) => ({
     ...food,
     localUpdatedAt: nowIso(),
     serverUpdatedAt: food.serverUpdatedAt ?? existing?.serverUpdatedAt ?? null,
-  });
+  }));
 }
 
 /** Sync-layer hook: write a server-pulled custom food. */
 export async function applyServerCustomFood(
   food: Omit<CustomFood, keyof Versioned>,
   serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  await db.put(STORE_CUSTOM_FOODS, {
-    ...food,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
-}
-
-/** Sync-layer hook: refresh the version token after a successful push. */
-export async function markCustomFoodSynced(
-  id: string,
-  serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  const row = await db.get(STORE_CUSTOM_FOODS, id);
-  if (!row) return;
-  await db.put(STORE_CUSTOM_FOODS, {
-    ...row,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
+): Promise<ApplyServerOutcome> {
+  return applyServerRecord(
+    STORE_CUSTOM_FOODS,
+    food.id,
+    { ...food, localUpdatedAt: serverUpdatedAt, serverUpdatedAt },
+    "customFoods",
+  );
 }
 
 export async function listCustomFoods(): Promise<CustomFood[]> {
@@ -734,9 +717,7 @@ export async function getProfileRecord(): Promise<
  *  existing `serverUpdatedAt` token so the push knows which server
  *  version it's branching from. */
 export async function saveProfile(profile: PersonalInfo): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_PROFILE, PROFILE_KEY);
-  await db.put(STORE_PROFILE, {
+  await saveLocalRecord(STORE_PROFILE, PROFILE_KEY, (existing) => ({
     ...profile,
     _key: PROFILE_KEY,
     localUpdatedAt: nowIso(),
@@ -744,7 +725,7 @@ export async function saveProfile(profile: PersonalInfo): Promise<void> {
     // Preserve the demo marker across edits so a user tweaking their
     // sample profile doesn't accidentally un-mark the dataset.
     ...(existing?._demoSeeded ? { _demoSeeded: true as const } : {}),
-  });
+  }));
 }
 
 /** Save a profile **and** mark it as demo-seeded in IDB. Used by the
@@ -752,15 +733,13 @@ export async function saveProfile(profile: PersonalInfo): Promise<void> {
  *  rather than only in localStorage (can fail silently in private
  *  windows / quota-exceeded). Read back via `isProfileMarkedAsDemo`. */
 export async function saveDemoProfile(profile: PersonalInfo): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_PROFILE, PROFILE_KEY);
-  await db.put(STORE_PROFILE, {
+  await saveLocalRecord(STORE_PROFILE, PROFILE_KEY, (existing) => ({
     ...profile,
     _key: PROFILE_KEY,
     localUpdatedAt: nowIso(),
     serverUpdatedAt: existing?.serverUpdatedAt ?? null,
     _demoSeeded: true,
-  });
+  }));
 }
 
 /** True when the locally-stored profile is marked as demo-seeded.
@@ -811,31 +790,34 @@ export async function clearDemoSeededStores(): Promise<void> {
 export async function applyServerProfile(
   profile: PersonalInfo,
   serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  await db.put(STORE_PROFILE, {
-    ...profile,
-    _key: PROFILE_KEY,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
+): Promise<ApplyServerOutcome> {
+  return applyServerRecord(
+    STORE_PROFILE,
+    PROFILE_KEY,
+    {
+      ...profile,
+      _key: PROFILE_KEY,
+      localUpdatedAt: serverUpdatedAt,
+      serverUpdatedAt,
+    },
+    null,
+  );
 }
 
 /** Sync-layer hook: after a successful push, refresh the local
  *  `serverUpdatedAt` to the value the server just stamped on us so
- *  future pushes carry the right concurrency token. The payload
- *  itself doesn't change; only the metadata. */
+ *  future pushes carry the right concurrency token. Compare-and-set on
+ *  the pushed snapshot's `localUpdatedAt` — see {@link markRecordSynced}. */
 export async function markProfileSynced(
   serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  const row = await db.get(STORE_PROFILE, PROFILE_KEY);
-  if (!row) return;
-  await db.put(STORE_PROFILE, {
-    ...row,
-    localUpdatedAt: serverUpdatedAt,
+  pushedLocalUpdatedAt: string | undefined,
+): Promise<MarkSyncedOutcome> {
+  return markVersionedRecordSynced(
+    STORE_PROFILE,
+    PROFILE_KEY,
     serverUpdatedAt,
-  });
+    pushedLocalUpdatedAt,
+  );
 }
 
 // ─── Daily logs ────────────────────────────────────────────────────────────
@@ -860,16 +842,13 @@ export async function getDailyLog(date: string): Promise<DailyLog | null> {
 }
 
 export async function saveDailyLog(date: string, meals: Meal[]): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_DAILY_LOGS, date);
-  const now = nowIso();
-  await db.put(STORE_DAILY_LOGS, {
+  await saveLocalRecord(STORE_DAILY_LOGS, date, (existing) => ({
     date,
     meals,
     updatedAt: Date.now(),
-    localUpdatedAt: now,
+    localUpdatedAt: nowIso(),
     serverUpdatedAt: existing?.serverUpdatedAt ?? null,
-  });
+  }));
   // Wake the data-bus so IDB-reading consumers (the fasting card + Topbar
   // chip, the streak chip, the Progress charts) refresh on a local log —
   // not only on a peer realtime arrival. `useDailyLog` reloads on this rev
@@ -898,30 +877,19 @@ export async function applyServerDailyLog(
   date: string,
   meals: Meal[],
   serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  await db.put(STORE_DAILY_LOGS, {
+): Promise<ApplyServerOutcome> {
+  return applyServerRecord(
+    STORE_DAILY_LOGS,
     date,
-    meals,
-    updatedAt: Date.parse(serverUpdatedAt) || Date.now(),
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
-}
-
-/** Sync-layer hook: refresh the version token after a successful push. */
-export async function markDailyLogSynced(
-  date: string,
-  serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  const row = await db.get(STORE_DAILY_LOGS, date);
-  if (!row) return;
-  await db.put(STORE_DAILY_LOGS, {
-    ...row,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
+    {
+      date,
+      meals,
+      updatedAt: Date.parse(serverUpdatedAt) || Date.now(),
+      localUpdatedAt: serverUpdatedAt,
+      serverUpdatedAt,
+    },
+    "dailyLogs",
+  );
 }
 
 // ─── Meal templates ────────────────────────────────────────────────────────
@@ -954,42 +922,25 @@ export async function saveMealTemplate(
 export async function upsertMealTemplate(
   template: Omit<MealTemplate, keyof Versioned> & Partial<Versioned>,
 ): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_MEAL_TEMPLATES, template.id);
-  await db.put(STORE_MEAL_TEMPLATES, {
+  await saveLocalRecord(STORE_MEAL_TEMPLATES, template.id, (existing) => ({
     ...template,
     localUpdatedAt: nowIso(),
     serverUpdatedAt:
       template.serverUpdatedAt ?? existing?.serverUpdatedAt ?? null,
-  });
+  }));
 }
 
 /** Sync-layer hook: write a server-pulled template. */
 export async function applyServerMealTemplate(
   template: Omit<MealTemplate, keyof Versioned>,
   serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  await db.put(STORE_MEAL_TEMPLATES, {
-    ...template,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
-}
-
-/** Sync-layer hook: refresh the version token after a successful push. */
-export async function markMealTemplateSynced(
-  id: string,
-  serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  const row = await db.get(STORE_MEAL_TEMPLATES, id);
-  if (!row) return;
-  await db.put(STORE_MEAL_TEMPLATES, {
-    ...row,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
+): Promise<ApplyServerOutcome> {
+  return applyServerRecord(
+    STORE_MEAL_TEMPLATES,
+    template.id,
+    { ...template, localUpdatedAt: serverUpdatedAt, serverUpdatedAt },
+    "mealTemplates",
+  );
 }
 
 export async function listMealTemplates(): Promise<MealTemplate[]> {
@@ -1010,15 +961,13 @@ export async function deleteMealTemplate(id: string): Promise<void> {
  * the same day collapse to the most recent value. Preserves the row's
  * existing `serverUpdatedAt` so the push knows the right base version. */
 export async function saveWeightEntry(date: string, kg: number): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_WEIGHT_HISTORY, date);
-  await db.put(STORE_WEIGHT_HISTORY, {
+  await saveLocalRecord(STORE_WEIGHT_HISTORY, date, (existing) => ({
     date,
     kg,
     recordedAt: Date.now(),
     localUpdatedAt: nowIso(),
     serverUpdatedAt: existing?.serverUpdatedAt ?? null,
-  });
+  }));
 }
 
 /** Sync-layer hook: write a server-pulled weight entry. */
@@ -1026,30 +975,19 @@ export async function applyServerWeightEntry(
   date: string,
   kg: number,
   serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  await db.put(STORE_WEIGHT_HISTORY, {
+): Promise<ApplyServerOutcome> {
+  return applyServerRecord(
+    STORE_WEIGHT_HISTORY,
     date,
-    kg,
-    recordedAt: Date.parse(serverUpdatedAt) || Date.now(),
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
-}
-
-/** Sync-layer hook: refresh the version token after a successful push. */
-export async function markWeightEntrySynced(
-  date: string,
-  serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  const row = await db.get(STORE_WEIGHT_HISTORY, date);
-  if (!row) return;
-  await db.put(STORE_WEIGHT_HISTORY, {
-    ...row,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
+    {
+      date,
+      kg,
+      recordedAt: Date.parse(serverUpdatedAt) || Date.now(),
+      localUpdatedAt: serverUpdatedAt,
+      serverUpdatedAt,
+    },
+    "weightHistory",
+  );
 }
 
 export async function getWeightEntry(
@@ -1085,34 +1023,31 @@ const MAX_WATER_ML = 20000;
  *  [0, MAX_WATER_ML] and preserves the row's `serverUpdatedAt` so the push
  *  knows the right base version. */
 export async function addWater(date: string, deltaMl: number): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_WATER_INTAKE, date);
-  const ml = Math.max(
-    0,
-    Math.min(MAX_WATER_ML, Math.round((existing?.ml ?? 0) + deltaMl)),
-  );
-  await db.put(STORE_WATER_INTAKE, {
+  // The read and the accumulate-and-write share one transaction, so two
+  // quick taps can't both add to the same stale total.
+  await saveLocalRecord(STORE_WATER_INTAKE, date, (existing) => ({
     date,
-    ml,
+    ml: Math.max(
+      0,
+      Math.min(MAX_WATER_ML, Math.round((existing?.ml ?? 0) + deltaMl)),
+    ),
     recordedAt: Date.now(),
     localUpdatedAt: nowIso(),
     serverUpdatedAt: existing?.serverUpdatedAt ?? null,
-  });
+  }));
   notifyDataChanged("waterIntake");
 }
 
 /** Set a day's water total to an absolute value (the inline "edit total"
  *  affordance), as opposed to `addWater`'s relative delta. */
 export async function setWaterTotal(date: string, ml: number): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_WATER_INTAKE, date);
-  await db.put(STORE_WATER_INTAKE, {
+  await saveLocalRecord(STORE_WATER_INTAKE, date, (existing) => ({
     date,
     ml: Math.max(0, Math.min(MAX_WATER_ML, Math.round(ml))),
     recordedAt: Date.now(),
     localUpdatedAt: nowIso(),
     serverUpdatedAt: existing?.serverUpdatedAt ?? null,
-  });
+  }));
   notifyDataChanged("waterIntake");
 }
 
@@ -1121,30 +1056,19 @@ export async function applyServerWaterIntake(
   date: string,
   ml: number,
   serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  await db.put(STORE_WATER_INTAKE, {
+): Promise<ApplyServerOutcome> {
+  return applyServerRecord(
+    STORE_WATER_INTAKE,
     date,
-    ml,
-    recordedAt: Date.parse(serverUpdatedAt) || Date.now(),
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
-}
-
-/** Sync-layer hook: refresh the version token after a successful push. */
-export async function markWaterIntakeSynced(
-  date: string,
-  serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  const row = await db.get(STORE_WATER_INTAKE, date);
-  if (!row) return;
-  await db.put(STORE_WATER_INTAKE, {
-    ...row,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
+    {
+      date,
+      ml,
+      recordedAt: Date.parse(serverUpdatedAt) || Date.now(),
+      localUpdatedAt: serverUpdatedAt,
+      serverUpdatedAt,
+    },
+    null,
+  );
 }
 
 export async function getWaterIntake(
@@ -1171,15 +1095,13 @@ export async function saveSupplementIntake(
   date: string,
   taken: SupplementIntakeEntry[],
 ): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_SUPPLEMENT_INTAKE, date);
-  await db.put(STORE_SUPPLEMENT_INTAKE, {
+  await saveLocalRecord(STORE_SUPPLEMENT_INTAKE, date, (existing) => ({
     date,
     taken,
     recordedAt: Date.now(),
     localUpdatedAt: nowIso(),
     serverUpdatedAt: existing?.serverUpdatedAt ?? null,
-  });
+  }));
   notifyDataChanged("supplementIntake");
 }
 
@@ -1188,30 +1110,19 @@ export async function applyServerSupplementIntake(
   date: string,
   taken: SupplementIntakeEntry[],
   serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  await db.put(STORE_SUPPLEMENT_INTAKE, {
+): Promise<ApplyServerOutcome> {
+  return applyServerRecord(
+    STORE_SUPPLEMENT_INTAKE,
     date,
-    taken,
-    recordedAt: Date.parse(serverUpdatedAt) || Date.now(),
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
-}
-
-/** Sync-layer hook: refresh the version token after a successful push. */
-export async function markSupplementIntakeSynced(
-  date: string,
-  serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  const row = await db.get(STORE_SUPPLEMENT_INTAKE, date);
-  if (!row) return;
-  await db.put(STORE_SUPPLEMENT_INTAKE, {
-    ...row,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
+    {
+      date,
+      taken,
+      recordedAt: Date.parse(serverUpdatedAt) || Date.now(),
+      localUpdatedAt: serverUpdatedAt,
+      serverUpdatedAt,
+    },
+    null,
+  );
 }
 
 export async function getSupplementIntake(
@@ -1240,9 +1151,7 @@ export async function saveBodyMeasurement(
   date: string,
   values: Pick<BodyMeasurement, "waistCm" | "neckCm" | "hipsCm" | "notes">,
 ): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_BODY_MEASUREMENTS, date);
-  await db.put(STORE_BODY_MEASUREMENTS, {
+  await saveLocalRecord(STORE_BODY_MEASUREMENTS, date, (existing) => ({
     date,
     waistCm: values.waistCm,
     neckCm: values.neckCm,
@@ -1251,7 +1160,7 @@ export async function saveBodyMeasurement(
     recordedAt: Date.now(),
     localUpdatedAt: nowIso(),
     serverUpdatedAt: existing?.serverUpdatedAt ?? null,
-  });
+  }));
 }
 
 /** All body measurements, oldest first - chart-natural order. */
@@ -1281,34 +1190,22 @@ export async function applyServerBodyMeasurement(
   date: string,
   values: Pick<BodyMeasurement, "waistCm" | "neckCm" | "hipsCm" | "notes">,
   serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  await db.put(STORE_BODY_MEASUREMENTS, {
+): Promise<ApplyServerOutcome> {
+  return applyServerRecord(
+    STORE_BODY_MEASUREMENTS,
     date,
-    waistCm: values.waistCm,
-    neckCm: values.neckCm,
-    hipsCm: values.hipsCm,
-    notes: values.notes,
-    recordedAt: Date.parse(serverUpdatedAt) || Date.now(),
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
-}
-
-/** Sync-layer hook: refresh the version token after a successful
- *  push. */
-export async function markBodyMeasurementSynced(
-  date: string,
-  serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  const row = await db.get(STORE_BODY_MEASUREMENTS, date);
-  if (!row) return;
-  await db.put(STORE_BODY_MEASUREMENTS, {
-    ...row,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
+    {
+      date,
+      waistCm: values.waistCm,
+      neckCm: values.neckCm,
+      hipsCm: values.hipsCm,
+      notes: values.notes,
+      recordedAt: Date.parse(serverUpdatedAt) || Date.now(),
+      localUpdatedAt: serverUpdatedAt,
+      serverUpdatedAt,
+    },
+    "bodyMeasurements",
+  );
 }
 
 // ─── Blood pressure ──────────────────────────────────────────────────────────
@@ -1319,9 +1216,7 @@ export async function saveBloodPressure(
   date: string,
   values: Pick<BloodPressure, "systolic" | "diastolic" | "pulse" | "notes">,
 ): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_BLOOD_PRESSURE, date);
-  await db.put(STORE_BLOOD_PRESSURE, {
+  await saveLocalRecord(STORE_BLOOD_PRESSURE, date, (existing) => ({
     date,
     systolic: values.systolic,
     diastolic: values.diastolic,
@@ -1330,7 +1225,7 @@ export async function saveBloodPressure(
     recordedAt: Date.now(),
     localUpdatedAt: nowIso(),
     serverUpdatedAt: existing?.serverUpdatedAt ?? null,
-  });
+  }));
 }
 
 /** All blood-pressure readings, oldest first - chart-natural order. */
@@ -1360,33 +1255,22 @@ export async function applyServerBloodPressure(
   date: string,
   values: Pick<BloodPressure, "systolic" | "diastolic" | "pulse" | "notes">,
   serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  await db.put(STORE_BLOOD_PRESSURE, {
+): Promise<ApplyServerOutcome> {
+  return applyServerRecord(
+    STORE_BLOOD_PRESSURE,
     date,
-    systolic: values.systolic,
-    diastolic: values.diastolic,
-    pulse: values.pulse,
-    notes: values.notes,
-    recordedAt: Date.parse(serverUpdatedAt) || Date.now(),
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
-}
-
-/** Sync-layer hook: refresh the version token after a successful push. */
-export async function markBloodPressureSynced(
-  date: string,
-  serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  const row = await db.get(STORE_BLOOD_PRESSURE, date);
-  if (!row) return;
-  await db.put(STORE_BLOOD_PRESSURE, {
-    ...row,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
+    {
+      date,
+      systolic: values.systolic,
+      diastolic: values.diastolic,
+      pulse: values.pulse,
+      notes: values.notes,
+      recordedAt: Date.parse(serverUpdatedAt) || Date.now(),
+      localUpdatedAt: serverUpdatedAt,
+      serverUpdatedAt,
+    },
+    "bloodPressure",
+  );
 }
 
 // ─── Fast sessions ───────────────────────────────────────────────────────────
@@ -1430,32 +1314,21 @@ export async function deleteFastSession(id: string): Promise<void> {
 export async function applyServerFastSession(
   session: FastSession,
   serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  await db.put(STORE_FAST_SESSIONS, {
-    id: session.id,
-    startedAt: session.startedAt,
-    endedAt: session.endedAt,
-    protocol: session.protocol,
-    targetHours: session.targetHours,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
-}
-
-/** Sync-layer hook: refresh the version token after a successful push. */
-export async function markFastSessionSynced(
-  id: string,
-  serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  const row = await db.get(STORE_FAST_SESSIONS, id);
-  if (!row) return;
-  await db.put(STORE_FAST_SESSIONS, {
-    ...row,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
+): Promise<ApplyServerOutcome> {
+  return applyServerRecord(
+    STORE_FAST_SESSIONS,
+    session.id,
+    {
+      id: session.id,
+      startedAt: session.startedAt,
+      endedAt: session.endedAt,
+      protocol: session.protocol,
+      targetHours: session.targetHours,
+      localUpdatedAt: serverUpdatedAt,
+      serverUpdatedAt,
+    },
+    "fastSessions",
+  );
 }
 
 // ─── Recipes ───────────────────────────────────────────────────────────────
@@ -1486,42 +1359,25 @@ export async function addRecipe(
 export async function upsertRecipe(
   recipe: Recipe & Partial<Versioned>,
 ): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_RECIPES, recipe.id);
-  await db.put(STORE_RECIPES, {
+  await saveLocalRecord(STORE_RECIPES, recipe.id, (existing) => ({
     ...recipe,
     localUpdatedAt: nowIso(),
     serverUpdatedAt:
       recipe.serverUpdatedAt ?? existing?.serverUpdatedAt ?? null,
-  });
+  }));
 }
 
 /** Sync-layer hook: write a server-pulled recipe. */
 export async function applyServerRecipe(
   recipe: Recipe,
   serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  await db.put(STORE_RECIPES, {
-    ...recipe,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
-}
-
-/** Sync-layer hook: refresh the version token after a successful push. */
-export async function markRecipeSynced(
-  id: string,
-  serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  const row = await db.get(STORE_RECIPES, id);
-  if (!row) return;
-  await db.put(STORE_RECIPES, {
-    ...row,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
+): Promise<ApplyServerOutcome> {
+  return applyServerRecord(
+    STORE_RECIPES,
+    recipe.id,
+    { ...recipe, localUpdatedAt: serverUpdatedAt, serverUpdatedAt },
+    "recipes",
+  );
 }
 
 export async function listRecipes(): Promise<
@@ -1571,15 +1427,13 @@ export async function addMealSchedule(
 export async function upsertMealSchedule(
   schedule: MealSchedule & Partial<Versioned>,
 ): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_MEAL_SCHEDULES, schedule.id);
-  await db.put(STORE_MEAL_SCHEDULES, {
+  await saveLocalRecord(STORE_MEAL_SCHEDULES, schedule.id, (existing) => ({
     ...schedule,
     updatedAt: Date.now(),
     localUpdatedAt: nowIso(),
     serverUpdatedAt:
       schedule.serverUpdatedAt ?? existing?.serverUpdatedAt ?? null,
-  });
+  }));
   notifyDataChanged("mealSchedules");
 }
 
@@ -1587,28 +1441,13 @@ export async function upsertMealSchedule(
 export async function applyServerMealSchedule(
   schedule: MealSchedule,
   serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  await db.put(STORE_MEAL_SCHEDULES, {
-    ...schedule,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
-}
-
-/** Sync-layer hook: refresh the version token after a successful push. */
-export async function markMealScheduleSynced(
-  id: string,
-  serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  const row = await db.get(STORE_MEAL_SCHEDULES, id);
-  if (!row) return;
-  await db.put(STORE_MEAL_SCHEDULES, {
-    ...row,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
+): Promise<ApplyServerOutcome> {
+  return applyServerRecord(
+    STORE_MEAL_SCHEDULES,
+    schedule.id,
+    { ...schedule, localUpdatedAt: serverUpdatedAt, serverUpdatedAt },
+    "mealSchedules",
+  );
 }
 
 export async function listMealSchedules(): Promise<MealSchedule[]> {
@@ -1650,15 +1489,13 @@ export async function addSupplement(
 export async function upsertSupplement(
   supplement: Supplement & Partial<Versioned>,
 ): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_SUPPLEMENTS, supplement.id);
-  await db.put(STORE_SUPPLEMENTS, {
+  await saveLocalRecord(STORE_SUPPLEMENTS, supplement.id, (existing) => ({
     ...supplement,
     updatedAt: Date.now(),
     localUpdatedAt: nowIso(),
     serverUpdatedAt:
       supplement.serverUpdatedAt ?? existing?.serverUpdatedAt ?? null,
-  });
+  }));
   notifyDataChanged("supplements");
 }
 
@@ -1666,28 +1503,13 @@ export async function upsertSupplement(
 export async function applyServerSupplement(
   supplement: Supplement,
   serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  await db.put(STORE_SUPPLEMENTS, {
-    ...supplement,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
-}
-
-/** Sync-layer hook: refresh the version token after a successful push. */
-export async function markSupplementSynced(
-  id: string,
-  serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  const row = await db.get(STORE_SUPPLEMENTS, id);
-  if (!row) return;
-  await db.put(STORE_SUPPLEMENTS, {
-    ...row,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
+): Promise<ApplyServerOutcome> {
+  return applyServerRecord(
+    STORE_SUPPLEMENTS,
+    supplement.id,
+    { ...supplement, localUpdatedAt: serverUpdatedAt, serverUpdatedAt },
+    "supplements",
+  );
 }
 
 export async function listSupplements(): Promise<Supplement[]> {
@@ -1733,14 +1555,12 @@ export async function addPantryItem(
 export async function upsertPantryItem(
   item: PantryItem & Partial<Versioned>,
 ): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_PANTRY_ITEMS, item.id);
-  await db.put(STORE_PANTRY_ITEMS, {
+  await saveLocalRecord(STORE_PANTRY_ITEMS, item.id, (existing) => ({
     ...item,
     updatedAt: Date.now(),
     localUpdatedAt: nowIso(),
     serverUpdatedAt: item.serverUpdatedAt ?? existing?.serverUpdatedAt ?? null,
-  });
+  }));
   notifyDataChanged("pantryItems");
 }
 
@@ -1748,28 +1568,13 @@ export async function upsertPantryItem(
 export async function applyServerPantryItem(
   item: PantryItem,
   serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  await db.put(STORE_PANTRY_ITEMS, {
-    ...item,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
-}
-
-/** Sync-layer hook: refresh the version token after a successful push. */
-export async function markPantryItemSynced(
-  id: string,
-  serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  const row = await db.get(STORE_PANTRY_ITEMS, id);
-  if (!row) return;
-  await db.put(STORE_PANTRY_ITEMS, {
-    ...row,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
+): Promise<ApplyServerOutcome> {
+  return applyServerRecord(
+    STORE_PANTRY_ITEMS,
+    item.id,
+    { ...item, localUpdatedAt: serverUpdatedAt, serverUpdatedAt },
+    "pantryItems",
+  );
 }
 
 export async function listPantryItems(): Promise<PantryItem[]> {
@@ -1817,54 +1622,47 @@ export async function addPantryNotification(
 export async function upsertPantryNotification(
   notif: PantryNotification & Partial<Versioned>,
 ): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_PANTRY_NOTIFICATIONS, notif.id);
-  await db.put(STORE_PANTRY_NOTIFICATIONS, {
+  await saveLocalRecord(STORE_PANTRY_NOTIFICATIONS, notif.id, (existing) => ({
     ...notif,
     updatedAt: Date.now(),
     localUpdatedAt: nowIso(),
     serverUpdatedAt: notif.serverUpdatedAt ?? existing?.serverUpdatedAt ?? null,
-  });
+  }));
   notifyDataChanged("pantryNotifications");
 }
 
-/** Mark a notification read (or unread). No-op when the id is gone. */
+/** Mark a notification read (or unread). No-op when the id is gone. Reads
+ *  and writes in one transaction, so a server version applied in between
+ *  can't be overwritten with the stale copy read before it. */
 export async function setPantryNotificationRead(
   id: string,
   read: boolean,
 ): Promise<void> {
-  const db = await getDB();
-  const row = await db.get(STORE_PANTRY_NOTIFICATIONS, id);
-  if (!row) return;
-  await upsertPantryNotification({ ...row, read });
+  await saveLocalRecord(
+    STORE_PANTRY_NOTIFICATIONS,
+    id,
+    (existing) =>
+      existing && {
+        ...existing,
+        read,
+        updatedAt: Date.now(),
+        localUpdatedAt: nowIso(),
+      },
+  );
+  notifyDataChanged("pantryNotifications");
 }
 
 /** Sync-layer hook: write a server-pulled notification. */
 export async function applyServerPantryNotification(
   notif: PantryNotification,
   serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  await db.put(STORE_PANTRY_NOTIFICATIONS, {
-    ...notif,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
-}
-
-/** Sync-layer hook: refresh the version token after a successful push. */
-export async function markPantryNotificationSynced(
-  id: string,
-  serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  const row = await db.get(STORE_PANTRY_NOTIFICATIONS, id);
-  if (!row) return;
-  await db.put(STORE_PANTRY_NOTIFICATIONS, {
-    ...row,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
+): Promise<ApplyServerOutcome> {
+  return applyServerRecord(
+    STORE_PANTRY_NOTIFICATIONS,
+    notif.id,
+    { ...notif, localUpdatedAt: serverUpdatedAt, serverUpdatedAt },
+    "pantryNotifications",
+  );
 }
 
 export async function listPantryNotifications(): Promise<PantryNotification[]> {
@@ -1891,15 +1689,16 @@ export async function upsertFavoriteStore(
   store: Omit<FavoriteStore, "createdAt" | "updatedAt" | keyof Versioned> &
     Partial<FavoriteStore>,
 ): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_FAVORITE_STORES, store.id);
-  const now = Date.now();
-  await db.put(STORE_FAVORITE_STORES, {
-    ...store,
-    createdAt: existing?.createdAt ?? store.createdAt ?? now,
-    updatedAt: now,
-    localUpdatedAt: nowIso(),
-    serverUpdatedAt: store.serverUpdatedAt ?? existing?.serverUpdatedAt ?? null,
+  await saveLocalRecord(STORE_FAVORITE_STORES, store.id, (existing) => {
+    const now = Date.now();
+    return {
+      ...store,
+      createdAt: existing?.createdAt ?? store.createdAt ?? now,
+      updatedAt: now,
+      localUpdatedAt: nowIso(),
+      serverUpdatedAt:
+        store.serverUpdatedAt ?? existing?.serverUpdatedAt ?? null,
+    };
   });
   notifyDataChanged("favoriteStores");
 }
@@ -1908,28 +1707,13 @@ export async function upsertFavoriteStore(
 export async function applyServerFavoriteStore(
   store: FavoriteStore,
   serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  await db.put(STORE_FAVORITE_STORES, {
-    ...store,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
-}
-
-/** Sync-layer hook: refresh the version token after a successful push. */
-export async function markFavoriteStoreSynced(
-  id: string,
-  serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  const row = await db.get(STORE_FAVORITE_STORES, id);
-  if (!row) return;
-  await db.put(STORE_FAVORITE_STORES, {
-    ...row,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
+): Promise<ApplyServerOutcome> {
+  return applyServerRecord(
+    STORE_FAVORITE_STORES,
+    store.id,
+    { ...store, localUpdatedAt: serverUpdatedAt, serverUpdatedAt },
+    "favoriteStores",
+  );
 }
 
 export async function listFavoriteStores(): Promise<FavoriteStore[]> {
@@ -1986,13 +1770,11 @@ export async function addFavoriteFood(
 export async function upsertFavoriteFood(
   fav: Omit<FavoriteFood, keyof Versioned> & Partial<Versioned>,
 ): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_FAVORITE_FOODS, fav.id);
-  await db.put(STORE_FAVORITE_FOODS, {
+  await saveLocalRecord(STORE_FAVORITE_FOODS, fav.id, (existing) => ({
     ...fav,
     localUpdatedAt: nowIso(),
     serverUpdatedAt: fav.serverUpdatedAt ?? existing?.serverUpdatedAt ?? null,
-  });
+  }));
   notifyDataChanged("favoriteFoods");
 }
 
@@ -2000,28 +1782,13 @@ export async function upsertFavoriteFood(
 export async function applyServerFavoriteFood(
   fav: Omit<FavoriteFood, keyof Versioned>,
   serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  await db.put(STORE_FAVORITE_FOODS, {
-    ...fav,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
-}
-
-/** Sync-layer hook: refresh the version token after a successful push. */
-export async function markFavoriteFoodSynced(
-  id: string,
-  serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  const row = await db.get(STORE_FAVORITE_FOODS, id);
-  if (!row) return;
-  await db.put(STORE_FAVORITE_FOODS, {
-    ...row,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
+): Promise<ApplyServerOutcome> {
+  return applyServerRecord(
+    STORE_FAVORITE_FOODS,
+    fav.id,
+    { ...fav, localUpdatedAt: serverUpdatedAt, serverUpdatedAt },
+    "favoriteFoods",
+  );
 }
 
 export async function listFavoriteFoods(): Promise<FavoriteFood[]> {
@@ -2056,14 +1823,16 @@ export async function deleteFavoriteFoodByName(name: string): Promise<void> {
 export async function saveMicronutrientProfile(
   profile: MicronutrientProfile,
 ): Promise<void> {
-  const db = await getDB();
-  const existing = await db.get(STORE_MICRONUTRIENT_PROFILES, profile.nameKey);
-  await db.put(STORE_MICRONUTRIENT_PROFILES, {
-    ...profile,
-    localUpdatedAt: nowIso(),
-    serverUpdatedAt:
-      profile.serverUpdatedAt ?? existing?.serverUpdatedAt ?? null,
-  });
+  await saveLocalRecord(
+    STORE_MICRONUTRIENT_PROFILES,
+    profile.nameKey,
+    (existing) => ({
+      ...profile,
+      localUpdatedAt: nowIso(),
+      serverUpdatedAt:
+        profile.serverUpdatedAt ?? existing?.serverUpdatedAt ?? null,
+    }),
+  );
   notifyDataChanged("micronutrientProfiles");
 }
 
@@ -2071,28 +1840,13 @@ export async function saveMicronutrientProfile(
 export async function applyServerMicronutrientProfile(
   profile: MicronutrientProfile,
   serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  await db.put(STORE_MICRONUTRIENT_PROFILES, {
-    ...profile,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
-}
-
-/** Sync-layer hook: refresh the version token after a successful push. */
-export async function markMicronutrientProfileSynced(
-  nameKey: string,
-  serverUpdatedAt: string,
-): Promise<void> {
-  const db = await getDB();
-  const row = await db.get(STORE_MICRONUTRIENT_PROFILES, nameKey);
-  if (!row) return;
-  await db.put(STORE_MICRONUTRIENT_PROFILES, {
-    ...row,
-    localUpdatedAt: serverUpdatedAt,
-    serverUpdatedAt,
-  });
+): Promise<ApplyServerOutcome> {
+  return applyServerRecord(
+    STORE_MICRONUTRIENT_PROFILES,
+    profile.nameKey,
+    { ...profile, localUpdatedAt: serverUpdatedAt, serverUpdatedAt },
+    null,
+  );
 }
 
 export async function listMicronutrientProfiles(): Promise<
@@ -2189,15 +1943,17 @@ export async function setSortOrder(
   id: string,
   sortOrder: number,
 ): Promise<void> {
-  const db = await getDB();
-  const row = await db.get(store, id);
-  if (!row) return;
-  await db.put(store, {
-    ...row,
-    sortOrder,
-    localUpdatedAt: nowIso(),
-    serverUpdatedAt: row.serverUpdatedAt ?? null,
-  });
+  await saveLocalRecord(
+    store,
+    id,
+    (existing) =>
+      existing && {
+        ...existing,
+        sortOrder,
+        localUpdatedAt: nowIso(),
+        serverUpdatedAt: existing.serverUpdatedAt ?? null,
+      },
+  );
 }
 
 /** Compute a fractional sort key that sits between `prev` and `next`.
@@ -2257,59 +2013,505 @@ export async function clearDeletion(
   await db.delete(STORE_DELETIONS, `${storeName}:${rowKey}`);
 }
 
-/** Realtime echo + initial-sync interaction: if a peer device deleted
- *  a row we *also* have a tombstone for, the tombstone is now
- *  redundant - both sides agree the row is gone. Clear it so we don't
- *  re-send the delete. Same shape as `clearDeletion`; named separately
- *  to make the call sites in the sync engine read clearly. */
-export async function clearTombstoneIfPresent(
-  storeName: DeletableStore,
-  rowKey: string,
-): Promise<void> {
-  await clearDeletion(storeName, rowKey);
+// ─── Sync-engine primitives ───────────────────────────────────────────────
+//
+// The invariants every server→IDB write path (pull, realtime) and every
+// push acknowledgement honours, each enforced inside ONE readwrite
+// transaction so a concurrent local save can't slip in between the check
+// and the write:
+//
+//  1. A dirty local row (never synced, or `localUpdatedAt !==
+//     serverUpdatedAt`) is NEVER overwritten by server data. It stays dirty
+//     and the push surfaces a stale base as a conflict. (When its content
+//     already equals the server's, it only adopts that version as its clean
+//     base — nothing is overwritten.)
+//  2. Marking a row synced is compare-and-set on the pushed snapshot's
+//     `localUpdatedAt`: an edit made while the push was in flight keeps the
+//     row dirty (with the fresh base token) so the next sync pushes it.
+//  3. A server row with a pending local tombstone is not written back (the
+//     user deleted it here; the tombstone push wins).
+
+/** Every IDB store whose rows carry the `Versioned` sync mixin. */
+type VersionedStore =
+  | typeof STORE_PROFILE
+  | typeof STORE_CUSTOM_FOODS
+  | typeof STORE_DAILY_LOGS
+  | typeof STORE_MEAL_TEMPLATES
+  | typeof STORE_WEIGHT_HISTORY
+  | typeof STORE_WATER_INTAKE
+  | typeof STORE_SUPPLEMENT_INTAKE
+  | typeof STORE_BODY_MEASUREMENTS
+  | typeof STORE_BLOOD_PRESSURE
+  | typeof STORE_FAST_SESSIONS
+  | typeof STORE_RECIPES
+  | typeof STORE_MEAL_SCHEDULES
+  | typeof STORE_SUPPLEMENTS
+  | typeof STORE_PANTRY_ITEMS
+  | typeof STORE_PANTRY_NOTIFICATIONS
+  | typeof STORE_FAVORITE_STORES
+  | typeof STORE_FAVORITE_FOODS
+  | typeof STORE_MICRONUTRIENT_PROFILES;
+
+/** The synced multi-row stores the sync engine addresses by name (every
+ *  versioned store except the single-row profile, which has its own
+ *  helpers). The names double as the data-bus table names. */
+export type SyncStoreName = Exclude<VersionedStore, typeof STORE_PROFILE>;
+
+/** Stores keyed by a client-minted UUID `id`, i.e. the ones whose rows can
+ *  be re-minted after a cross-user UUID collision. */
+export type UuidKeyedStore =
+  | typeof STORE_CUSTOM_FOODS
+  | typeof STORE_MEAL_TEMPLATES
+  | typeof STORE_RECIPES
+  | typeof STORE_MEAL_SCHEDULES
+  | typeof STORE_SUPPLEMENTS
+  | typeof STORE_PANTRY_ITEMS
+  | typeof STORE_PANTRY_NOTIFICATIONS;
+
+type VersionFields = Pick<Versioned, "localUpdatedAt" | "serverUpdatedAt">;
+
+/** A row is dirty — waiting to be pushed — when it has never reached the
+ *  server or was modified locally after the last pull/push. The single
+ *  definition the sync engine and these primitives share. */
+export function isDirtyRecord(row: VersionFields): boolean {
+  if (!row.serverUpdatedAt) return true;
+  return row.localUpdatedAt !== row.serverUpdatedAt;
 }
 
-/** Silent local-only delete used by the realtime DELETE handler (and
- *  the sync pull when we discover a row is gone server-side). Removes
- *  the IDB row WITHOUT writing a tombstone - we'd otherwise echo a
- *  redundant DELETE back to the server. Also wipes any pre-existing
- *  tombstone for the same key, since the server has already confirmed
- *  the row's deletion. */
+/** Postgres `timestamptz` → microseconds since the epoch. `Date.parse` alone
+ *  truncates to milliseconds, which would make two server writes inside the
+ *  same millisecond compare equal (and the second look "not newer"). The
+ *  sub-millisecond digits are read from the fractional part directly.
+ *  Returns `null` for an unparseable string. Safe in a double: ~1.8e15 for
+ *  present-day dates, well under 2^53. */
+function serverTimeMicros(ts: string): number | null {
+  const ms = Date.parse(ts);
+  if (Number.isNaN(ms)) return null;
+  const fraction = /\.(\d+)/.exec(ts)?.[1] ?? "";
+  const subMillis = Number(fraction.padEnd(6, "0").slice(3, 6));
+  return ms * 1000 + subMillis;
+}
+
+/** Order two server `updated_at` tokens: negative when `a` is older, 0 when
+ *  equal, positive when `a` is newer. An unparseable token sorts as older
+ *  so a malformed value can never block a well-formed newer one. */
+export function compareServerTimestamps(a: string, b: string): number {
+  const ma = serverTimeMicros(a);
+  const mb = serverTimeMicros(b);
+  if (ma === null && mb === null) return 0;
+  if (ma === null) return -1;
+  if (mb === null) return 1;
+  return ma - mb;
+}
+
+/** Deterministic JSON (object keys sorted) so two structurally equal rows
+ *  serialize identically regardless of property insertion order. */
+function stableStringify(value: unknown): string {
+  return JSON.stringify(value, (_key, v: unknown) => {
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      return Object.fromEntries(
+        Object.entries(v as Record<string, unknown>).sort(([a], [b]) =>
+          a < b ? -1 : a > b ? 1 : 0,
+        ),
+      );
+    }
+    return v;
+  });
+}
+
+/** Fields of a stored row that are client bookkeeping rather than content
+ *  the server owns, so they never round-trip through a push and the pull
+ *  that follows it:
+ *   - the version tokens themselves;
+ *   - `updatedAt`, which a local save stamps with `Date.now()` while the
+ *     pull mappers derive it from the server's `updated_at`;
+ *   - `recordedAt`, which the `applyServerX` helpers of the date-keyed
+ *     stores derive from the server's `updated_at`, not its `recorded_at`;
+ *   - `_demoSeeded`, an IDB-only marker on the profile row.
+ *  Comparing them would make the echo of every successful push look like
+ *  new server content. */
+const CLIENT_BOOKKEEPING_FIELDS = [
+  "localUpdatedAt",
+  "serverUpdatedAt",
+  "updatedAt",
+  "recordedAt",
+  "_demoSeeded",
+] as const;
+
+/** The server-owned content of a stored row, serialized deterministically:
+ *  equal for a local row and the server row it was pushed as (or pulled
+ *  from), whatever their bookkeeping fields say. */
+function serverOwnedContent(row: object): string {
+  const content: Record<string, unknown> = { ...row };
+  for (const field of CLIENT_BOOKKEEPING_FIELDS) delete content[field];
+  return stableStringify(content);
+}
+
+/** Write a row authored on this device (every `saveX` / `upsertX` /
+ *  `setX` of a synced store goes through here). The read of the stored row
+ *  and the write share ONE readwrite transaction, so a server version
+ *  applied — or a push acknowledged — in between can't be overwritten with
+ *  a stale base token.
+ *
+ *  `build` receives the stored row (if any) and returns the row to store,
+ *  stamped dirty (`localUpdatedAt` = now, `serverUpdatedAt` = the base it
+ *  branches from), or `undefined` to write nothing.
+ *
+ *  A save whose server-owned content equals the stored row's is not an
+ *  edit: the row keeps its stored version tokens, so a clean row stays
+ *  clean (and a dirty one keeps its base). Without this, a component that
+ *  re-saves what it just loaded would turn every server-mirrored row dirty;
+ *  a dirty row is never overwritten by server data (invariant 1), so every
+ *  later peer update would be held back and the next sync would report a
+ *  conflict the user never caused. Client bookkeeping fields still take
+ *  the new values ({@link CLIENT_BOOKKEEPING_FIELDS}). */
+async function saveLocalRecord<S extends VersionedStore>(
+  store: S,
+  key: string,
+  build: (
+    existing: MacroDB[S]["value"] | undefined,
+  ) => MacroDB[S]["value"] | undefined,
+): Promise<void> {
+  const db = await getDB();
+  const tx = db.transaction(store, "readwrite");
+  const existing = await tx.store.get(key);
+  const next = build(existing);
+  if (next) {
+    if (existing && serverOwnedContent(existing) === serverOwnedContent(next)) {
+      const stored = existing as VersionFields;
+      await tx.store.put({
+        ...next,
+        localUpdatedAt: stored.localUpdatedAt,
+        serverUpdatedAt: stored.serverUpdatedAt,
+      });
+    } else {
+      await tx.store.put(next);
+    }
+  }
+  await tx.done;
+}
+
+/** What happened when a server row was offered to IDB. */
+export type ApplyServerOutcome =
+  /** Written (new row, newer server version, or a clean local copy that had
+   *  drifted from the server's content at the same version). */
+  | "applied"
+  /** The local row is dirty; left untouched (invariant 1). */
+  | "kept-dirty"
+  /** The local row was dirty but its server-owned content already equals
+   *  this server version (e.g. our push landed but its acknowledgement was
+   *  lost): it now records that version as its clean base. Content is
+   *  untouched, so there is nothing to re-render. */
+  | "adopted"
+  /** The local clean copy already mirrors this (or a newer) server version. */
+  | "not-newer"
+  /** The user deleted this row locally and the tombstone hasn't been pushed
+   *  yet; writing it back would resurrect it (invariant 3). */
+  | "tombstoned";
+
+/** A dirty local row may take a server version as its clean base only when
+ *  nothing would be lost: its server-owned content already equals that
+ *  version's, and that version is not older than the base the row branched
+ *  from. This is how a push whose acknowledgement never arrived (a timeout
+ *  or a dropped connection after the server committed) settles on the next
+ *  pull, instead of being re-sent and rejected as a conflict with itself. */
+function adoptsServerVersion(
+  existing: VersionFields,
+  incoming: VersionFields,
+): boolean {
+  if (!incoming.serverUpdatedAt) return false;
+  if (
+    existing.serverUpdatedAt &&
+    compareServerTimestamps(
+      incoming.serverUpdatedAt,
+      existing.serverUpdatedAt,
+    ) < 0
+  ) {
+    return false;
+  }
+  return serverOwnedContent(existing) === serverOwnedContent(incoming);
+}
+
+/** Write one server row into `store` under `key`, honouring the invariants
+ *  above. `record` carries `localUpdatedAt === serverUpdatedAt` (clean).
+ *
+ *  A clean local copy at the SAME version is still refreshed when its
+ *  server-owned content differs from the server's: a clean row is by
+ *  definition a mirror of that server version, so any difference is local
+ *  corruption — e.g. a pantry row an older client pulled without its
+ *  `category` / `density` / `low_threshold` columns, which would otherwise
+ *  be pushed back as NULLs on the next local edit. Identical content is a
+ *  no-op — in particular the realtime echo of our own push, which must not
+ *  rewrite the row or wake the data bus (a hook reloading on it would
+ *  replace edits still waiting in its save debounce with the pushed
+ *  snapshot). Client bookkeeping fields are ignored by the comparison
+ *  ({@link CLIENT_BOOKKEEPING_FIELDS}). */
+async function applyServerRecord<S extends VersionedStore>(
+  store: S,
+  key: string,
+  record: MacroDB[S]["value"],
+  tombstoneStore: DeletableStore | null,
+): Promise<ApplyServerOutcome> {
+  const db = await getDB();
+  const tx = db.transaction([store, STORE_DELETIONS], "readwrite");
+  const objectStore = tx.objectStore(store);
+  const incoming = record as VersionFields;
+  let outcome: ApplyServerOutcome = "applied";
+  const tombstone = tombstoneStore
+    ? await tx.objectStore(STORE_DELETIONS).get(`${tombstoneStore}:${key}`)
+    : undefined;
+  if (tombstone) {
+    outcome = "tombstoned";
+  } else {
+    const stored = await objectStore.get(key);
+    const existing = stored as VersionFields | undefined;
+    if (stored && existing && isDirtyRecord(existing)) {
+      outcome = adoptsServerVersion(existing, incoming)
+        ? "adopted"
+        : "kept-dirty";
+      if (outcome === "adopted") {
+        await objectStore.put({
+          ...stored,
+          localUpdatedAt: incoming.serverUpdatedAt,
+          serverUpdatedAt: incoming.serverUpdatedAt,
+        });
+      }
+    } else if (existing) {
+      const order = compareServerTimestamps(
+        incoming.serverUpdatedAt ?? "",
+        existing.serverUpdatedAt ?? "",
+      );
+      if (
+        order < 0 ||
+        (order === 0 &&
+          serverOwnedContent(existing) === serverOwnedContent(record))
+      ) {
+        outcome = "not-newer";
+      }
+    }
+  }
+  if (outcome === "applied") await objectStore.put(record);
+  await tx.done;
+  return outcome;
+}
+
+/** What happened when a push acknowledgement was recorded. */
+export type MarkSyncedOutcome =
+  /** The row still matched the pushed snapshot and is now clean. */
+  | "synced"
+  /** The row was edited while the push was in flight: it took the new base
+   *  token but stays dirty, so the next sync pushes the newer edit. */
+  | "still-dirty"
+  /** The row is gone locally (deleted mid-push; its tombstone will drain). */
+  | "missing";
+
+async function markVersionedRecordSynced<S extends VersionedStore>(
+  store: S,
+  key: string,
+  serverUpdatedAt: string,
+  pushedLocalUpdatedAt: string | undefined,
+): Promise<MarkSyncedOutcome> {
+  const db = await getDB();
+  const tx = db.transaction(store, "readwrite");
+  const row = await tx.store.get(key);
+  let outcome: MarkSyncedOutcome = "missing";
+  if (row) {
+    const current = row as VersionFields;
+    const unchanged = current.localUpdatedAt === pushedLocalUpdatedAt;
+    outcome = unchanged ? "synced" : "still-dirty";
+    await tx.store.put({
+      ...row,
+      localUpdatedAt: unchanged ? serverUpdatedAt : current.localUpdatedAt,
+      serverUpdatedAt,
+    });
+  }
+  await tx.done;
+  return outcome;
+}
+
+/** Sync-layer hook: record that the push of `key` (whose snapshot carried
+ *  `pushedLocalUpdatedAt`) was accepted at `serverUpdatedAt`. Compare-and-
+ *  set: only marks the row clean if it wasn't modified after the snapshot
+ *  was taken (invariant 2). */
+export async function markRecordSynced(
+  store: SyncStoreName,
+  key: string,
+  serverUpdatedAt: string,
+  pushedLocalUpdatedAt: string | undefined,
+): Promise<MarkSyncedOutcome> {
+  return markVersionedRecordSynced(
+    store,
+    key,
+    serverUpdatedAt,
+    pushedLocalUpdatedAt,
+  );
+}
+
+async function rebaseVersionedRecord<S extends VersionedStore>(
+  store: S,
+  key: string,
+  expectedBase: string | null,
+  newBase: string | null,
+): Promise<boolean> {
+  const db = await getDB();
+  const tx = db.transaction(store, "readwrite");
+  const row = await tx.store.get(key);
+  const current = row as VersionFields | undefined;
+  const rebased =
+    !!row &&
+    !!current &&
+    isDirtyRecord(current) &&
+    (current.serverUpdatedAt ?? null) === expectedBase;
+  if (rebased) await tx.store.put({ ...row, serverUpdatedAt: newBase });
+  await tx.done;
+  return rebased;
+}
+
+/** Conflict resolution "keep this device's version": move a dirty row's base
+ *  token from `expectedBase` to the server's current `newBase` (or `null`
+ *  when the server row is gone, so the push re-creates it) WITHOUT touching
+ *  its content, so the next push wins the optimistic-concurrency check.
+ *  `expectedBase` is `null` for a never-synced row whose INSERT found a
+ *  peer's row with the same natural key: it adopts that row's token, so
+ *  the next push is a versioned UPDATE replacing it.
+ *  No-op (returns false) unless the row is still dirty on `expectedBase`. */
+export async function rebaseDirtyRecord(
+  store: SyncStoreName,
+  key: string,
+  expectedBase: string | null,
+  newBase: string | null,
+): Promise<boolean> {
+  return rebaseVersionedRecord(store, key, expectedBase, newBase);
+}
+
+/** Profile flavour of {@link rebaseDirtyRecord}. */
+export async function rebaseDirtyProfile(
+  expectedBase: string | null,
+  newBase: string | null,
+): Promise<boolean> {
+  return rebaseVersionedRecord(
+    STORE_PROFILE,
+    PROFILE_KEY,
+    expectedBase,
+    newBase,
+  );
+}
+
+/** Result of reconciling a store against a complete server key set. */
+export type ReconcileOutcome = {
+  /** Clean, previously-synced rows the server no longer has — deleted. */
+  removed: string[];
+  /** Dirty, previously-synced rows the server no longer has — kept, and
+   *  their base token cleared so the next push re-creates them. */
+  requeued: string[];
+};
+
+/** Remote-delete reconciliation, run after a COMPLETE pull of `store`.
+ *  Hard deletes leave nothing to pull, so the only way a device that missed
+ *  the realtime DELETE (offline, asleep, or a table without realtime) learns
+ *  about it is by noticing the row is absent from the full server set.
+ *
+ *  For each local row whose key is not in `serverKeys`:
+ *   - never synced (`serverUpdatedAt` null) → untouched; it is a local
+ *     creation the push will upload;
+ *   - its token changed since `baseline` was captured (i.e. a realtime event
+ *     landed after the pull's SELECT) → untouched; the next pull decides;
+ *   - clean → deleted locally (no tombstone: the server already agrees);
+ *   - dirty → KEPT and re-queued (`serverUpdatedAt: null`). Deliberate
+ *     choice: a local edit to a row another device deleted wins over the
+ *     delete and is re-pushed, rather than silently discarding user input.
+ *
+ *  `baseline` maps each local key to the `serverUpdatedAt` it had BEFORE the
+ *  pull's SELECT was issued. */
+export async function reconcileServerAbsences(
+  store: SyncStoreName,
+  serverKeys: ReadonlySet<string>,
+  baseline: ReadonlyMap<string, string | null | undefined>,
+): Promise<ReconcileOutcome> {
+  const db = await getDB();
+  const tx = db.transaction(store, "readwrite");
+  const outcome: ReconcileOutcome = { removed: [], requeued: [] };
+  let cursor = await tx.store.openCursor();
+  while (cursor) {
+    const key = String(cursor.primaryKey);
+    const row = cursor.value as VersionFields;
+    if (
+      !serverKeys.has(key) &&
+      row.serverUpdatedAt &&
+      baseline.get(key) === row.serverUpdatedAt
+    ) {
+      if (isDirtyRecord(row)) {
+        await cursor.update({ ...cursor.value, serverUpdatedAt: null });
+        outcome.requeued.push(key);
+      } else {
+        await cursor.delete();
+        outcome.removed.push(key);
+      }
+    }
+    cursor = await cursor.continue();
+  }
+  await tx.done;
+  return outcome;
+}
+
+/** UUID-collision recovery (the server's RLS rejected our insert because the
+ *  client-minted id belongs to another user): atomically move the local row
+ *  from `oldId` to `newId`, as a never-synced row. No tombstone for `oldId`
+ *  — it never belonged to this user server-side. Preserves the row's
+ *  current content and `localUpdatedAt`, so the retry pushes exactly what is
+ *  stored and the compare-and-set mark can succeed. Returns the moved row, or
+ *  `null` if it was deleted locally in the meantime. */
+export async function reassignLocalRecordId<S extends UuidKeyedStore>(
+  store: S,
+  oldId: string,
+  newId: string,
+): Promise<MacroDB[S]["value"] | null> {
+  const db = await getDB();
+  const tx = db.transaction(store, "readwrite");
+  const existing = await tx.store.get(oldId);
+  let moved: MacroDB[S]["value"] | null = null;
+  if (existing) {
+    moved = { ...existing, id: newId, serverUpdatedAt: null };
+    await tx.store.put(moved);
+    await tx.store.delete(oldId);
+  }
+  await tx.done;
+  if (moved) notifyDataChanged(store);
+  return moved;
+}
+
+/** What a server-side DELETE did to the local copy. */
+export type ServerDeletionOutcome = "deleted" | "kept-dirty" | "absent";
+
+/** Silent local-only delete used by the realtime DELETE handler. Removes the
+ *  IDB row WITHOUT writing a tombstone (we'd otherwise echo a redundant
+ *  DELETE back to the server) and clears any pending tombstone for the same
+ *  key, since the server has already confirmed the deletion.
+ *
+ *  A dirty local row is kept (invariant 1) and, if it had reached the
+ *  server before, re-queued as a fresh insert — the same "local edit wins
+ *  over a remote delete" rule {@link reconcileServerAbsences} applies. */
 export async function applyServerDeletion(
   storeName: DeletableStore,
   rowKey: string,
-): Promise<void> {
+): Promise<ServerDeletionOutcome> {
   const db = await getDB();
-  const storeMap: Record<DeletableStore, string> = {
-    customFoods: STORE_CUSTOM_FOODS,
-    mealTemplates: STORE_MEAL_TEMPLATES,
-    recipes: STORE_RECIPES,
-    mealSchedules: STORE_MEAL_SCHEDULES,
-    supplements: STORE_SUPPLEMENTS,
-    dailyLogs: STORE_DAILY_LOGS,
-    weightHistory: STORE_WEIGHT_HISTORY,
-    bodyMeasurements: STORE_BODY_MEASUREMENTS,
-    bloodPressure: STORE_BLOOD_PRESSURE,
-    fastSessions: STORE_FAST_SESSIONS,
-    pantryItems: STORE_PANTRY_ITEMS,
-    pantryNotifications: STORE_PANTRY_NOTIFICATIONS,
-    favoriteStores: STORE_FAVORITE_STORES,
-    favoriteFoods: STORE_FAVORITE_FOODS,
-  };
-  await db.delete(
-    storeMap[storeName] as
-      | typeof STORE_CUSTOM_FOODS
-      | typeof STORE_MEAL_TEMPLATES
-      | typeof STORE_RECIPES
-      | typeof STORE_DAILY_LOGS
-      | typeof STORE_WEIGHT_HISTORY
-      | typeof STORE_PANTRY_ITEMS
-      | typeof STORE_PANTRY_NOTIFICATIONS
-      | typeof STORE_FAVORITE_STORES
-      | typeof STORE_FAVORITE_FOODS,
-    rowKey,
-  );
-  await clearTombstoneIfPresent(storeName, rowKey);
+  const tx = db.transaction([storeName, STORE_DELETIONS], "readwrite");
+  const objectStore = tx.objectStore(storeName);
+  const row = await objectStore.get(rowKey);
+  let outcome: ServerDeletionOutcome = "absent";
+  if (row && isDirtyRecord(row)) {
+    outcome = "kept-dirty";
+    if (row.serverUpdatedAt) {
+      await objectStore.put({ ...row, serverUpdatedAt: null });
+    }
+  } else if (row) {
+    outcome = "deleted";
+    await objectStore.delete(rowKey);
+  }
+  await tx.objectStore(STORE_DELETIONS).delete(`${storeName}:${rowKey}`);
+  await tx.done;
+  return outcome;
 }
 
 // ─── Bulk ──────────────────────────────────────────────────────────────────

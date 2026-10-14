@@ -6,6 +6,7 @@ import {
   bumpPending,
   setSyncError,
   setSynced,
+  setSyncing,
 } from "@/lib/sync-status";
 import en from "@/messages/en.json";
 import type { ReactElement } from "react";
@@ -105,8 +106,11 @@ describe("UserMenu sign-out", () => {
     bumpPending();
     mockTriggerSync.mockImplementation(async () => {
       expect(mockSignOutAndClearLocal).not.toHaveBeenCalled();
+      // The engine's status sequence: a run starts (claiming every write
+      // made so far), then lands it all.
+      setSyncing();
       setSynced();
-      return { conflicts: 0 };
+      return { conflicts: [] };
     });
 
     await clickSignOut();

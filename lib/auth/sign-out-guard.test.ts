@@ -25,7 +25,17 @@ describe("signOutRisk", () => {
 
   it("reports the larger of pending writes and conflicted rows", () => {
     expect(
-      signOutRisk({ status: { state: "conflict", count: 3 }, pending: 1 }),
+      signOutRisk({
+        status: {
+          state: "conflict",
+          rows: [
+            { table: "daily_logs", key: "2026-05-14" },
+            { table: "daily_logs", key: "2026-05-15" },
+            { table: "profiles", key: "user-a" },
+          ],
+        },
+        pending: 1,
+      }),
     ).toEqual({ atRisk: true, count: 3 });
   });
 

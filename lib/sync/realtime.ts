@@ -15,7 +15,7 @@ import {
   applyServerWaterIntake,
   applyServerWeightEntry,
   applyServerDeletion,
-  getProfileRecord,
+  type DeletableStore,
 } from "@/lib/db";
 import { reportStorageError } from "@/lib/storage-status";
 import type {
@@ -23,7 +23,7 @@ import type {
   RealtimePostgresChangesPayload,
   SupabaseClient,
 } from "@supabase/supabase-js";
-import { notifyDataChanged, type SyncedTable } from "./data-bus";
+import { notifyDataChanged } from "./data-bus";
 import {
   customFoodFromRow,
   dailyLogFromRow,
@@ -67,9 +67,10 @@ export type RealtimeCallbacks = { onReconnect?: () => void };
 /** Subscribe to Postgres change events on every synced table, filtered
  *  to the calling user's rows via the standard
  *  `user_id=eq.<userId>` Realtime filter. On each `INSERT` / `UPDATE`,
- *  write the new row into IDB via the matching `applyServerX` helper
- *  and notify the data bus so React hooks re-fetch. On `DELETE`, call
- *  the local `deleteX` and notify.
+ *  offer the new row to IDB via the matching `applyServerX` helper (which
+ *  never overwrites a dirty local edit) and, when it was written, notify
+ *  the data bus so React hooks re-fetch. On `DELETE`, remove the local
+ *  copy via `applyServerDeletion` (owner-checked, dirty rows kept).
  *
  *  Channels are owned by this module — the returned handle's
  *  `unsubscribe()` is the only public lifecycle hook. */
@@ -105,7 +106,7 @@ export function startRealtimeSubscription(
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "profiles", filter },
-        run(handleProfile),
+        run(userId, handleProfile),
       )
       .subscribe(buildSubscribeHandler()),
   );
@@ -116,7 +117,7 @@ export function startRealtimeSubscription(
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "daily_logs", filter },
-        run(handleDailyLog),
+        run(userId, handleDailyLog),
       )
       .subscribe(buildSubscribeHandler()),
   );
@@ -127,7 +128,7 @@ export function startRealtimeSubscription(
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "weight_history", filter },
-        run(handleWeight),
+        run(userId, handleWeight),
       )
       .subscribe(buildSubscribeHandler()),
   );
@@ -138,7 +139,7 @@ export function startRealtimeSubscription(
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "water_intake", filter },
-        run(handleWater),
+        run(userId, handleWater),
       )
       .subscribe(buildSubscribeHandler()),
   );
@@ -149,7 +150,7 @@ export function startRealtimeSubscription(
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "supplement_intake", filter },
-        run(handleSupplementIntake),
+        run(userId, handleSupplementIntake),
       )
       .subscribe(buildSubscribeHandler()),
   );
@@ -160,7 +161,7 @@ export function startRealtimeSubscription(
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "custom_foods", filter },
-        run(handleCustomFood),
+        run(userId, handleCustomFood),
       )
       .subscribe(buildSubscribeHandler()),
   );
@@ -171,7 +172,7 @@ export function startRealtimeSubscription(
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "meal_templates", filter },
-        run(handleMealTemplate),
+        run(userId, handleMealTemplate),
       )
       .subscribe(buildSubscribeHandler()),
   );
@@ -182,7 +183,7 @@ export function startRealtimeSubscription(
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "recipes", filter },
-        run(handleRecipe),
+        run(userId, handleRecipe),
       )
       .subscribe(buildSubscribeHandler()),
   );
@@ -193,7 +194,7 @@ export function startRealtimeSubscription(
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "pantry_items", filter },
-        run(handlePantryItem),
+        run(userId, handlePantryItem),
       )
       .subscribe(buildSubscribeHandler()),
   );
@@ -204,7 +205,7 @@ export function startRealtimeSubscription(
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "pantry_notifications", filter },
-        run(handlePantryNotification),
+        run(userId, handlePantryNotification),
       )
       .subscribe(buildSubscribeHandler()),
   );
@@ -215,7 +216,7 @@ export function startRealtimeSubscription(
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "favorite_stores", filter },
-        run((payload) => handleFavoriteStore(payload, userId)),
+        run(userId, handleFavoriteStore),
       )
       .subscribe(buildSubscribeHandler()),
   );
@@ -225,7 +226,7 @@ export function startRealtimeSubscription(
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "favorite_foods", filter },
-        run(handleFavoriteFood),
+        run(userId, handleFavoriteFood),
       )
       .subscribe(buildSubscribeHandler()),
   );
@@ -241,7 +242,7 @@ export function startRealtimeSubscription(
           table: "micronutrient_profiles",
           filter,
         },
-        run(handleMicronutrientProfile),
+        run(userId, handleMicronutrientProfile),
       )
       .subscribe(buildSubscribeHandler()),
   );
@@ -270,9 +271,12 @@ type LoosePayload = RealtimePostgresChangesPayload<Record<string, unknown>>;
  *  storage-health banner via `reportStorageError` instead of vanishing as an
  *  unhandled rejection — a silently dropped cross-device change is exactly
  *  the failure that banner exists for. */
-function run(handler: (payload: LoosePayload) => Promise<void>) {
+function run(
+  userId: string,
+  handler: (payload: LoosePayload, userId: string) => Promise<void>,
+) {
   return (payload: LoosePayload) => {
-    handler(payload).catch(reportStorageError);
+    handler(payload, userId).catch(reportStorageError);
   };
 }
 
@@ -299,39 +303,41 @@ async function handleProfile(payload: LoosePayload) {
   // `{}` placeholder (migration 0074): no profile yet — keep the local one.
   const profile = profileFromRow(row);
   if (!profile) return;
-  if (await isOwnEcho("profile", row.updated_at)) return;
-  await applyServerProfile(profile, row.updated_at);
-  notifyDataChanged("profile");
+  if ((await applyServerProfile(profile, row.updated_at)) === "applied") {
+    notifyDataChanged("profile");
+  }
 }
 
-async function handleDailyLog(payload: LoosePayload) {
+async function handleDailyLog(payload: LoosePayload, userId: string) {
   if (payload.eventType === "DELETE") {
-    const old = payload.old as Partial<DailyLogRow> | undefined;
-    if (old?.date) await applyServerDeletion("dailyLogs", old.date);
-    notifyDataChanged("dailyLogs");
+    await handleDeletion(payload, userId, "dailyLogs", "date");
     return;
   }
   const row = newRow<DailyLogRow>(payload);
   if (!row) return;
-  if (await isOwnEcho("dailyLogs", row.updated_at)) return;
   const log = dailyLogFromRow(row);
-  await applyServerDailyLog(log.date, log.meals, row.updated_at);
-  notifyDataChanged("dailyLogs");
+  if (
+    (await applyServerDailyLog(log.date, log.meals, row.updated_at)) ===
+    "applied"
+  ) {
+    notifyDataChanged("dailyLogs");
+  }
 }
 
-async function handleWeight(payload: LoosePayload) {
+async function handleWeight(payload: LoosePayload, userId: string) {
   if (payload.eventType === "DELETE") {
-    const old = payload.old as Partial<WeightRow> | undefined;
-    if (old?.date) await applyServerDeletion("weightHistory", old.date);
-    notifyDataChanged("weightHistory");
+    await handleDeletion(payload, userId, "weightHistory", "date");
     return;
   }
   const row = newRow<WeightRow>(payload);
   if (!row) return;
-  if (await isOwnEcho("weightHistory", row.updated_at)) return;
   const entry = weightFromRow(row);
-  await applyServerWeightEntry(entry.date, entry.kg, row.updated_at);
-  notifyDataChanged("weightHistory");
+  if (
+    (await applyServerWeightEntry(entry.date, entry.kg, row.updated_at)) ===
+    "applied"
+  ) {
+    notifyDataChanged("weightHistory");
+  }
 }
 
 async function handleWater(payload: LoosePayload) {
@@ -342,10 +348,13 @@ async function handleWater(payload: LoosePayload) {
   if (payload.eventType === "DELETE") return;
   const row = newRow<WaterRow>(payload);
   if (!row) return;
-  if (await isOwnEcho("waterIntake", row.updated_at)) return;
   const entry = waterFromRow(row);
-  await applyServerWaterIntake(entry.date, entry.ml, row.updated_at);
-  notifyDataChanged("waterIntake");
+  if (
+    (await applyServerWaterIntake(entry.date, entry.ml, row.updated_at)) ===
+    "applied"
+  ) {
+    notifyDataChanged("waterIntake");
+  }
 }
 
 async function handleSupplementIntake(payload: LoosePayload) {
@@ -354,116 +363,128 @@ async function handleSupplementIntake(payload: LoosePayload) {
   if (payload.eventType === "DELETE") return;
   const row = newRow<SupplementIntakeRow>(payload);
   if (!row) return;
-  if (await isOwnEcho("supplementIntake", row.updated_at)) return;
   const entry = supplementIntakeFromRow(row);
-  await applyServerSupplementIntake(entry.date, entry.taken, row.updated_at);
-  notifyDataChanged("supplementIntake");
+  if (
+    (await applyServerSupplementIntake(
+      entry.date,
+      entry.taken,
+      row.updated_at,
+    )) === "applied"
+  ) {
+    notifyDataChanged("supplementIntake");
+  }
 }
 
-async function handleCustomFood(payload: LoosePayload) {
+async function handleCustomFood(payload: LoosePayload, userId: string) {
   if (payload.eventType === "DELETE") {
-    const old = payload.old as Partial<CustomFoodRow> | undefined;
-    if (old?.id) await applyServerDeletion("customFoods", old.id);
-    notifyDataChanged("customFoods");
+    await handleDeletion(payload, userId, "customFoods", "id");
     return;
   }
   const row = newRow<CustomFoodRow>(payload);
   if (!row) return;
-  if (await isOwnEcho("customFoods", row.updated_at)) return;
-  await applyServerCustomFood(customFoodFromRow(row), row.updated_at);
-  notifyDataChanged("customFoods");
+  if (
+    (await applyServerCustomFood(customFoodFromRow(row), row.updated_at)) ===
+    "applied"
+  ) {
+    notifyDataChanged("customFoods");
+  }
 }
 
-async function handleMealTemplate(payload: LoosePayload) {
+async function handleMealTemplate(payload: LoosePayload, userId: string) {
   if (payload.eventType === "DELETE") {
-    const old = payload.old as Partial<MealTemplateRow> | undefined;
-    if (old?.id) await applyServerDeletion("mealTemplates", old.id);
-    notifyDataChanged("mealTemplates");
+    await handleDeletion(payload, userId, "mealTemplates", "id");
     return;
   }
   const row = newRow<MealTemplateRow>(payload);
   if (!row) return;
-  if (await isOwnEcho("mealTemplates", row.updated_at)) return;
-  await applyServerMealTemplate(mealTemplateFromRow(row), row.updated_at);
-  notifyDataChanged("mealTemplates");
+  if (
+    (await applyServerMealTemplate(
+      mealTemplateFromRow(row),
+      row.updated_at,
+    )) === "applied"
+  ) {
+    notifyDataChanged("mealTemplates");
+  }
 }
 
-async function handleRecipe(payload: LoosePayload) {
+async function handleRecipe(payload: LoosePayload, userId: string) {
   if (payload.eventType === "DELETE") {
-    const old = payload.old as Partial<RecipeRow> | undefined;
-    if (old?.id) await applyServerDeletion("recipes", old.id);
-    notifyDataChanged("recipes");
+    await handleDeletion(payload, userId, "recipes", "id");
     return;
   }
   const row = newRow<RecipeRow>(payload);
   if (!row) return;
-  if (await isOwnEcho("recipes", row.updated_at)) return;
-  await applyServerRecipe(recipeFromRow(row), row.updated_at);
-  notifyDataChanged("recipes");
+  if (
+    (await applyServerRecipe(recipeFromRow(row), row.updated_at)) === "applied"
+  ) {
+    notifyDataChanged("recipes");
+  }
 }
 
-async function handlePantryItem(payload: LoosePayload) {
+async function handlePantryItem(payload: LoosePayload, userId: string) {
   if (payload.eventType === "DELETE") {
-    const old = payload.old as Partial<PantryItemRow> | undefined;
-    if (old?.id) await applyServerDeletion("pantryItems", old.id);
-    notifyDataChanged("pantryItems");
+    await handleDeletion(payload, userId, "pantryItems", "id");
     return;
   }
   const row = newRow<PantryItemRow>(payload);
   if (!row) return;
-  if (await isOwnEcho("pantryItems", row.updated_at)) return;
-  await applyServerPantryItem(pantryItemFromRow(row), row.updated_at);
-  notifyDataChanged("pantryItems");
+  if (
+    (await applyServerPantryItem(pantryItemFromRow(row), row.updated_at)) ===
+    "applied"
+  ) {
+    notifyDataChanged("pantryItems");
+  }
 }
 
-async function handlePantryNotification(payload: LoosePayload) {
+async function handlePantryNotification(payload: LoosePayload, userId: string) {
   if (payload.eventType === "DELETE") {
-    const old = payload.old as Partial<PantryNotificationRow> | undefined;
-    if (old?.id) await applyServerDeletion("pantryNotifications", old.id);
-    notifyDataChanged("pantryNotifications");
+    await handleDeletion(payload, userId, "pantryNotifications", "id");
     return;
   }
   const row = newRow<PantryNotificationRow>(payload);
   if (!row) return;
-  if (await isOwnEcho("pantryNotifications", row.updated_at)) return;
-  await applyServerPantryNotification(
-    pantryNotificationFromRow(row),
-    row.updated_at,
-  );
-  notifyDataChanged("pantryNotifications");
+  if (
+    (await applyServerPantryNotification(
+      pantryNotificationFromRow(row),
+      row.updated_at,
+    )) === "applied"
+  ) {
+    notifyDataChanged("pantryNotifications");
+  }
 }
 
 async function handleFavoriteStore(payload: LoosePayload, userId: string) {
   if (payload.eventType === "DELETE") {
-    // The id is a shared OSM key, so another user removing the same store
-    // from their favourites produces a DELETE with the same `old.id`. Realtime applies
-    // neither the `user_id` filter nor RLS to DELETE events, so only act on
-    // our own rows: `old` carries the primary key, (user_id, id) since 0077.
-    const old = payload.old as Partial<FavoriteStoreRow> | undefined;
-    if (!old?.id || old.user_id !== userId) return;
-    await applyServerDeletion("favoriteStores", old.id);
-    notifyDataChanged("favoriteStores");
+    await handleDeletion(payload, userId, "favoriteStores", "id");
     return;
   }
   const row = newRow<FavoriteStoreRow>(payload);
   if (!row) return;
-  if (await isOwnEcho("favoriteStores", row.updated_at)) return;
-  await applyServerFavoriteStore(favoriteStoreFromRow(row), row.updated_at);
-  notifyDataChanged("favoriteStores");
+  if (
+    (await applyServerFavoriteStore(
+      favoriteStoreFromRow(row),
+      row.updated_at,
+    )) === "applied"
+  ) {
+    notifyDataChanged("favoriteStores");
+  }
 }
 
-async function handleFavoriteFood(payload: LoosePayload) {
+async function handleFavoriteFood(payload: LoosePayload, userId: string) {
   if (payload.eventType === "DELETE") {
-    const old = payload.old as Partial<FavoriteFoodRow> | undefined;
-    if (old?.id) await applyServerDeletion("favoriteFoods", old.id);
-    notifyDataChanged("favoriteFoods");
+    await handleDeletion(payload, userId, "favoriteFoods", "id");
     return;
   }
   const row = newRow<FavoriteFoodRow>(payload);
   if (!row) return;
-  if (await isOwnEcho("favoriteFoods", row.updated_at)) return;
-  await applyServerFavoriteFood(favoriteFoodFromRow(row), row.updated_at);
-  notifyDataChanged("favoriteFoods");
+  if (
+    (await applyServerFavoriteFood(
+      favoriteFoodFromRow(row),
+      row.updated_at,
+    )) === "applied"
+  ) {
+    notifyDataChanged("favoriteFoods");
+  }
 }
 
 async function handleMicronutrientProfile(payload: LoosePayload) {
@@ -476,41 +497,68 @@ async function handleMicronutrientProfile(payload: LoosePayload) {
   if (!row) return;
   // No own-echo check: the client never pushes these, so every event
   // is a genuine cron write from the server.
-  await applyServerMicronutrientProfile(
-    micronutrientProfileFromRow(row),
-    row.updated_at,
-  );
-  notifyDataChanged("micronutrientProfiles");
+  if (
+    (await applyServerMicronutrientProfile(
+      micronutrientProfileFromRow(row),
+      row.updated_at,
+    )) === "applied"
+  ) {
+    notifyDataChanged("micronutrientProfiles");
+  }
 }
 
-// ─── Own-echo detection ──────────────────────────────────────────────
+// ─── Own echoes & deletions ─────────────────────────────────────────
 
-/** When this device pushes a row, the server fires a Realtime event
- *  back to us. We've already written the row locally (and
- *  `markXSynced` set `serverUpdatedAt` to the new server timestamp).
- *  If the incoming event's `updated_at` matches what we already have
- *  locally, it's our own echo — skip it. Otherwise it's a change
- *  from a peer device and we apply it.
- *
- *  We look up the local row by key per-table; for tables we only
- *  store a single row of (profile), we just compare the cached
- *  `serverUpdatedAt`. For per-id stores we'd need a key-specific
- *  read, but the cost of a redundant IDB write is small enough that
- *  we accept it for the row-id case if we don't have a quick lookup
- *  — `applyServerX` is idempotent. */
-async function isOwnEcho(
-  table: SyncedTable,
-  serverUpdatedAt: string,
-): Promise<boolean> {
-  if (table === "profile") {
-    const local = await getProfileRecord();
-    return local?.serverUpdatedAt === serverUpdatedAt;
+// Own echoes need no special casing: when this device pushes a row, the
+// server fires the change back to us, and `applyServerX` decides inside one
+// IDB transaction — a local copy that is still dirty (the echo raced our
+// mark-synced, or the user edited mid-push) is never overwritten, and a
+// clean copy already at that version with the same content is a no-op.
+
+/** Stores whose server primary key includes `user_id`, because the key
+ *  alone is shared across users: the date-keyed tables are
+ *  `(user_id, date)`, and favorite_stores is `(user_id, id)` since migration
+ *  0077 (its id is a shared OSM key such as `node/123`). A DELETE's `old`
+ *  for these always carries the owner. */
+const OWNER_KEYED_STORES: ReadonlySet<DeletableStore> = new Set([
+  "dailyLogs",
+  "weightHistory",
+  "favoriteStores",
+]);
+
+/** The local key a realtime DELETE refers to, or `null` when the event
+ *  isn't provably about this user's row. Supabase Realtime cannot filter
+ *  DELETE events and does not apply RLS to them ("Delete events are not
+ *  filterable", https://supabase.com/docs/guides/realtime/postgres-changes),
+ *  so every subscriber receives every user's deletes and `old` carries only
+ *  the primary key. For an owner-keyed store (see `OWNER_KEYED_STORES`)
+ *  another user deleting their row with the same date or OSM key would
+ *  delete ours without the owner check, so the event must name this user.
+ *  The other id-keyed tables use globally unique UUID keys; their `old` has
+ *  no `user_id`, and a key we hold locally is ours. */
+function deletedKey(
+  payload: LoosePayload,
+  userId: string,
+  store: DeletableStore,
+  keyField: "date" | "id",
+): string | null {
+  const old = payload.old as Record<string, unknown> | undefined;
+  const key = old?.[keyField];
+  if (typeof key !== "string" || key === "") return null;
+  const owner = old?.user_id;
+  if (OWNER_KEYED_STORES.has(store)) return owner === userId ? key : null;
+  return owner === undefined || owner === userId ? key : null;
+}
+
+async function handleDeletion(
+  payload: LoosePayload,
+  userId: string,
+  store: DeletableStore,
+  keyField: "date" | "id",
+): Promise<void> {
+  const key = deletedKey(payload, userId, store, keyField);
+  if (!key) return;
+  if ((await applyServerDeletion(store, key)) === "deleted") {
+    notifyDataChanged(store);
   }
-  // Per-key own-echo detection on the other tables would require a
-  // store-specific `get` — for Pass 2 we accept the redundant write
-  // (applyServerX is idempotent, so it's free of side effects). The
-  // bus notify still fires, which is correct: the hook re-reads the
-  // value it already had. Pass 3 can add per-store getRecord helpers
-  // if profiling shows this hurts.
-  return false;
 }

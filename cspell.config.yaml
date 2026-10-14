@@ -396,6 +396,7 @@ words:
   - tmpl
   - TOCTOU
   - toggleable
+  - tombstoned
   - Topbar
   - TOTP
   - travelmode
@@ -419,6 +420,7 @@ words:
   - unlogged
   - unmetered
   - unparseable
+  - unpushed
   - unsat
   - unstar
   - unstub

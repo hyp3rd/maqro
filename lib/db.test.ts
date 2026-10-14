@@ -658,20 +658,27 @@ describe("deletion tombstones (Pass A - silent-resurrection bug)", () => {
 
   it("applyServerDeletion removes the row WITHOUT writing a tombstone (realtime echo path)", async () => {
     const {
-      addCustomFood,
+      applyServerCustomFood,
       applyServerDeletion,
       listCustomFoods,
       listDeletions,
     } = await freshDb();
-    const id = await addCustomFood({
-      name: "Whey",
-      protein: 80,
-      carbs: 8,
-      fat: 2,
-      calories: 370,
-    });
+    // A clean, previously-synced row (a dirty one is kept — see below).
+    const id = "11111111-2222-4333-8444-555555555555";
+    await applyServerCustomFood(
+      {
+        id,
+        name: "Whey",
+        protein: 80,
+        carbs: 8,
+        fat: 2,
+        calories: 370,
+        createdAt: 0,
+      },
+      "2026-05-16T12:00:00Z",
+    );
 
-    await applyServerDeletion("customFoods", id);
+    expect(await applyServerDeletion("customFoods", id)).toBe("deleted");
 
     // The IDB row is gone…
     expect(await listCustomFoods()).toHaveLength(0);
@@ -679,6 +686,34 @@ describe("deletion tombstones (Pass A - silent-resurrection bug)", () => {
     // handler wrote a tombstone we'd echo a redundant DELETE back to
     // the server on the next sync.)
     expect(await listDeletions()).toHaveLength(0);
+  });
+
+  it("applyServerDeletion keeps a dirty row and re-queues it as an insert (local edit wins over a remote delete)", async () => {
+    const {
+      applyServerCustomFood,
+      applyServerDeletion,
+      listCustomFoods,
+      upsertCustomFood,
+    } = await freshDb();
+    const id = "11111111-2222-4333-8444-555555555555";
+    const food = {
+      id,
+      name: "Whey",
+      protein: 80,
+      carbs: 8,
+      fat: 2,
+      calories: 370,
+      createdAt: 0,
+    };
+    await applyServerCustomFood(food, "2026-05-16T12:00:00Z");
+    await upsertCustomFood({ ...food, name: "Whey isolate" }); // dirty
+
+    expect(await applyServerDeletion("customFoods", id)).toBe("kept-dirty");
+
+    const [kept] = await listCustomFoods();
+    expect(kept?.name).toBe("Whey isolate");
+    // Base token cleared → the next push upserts it back.
+    expect(kept?.serverUpdatedAt).toBeNull();
   });
 
   it("applyServerDeletion also clears a pre-existing tombstone (delete already in flight, peer confirmed)", async () => {
@@ -820,5 +855,182 @@ describe("shoppingListMeta", () => {
     expect(await db.listShoppingListMeta()).toHaveLength(1);
     await db.clearAllStores();
     expect(await db.listShoppingListMeta()).toHaveLength(0);
+  });
+});
+
+// A load-then-save round trip (a hook re-saving what it just read) must not
+// turn a clean, server-mirrored row dirty: a dirty row is never overwritten
+// by server data, so every later peer update would be kept out ("kept-dirty")
+// and the next sync would report a false conflict.
+describe("a save that changes no server-owned content leaves the row clean", () => {
+  const DAY = "2026-05-16";
+  const V2 = "2026-05-16T12:00:02.000000+00:00";
+  const V3 = "2026-05-16T12:00:03.000000+00:00";
+  type Db = Awaited<ReturnType<typeof freshDb>>;
+  const PANTRY = {
+    id: "33333333-3333-4333-8333-333333333333",
+    name: "Rice",
+    quantity: 500,
+    unit: "g",
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const STORE = {
+    id: "node/123",
+    name: "Corner shop",
+    kind: "grocery",
+    lat: 45,
+    lon: 9,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const FOOD = {
+    id: "44444444-4444-4444-8444-444444444444",
+    name: "Whey",
+    protein: 80,
+    carbs: 8,
+    fat: 2,
+    calories: 370,
+    createdAt: 1,
+  };
+
+  const cases: Array<{
+    name: string;
+    applyV2: (db: Db) => Promise<unknown>;
+    resave: (db: Db) => Promise<void>;
+    applyV3: (db: Db) => Promise<unknown>;
+    read: (db: Db) => Promise<unknown>;
+    expected: unknown;
+  }> = [
+    {
+      name: "saveDailyLog",
+      applyV2: (db) => db.applyServerDailyLog(DAY, SAMPLE_MEALS, V2),
+      resave: (db) => db.saveDailyLog(DAY, structuredClone(SAMPLE_MEALS)),
+      applyV3: (db) => db.applyServerDailyLog(DAY, [], V3),
+      read: async (db) => (await db.getDailyLog(DAY))?.meals,
+      expected: [],
+    },
+    {
+      name: "saveProfile",
+      applyV2: (db) => db.applyServerProfile(BASELINE_PROFILE, V2),
+      resave: (db) => db.saveProfile({ ...BASELINE_PROFILE }),
+      applyV3: (db) =>
+        db.applyServerProfile({ ...BASELINE_PROFILE, age: 31 }, V3),
+      read: async (db) => (await db.getProfile())?.age,
+      expected: 31,
+    },
+    {
+      name: "saveWeightEntry",
+      applyV2: (db) => db.applyServerWeightEntry(DAY, 70, V2),
+      resave: (db) => db.saveWeightEntry(DAY, 70),
+      applyV3: (db) => db.applyServerWeightEntry(DAY, 71, V3),
+      read: async (db) => (await db.getWeightEntry(DAY))?.kg,
+      expected: 71,
+    },
+    {
+      name: "setWaterTotal / addWater(0)",
+      applyV2: (db) => db.applyServerWaterIntake(DAY, 500, V2),
+      resave: async (db) => {
+        await db.setWaterTotal(DAY, 500);
+        await db.addWater(DAY, 0);
+      },
+      applyV3: (db) => db.applyServerWaterIntake(DAY, 750, V3),
+      read: async (db) => (await db.getWaterIntake(DAY))?.ml,
+      expected: 750,
+    },
+    {
+      name: "upsertPantryItem",
+      applyV2: (db) => db.applyServerPantryItem(PANTRY, V2),
+      resave: (db) => db.upsertPantryItem({ ...PANTRY }),
+      applyV3: (db) =>
+        db.applyServerPantryItem({ ...PANTRY, quantity: 250 }, V3),
+      read: async (db) => (await db.listPantryItems())[0]?.quantity,
+      expected: 250,
+    },
+    {
+      name: "upsertFavoriteStore",
+      applyV2: (db) => db.applyServerFavoriteStore(STORE, V2),
+      resave: (db) => db.upsertFavoriteStore({ ...STORE }),
+      applyV3: (db) =>
+        db.applyServerFavoriteStore({ ...STORE, name: "Renamed" }, V3),
+      read: async (db) => (await db.listFavoriteStores())[0]?.name,
+      expected: "Renamed",
+    },
+    {
+      name: "upsertCustomFood / setSortOrder to the same value",
+      applyV2: (db) => db.applyServerCustomFood({ ...FOOD, sortOrder: 5 }, V2),
+      resave: async (db) => {
+        await db.upsertCustomFood({ ...FOOD, sortOrder: 5 });
+        await db.setSortOrder("customFoods", FOOD.id, 5);
+      },
+      applyV3: (db) =>
+        db.applyServerCustomFood({ ...FOOD, sortOrder: 5, name: "Casein" }, V3),
+      read: async (db) => (await db.listCustomFoods())[0]?.name,
+      expected: "Casein",
+    },
+  ];
+
+  it.each(cases)(
+    "$name: apply v2, re-save the same content, apply v3 → applied",
+    async ({ applyV2, resave, applyV3, read, expected }) => {
+      const db = await freshDb();
+      expect(await applyV2(db)).toBe("applied");
+
+      await resave(db);
+
+      expect(await applyV3(db)).toBe("applied");
+      expect(await read(db)).toEqual(expected);
+    },
+  );
+
+  it("a re-save keeps the row's version tokens, so it stays clean", async () => {
+    const db = await freshDb();
+    await db.applyServerDailyLog(DAY, SAMPLE_MEALS, V2);
+
+    await db.saveDailyLog(DAY, structuredClone(SAMPLE_MEALS));
+
+    const row = await db.getDailyLog(DAY);
+    expect(row?.localUpdatedAt).toBe(V2);
+    expect(row?.serverUpdatedAt).toBe(V2);
+    expect(row && db.isDirtyRecord(row)).toBe(false);
+  });
+
+  it("a real edit still dirties the row and keeps its base", async () => {
+    const db = await freshDb();
+    await db.applyServerDailyLog(DAY, SAMPLE_MEALS, V2);
+
+    await db.saveDailyLog(DAY, []);
+
+    const row = await db.getDailyLog(DAY);
+    expect(row?.serverUpdatedAt).toBe(V2);
+    expect(row && db.isDirtyRecord(row)).toBe(true);
+    expect(await db.applyServerDailyLog(DAY, SAMPLE_MEALS, V3)).toBe(
+      "kept-dirty",
+    );
+  });
+
+  it("re-saving a dirty row's own content keeps it dirty on the same base", async () => {
+    const db = await freshDb();
+    await db.applyServerDailyLog(DAY, SAMPLE_MEALS, V2);
+    await db.saveDailyLog(DAY, []);
+    const edited = await db.getDailyLog(DAY);
+
+    await db.saveDailyLog(DAY, []);
+
+    const row = await db.getDailyLog(DAY);
+    expect(row?.localUpdatedAt).toBe(edited?.localUpdatedAt);
+    expect(row?.serverUpdatedAt).toBe(V2);
+    expect(row && db.isDirtyRecord(row)).toBe(true);
+  });
+
+  it("saveDemoProfile still marks an unchanged profile as demo-seeded without dirtying it", async () => {
+    const db = await freshDb();
+    await db.applyServerProfile(BASELINE_PROFILE, V2);
+
+    await db.saveDemoProfile({ ...BASELINE_PROFILE });
+
+    expect(await db.isProfileMarkedAsDemo()).toBe(true);
+    const row = await db.getProfileRecord();
+    expect(row && db.isDirtyRecord(row)).toBe(false);
   });
 });

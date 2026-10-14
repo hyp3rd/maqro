@@ -21,11 +21,13 @@ export type SignOutRisk = {
  *  conflict — is treated as at risk, even when the counter reads zero,
  *  because the counter is per-page-load and cannot see rows left dirty by an
  *  earlier session. */
-export function signOutRisk(snapshot: SyncSnapshot): SignOutRisk {
+export function signOutRisk(
+  snapshot: Pick<SyncSnapshot, "status" | "pending">,
+): SignOutRisk {
   const { status, pending } = snapshot;
   if (status.state === "synced" && pending === 0) {
     return { atRisk: false, count: 0 };
   }
-  const conflicts = status.state === "conflict" ? status.count : 0;
+  const conflicts = status.state === "conflict" ? status.rows.length : 0;
   return { atRisk: true, count: Math.max(pending, conflicts) };
 }

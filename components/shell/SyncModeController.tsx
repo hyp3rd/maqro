@@ -5,6 +5,7 @@ import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { triggerSync } from "@/lib/sync";
 import { useSyncMode } from "@/lib/sync-mode";
 import { useSyncSnapshot } from "@/lib/sync-status";
+import { reportSyncFailure } from "@/lib/sync/report-failure";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SaveReminderDialog } from "./SaveReminderDialog";
 
@@ -17,7 +18,7 @@ const REMOTE_DEBOUNCE_MS = 2_000; // remote-only push, after edits settle
 export function SyncModeController() {
   const { user } = useUser();
   const { mode, intervalMinutes } = useSyncMode();
-  const { status, pending } = useSyncSnapshot();
+  const { status, pending, pendingSinceAttempt } = useSyncSnapshot();
   const [reminderOpen, setReminderOpen] = useState(false);
 
   const userId = user?.id ?? null;
@@ -35,16 +36,20 @@ export function SyncModeController() {
   const doSync = useCallback(() => {
     const supabase = getSupabaseBrowser();
     if (!userId || !supabase) return;
-    void triggerSync(supabase, userId);
+    void triggerSync(supabase, userId).catch(reportSyncFailure);
   }, [userId]);
 
   // remote-only: push a short debounce after the latest change, so the
   // server stays continuously current without a request per keystroke.
+  // Keyed on writes no sync has attempted yet — not on `pending`, which a
+  // conflict or error keeps above zero: re-firing on those would loop a
+  // full sync every couple of seconds until the user resolves it.
   useEffect(() => {
-    if (!userId || mode !== "remote-only" || pending <= 0 || syncing) return;
+    if (!userId || mode !== "remote-only") return;
+    if (pendingSinceAttempt <= 0 || syncing) return;
     const t = setTimeout(doSync, REMOTE_DEBOUNCE_MS);
     return () => clearTimeout(t);
-  }, [userId, mode, pending, syncing, doSync]);
+  }, [userId, mode, pendingSinceAttempt, syncing, doSync]);
 
   // auto-save: a fixed interval that pushes whenever changes are pending.
   useEffect(() => {

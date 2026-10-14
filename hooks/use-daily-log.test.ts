@@ -167,7 +167,14 @@ describe("useDailyLog", () => {
     const { useDailyLog } = await freshHook();
     const db = await import("@/lib/db");
     const bus = await import("@/lib/sync/data-bus");
-    await db.saveDailyLog("2026-05-13", DEFAULT_MEALS);
+    // A clean, synced row: the sync engine never lets a peer's change
+    // overwrite a dirty (unpushed) local row, so the day must be in sync
+    // for the pulled change to land at all.
+    await db.applyServerDailyLog(
+      "2026-05-13",
+      DEFAULT_MEALS,
+      "2026-05-13T08:00:00.000Z",
+    );
 
     const { result } = renderHook(() =>
       useDailyLog("2026-05-13", DEFAULT_MEALS),
