@@ -15,6 +15,11 @@ const mocks = vi.hoisted(() => ({
   registerCurrentDevice: vi.fn(),
   watchForForcedSignOut: vi.fn(),
   startRealtimeSubscription: vi.fn(),
+  reportClientError: vi.fn(),
+}));
+
+vi.mock("@/lib/error-reporter", () => ({
+  reportClientError: mocks.reportClientError,
 }));
 
 vi.mock("@/lib/sync", async (importOriginal) => ({
@@ -73,7 +78,7 @@ afterEach(() => {
 
 describe("SyncManager — sign-in lifecycle", () => {
   it("starts realtime, the forced-sign-out watcher and device registration after a clean sync", async () => {
-    mocks.triggerSync.mockResolvedValue({ conflicts: 0 });
+    mocks.triggerSync.mockResolvedValue({ conflicts: [] });
 
     render(<SyncManager />);
     await settle();
@@ -117,5 +122,24 @@ describe("SyncManager — sign-in lifecycle", () => {
     rerender(<SyncManager />);
     await settle();
     expect(mocks.triggerSync).toHaveBeenCalledTimes(2);
+  });
+
+  it("reports a failed catch-up sync after a reconnect instead of swallowing it", async () => {
+    mocks.triggerSync.mockResolvedValueOnce({ conflicts: [] });
+    render(<SyncManager />);
+    await settle();
+    const opts = mocks.startRealtimeSubscription.mock.calls[0]?.[2] as {
+      onReconnect: () => void;
+    };
+    const failure = new Error("offline again");
+    mocks.triggerSync.mockRejectedValueOnce(failure);
+
+    opts.onReconnect();
+    await settle();
+
+    expect(mocks.reportClientError).toHaveBeenCalledWith(
+      failure,
+      expect.objectContaining({ route: "sync" }),
+    );
   });
 });

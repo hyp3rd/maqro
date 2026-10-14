@@ -13,9 +13,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render } from "@testing-library/react";
 import { SyncModeController } from "./SyncModeController";
 
-const mockTriggerSync = vi.hoisted(() => vi.fn());
+const mockTriggerSync = vi.hoisted(() => vi.fn().mockResolvedValue(null));
+const reportClientError = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/sync", () => ({ triggerSync: mockTriggerSync }));
+vi.mock("@/lib/error-reporter", () => ({ reportClientError }));
 vi.mock("@/hooks/use-user", () => ({
   useUser: () => ({ user: { id: "11111111-1111-4111-8111-111111111111" } }),
 }));
@@ -39,6 +41,22 @@ afterEach(() => {
 });
 
 describe("SyncModeController — remote-only", () => {
+  it("reports a failed automatic sync instead of leaving it unhandled", async () => {
+    const failure = new Error("sync failed");
+    mockTriggerSync.mockRejectedValueOnce(failure);
+    render(<SyncModeController />);
+
+    act(() => bumpPending());
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(REMOTE_DEBOUNCE_MS);
+    });
+
+    expect(reportClientError).toHaveBeenCalledWith(
+      failure,
+      expect.objectContaining({ route: "sync" }),
+    );
+  });
+
   it("pushes shortly after a local write", () => {
     render(<SyncModeController />);
 

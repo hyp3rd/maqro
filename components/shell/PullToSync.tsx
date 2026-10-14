@@ -4,6 +4,7 @@ import { PullToRefresh } from "@/components/gestures/PullToRefresh";
 import { useUser } from "@/hooks/use-user";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { triggerSync } from "@/lib/sync";
+import { reportSyncFailure } from "@/lib/sync/report-failure";
 import type { ReactNode } from "react";
 
 /** Wraps the app's main scroll container so a pull-down anywhere in the
@@ -34,9 +35,10 @@ export function PullToSync({
     const supabase = getSupabaseBrowser();
     if (!supabase) return;
     // triggerSync owns its own status side-effects (the topbar pill
-    // reflects syncing → synced) and swallows its own errors, so we
-    // just await it for the pull indicator's duration.
-    await triggerSync(supabase, user.id);
+    // reflects syncing → synced, or the error) and then rethrows; we
+    // await it for the pull indicator's duration and hand a failure to
+    // the reporter rather than leaving it unhandled.
+    await triggerSync(supabase, user.id).catch(reportSyncFailure);
   }
 
   return (

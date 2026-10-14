@@ -18,6 +18,7 @@ import {
   triggerSync,
 } from "@/lib/sync";
 import { useSyncSnapshot } from "@/lib/sync-status";
+import { reportSyncFailure } from "@/lib/sync/report-failure";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import {
@@ -59,21 +60,22 @@ export function SyncStatusPill() {
     if (!user) return;
     const supabase = getSupabaseBrowser();
     if (!supabase) return;
-    void triggerSync(supabase, user.id);
+    void triggerSync(supabase, user.id).catch(reportSyncFailure);
   }
 
   // Conflict resolution "keep this device's version" — only ever reached
   // from the confirm button of the resolve dialog, never from the pill
   // itself: it overwrites the other device's version. A failure is already
   // recorded on sync-status (the pill flips to "Sync error") before the
-  // promise rejects; the catch only keeps it from becoming an unhandled
-  // rejection.
+  // promise rejects; `reportSyncFailure` forwards it to the error reporter.
   function onConfirmKeepLocal() {
     setResolveOpen(false);
     if (!user) return;
     const supabase = getSupabaseBrowser();
     if (!supabase) return;
-    void resolveConflictsKeepingLocal(supabase, user.id).catch(() => {});
+    void resolveConflictsKeepingLocal(supabase, user.id).catch(
+      reportSyncFailure,
+    );
   }
 
   async function onConfirmDiscard() {
@@ -82,9 +84,8 @@ export function SyncStatusPill() {
     if (!user) return;
     const supabase = getSupabaseBrowser();
     if (!supabase) return;
-    // Errors are surfaced via sync-status; nothing to do with the
-    // promise here.
-    void discardPendingChanges(supabase, user.id);
+    // Errors are surfaced via sync-status before the promise rejects.
+    void discardPendingChanges(supabase, user.id).catch(reportSyncFailure);
   }
 
   const styles =

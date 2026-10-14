@@ -5,6 +5,7 @@ import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { triggerSync } from "@/lib/sync";
 import { useSyncMode } from "@/lib/sync-mode";
 import { useSyncSnapshot } from "@/lib/sync-status";
+import { reportSyncFailure } from "@/lib/sync/report-failure";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SaveReminderDialog } from "./SaveReminderDialog";
 
@@ -35,7 +36,7 @@ export function SyncModeController() {
   const doSync = useCallback(() => {
     const supabase = getSupabaseBrowser();
     if (!userId || !supabase) return;
-    void triggerSync(supabase, userId);
+    void triggerSync(supabase, userId).catch(reportSyncFailure);
   }, [userId]);
 
   // remote-only: push a short debounce after the latest change, so the

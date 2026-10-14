@@ -14,6 +14,7 @@ import {
   startRealtimeSubscription,
   type RealtimeHandle,
 } from "@/lib/sync/realtime";
+import { reportSyncFailure } from "@/lib/sync/report-failure";
 import { useEffect, useRef } from "react";
 
 /** Headless component that owns two cross-device sync lifecycles:
@@ -120,8 +121,8 @@ export function SyncManager() {
         realtimeRef.current = startRealtimeSubscription(supabase, user.id, {
           onReconnect: () => {
             // Network came back - pull anything we missed. Errors are
-            // surfaced via sync-status; we don't need to handle here.
-            void triggerSync(supabase, user.id).catch(() => {});
+            // surfaced via sync-status before the promise rejects.
+            void triggerSync(supabase, user.id).catch(reportSyncFailure);
           },
         });
       })

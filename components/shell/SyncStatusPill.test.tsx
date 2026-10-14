@@ -17,9 +17,11 @@ const mocks = vi.hoisted(() => ({
   resolveConflictsKeepingLocal: vi.fn().mockResolvedValue(null),
   discardPendingChanges: vi.fn().mockResolvedValue(null),
 }));
+const reportClientError = vi.hoisted(() => vi.fn());
 const supabase = {};
 
 vi.mock("@/lib/sync", () => mocks);
+vi.mock("@/lib/error-reporter", () => ({ reportClientError }));
 vi.mock("@/hooks/use-user", () => ({
   useUser: () => ({ user: { id: USER_ID } }),
 }));
@@ -91,6 +93,42 @@ describe("SyncStatusPill — conflict state", () => {
     expect(mocks.resolveConflictsKeepingLocal).not.toHaveBeenCalled();
   });
 
+  it("reports a failed 'keep this device's' instead of swallowing it", async () => {
+    const failure = new Error("sync failed");
+    mocks.resolveConflictsKeepingLocal.mockRejectedValueOnce(failure);
+    renderConflict(1);
+    fireEvent.click(screen.getByRole("button", { name: /needs review/i }));
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /keep this device's/i }),
+    );
+
+    await vi.waitFor(() =>
+      expect(reportClientError).toHaveBeenCalledWith(
+        failure,
+        expect.objectContaining({ route: "sync" }),
+      ),
+    );
+  });
+
+  it("reports a failed 'keep the other device's' instead of leaving it unhandled", async () => {
+    const failure = new Error("sync failed");
+    mocks.discardPendingChanges.mockRejectedValueOnce(failure);
+    renderConflict(1);
+    fireEvent.click(screen.getByRole("button", { name: /needs review/i }));
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /keep the other device's/i }),
+    );
+
+    await vi.waitFor(() =>
+      expect(reportClientError).toHaveBeenCalledWith(
+        failure,
+        expect.objectContaining({ route: "sync" }),
+      ),
+    );
+  });
+
   it("cancel resolves nothing", () => {
     renderConflict(1);
     fireEvent.click(screen.getByRole("button", { name: /needs review/i }));
@@ -100,5 +138,22 @@ describe("SyncStatusPill — conflict state", () => {
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(mocks.resolveConflictsKeepingLocal).not.toHaveBeenCalled();
     expect(mocks.discardPendingChanges).not.toHaveBeenCalled();
+  });
+});
+
+describe("SyncStatusPill — manual sync", () => {
+  it("reports a failed sync started from the pill instead of leaving it unhandled", async () => {
+    const failure = new Error("sync failed");
+    mocks.triggerSync.mockRejectedValueOnce(failure);
+    render(<SyncStatusPill />);
+
+    fireEvent.click(screen.getByRole("button", { name: /up to date/i }));
+
+    await vi.waitFor(() =>
+      expect(reportClientError).toHaveBeenCalledWith(
+        failure,
+        expect.objectContaining({ route: "sync" }),
+      ),
+    );
   });
 });
