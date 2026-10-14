@@ -15,7 +15,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_USER_ID = "22222222-2222-4222-8222-222222222222";
@@ -853,6 +853,82 @@ describe("hooks showing peer updates never dirty the rows they load", () => {
     ).toBe(32);
     unmount();
     handle.unsubscribe();
+  });
+
+  it("useProfile does not save the defaults it merges behind a peer's profile that lacks a field", async () => {
+    const { db, sync, realtime, server, sb } = env;
+    // Written by an older client that predates the `units` preference: the
+    // hook fills it in memory from the locale/defaults.
+    const { units: _units, ...legacy } = PROFILE;
+    void _units;
+    server.seed("profiles", { user_id: USER_ID, payload: legacy });
+    await sync.triggerSync(sb, USER_ID);
+    const handle = realtime.startRealtimeSubscription(sb, USER_ID);
+    const { useProfile } = await import("@/hooks/use-profile");
+    const { result, unmount } = renderHook(() => useProfile(DEFAULT_PROFILE));
+    await waitFor(() => expect(result.current.profile.age).toBe(30));
+    expect(result.current.profile.units).toBeDefined();
+    await outlastSaveDebounce();
+
+    peerUpdate(
+      "profiles",
+      { user_id: USER_ID },
+      { payload: { ...legacy, age: 31 } },
+    );
+    await waitFor(() => expect(result.current.profile.age).toBe(31));
+    await outlastSaveDebounce();
+    peerUpdate(
+      "profiles",
+      { user_id: USER_ID },
+      { payload: { ...legacy, age: 32 } },
+    );
+    await waitFor(() => expect(result.current.profile.age).toBe(32));
+    await outlastSaveDebounce();
+
+    const stored = await db.getProfileRecord();
+    expect(stored && db.isDirtyRecord(stored)).toBe(false);
+    const next = await sync.triggerSync(sb, USER_ID);
+    expect(next?.conflicts).toBe(0);
+    unmount();
+    handle.unsubscribe();
+  });
+
+  it("useProfile still saves a real edit", async () => {
+    const { db, sync, server, sb } = env;
+    server.seed("profiles", { user_id: USER_ID, payload: PROFILE });
+    await sync.triggerSync(sb, USER_ID);
+    const { useProfile } = await import("@/hooks/use-profile");
+    const { result, unmount } = renderHook(() => useProfile(DEFAULT_PROFILE));
+    await waitFor(() => expect(result.current.profile.age).toBe(30));
+
+    act(() => result.current.patchProfile("age", 40));
+
+    await waitFor(async () => expect((await db.getProfile())?.age).toBe(40));
+    const stored = await db.getProfileRecord();
+    expect(stored && db.isDirtyRecord(stored)).toBe(true);
+    unmount();
+  });
+
+  it("useDailyLog still saves a real edit", async () => {
+    const { db, sync, server, sb } = env;
+    server.seed("daily_logs", {
+      user_id: USER_ID,
+      date: DAY,
+      meals: meals("eggs"),
+    });
+    await sync.triggerSync(sb, USER_ID);
+    const { useDailyLog } = await import("@/hooks/use-daily-log");
+    const { result, unmount } = renderHook(() => useDailyLog(DAY, NO_MEALS));
+    await waitFor(() => expect(mealNames(result.current)).toEqual(["eggs"]));
+
+    act(() => result.current.setMeals(meals("eggs", "toast")));
+
+    await waitFor(async () =>
+      expect(mealNames(await db.getDailyLog(DAY))).toEqual(["eggs", "toast"]),
+    );
+    const stored = await db.getDailyLog(DAY);
+    expect(stored && db.isDirtyRecord(stored)).toBe(true);
+    unmount();
   });
 });
 

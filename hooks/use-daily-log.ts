@@ -60,6 +60,11 @@ export function useDailyLog(date: string, defaultMeals: Meal[]): DailyLogState {
   // load effect when an actual saved row was loaded, and by `setMeals`
   // when the user produces real data.
   const hasRealLocalData = useRef(false);
+  // The meals IndexedDB holds for the loaded date, as this hook last read
+  // or wrote them. The auto-save skips state equal to it: re-saving what
+  // was just loaded (a peer's update arriving through the data bus) is not
+  // a user edit and must not be written back.
+  const storedMeals = useRef<Meal[] | null>(null);
 
   useEffect(() => {
     if (date === "") return; // SSR snapshot; skip until hydrate.
@@ -67,6 +72,7 @@ export function useDailyLog(date: string, defaultMeals: Meal[]): DailyLogState {
     getDailyLog(date)
       .then((log) => {
         if (cancelled) return;
+        storedMeals.current = log?.meals ?? null;
         const next = log?.meals ?? defaultMeals;
         // Keep the existing reference when nothing changed (our own save
         // echo), so the save effect's `meals` dep doesn't re-fire.
@@ -77,6 +83,7 @@ export function useDailyLog(date: string, defaultMeals: Meal[]): DailyLogState {
       .catch((err) => {
         if (cancelled) return;
         reportStorageError(err);
+        storedMeals.current = null;
         setMealsState(defaultMeals);
         setLoadedFor(date);
       });
@@ -88,7 +95,11 @@ export function useDailyLog(date: string, defaultMeals: Meal[]): DailyLogState {
   useEffect(() => {
     if (!isHydrated) return;
     if (!hasRealLocalData.current) return;
+    const stored = storedMeals.current;
+    if (stored && sameMeals(stored, meals)) return;
     const t = window.setTimeout(() => {
+      // No need to update `storedMeals` here: the save notifies the data
+      // bus, and the reload it triggers records what IDB now holds.
       saveDailyLog(date, meals).then(reportStorageOk).catch(reportStorageError);
       // Offer the day's foods for background micronutrient enrichment.
       // Fire-and-forget + Pro-gated server-side. Skip it entirely when
