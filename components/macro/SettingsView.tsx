@@ -83,7 +83,6 @@ import { PassphraseDialog } from "./PassphraseDialog";
 import { SecurityIntro } from "./SecurityIntro";
 import { SecurityOverview } from "./SecurityOverview";
 import { SignedInDevicesSection } from "./SignedInDevicesSection";
-import { TrustedDevicesSection } from "./TrustedDevicesSection";
 import { SecurityStatusProvider } from "./security-status";
 
 function formatDate(iso: string | undefined): string {
@@ -485,7 +484,6 @@ export function SettingsView({
           <MfaSection signedIn={Boolean(user)} />
           <PasskeysSection signedIn={Boolean(user)} />
           <BackupEmailSection signedIn={Boolean(user)} />
-          <TrustedDevicesSection signedIn={Boolean(user)} />
           <ConnectedAccountsSection signedIn={Boolean(user)} />
           <SignedInDevicesSection signedIn={Boolean(user)} />
         </SecurityStatusProvider>

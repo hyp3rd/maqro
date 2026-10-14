@@ -11,8 +11,7 @@ import Link from "next/link";
  *  account has two-step verification on (or on a `?mfa=required` resume). Shares
  *  the verify logic + code input with the in-app step-up dialog via
  *  `useTotpChallenge` / `TotpCodeInput`; what stays here is the login-specific
- *  chrome — the "trust this device" opt-in, the passkey escape, and the
- *  recovery links. The passkey button is the key lost-authenticator escape on
+ *  chrome — the passkey escape and the recovery links. The passkey button is the key lost-authenticator escape on
  *  the `?mfa=required` resume path, which never shows the request stage. */
 export function LoginMfaStage({
   factorId,
@@ -22,8 +21,8 @@ export function LoginMfaStage({
   onUsePasskey,
 }: {
   factorId: string;
-  /** Runs once the session reaches AAL2; receives whether to trust the device. */
-  onVerified: (opts: { trustDevice: boolean }) => void;
+  /** Runs once the session reaches AAL2. */
+  onVerified: () => void;
   onUseDifferentEmail: () => void;
   passkeySupported?: boolean;
   /** Runs the passkey ceremony; navigates on success, returns a humanized error
@@ -32,12 +31,11 @@ export function LoginMfaStage({
    *  an alternative to the authenticator code. */
   onUsePasskey?: () => Promise<string | null>;
 }) {
-  const [trustDevice, setTrustDevice] = useState(false);
   const [passkeyBusy, setPasskeyBusy] = useState(false);
   const [passkeyError, setPasskeyError] = useState<string | null>(null);
   const { code, setCode, busy, error, setError, submit } = useTotpChallenge({
     factorId,
-    onVerified: () => onVerified({ trustDevice }),
+    onVerified,
   });
 
   // One error at a time: the TOTP path and the passkey path each clear the
@@ -105,25 +103,6 @@ export function LoginMfaStage({
           {displayError}
         </p>
       )}
-
-      <label className="flex cursor-pointer items-start gap-2 rounded-md border border-border/60 bg-card px-3 py-2.5 text-xs">
-        <input
-          type="checkbox"
-          checked={trustDevice}
-          onChange={(e) => setTrustDevice(e.target.checked)}
-          disabled={anyBusy}
-          className="mt-0.5 h-3.5 w-3.5 shrink-0 cursor-pointer accent-foreground"
-        />
-        <span className="space-y-0.5">
-          <span className="block font-medium">
-            Trust this device for 7 days
-          </span>
-          <span className="block text-muted-foreground">
-            Skip the verification step on this browser until then. You can
-            revoke from Settings.
-          </span>
-        </span>
-      </label>
 
       <div className="flex flex-col gap-2">
         <Button

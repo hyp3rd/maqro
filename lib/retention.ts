@@ -30,12 +30,10 @@
  *  month aggregate data and disappears with the user on
  *  delete-account cascade.
  *
- *    - mfa_trusted_devices: 14 days. Trust windows themselves are
- *      7 days (set in `/api/auth/mfa/trusted-devices` POST), so 14
- *      gives one full extra window of headroom before the cron
- *      sweeps a row out — useful in case the user comes back and
- *      hits a "this device was trusted last week" UI affordance.
- *      Anchor column is `trusted_until`, not `created_at`.
+ *    - mfa_trusted_devices: 14 days past `trusted_until`. The
+ *      trusted-device feature is retired (migration 0078): nothing
+ *      writes or reads these rows any more, and the sweep drains the
+ *      leftovers until a later release drops the table.
  *    - trace_events: 90 days. The admin "trace this user" flag
  *      is a debugging affordance; we don't need infinite history.
  *      Matches error_log so a joined query across both stays in

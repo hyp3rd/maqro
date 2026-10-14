@@ -83,17 +83,13 @@ export async function requireAdmin(): Promise<RequireAdminResult> {
   // the role-mismatch 403 reads as "not an admin" which is the
   // wrong signal here. Order matters for the right error shape.
   //
-  // Strict gate: admin routes deliberately ignore the trusted-device
-  // escape hatch. Every admin endpoint either reads sensitive PII
+  // Strict gate: every admin endpoint either reads sensitive PII
   // (audit log, error log, user details, trace events) or performs
   // a privileged mutation (role grant, ban, force-signout, settings
-  // change, webhook replay). The 7-day trust grant is fine for
-  // routine user-side mutations; an admin who's borrowed-laptop'd
-  // shouldn't be one click away from granting themselves the keys.
-  // The admin still types their TOTP code only ONCE per session
-  // (the AAL2 promotion lasts as long as the auth cookie), so the
-  // friction is bounded.
-  const gate = await assertFreshAal2(supabase);
+  // change, webhook replay). The admin still types their TOTP code
+  // only ONCE per session (the AAL2 promotion lasts as long as the
+  // auth cookie), so the friction is bounded.
+  const gate = await assertFreshAal2(supabase, user);
   if (!gate.ok) return { ok: false, response: gate.response };
   const { data: profile } = await supabase
     .from("profiles")

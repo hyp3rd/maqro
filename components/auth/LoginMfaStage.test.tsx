@@ -143,3 +143,17 @@ describe("LoginMfaStage — passkey escape", () => {
     expect(link.getAttribute("href")).toBe("/login/recovery");
   });
 });
+
+describe("LoginMfaStage — no remembered-device bypass", () => {
+  it("offers no way to skip the second factor on later sign-ins", () => {
+    render(
+      <LoginMfaStage
+        factorId="f1"
+        onVerified={noop}
+        onUseDifferentEmail={noop}
+      />,
+    );
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.queryByText(/trust this device/i)).toBeNull();
+  });
+});

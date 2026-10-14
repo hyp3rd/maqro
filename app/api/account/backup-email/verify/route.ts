@@ -38,9 +38,8 @@ export async function POST(req: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
   // Strict AAL2: completes the change-of-recovery-channel flow
-  // started by /start. Same threat model — must not honor the
-  // trusted-device escape hatch.
-  const gate = await assertFreshAal2(supabase);
+  // started by /start. Same threat model, same gate.
+  const gate = await assertFreshAal2(supabase, user);
   if (!gate.ok) return gate.response;
 
   const parsed = await parseBody(req, BodySchema);

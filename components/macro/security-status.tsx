@@ -16,8 +16,7 @@ import {
  *  reads them via {@link useSecurityStats}. No provider in the tree = every hook
  *  is an inert no-op, so the sections render unchanged outside the hub. */
 
-export type SecurityStatusKey =
-  "twoStep" | "passkeys" | "backupEmail" | "trustedDevices";
+export type SecurityStatusKey = "twoStep" | "passkeys" | "backupEmail";
 
 export type SecurityTone = "good" | "muted";
 

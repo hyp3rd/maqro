@@ -17,7 +17,6 @@ const ORDER: { key: SecurityStatusKey; label: string }[] = [
   { key: "twoStep", label: "Two-step" },
   { key: "passkeys", label: "Passkeys" },
   { key: "backupEmail", label: "Backup email" },
-  { key: "trustedDevices", label: "Trusted devices" },
 ];
 
 export function SecurityOverview() {

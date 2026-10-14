@@ -1,6 +1,5 @@
 import { parseBody } from "@/lib/api/parse-body";
 import { assertAal2 } from "@/lib/auth/mfa-required";
-import { trustedDeviceOption } from "@/lib/auth/trusted-device";
 import { FEATURES } from "@/lib/billing/tiers";
 import { loadUserTier } from "@/lib/billing/usage";
 import { checkAuthRateLimit, ipFromRequest } from "@/lib/rate-limit";
@@ -43,10 +42,7 @@ export async function POST(req: Request): Promise<NextResponse> {
   if (!user) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
-  const gate = await assertAal2(
-    supabase,
-    await trustedDeviceOption(supabase, user.id),
-  );
+  const gate = await assertAal2(supabase, user);
   if (!gate.ok) return gate.response;
 
   // Gated behind the same paid-tier check as /api/recipes/import-from-url.

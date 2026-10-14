@@ -1,14 +1,19 @@
+import { MfaRequiredError } from "@/lib/auth/session-assurance";
+import { signOutAndClearLocal } from "@/lib/auth/sign-out";
 import * as db from "@/lib/db";
 import { __resetSyncStatusForTests, getSyncStatus } from "@/lib/sync-status";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  discardPendingChanges,
   pushCustomFoods,
   pushFavoriteStores,
   pushMealTemplates,
   triggerSync,
   type SyncResult,
 } from "./index";
+
+vi.mock("@/lib/auth/sign-out", () => ({ signOutAndClearLocal: vi.fn() }));
 
 // Mock the IDB-backed db module so the sync code is exercised in
 // isolation. Each test seeds the mocks with the rows it wants `list*`
@@ -104,6 +109,7 @@ vi.mock("@/lib/db", () => ({
   // pushDeletions step is a no-op in these test scenarios.
   listDeletions: vi.fn().mockResolvedValue([]),
   clearDeletion: vi.fn(),
+  clearAllStores: vi.fn(),
   deleteCustomFood: vi.fn(),
   deleteMealTemplate: vi.fn(),
   deleteRecipe: vi.fn(),
@@ -174,6 +180,33 @@ function newResult(): SyncResult {
  *  per-operation handlers and a global call log. */
 type OpResult = { data: unknown; error: unknown };
 
+/** `auth` surface the sync engine's assurance check reads. The user has a
+ *  verified TOTP factor; `aal2` has proved it, `mfa-pending` (aal1) hasn't —
+ *  the state RLS rejects (migration 0079). */
+function fakeAuth(session: "aal2" | "mfa-pending") {
+  return {
+    mfa: {
+      getAuthenticatorAssuranceLevel: async () => ({
+        data: {
+          currentLevel: session === "aal2" ? "aal2" : "aal1",
+          nextLevel: "aal2",
+          currentAuthenticationMethods: [{ method: "otp" }],
+        },
+        error: null,
+      }),
+    },
+    getUser: async () => ({
+      data: {
+        user: {
+          id: USER_ID,
+          factors: [{ id: "f1", factor_type: "totp", status: "verified" }],
+        },
+      },
+      error: null,
+    }),
+  };
+}
+
 function makeSupabase(opts: {
   upsert?: (row: unknown) => OpResult;
   update?: (
@@ -181,7 +214,10 @@ function makeSupabase(opts: {
     pkFields: Record<string, unknown>,
     base: string,
   ) => OpResult;
+  /** The session's assurance (see `fakeAuth`). Default `aal2`. */
+  session?: "aal2" | "mfa-pending";
 }) {
+  const fromCalls: string[] = [];
   const upsertCalls: unknown[] = [];
   const updateCalls: Array<{
     row: unknown;
@@ -190,70 +226,74 @@ function makeSupabase(opts: {
   }> = [];
 
   const sb = {
-    from: () => ({
-      // Pull chain. The sync engine does:
-      //   .select(cols).eq("user_id", id).abortSignal(sig)
-      // and optionally `.maybeSingle()` on the profile pull. We
-      // default to "no rows" so a pull-only test (triggerSync with
-      // empty stores) is a no-op rather than a hang.
-      select: () => {
-        const builder = {
-          eq: () => builder,
-          abortSignal: () => {
-            const empty = Promise.resolve({ data: [], error: null });
-            // The builder is itself thenable for `await q.eq(...).abortSignal(sig)` -
-            // returns [] which the engine iterates and writes nothing.
-            return Object.assign(empty, {
-              maybeSingle: () => Promise.resolve({ data: null, error: null }),
-            });
-          },
-        };
-        return builder;
-      },
-      upsert: (row: unknown) => {
-        upsertCalls.push(row);
-        const r = opts.upsert
-          ? opts.upsert(row)
-          : { data: { updated_at: "2026-05-16T12:00:00Z" }, error: null };
-        return {
-          select: () => ({
-            abortSignal: () => ({ single: () => Promise.resolve(r) }),
-          }),
-        };
-      },
-      update: (row: unknown) => {
-        const pkFields: Record<string, unknown> = {};
-        let base: string = "";
-        const filterBuilder = {
-          eq: (k: string, v: unknown) => {
-            if (k === "updated_at") {
-              base = v as string;
-            } else {
-              pkFields[k] = v;
-            }
-            return filterBuilder;
-          },
-          select: () => ({
-            abortSignal: () => ({
-              maybeSingle: () => {
-                updateCalls.push({ row, pkFields, base });
-                const r = opts.update
-                  ? opts.update(row, pkFields, base)
-                  : {
-                      data: { updated_at: "2026-05-16T12:01:00Z" },
-                      error: null,
-                    };
-                return Promise.resolve(r);
-              },
+    auth: fakeAuth(opts.session ?? "aal2"),
+    from: (table: string) => (
+      fromCalls.push(table),
+      {
+        // Pull chain. The sync engine does:
+        //   .select(cols).eq("user_id", id).abortSignal(sig)
+        // and optionally `.maybeSingle()` on the profile pull. We
+        // default to "no rows" so a pull-only test (triggerSync with
+        // empty stores) is a no-op rather than a hang.
+        select: () => {
+          const builder = {
+            eq: () => builder,
+            abortSignal: () => {
+              const empty = Promise.resolve({ data: [], error: null });
+              // The builder is itself thenable for `await q.eq(...).abortSignal(sig)` -
+              // returns [] which the engine iterates and writes nothing.
+              return Object.assign(empty, {
+                maybeSingle: () => Promise.resolve({ data: null, error: null }),
+              });
+            },
+          };
+          return builder;
+        },
+        upsert: (row: unknown) => {
+          upsertCalls.push(row);
+          const r = opts.upsert
+            ? opts.upsert(row)
+            : { data: { updated_at: "2026-05-16T12:00:00Z" }, error: null };
+          return {
+            select: () => ({
+              abortSignal: () => ({ single: () => Promise.resolve(r) }),
             }),
-          }),
-        };
-        return filterBuilder;
-      },
-    }),
+          };
+        },
+        update: (row: unknown) => {
+          const pkFields: Record<string, unknown> = {};
+          let base: string = "";
+          const filterBuilder = {
+            eq: (k: string, v: unknown) => {
+              if (k === "updated_at") {
+                base = v as string;
+              } else {
+                pkFields[k] = v;
+              }
+              return filterBuilder;
+            },
+            select: () => ({
+              abortSignal: () => ({
+                maybeSingle: () => {
+                  updateCalls.push({ row, pkFields, base });
+                  const r = opts.update
+                    ? opts.update(row, pkFields, base)
+                    : {
+                        data: { updated_at: "2026-05-16T12:01:00Z" },
+                        error: null,
+                      };
+                  return Promise.resolve(r);
+                },
+              }),
+            }),
+          };
+          return filterBuilder;
+        },
+      }
+    ),
   } as unknown as SupabaseClient;
 
-  return { sb, upsertCalls, updateCalls };
+  return { sb, fromCalls, upsertCalls, updateCalls };
 }
 
 describe("pushCustomFoods — per-row push with optimistic concurrency", () => {
@@ -571,6 +611,7 @@ describe("runInitialSync — pull-then-push order (incognito-clobber fix)", () =
     // `from(<table>)` chain was invoked first.
     const callOrder: string[] = [];
     const sb = {
+      auth: fakeAuth("aal2"),
       from: (table: string) => ({
         select: () => {
           callOrder.push(`select:${table}`);
@@ -641,6 +682,7 @@ describe("runInitialSync — pull-then-push order (incognito-clobber fix)", () =
 
     // Supabase mock: profile pull returns a real row.
     const sb = {
+      auth: fakeAuth("aal2"),
       from: (table: string) => ({
         select: () => {
           const builder = {
@@ -710,6 +752,7 @@ describe("runInitialSync — pull-then-push order (incognito-clobber fix)", () =
     };
     const upserts: Array<{ table: string; row: unknown }> = [];
     const sb = {
+      auth: fakeAuth("aal2"),
       from: (table: string) => ({
         select: () => {
           const builder = {
@@ -759,60 +802,64 @@ describe("runInitialSync — pull-then-push order (incognito-clobber fix)", () =
   });
 });
 
-describe("pushFavoriteStores — per-user key (migration 0077)", () => {
-  // The id is a shared OSM key ("node/123"): two users may favourite the same
-  // store, so the server row is keyed (user_id, id) and every push must
-  // address the caller's row by both columns.
-  const STORE = {
-    id: "node/123",
-    name: "Corner Market",
-    kind: "supermarket",
-    lat: 45.1,
-    lon: 9.2,
+describe("MFA-enrolled session that hasn't proved the second factor", () => {
+  const colliding = {
+    id: "local-id",
+    name: "Tofu",
+    protein: 8,
+    carbs: 2,
+    fat: 4,
+    calories: 76,
     createdAt: 0,
-    updatedAt: 0,
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
+    __resetSyncStatusForTests();
+  });
+  afterEach(() => {
+    __resetSyncStatusForTests();
   });
 
-  it("upserts a new favourite with the caller's user_id in the row", async () => {
-    vi.mocked(db.listFavoriteStores).mockResolvedValue([STORE]);
-    const { sb, upsertCalls } = makeSupabase({});
-    const result = newResult();
+  it("triggerSync never touches the Data API and keeps local data", async () => {
+    const { sb, fromCalls } = makeSupabase({ session: "mfa-pending" });
 
-    await pushFavoriteStores(sb, USER_ID, result);
-
-    expect(upsertCalls).toEqual([
-      expect.objectContaining({ id: "node/123", user_id: USER_ID }),
-    ]);
-    expect(result.pushed.favoriteStores).toBe(1);
-    expect(vi.mocked(db.markFavoriteStoreSynced)).toHaveBeenCalledWith(
-      "node/123",
-      "2026-05-16T12:00:00Z",
+    await expect(triggerSync(sb, USER_ID)).rejects.toBeInstanceOf(
+      MfaRequiredError,
     );
+
+    // No pull (it would read back empty under RLS), no push, no tombstones.
+    expect(fromCalls).toHaveLength(0);
+    expect(vi.mocked(db.listDeletions)).not.toHaveBeenCalled();
+    // Owing the second factor is not a dead session: nothing is wiped.
+    expect(vi.mocked(signOutAndClearLocal)).not.toHaveBeenCalled();
+    expect(getSyncStatus().state).toBe("error");
   });
 
-  it("filters an update on (user_id, id), not the shared OSM key alone", async () => {
-    vi.mocked(db.listFavoriteStores).mockResolvedValue([
-      {
-        ...STORE,
-        localUpdatedAt: "2026-05-16T13:00:00Z",
-        serverUpdatedAt: "2026-05-16T12:00:00Z",
-      },
-    ]);
-    const { sb, updateCalls } = makeSupabase({});
-    const result = newResult();
+  it("discardPendingChanges refuses before wiping the local stores", async () => {
+    const { sb, fromCalls } = makeSupabase({ session: "mfa-pending" });
 
-    await pushFavoriteStores(sb, USER_ID, result);
+    await expect(discardPendingChanges(sb, USER_ID)).rejects.toBeInstanceOf(
+      MfaRequiredError,
+    );
+    expect(vi.mocked(db.clearAllStores)).not.toHaveBeenCalled();
+    expect(fromCalls).toHaveLength(0);
+  });
 
-    expect(updateCalls).toHaveLength(1);
-    expect(updateCalls[0].pkFields).toEqual({
-      user_id: USER_ID,
-      id: "node/123",
+  it("an RLS 42501 is not mistaken for a UUID collision (no re-mint)", async () => {
+    vi.mocked(db.listCustomFoods).mockResolvedValue([colliding]);
+    const { sb, upsertCalls } = makeSupabase({
+      session: "mfa-pending",
+      // What the restrictive MFA policy answers for the insert.
+      upsert: () => ({ data: null, error: { code: "42501" } }),
     });
-    expect(updateCalls[0].base).toBe("2026-05-16T12:00:00Z");
-    expect(result.pushed.favoriteStores).toBe(1);
+
+    await expect(
+      pushCustomFoods(sb, USER_ID, newResult()),
+    ).rejects.toBeInstanceOf(MfaRequiredError);
+
+    expect(upsertCalls).toHaveLength(1);
+    expect(vi.mocked(db.upsertCustomFood)).not.toHaveBeenCalled();
+    expect(vi.mocked(db.applyServerDeletion)).not.toHaveBeenCalled();
   });
 });

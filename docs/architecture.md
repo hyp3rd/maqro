@@ -85,7 +85,6 @@ app/
     delete-account/route.ts         # Admin.deleteUser (service-role)
     account/backup-email/{,start,verify}/route.ts  # Set / verify / clear backup recovery email
     auth/recovery/route.ts          # Issue a backup-email recovery code (and verify via /auth/confirm)
-    auth/mfa/trusted-devices/{,[id],check}/route.ts  # 7-day MFA bypass - list/create/revoke + per-row revoke + login-time check
     billing/usage/route.ts          # GET current-month AI usage + tier + plan state
     billing/checkout/route.ts       # Create Stripe Checkout Session
     billing/portal/route.ts         # Create Stripe Customer Portal Session
@@ -130,7 +129,7 @@ components/
                                     #   ShoppingListView, RecipesView, MyFoodsView,
                                     #   SettingsView (+ BillingSection, MfaSection,
                                     #   BackupEmailSection, ConnectedAccountsSection,
-                                    #   SignedInDevicesSection, TrustedDevicesSection,
+                                    #   SignedInDevicesSection,
                                     #   UnitsSection: metric / imperial toggle),
                                     #   InfoExplainer (info-icon → Dialog for BMR /
                                     #   TDEE / safety-floor explainers),
@@ -238,7 +237,7 @@ supabase/migrations/
   0028_user_devices_device_id.sql          # Stable per-browser device_id on user_devices
   0029_backup_email.sql                    # backup_email + verified_at + pending OTP columns
   0030_backup_email_collision_check.sql    # email_taken_by_other_user RPC for backup-email start
-  0031_mfa_trusted_devices.sql             # "Trust this device for 7 days" - skip MFA window
+  0031_mfa_trusted_devices.sql             # "Trust this device for 7 days" - retired; end-user access revoked in 0078
   0032_auth_audit_log_view.sql             # public view exposing auth.audit_log_entries to service-role
   0033_profiles_traced.sql                 # profiles.traced bool flag for admin observability tracing
   0034_admin_sessions.sql                  # admin_sessions table - bracket admin-panel presence with start/end events

@@ -1,7 +1,6 @@
 import type { ShareVisibility } from "@/components/macro/types";
 import { parseBody } from "@/lib/api/parse-body";
 import { assertAal2 } from "@/lib/auth/mfa-required";
-import { trustedDeviceOption } from "@/lib/auth/trusted-device";
 import { generateShareSlug } from "@/lib/share-slug";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -41,10 +40,7 @@ export async function POST(
   if (!user) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
-  const gate = await assertAal2(
-    supabase,
-    await trustedDeviceOption(supabase, user.id),
-  );
+  const gate = await assertAal2(supabase, user);
   if (!gate.ok) return gate.response;
 
   // Check if already shared (idempotent path). RLS restricts the SELECT
@@ -136,6 +132,8 @@ export async function PATCH(
   if (!user) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  const gate = await assertAal2(supabase, user);
+  if (!gate.ok) return gate.response;
 
   // Refuse to set visibility on a row that isn't shared yet — the UI
   // shouldn't let this happen, but a 404 here is clearer than silently
@@ -192,6 +190,8 @@ export async function DELETE(
   if (!user) {
     return NextResponse.json({ error: "Not authenticated." }, { status: 401 });
   }
+  const gate = await assertAal2(supabase, user);
+  if (!gate.ok) return gate.response;
 
   const { error } = await supabase
     .from("recipes")
