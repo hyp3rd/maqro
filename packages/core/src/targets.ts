@@ -32,7 +32,13 @@ export type DateTargets = CalculatedValues & {
 /** Local midnight (ms epoch) of a `YYYY-MM-DD` key, or `undefined` for a key
  *  that isn't a real calendar date (e.g. the empty key `useToday` returns
  *  before hydration) — `computeMacros` then falls back to the present.
- *  Component-based like `addDays`, so DST never shifts the day. */
+ *  Component-based like `addDays`, so DST never shifts the day.
+ *
+ *  "Local" is the PROCESS timezone (`new Date(y, m, d)`): the user's zone in
+ *  the browser, but UTC on the server, so in the crons the instant is UTC
+ *  midnight of `date`. That only moves the age clock (a birthdate-derived
+ *  age rolls over at UTC rather than local midnight), never which day — and
+ *  so which goal phase — the target is resolved for. */
 function localMidnightMs(date: string): number | undefined {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
   if (!match) return undefined;
