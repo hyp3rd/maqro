@@ -37,13 +37,19 @@ function lastObserver(): FakeResizeObserver {
 }
 
 /** Renders the observed element only when `show`, and prints the width. */
-function Probe({ show = true }: { show?: boolean }) {
+function Probe({ show = true, padding }: { show?: boolean; padding?: string }) {
   const [ref, width] = useElementWidth<HTMLDivElement>();
   return createElement(
     "section",
     null,
     createElement("output", null, width === null ? "none" : String(width)),
-    show ? createElement("div", { ref, "data-testid": "observed" }) : null,
+    show
+      ? createElement("div", {
+          ref,
+          "data-testid": "observed",
+          style: padding ? { padding } : undefined,
+        })
+      : null,
   );
 }
 
@@ -57,6 +63,7 @@ describe("useElementWidth", () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it("is null until the first observation, then tracks the content box", () => {
@@ -127,6 +134,27 @@ describe("useElementWidth", () => {
     rerender(createElement(Probe));
     expect(FakeResizeObserver.last).toBe(observer);
     expect(observer.disconnected).toBe(false);
+  });
+
+  it("measures as the element attaches, before any observation", () => {
+    // Layout width is 0 in jsdom; give the element a real one.
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(327);
+    render(createElement(Probe));
+    // Committed with the first render: no frame drawn at the fallback.
+    expect(shown()).toBe("327");
+    // The observer still takes over from there.
+    act(() =>
+      lastObserver().deliver({
+        contentRect: { width: 702 } as DOMRectReadOnly,
+      }),
+    );
+    expect(shown()).toBe("702");
+  });
+
+  it("reads the content box: horizontal padding is left out", () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(343);
+    render(createElement(Probe, { padding: "0 8px" }));
+    expect(shown()).toBe("327");
   });
 
   it("stays null where ResizeObserver doesn't exist", () => {
