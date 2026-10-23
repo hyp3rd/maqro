@@ -9,6 +9,7 @@ import type { PersonalInfo } from "@/components/macro/types";
 import { MiniLineChart } from "@/components/shell/MiniLineChart";
 import { Button } from "@/components/ui/button";
 import { AiUsageProvider, useTier } from "@/hooks/use-ai-usage";
+import { useToday } from "@/hooks/use-today";
 import { effectiveAge } from "@/lib/age";
 import { FEATURES } from "@/lib/billing/tiers";
 import {
@@ -24,7 +25,6 @@ import {
   listMicronutrientProfiles,
   listWaterIntake,
   listWeightEntries,
-  todayKey as localTodayKey,
   type BloodPressure,
   type BodyMeasurement,
   type DailyLog,
@@ -69,6 +69,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, CloudUpload, FileDown, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { addDays } from "@maqro/core/date";
 import { targetsForDate } from "@maqro/core/targets";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -231,8 +232,13 @@ function ReportBody({
   water: WaterIntake[];
   micronutrientProfiles: MicronutrientProfile[];
 }) {
-  const today = todayKey();
-  const cutoffDate = cutoffDateString(days);
+  // The user's LOCAL today — the same day key the app's day view, the
+  // target below and every window (recap, streak, micronutrients, range
+  // cutoff) use, so they can never straddle two days near midnight.
+  // `useToday` re-renders at local midnight, so a report left open
+  // overnight rolls over with the calendar.
+  const today = useToday();
+  const cutoffDate = addDays(today, -days);
 
   // Filter every store to the chosen date range before any
   // computation. Keeps derived numbers (delta, adherence,
@@ -276,15 +282,12 @@ function ReportBody({
   // mode users without a saved profile can still print a chart-
   // only report. The target comes from the same `targetsForDate` resolver
   // and tier gate as the app, so a Pro user's active phase (and its TDEE
-  // override) shows here exactly as in-app. It is resolved for the user's
-  // LOCAL today, like the app's day view.
+  // override) shows here exactly as in-app, for the same local `today`.
   const { tier } = useTier();
   const phasesEnabled = tier !== null && FEATURES.canUseGoalPhases(tier);
-  const targetDate = localTodayKey();
   const calc = useMemo(
-    () =>
-      profile ? targetsForDate(profile, targetDate, { phasesEnabled }) : null,
-    [profile, targetDate, phasesEnabled],
+    () => (profile ? targetsForDate(profile, today, { phasesEnabled }) : null),
+    [profile, today, phasesEnabled],
   );
   const targetCalories = calc?.targetCalories ?? 0;
   const streak = useMemo<StreakState>(
@@ -1693,17 +1696,6 @@ const GOAL_LABEL: Record<string, string> = {
 function clampDays(n: number): number {
   if (!Number.isFinite(n) || n <= 0) return 60;
   return Math.min(365, Math.round(n));
-}
-
-function todayKey(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-/** Hoisted out of the component body to sidestep `react-hooks/purity`
- *  (Date.now is impure-by-rule even in client components). Returns
- *  the lower-bound date string for filtering window-scoped data. */
-function cutoffDateString(days: number): string {
-  return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
 }
 
 function shortDateLabel(d: string): string {
