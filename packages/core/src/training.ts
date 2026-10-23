@@ -55,8 +55,10 @@ export const LONG_ENDURANCE_MIN = 60;
 
 /** Relative day weights per preset, normalized to the template week's mean
  *  before use (so only their ratios matter). Modest is the default;
- *  Pronounced is opt-in. Sources: MacroFactor / Leangains practice, RP
- *  per-weekday templates (scratchpad evidence A4). */
+ *  Pronounced is opt-in. Practice-based, not trial-based: MacroFactor's
+ *  coached calorie shifts ("modest by default"), Leangains / RippedBody
+ *  training- vs rest-day targets, and RP Diet Coach's per-weekday templates
+ *  (its "Diet Setup" docs). */
 export const CYCLING_WEIGHTS: Record<
   Exclude<CyclingPreset, "off">,
   Record<TrainingDayClass, number>
@@ -207,9 +209,10 @@ export function normalizeProteinSetting(raw: unknown): ProteinSetting {
  *  | 5 | `lower` with no intensity ("leg day")     | `heavy`     |
  *  | 6 | everything else (moderate / unspecified)  | `training`  |
  *
- *  Only endurance uses the duration (A2: "optional long endurance
- *  (>60 min)"); a long hard endurance session is `endurance`, a short hard
- *  one `heavy`. */
+ *  Only endurance uses the duration: over 60 min is where the carbohydrate
+ *  guidance changes (Thomas et al. 2016, the joint sports-nutrition
+ *  position stand). A long hard endurance session is `endurance`, a short
+ *  hard one `heavy`. */
 export function classifyTrainingDay(day: TrainingDay): TrainingDayClass {
   if (day.type === "rest") return "rest";
   if (day.intensity === "light") return "light";
