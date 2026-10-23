@@ -22,7 +22,7 @@ import { useSafeSignOut } from "@/hooks/use-safe-sign-out";
 import { useUser } from "@/hooks/use-user";
 import { isLikelyEmail } from "@/lib/account/backup-email";
 import { clientFetch } from "@/lib/auth/client-fetch";
-import { signOutAndClearLocal } from "@/lib/auth/sign-out";
+import { clearAccountRecords, signOutAndClearLocal } from "@/lib/auth/sign-out";
 import { clearAllStores } from "@/lib/db";
 import {
   buildExport,
@@ -673,7 +673,7 @@ export function SettingsView({
  *  destroying their account. Also useful for "this device is acting
  *  weird, reset and re-sync" troubleshooting and for handing the
  *  device to someone else. */
-function ResetDeviceSection({ signedIn }: { signedIn: boolean }) {
+export function ResetDeviceSection({ signedIn }: { signedIn: boolean }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -696,6 +696,9 @@ function ResetDeviceSection({ signedIn }: { signedIn: boolean }) {
         // Storage disabled - fine, the rest of the reset is still
         // useful.
       }
+      // The per-account records too, also when there is no session to
+      // sign out (an expired one opened offline still has them).
+      clearAccountRecords();
 
       if (signedIn) {
         const supabase = getSupabaseBrowser();

@@ -1,6 +1,18 @@
+import { clearLastKnownUser } from "@/lib/auth/last-known-user";
 import { clearCachedTier } from "@/lib/billing/tier-cache";
 import { clearAllStores } from "@/lib/db";
 import type { SupabaseClient } from "@supabase/supabase-js";
+
+/** Forget the per-account records this device keeps outside IndexedDB —
+ *  the last-known tier and the last-known user — so the next user on this
+ *  device is never gated on, or shown as, the previous one. Used by every
+ *  path that hands the device over: sign-out, forced sign-out, device
+ *  reset. Never throws (both records degrade to "absent" on storage
+ *  errors). */
+export function clearAccountRecords(): void {
+  clearCachedTier();
+  clearLastKnownUser();
+}
 
 /** Sign out and wipe the local IndexedDB *before* tearing down the
  *  session, so a different user signing in on the same device starts
@@ -18,8 +30,8 @@ export async function signOutAndClearLocal(
   supabase: SupabaseClient,
 ): Promise<void> {
   await clearAllStores().catch(() => {});
-  // The last-known tier is per-account state too: the next user on this
-  // device must never be gated on it.
-  clearCachedTier();
+  // Cleared here rather than left to the SIGNED_OUT event, which never
+  // fires when `signOut()` can't load an expired session offline.
+  clearAccountRecords();
   await supabase.auth.signOut();
 }

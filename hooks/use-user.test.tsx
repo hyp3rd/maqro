@@ -1,11 +1,16 @@
 /**
  * @vitest-environment jsdom
  */
+import {
+  readLastKnownUserId,
+  writeLastKnownUserId,
+} from "@/lib/auth/last-known-user";
 import { writeCachedTier } from "@/lib/billing/tier-cache";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PersonalInfo } from "@maqro/core/types";
 import {
+  AuthApiError,
   AuthRetryableFetchError,
   AuthSessionMissingError,
   type AuthChangeEvent,
@@ -22,32 +27,62 @@ import { useUser } from "./use-user";
  *  sequence offline: INITIAL_SESSION delivers the persisted session's user
  *  (no network needed), then `getUser()` — a `/auth/v1/user` round-trip —
  *  resolves `{ user: null }` with an `AuthRetryableFetchError`. That null is
- *  "couldn't ask the server", not "signed out". */
+ *  "couldn't ask the server", not "signed out".
+ *
+ *  Once the access token has expired too, auth-js cannot refresh it offline:
+ *  INITIAL_SESSION delivers `null`, and both `getUser()` and `getSession()`
+ *  report no session with an `AuthRetryableFetchError` (the stored session
+ *  is kept for a refresh once the network is back). */
 
 type GetUserResult = { data: { user: User | null }; error: AuthError | null };
+type GetSessionResult = {
+  data: { session: Session | null };
+  error: AuthError | null;
+};
+type AuthListener = (event: AuthChangeEvent, session: Session | null) => void;
 
-/** A stand-in for the browser auth client that reproduces the ordering above:
- *  INITIAL_SESSION fires first, `getUser()` settles only when the test
- *  releases it. */
-function fakeAuthClient(persisted: Session | null) {
+/** A stand-in for the browser auth client. INITIAL_SESSION fires first with
+ *  `initial`; the first `getUser()` settles only when the test releases it,
+ *  later ones answer `nextGetUser`; `emit` fires any later auth event. */
+function fakeAuthClient(
+  initial: Session | null,
+  getSession: GetSessionResult = { data: { session: initial }, error: null },
+) {
   let releaseGetUser: (result: GetUserResult) => void = () => {};
   const getUserSettled = new Promise<GetUserResult>((resolve) => {
     releaseGetUser = resolve;
   });
+  const state = {
+    nextGetUser: null as GetUserResult | null,
+    listener: null as AuthListener | null,
+  };
+  const getUser = vi.fn(() =>
+    state.nextGetUser === null
+      ? getUserSettled
+      : Promise.resolve(state.nextGetUser),
+  );
   const client = {
     auth: {
-      getUser: () => getUserSettled,
-      getSession: () =>
-        Promise.resolve({ data: { session: persisted }, error: null }),
-      onAuthStateChange: (
-        callback: (event: AuthChangeEvent, session: Session | null) => void,
-      ) => {
-        queueMicrotask(() => callback("INITIAL_SESSION", persisted));
+      getUser,
+      getSession: () => Promise.resolve(getSession),
+      onAuthStateChange: (callback: AuthListener) => {
+        state.listener = callback;
+        queueMicrotask(() => callback("INITIAL_SESSION", initial));
         return { data: { subscription: { unsubscribe: () => {} } } };
       },
     },
   };
-  return { client, releaseGetUser };
+  return {
+    client,
+    getUser,
+    releaseGetUser,
+    /** Answer every later `getUser()` (an `online` re-check) with `result`. */
+    answerGetUserWith: (result: GetUserResult) => {
+      state.nextGetUser = result;
+    },
+    emit: (event: AuthChangeEvent, session: Session | null) =>
+      act(() => state.listener?.(event, session)),
+  };
 }
 
 const supabase = vi.hoisted(() => ({ client: null as unknown }));
@@ -57,9 +92,25 @@ vi.mock("@/lib/supabase/client", () => ({
 
 const USER = { id: "u1" } as User;
 const SESSION = { user: USER } as Session;
+const networkError = () => new AuthRetryableFetchError("Failed to fetch", 0);
 const offlineGetUser: GetUserResult = {
   data: { user: null },
-  error: new AuthRetryableFetchError("Failed to fetch", 0),
+  error: networkError(),
+};
+/** `getSession()` offline with an expired access token: the refresh failed
+ *  for lack of network, so there is no usable session. */
+const expiredOfflineSession: GetSessionResult = {
+  data: { session: null },
+  error: networkError(),
+};
+/** The server rejected the stored refresh token (revoked session). */
+const revokedGetUser: GetUserResult = {
+  data: { user: null },
+  error: new AuthApiError(
+    "Invalid Refresh Token: Refresh Token Not Found",
+    400,
+    "refresh_token_not_found",
+  ),
 };
 
 const fetchMock =
@@ -77,15 +128,33 @@ afterEach(() => {
 });
 
 /** Renders `useUser` against a fake client and waits for INITIAL_SESSION. */
-async function startWith(persisted: Session | null) {
-  const fake = fakeAuthClient(persisted);
+async function startWith(
+  persisted: Session | null,
+  getSession?: GetSessionResult,
+) {
+  const fake = fakeAuthClient(persisted, getSession);
   supabase.client = fake.client;
   const hook = renderHook(() => useUser());
   await waitFor(() =>
     expect(hook.result.current.user).toBe(persisted?.user ?? null),
   );
   expect(hook.result.current.isLoaded).toBe(false);
-  return { ...hook, releaseGetUser: fake.releaseGetUser };
+  return { ...hook, ...fake };
+}
+
+/** Opened offline after the access token expired, with `u1` recorded. */
+async function startExpiredOffline() {
+  writeLastKnownUserId("u1");
+  const started = await startWith(null, expiredOfflineSession);
+  await act(async () => started.releaseGetUser(offlineGetUser));
+  await waitFor(() => expect(started.result.current.isLoaded).toBe(true));
+  return started;
+}
+
+function goOnline() {
+  return act(async () => {
+    window.dispatchEvent(new Event("online"));
+  });
 }
 
 describe("useUser", () => {
@@ -94,16 +163,22 @@ describe("useUser", () => {
     await act(async () => releaseGetUser(offlineGetUser));
     await waitFor(() => expect(result.current.isLoaded).toBe(true));
     expect(result.current.user).toBe(USER);
+    expect(result.current.localUserId).toBe("u1");
+    expect(result.current.isOfflineUnverified).toBe(false);
   });
 
-  it("offline with no usable persisted session: signed out", async () => {
+  it("offline with no stored session: signed out", async () => {
+    writeLastKnownUserId("u1");
     const { result, releaseGetUser } = await startWith(null);
     await act(async () => releaseGetUser(offlineGetUser));
     await waitFor(() => expect(result.current.isLoaded).toBe(true));
     expect(result.current.user).toBeNull();
+    expect(result.current.localUserId).toBeNull();
+    expect(readLastKnownUserId()).toBeNull();
   });
 
-  it("a session the server rejects still signs out", async () => {
+  it("a session the server rejects still signs out, and forgets the user", async () => {
+    writeLastKnownUserId("u1");
     const { result, releaseGetUser } = await startWith(SESSION);
     await act(async () =>
       releaseGetUser({
@@ -113,9 +188,11 @@ describe("useUser", () => {
     );
     await waitFor(() => expect(result.current.isLoaded).toBe(true));
     expect(result.current.user).toBeNull();
+    expect(result.current.localUserId).toBeNull();
+    expect(readLastKnownUserId()).toBeNull();
   });
 
-  it("online: the server-verified user wins", async () => {
+  it("online: the server-verified user wins, and is recorded", async () => {
     const verified = { id: "u1", email: "a@example.com" } as User;
     const { result, releaseGetUser } = await startWith(SESSION);
     await act(async () =>
@@ -123,6 +200,7 @@ describe("useUser", () => {
     );
     await waitFor(() => expect(result.current.isLoaded).toBe(true));
     expect(result.current.user).toBe(verified);
+    expect(readLastKnownUserId()).toBe("u1");
   });
 
   it("unconfigured: loaded at once, no user", () => {
@@ -130,9 +208,107 @@ describe("useUser", () => {
     const { result } = renderHook(() => useUser());
     expect(result.current).toEqual({
       user: null,
+      localUserId: null,
+      isOfflineUnverified: false,
       isLoaded: true,
       isUnconfigured: true,
     });
+  });
+});
+
+describe("useUser — offline open after the access token expired", () => {
+  it("keeps the last-known user, explicitly unverified and without a session", async () => {
+    const { result } = await startExpiredOffline();
+    expect(result.current.user).toBeNull();
+    expect(result.current.localUserId).toBe("u1");
+    expect(result.current.isOfflineUnverified).toBe(true);
+    expect(readLastKnownUserId()).toBe("u1");
+  });
+
+  it("with nothing recorded: signed out", async () => {
+    const { result, releaseGetUser } = await startWith(
+      null,
+      expiredOfflineSession,
+    );
+    await act(async () => releaseGetUser(offlineGetUser));
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+    expect(result.current.localUserId).toBeNull();
+    expect(result.current.isOfflineUnverified).toBe(false);
+  });
+
+  it("a late INITIAL_SESSION(null) does not undo the resolved state", async () => {
+    const { result, emit } = await startExpiredOffline();
+    emit("INITIAL_SESSION", null);
+    expect(result.current.localUserId).toBe("u1");
+    expect(result.current.isOfflineUnverified).toBe(true);
+  });
+
+  it("back online with a revoked session: signed out and the record cleared", async () => {
+    const { result, answerGetUserWith, getUser } = await startExpiredOffline();
+    answerGetUserWith(revokedGetUser);
+    await goOnline();
+    await waitFor(() => expect(result.current.localUserId).toBeNull());
+    expect(getUser).toHaveBeenCalledTimes(2);
+    expect(result.current.user).toBeNull();
+    expect(result.current.isOfflineUnverified).toBe(false);
+    expect(readLastKnownUserId()).toBeNull();
+  });
+
+  it("back online with a valid session: verified", async () => {
+    const { result, answerGetUserWith } = await startExpiredOffline();
+    answerGetUserWith({ data: { user: USER }, error: null });
+    await goOnline();
+    await waitFor(() => expect(result.current.user).toBe(USER));
+    expect(result.current.isOfflineUnverified).toBe(false);
+    expect(readLastKnownUserId()).toBe("u1");
+  });
+
+  it("an 'online' event while the server is still unreachable changes nothing", async () => {
+    const { result, answerGetUserWith } = await startExpiredOffline();
+    answerGetUserWith(offlineGetUser);
+    await goOnline();
+    expect(result.current.isOfflineUnverified).toBe(true);
+    expect(readLastKnownUserId()).toBe("u1");
+  });
+
+  it("the server rejecting the refresh (SIGNED_OUT) clears the record", async () => {
+    const { result, emit } = await startExpiredOffline();
+    emit("SIGNED_OUT", null);
+    expect(result.current.localUserId).toBeNull();
+    expect(result.current.isOfflineUnverified).toBe(false);
+    expect(readLastKnownUserId()).toBeNull();
+  });
+
+  it("a refresh that succeeds once the network is back verifies the session", async () => {
+    const { result, emit } = await startExpiredOffline();
+    emit("TOKEN_REFRESHED", SESSION);
+    expect(result.current.user).toBe(USER);
+    expect(result.current.isOfflineUnverified).toBe(false);
+  });
+
+  it("a verified session never re-checks on 'online'", async () => {
+    const { result, releaseGetUser, getUser } = await startWith(SESSION);
+    await act(async () =>
+      releaseGetUser({ data: { user: USER }, error: null }),
+    );
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+    await goOnline();
+    expect(getUser).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("useUser — account switch", () => {
+  it("signing in as another account replaces the record", async () => {
+    const { result, releaseGetUser, emit } = await startWith(SESSION);
+    await act(async () =>
+      releaseGetUser({ data: { user: USER }, error: null }),
+    );
+    await waitFor(() => expect(readLastKnownUserId()).toBe("u1"));
+
+    const other = { id: "u2" } as User;
+    emit("SIGNED_IN", { user: other } as Session);
+    expect(result.current.user).toBe(other);
+    expect(readLastKnownUserId()).toBe("u2");
   });
 });
 
@@ -166,6 +342,10 @@ const PROFILE: PersonalInfo = {
   ],
 };
 
+function aiUsageWrapper({ children }: { children: ReactNode }) {
+  return <AiUsageProvider>{children}</AiUsageProvider>;
+}
+
 describe("offline start: cached Pro tier and phase target", () => {
   it("a Pro user opening the PWA offline keeps the 1,900 phase target", async () => {
     writeCachedTier("u1", "pro");
@@ -174,11 +354,8 @@ describe("offline start: cached Pro tier and phase target", () => {
     );
     const fake = fakeAuthClient(SESSION);
     supabase.client = fake.client;
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <AiUsageProvider>{children}</AiUsageProvider>
-    );
     const { result } = renderHook(() => useTargets(PROFILE, TODAY, TODAY), {
-      wrapper,
+      wrapper: aiUsageWrapper,
     });
 
     await act(async () => fake.releaseGetUser(offlineGetUser));
@@ -190,5 +367,23 @@ describe("offline start: cached Pro tier and phase target", () => {
       "/api/billing/usage",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
+  });
+
+  it("after the access token expired, the last-known user keeps the 1,900 target without calling the server", async () => {
+    writeCachedTier("u1", "pro");
+    writeLastKnownUserId("u1");
+    const fake = fakeAuthClient(null, expiredOfflineSession);
+    supabase.client = fake.client;
+    const { result } = renderHook(() => useTargets(PROFILE, TODAY, TODAY), {
+      wrapper: aiUsageWrapper,
+    });
+
+    await act(async () => fake.releaseGetUser(offlineGetUser));
+
+    await waitFor(() => expect(result.current.phasesEnabled).toBe(true));
+    expect(result.current.todayTargets.targetCalories).toBe(1900);
+    expect(result.current.dayTargets.targetCalories).toBe(1900);
+    // The record is not a credential: no usage request is made as u1.
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

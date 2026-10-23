@@ -145,7 +145,7 @@ components/
   marketing/                        # StructuredData (JSON-LD for landing SEO)
   ui/                               # shadcn primitives
 hooks/
-  use-user.ts                       # Supabase auth subscription
+  use-user.ts                       # Supabase auth subscription (+ offline-unverified last-known user)
   use-user-role.ts                  # Client-side isAdmin (UX hint only)
   use-profile.ts                    # IDB-hydrated profile state
   use-daily-log.ts                  # IDB-hydrated day log state

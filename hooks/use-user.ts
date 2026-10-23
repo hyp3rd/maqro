@@ -1,5 +1,10 @@
 "use client";
 
+import {
+  clearLastKnownUser,
+  readLastKnownUserId,
+  writeLastKnownUserId,
+} from "@/lib/auth/last-known-user";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { useEffect, useState } from "react";
 import {
@@ -9,7 +14,19 @@ import {
 } from "@supabase/supabase-js";
 
 export type UserState = {
+  /** The user of the session this device holds — `null` when signed out
+   *  AND when offline-unverified. Anything that needs a real session (sync,
+   *  AI calls, billing, account actions) keys off this. */
   user: User | null;
+  /** Whose on-device data (day log, cached tier) to show: the session's
+   *  user, or — offline-unverified — the last-known user; otherwise `null`.
+   *  A selector for local data only: never a reason to call the server. */
+  localUserId: string | null;
+  /** True while the auth server can't be reached, no usable session exists
+   *  (e.g. the access token expired offline), and `localUserId` comes from
+   *  the on-device last-known record (lib/auth/last-known-user.ts). The
+   *  identity is re-verified as soon as the network returns. */
+  isOfflineUnverified: boolean;
   /** False before the auth client has resolved. */
   isLoaded: boolean;
   /** True if Supabase env vars aren't configured — the auth UI will be
@@ -17,8 +34,21 @@ export type UserState = {
   isUnconfigured: boolean;
 };
 
+/** What the hook currently reports. `offlineUserId` is set only in the
+ *  offline-unverified state, where `user` is `null`. */
+type Identity = { user: User | null; offlineUserId: string | null };
+
+type Resolution = Identity & {
+  /** The answer came from a network failure rather than the server, so it
+   *  must be checked again once the network is back. */
+  unverified: boolean;
+};
+
+const SIGNED_OUT: Identity = { user: null, offlineUserId: null };
+
 /** The signed-in user per the auth server, or — when the server can't be
- *  reached — per the locally persisted session.
+ *  reached — per the locally persisted session, or failing that the
+ *  last-known user.
  *
  *  `getUser()` validates the session against `/auth/v1/user`. Offline (common
  *  for this PWA) that request fails with an `AuthRetryableFetchError` and
@@ -26,30 +56,51 @@ export type UserState = {
  *  out": auth-js deliberately keeps the stored session on retryable failures
  *  and refreshes it once the network is back. Reporting `null` there would
  *  flip every signed-in surface to guest mode for the whole offline session
- *  (the cached Pro tier, the day log's identity, sync). So on a network
- *  failure we fall back to `getSession()`, which reads the persisted session
- *  without a network round-trip.
+ *  (the cached Pro tier, the day log's identity). So on a network failure we
+ *  fall back to `getSession()`, which reads the persisted session.
  *
- *  That identity is unverified, which is acceptable here: it only selects
- *  which local data / cached client-side gates to show on this device, and
- *  every server route re-authenticates the request itself. Any other error
- *  (missing or revoked session) still means signed out. */
-async function resolveUser(supabase: SupabaseClient): Promise<User | null> {
+ *  When the access token has also expired, `getSession()` needs a refresh
+ *  that can't happen offline: it reports no session, with the same retryable
+ *  error. Only then is the last-known record used — as `offlineUserId`, with
+ *  `user` left `null`, because there is no token to act on.
+ *
+ *  Any other outcome (no stored session, a missing or revoked one) is a
+ *  definite "signed out". */
+async function resolveUser(supabase: SupabaseClient): Promise<Resolution> {
   const { data, error } = await supabase.auth.getUser();
   if (error === null || !isAuthRetryableFetchError(error)) {
-    return data.user ?? null;
+    return { user: data.user ?? null, offlineUserId: null, unverified: false };
   }
-  const { data: local } = await supabase.auth.getSession();
-  return local.session?.user ?? null;
+  const { data: local, error: localError } = await supabase.auth.getSession();
+  if (local.session !== null) {
+    return { user: local.session.user, offlineUserId: null, unverified: true };
+  }
+  if (localError !== null && isAuthRetryableFetchError(localError)) {
+    return {
+      user: null,
+      offlineUserId: readLastKnownUserId(),
+      unverified: true,
+    };
+  }
+  return { ...SIGNED_OUT, unverified: false };
+}
+
+/** Keep the last-known record in step with what the hook reports: a session
+ *  records its user (an account switch replaces the previous one), the
+ *  offline-unverified state leaves it alone, and signed out clears it. */
+function syncLastKnownUser(identity: Identity): void {
+  if (identity.user !== null) writeLastKnownUserId(identity.user.id);
+  else if (identity.offlineUserId === null) clearLastKnownUser();
 }
 
 /** Subscribes to the Supabase auth session. Updates on sign-in, sign-out,
- * and token refresh. Falls back to `{ user: null, isLoaded: true,
- * isUnconfigured: true }` when env vars are missing. */
+ * and token refresh, and re-checks an identity resolved from a network
+ * failure when the browser comes back online. Falls back to `{ user: null,
+ * isLoaded: true, isUnconfigured: true }` when env vars are missing. */
 export function useUser(): UserState {
   const supabase = getSupabaseBrowser();
   const isUnconfigured = supabase === null;
-  const [user, setUser] = useState<User | null>(null);
+  const [identity, setIdentity] = useState<Identity>(SIGNED_OUT);
   // `authResolved` is set true after the first async getUser() completes.
   // We don't reset it on unmount; React's strict-mode double-mount is
   // safe because the second mount will overwrite with the same value.
@@ -59,28 +110,75 @@ export function useUser(): UserState {
     if (!supabase) return; // unconfigured — derived isLoaded is already true.
 
     let cancelled = false;
+    // Whether the first resolution has landed: until then INITIAL_SESSION
+    // (a read of local storage) supplies a provisional user; afterwards the
+    // server-backed resolution supersedes it.
+    let resolved = false;
+    // Whether the current identity came from a network failure and so must
+    // be re-verified when the network returns.
+    let unverified = false;
+    // Only the latest resolution may apply (an `online` re-check can overlap
+    // the initial one).
+    let latestResolution = 0;
 
-    resolveUser(supabase).then((resolved) => {
-      if (cancelled) return;
-      setUser(resolved);
-      setAuthResolved(true);
-    });
+    const apply = (next: Identity) => {
+      syncLastKnownUser(next);
+      setIdentity(next);
+    };
+
+    const verify = () => {
+      const run = ++latestResolution;
+      void resolveUser(supabase).then(({ unverified: stale, ...next }) => {
+        if (cancelled || run !== latestResolution) return;
+        resolved = true;
+        unverified = stale;
+        apply(next);
+        setAuthResolved(true);
+      });
+    };
+
+    verify();
 
     const { data: subscription } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setUser(session?.user ?? null);
+      (event, session) => {
+        if (event === "INITIAL_SESSION") {
+          // Provisional only. Offline with an expired token it is `null`
+          // although nothing signed the user out, so once `verify()` has
+          // answered it must not override that answer.
+          if (!resolved)
+            setIdentity({ user: session?.user ?? null, offlineUserId: null });
+          return;
+        }
+        // Any other event reflects a session change auth-js just made
+        // (sign-in, refresh, sign-out — including a refresh the server
+        // rejected once the network returned).
+        unverified = false;
+        apply({ user: session?.user ?? null, offlineUserId: null });
       },
     );
+
+    const onOnline = () => {
+      if (unverified) verify();
+    };
+    window.addEventListener("online", onOnline);
 
     return () => {
       cancelled = true;
       subscription.subscription.unsubscribe();
+      window.removeEventListener("online", onOnline);
     };
   }, [supabase]);
 
   // Derived: unconfigured users skip loading entirely; configured users
   // wait for the first getUser() to resolve.
   const isLoaded = isUnconfigured || authResolved;
+  const { user, offlineUserId } = identity;
 
-  return { user, isLoaded, isUnconfigured };
+  return {
+    user,
+    localUserId: user?.id ?? offlineUserId,
+    isOfflineUnverified: user === null && offlineUserId !== null,
+    isLoaded,
+    isUnconfigured,
+  };
 }

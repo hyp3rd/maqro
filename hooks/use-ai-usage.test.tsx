@@ -32,10 +32,18 @@ import {
  *  never outlive the account it belongs to, and must never grant more than
  *  the server's latest answer. */
 
-const auth = vi.hoisted(() => ({ user: null as User | null, isLoaded: true }));
+/** `offlineUserId` models the offline-unverified state: no session, the
+ *  last-known user's local data. */
+const auth = vi.hoisted(() => ({
+  user: null as User | null,
+  offlineUserId: null as string | null,
+  isLoaded: true,
+}));
 vi.mock("@/hooks/use-user", () => ({
   useUser: () => ({
     user: auth.user,
+    localUserId: auth.user?.id ?? auth.offlineUserId,
+    isOfflineUnverified: auth.user === null && auth.offlineUserId !== null,
     isLoaded: auth.isLoaded,
     isUnconfigured: false,
   }),
@@ -104,6 +112,7 @@ function wrapper({ children }: { children: ReactNode }) {
 
 beforeEach(() => {
   auth.user = asUser("u1");
+  auth.offlineUserId = null;
   auth.isLoaded = true;
   window.localStorage.clear();
   fetchMock.mockReset();
@@ -257,6 +266,36 @@ describe("AiUsageProvider / useTier", () => {
       expect(result.current).toEqual({ tier: null, resolved: true }),
     );
     expect(readCachedTier("u1")).toBeNull();
+  });
+
+  it("offline-unverified: the cached tier applies and nothing is fetched", async () => {
+    writeCachedTier("u1", "pro");
+    auth.user = null;
+    auth.offlineUserId = "u1";
+    const { result } = renderHook(
+      () => ({ tier: useTier(), usage: useAiUsage() }),
+      { wrapper },
+    );
+    expect(result.current.tier).toEqual({ tier: "pro", resolved: true });
+    expect(result.current.usage.state.status).toBe("error");
+    // An explicit refresh still makes no request as an unverified user.
+    act(() => result.current.usage.refresh());
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("offline-unverified then verified: the live tier is fetched at once", async () => {
+    writeCachedTier("u1", "pro");
+    auth.user = null;
+    auth.offlineUserId = "u1";
+    const { result, rerender } = renderHook(() => useTier(), { wrapper });
+    expect(result.current).toEqual({ tier: "pro", resolved: true });
+
+    fetchMock.mockResolvedValue(usageResponse("free"));
+    auth.user = asUser("u1");
+    auth.offlineUserId = null;
+    rerender();
+    await waitFor(() => expect(result.current.tier).toBe("free"));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("a 401 drops only the current user's entry, never another account's", async () => {
