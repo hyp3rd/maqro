@@ -10,6 +10,7 @@ import {
   partitionDayMacros,
   proteinCeilingGrams,
   proteinGrams,
+  referenceWeightKg,
   weekProteinGrams,
 } from "@maqro/core/training";
 import type {
@@ -274,35 +275,150 @@ describe("normalizeProteinSetting", () => {
 });
 
 describe("proteinGrams", () => {
+  /** 80 kg / 180 cm: BMI 24.7. */
+  const lean = { weightKg: 80, heightCm: 180 };
+  /** 120 kg / 180 cm: BMI 37; the BMI-25 weight for 180 cm is 81 kg. */
+  const obese = { weightKg: 120, heightCm: 180 };
+
   it("bodyweight basis: g/kg × weight", () => {
-    expect(proteinGrams({ basis: "bodyweight", gPerKg: 2 }, 80)).toEqual({
+    expect(proteinGrams({ basis: "bodyweight", gPerKg: 2 }, lean)).toEqual({
       grams: 160,
       basis: "bodyweight",
+      kg: 80,
     });
   });
 
   it("lean-mass basis uses weight × (1 − body fat)", () => {
-    const out = proteinGrams({ basis: "leanMass", gPerKg: 2.6 }, 80, 20);
+    const out = proteinGrams(
+      { basis: "leanMass", gPerKg: 2.6 },
+      { ...lean, bodyFatPct: 20 },
+    );
     expect(out.basis).toBe("leanMass");
     expect(out.grams).toBeCloseTo(166.4, 9);
+    // The 1.2 g/kg minimum stays a bodyweight figure.
+    expect(out.kg).toBe(80);
   });
 
   it("lean mass without a usable estimate → the 2.0 g/kg bodyweight default", () => {
     // Not the lean-mass 2.6 g/kg applied to bodyweight (208 g): a lean-mass
     // figure is per kg of FFM and over-prescribes on total weight.
     for (const bf of [undefined, null, NaN, 2, 70]) {
-      expect(proteinGrams({ basis: "leanMass", gPerKg: 2.6 }, 80, bf)).toEqual({
-        grams: 160,
-        basis: "bodyweight",
-      });
+      expect(
+        proteinGrams(
+          { basis: "leanMass", gPerKg: 2.6 },
+          { ...lean, bodyFatPct: bf },
+        ),
+      ).toEqual({ grams: 160, basis: "bodyweight", kg: 80 });
     }
   });
 
   it("a bodyweight setting keeps its own g/kg", () => {
-    expect(proteinGrams({ basis: "bodyweight", gPerKg: 2.6 }, 80)).toEqual({
+    expect(proteinGrams({ basis: "bodyweight", gPerKg: 2.6 }, lean)).toEqual({
       grams: 208,
       basis: "bodyweight",
+      kg: 80,
     });
+  });
+
+  describe("BMI ≥ 30 without a body-fat estimate → the BMI-25 weight", () => {
+    const rows: [string, Parameters<typeof proteinGrams>, number, string][] = [
+      [
+        "bodyweight 2.0 at 180 cm / 120 kg → 2.0 × 81",
+        [{ basis: "bodyweight", gPerKg: 2 }, obese],
+        162,
+        "referenceWeight",
+      ],
+      [
+        "bodyweight 1.6 at 180 cm / 120 kg → 1.6 × 81",
+        [{ basis: "bodyweight", gPerKg: 1.6 }, obese],
+        129.6,
+        "referenceWeight",
+      ],
+      [
+        "lean mass, no estimate: the 2.0 default on 81 kg",
+        [{ basis: "leanMass", gPerKg: 2.6 }, obese],
+        162,
+        "referenceWeight",
+      ],
+      [
+        "BMI exactly 30 (200 cm / 120 kg) → 2.0 × 100",
+        [
+          { basis: "bodyweight", gPerKg: 2 },
+          { weightKg: 120, heightCm: 200 },
+        ],
+        200,
+        "referenceWeight",
+      ],
+      [
+        "BMI just under 30 (200 cm / 119.9 kg) → bodyweight",
+        [
+          { basis: "bodyweight", gPerKg: 2 },
+          { weightKg: 119.9, heightCm: 200 },
+        ],
+        239.8,
+        "bodyweight",
+      ],
+      [
+        "with an estimate, a bodyweight setting applies as set",
+        [
+          { basis: "bodyweight", gPerKg: 2 },
+          { ...obese, bodyFatPct: 35 },
+        ],
+        240,
+        "bodyweight",
+      ],
+      [
+        "with an estimate, lean mass applies (2.6 × 78 kg)",
+        [
+          { basis: "leanMass", gPerKg: 2.6 },
+          { ...obese, bodyFatPct: 35 },
+        ],
+        202.8,
+        "leanMass",
+      ],
+      [
+        "an implausible estimate counts as none",
+        [
+          { basis: "bodyweight", gPerKg: 2 },
+          { ...obese, bodyFatPct: 75 },
+        ],
+        162,
+        "referenceWeight",
+      ],
+    ];
+    for (const [name, args, grams, basis] of rows) {
+      it(name, () => {
+        const out = proteinGrams(...args);
+        expect(out.grams).toBeCloseTo(grams, 9);
+        expect(out.basis).toBe(basis);
+        expect(out.kg).toBeCloseTo(
+          basis === "referenceWeight"
+            ? 25 * (args[1].heightCm / 100) ** 2
+            : args[1].weightKg,
+          9,
+        );
+      });
+    }
+
+    it("a height that isn't a positive number → bodyweight", () => {
+      for (const heightCm of [0, -180, NaN, Infinity]) {
+        expect(
+          proteinGrams(
+            { basis: "bodyweight", gPerKg: 2 },
+            { weightKg: 120, heightCm },
+          ),
+        ).toEqual({ grams: 240, basis: "bodyweight", kg: 120 });
+      }
+    });
+  });
+});
+
+describe("referenceWeightKg", () => {
+  it("is the BMI-25 weight for the height", () => {
+    expect(referenceWeightKg(180)).toBeCloseTo(81, 9);
+    expect(referenceWeightKg(160)).toBeCloseTo(64, 9);
+    expect(referenceWeightKg(0)).toBeNull();
+    expect(referenceWeightKg(NaN)).toBeNull();
   });
 });
 
@@ -443,6 +559,7 @@ describe("partitionDayMacros", () => {
       mean: { targetCalories: 2200, carbs: 138, fat: 86 },
       proteinGrams: 160,
       weightKg: 80,
+      proteinKg: over.weightKg ?? 80,
       goal: "lose",
       dietType: "balanced",
       ...over,
@@ -686,6 +803,7 @@ describe("partitionDayMacros", () => {
 describe("proteinCeilingGrams / weekProteinGrams", () => {
   const floors = {
     weightKg: 120,
+    proteinKg: 120,
     meanKcal: 2150,
     goal: "lose" as const,
     dietType: "balanced" as const,

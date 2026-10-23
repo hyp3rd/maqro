@@ -505,9 +505,27 @@ describe("targetsForDate — training days", () => {
     expect(weekTargets(p, "2026-06-10", FREE)?.totalCalories).toBe(7 * 2600);
   });
 
+  it("BMI ≥ 30 without a body-fat estimate: g/kg on the BMI-25 weight", () => {
+    // 120 kg / 180 cm (BMI 37): 2.0 g/kg × 81 kg = 162 g → 160.
+    const p = mockupProfile({ weight: 120 });
+    const t = targetsForDate(p, "2026-10-20", FREE);
+    expect(t.protein).toBe(160);
+    expect(t.training?.proteinBasis).toBe("referenceWeight");
+    // With an estimate, the bodyweight setting applies as set (240 g).
+    const withEstimate = targetsForDate(p, "2026-10-20", {
+      ...FREE,
+      bodyFatPct: 32,
+    });
+    expect(withEstimate.protein).toBe(240);
+    expect(withEstimate.training?.proteinBasis).toBe("bodyweight");
+  });
+
   it("protein gives way to the fat and carb floors, the same every day", () => {
     // 120 kg / 180 cm / 35 y sedentary male cutting 0.5 kg/week: the cut
-    // lands under the 2,155 BMR floor, so every day sits at 2,155.
+    // lands under the 2,155 BMR floor, so every day sits at 2,155. A
+    // body-fat estimate keeps the bodyweight basis (BMI 37 would otherwise
+    // take the 81 kg reference weight).
+    const ctx = { ...FREE, bodyFatPct: 32 };
     const p = profile({
       weight: 120,
       age: 35,
@@ -518,7 +536,7 @@ describe("targetsForDate — training days", () => {
       training: schedule(),
       proteinSetting: { basis: "bodyweight", gPerKg: 3.4 },
     });
-    const days = weekTargets(p, "2026-10-19", FREE)?.days ?? [];
+    const days = weekTargets(p, "2026-10-19", ctx)?.days ?? [];
     expect(days).toHaveLength(7);
     for (const d of days) {
       expect(d.targetCalories).toBe(2155);
@@ -532,7 +550,7 @@ describe("targetsForDate — training days", () => {
     const byDefault = targetsForDate(
       { ...p, proteinSetting: undefined },
       "2026-10-20",
-      FREE,
+      ctx,
     );
     expect(byDefault.protein).toBe(240);
     expect(byDefault.training?.proteinCapped).toBe(false);
@@ -575,7 +593,11 @@ describe("targetsForDate — training days", () => {
                         0.5 * weight,
                         ((goal === "lose" ? 0.15 : 0.2) * mean) / 9,
                       );
-                      const wanted = round5(gPerKg * weight);
+                      // BMI ≥ 30 (no body-fat estimate here) → g/kg on
+                      // the BMI-25 weight for the height.
+                      const m2 = (height / 100) ** 2;
+                      const proteinKg = weight / m2 >= 30 ? 25 * m2 : weight;
+                      const wanted = round5(gPerKg * proteinKg);
                       expect(new Set(days.map((d) => d.protein)).size).toBe(1);
                       for (const d of days) {
                         expect(d.fat).toBeGreaterThanOrEqual(fatFloor);

@@ -2,6 +2,7 @@ import { addDays } from "./date";
 import { effectiveGoal } from "./goal-phases";
 import { computeMacros } from "./macros";
 import {
+  type ProteinBasis,
   type TrainingDayClass,
   classifyTrainingDay,
   distributeWeekCalories,
@@ -17,7 +18,6 @@ import {
   type GoalPhase,
   MIN_DAILY_KCAL,
   type PersonalInfo,
-  type ProteinSetting,
   type TrainingDay,
 } from "./types";
 
@@ -38,8 +38,10 @@ import {
 /** What the caller has resolved about the user before asking for a target.
  *  Gating lives in callers (see goal-phases.ts): pass `phasesEnabled: true`
  *  only after the tier check (`FEATURES.canUseGoalPhases`). `bodyFatPct` is
- *  the latest body-fat estimate (%) if the caller has one — only a lean-mass
- *  protein basis reads it; absent → the 2.0 g/kg bodyweight default. */
+ *  the latest body-fat estimate (%) if the caller has one — the training
+ *  protein reads it (`proteinGrams`): absent, a lean-mass setting takes the
+ *  2.0 g/kg bodyweight default, and at BMI ≥ 30 g/kg is taken on the BMI-25
+ *  reference weight. */
 export type TargetContext = {
   phasesEnabled: boolean;
   bodyFatPct?: number | null;
@@ -53,11 +55,13 @@ export type TrainingDayTargets = {
   cycling: CyclingPreset;
   /** The weekly mean daily target the day is planned around. */
   meanCalories: number;
-  /** The protein basis actually used: a lean-mass setting without a
-   *  body-fat estimate falls back to the 2.0 g/kg bodyweight default, so
-   *  `bodyweight` here under a `leanMass` setting means "add a body-fat
-   *  estimate to use lean mass". */
-  proteinBasis: ProteinSetting["basis"];
+  /** The protein basis actually used (`proteinGrams`): a lean-mass setting
+   *  without a body-fat estimate falls back to the 2.0 g/kg bodyweight
+   *  default, so `bodyweight` under a `leanMass` setting means "add a
+   *  body-fat estimate to use lean mass"; `referenceWeight` (BMI ≥ 30, no
+   *  estimate) means g/kg was taken on the BMI-25 weight for the height —
+   *  also a prompt for a body-fat estimate. */
+  proteinBasis: ProteinBasis;
   /** The setting's protein didn't fit the week's smallest day alongside the
    *  fat and carb floors, so every day's protein was lowered to what does
    *  (`weekProteinGrams`). */
@@ -147,11 +151,15 @@ export function targetsForDate(
   const dayKcal = weekKcal[weekday];
   const protein = proteinGrams(
     normalizeProteinSetting(profile.proteinSetting),
-    profile.weight,
-    ctx.bodyFatPct,
+    {
+      weightKg: profile.weight,
+      heightCm: profile.height,
+      bodyFatPct: ctx.bodyFatPct,
+    },
   );
   const floors = {
     weightKg: profile.weight,
+    proteinKg: protein.kg,
     meanKcal: values.targetCalories,
     goal: effective.goal,
     dietType: profile.dietType,
@@ -168,6 +176,7 @@ export function targetsForDate(
     mean: values,
     proteinGrams: weekProtein.grams,
     weightKg: floors.weightKg,
+    proteinKg: floors.proteinKg,
     goal: floors.goal,
     dietType: floors.dietType,
   });

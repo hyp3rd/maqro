@@ -308,36 +308,84 @@ export function distributeWeekCalories(input: WeekCaloriesInput): number[] {
   return out;
 }
 
-/** Daily protein grams for the setting: g/kg × bodyweight, or × lean mass
- *  (weight × (1 − body fat %)) when the basis is `leanMass` AND a plausible
- *  body-fat estimate (3–60 %) is supplied. A lean-mass setting without one
- *  falls back to the 2.0 g/kg BODYWEIGHT default — not its own g/kg on
- *  bodyweight, which is a per-kg-of-FFM figure and would over-prescribe
- *  (owner decision). `basis` reports the one actually used, so the UI can
- *  suggest adding a body-fat estimate. */
+/** At or above this BMI, with no body-fat estimate, protein g/kg is taken on
+ *  the reference weight instead of total bodyweight. */
+export const OBESE_BMI = 30;
+/** The BMI the reference weight is taken at. */
+export const REFERENCE_BMI = 25;
+
+/** The weight (kg) at BMI 25 for a height in cm (180 cm → 81 kg), or
+ *  `null` for a height that isn't a positive number. */
+export function referenceWeightKg(heightCm: number): number | null {
+  if (!Number.isFinite(heightCm) || heightCm <= 0) return null;
+  return REFERENCE_BMI * (heightCm / 100) ** 2;
+}
+
+/** The body measure protein g/kg was actually applied to. */
+export type ProteinBasis = ProteinSetting["basis"] | "referenceWeight";
+
+/** What `proteinGrams` reads about the body. */
+export type ProteinBody = {
+  weightKg: number;
+  heightCm: number;
+  /** The latest body-fat estimate (%), if any. */
+  bodyFatPct?: number | null;
+};
+
+/** Daily protein grams for the setting, and the kg its g/kg was applied to:
+ *
+ *  - `leanMass` setting with a plausible body-fat estimate (3–60 %): g/kg ×
+ *    lean mass (weight × (1 − body fat %)).
+ *  - `leanMass` without one: the 2.0 g/kg default on bodyweight — not its
+ *    own g/kg, which is a per-kg-of-FFM figure and would over-prescribe
+ *    (owner decision).
+ *  - `bodyweight`: its g/kg × bodyweight.
+ *  - No body-fat estimate and BMI ≥ 30: the bodyweight figures above are
+ *    taken on the reference weight at BMI 25 for the height instead (180 cm
+ *    → 81 kg → 162 g at 2.0 g/kg), as total weight over-prescribes protein
+ *    with more body fat (owner decision; Carbon and MacroFactor ask for a
+ *    body-fat estimate there). With an estimate, the user's chosen basis
+ *    applies as set.
+ *
+ *  `basis` is the one actually used, so the UI can suggest adding a body-fat
+ *  estimate; `kg` is what the any-goal 1.2 g/kg minimum is taken on
+ *  (bodyweight, or the reference weight — never lean mass, as that minimum
+ *  is a bodyweight figure). */
 export function proteinGrams(
   setting: ProteinSetting,
-  weightKg: number,
-  bodyFatPct?: number | null,
-): { grams: number; basis: ProteinSetting["basis"] } {
-  if (setting.basis === "bodyweight") {
-    return { grams: setting.gPerKg * weightKg, basis: "bodyweight" };
-  }
-  if (
+  body: ProteinBody,
+): { grams: number; basis: ProteinBasis; kg: number } {
+  const { weightKg, bodyFatPct } = body;
+  const hasBodyFat =
     typeof bodyFatPct === "number" &&
     Number.isFinite(bodyFatPct) &&
     bodyFatPct >= BODY_FAT_MIN_PCT &&
-    bodyFatPct <= BODY_FAT_MAX_PCT
-  ) {
+    bodyFatPct <= BODY_FAT_MAX_PCT;
+  if (hasBodyFat && setting.basis === "leanMass") {
     return {
       grams: setting.gPerKg * weightKg * (1 - bodyFatPct / 100),
       basis: "leanMass",
+      kg: weightKg,
     };
   }
-  return {
-    grams: DEFAULT_PROTEIN_SETTING.gPerKg * weightKg,
-    basis: "bodyweight",
-  };
+  const gPerKg =
+    setting.basis === "leanMass"
+      ? DEFAULT_PROTEIN_SETTING.gPerKg
+      : setting.gPerKg;
+  const reference = referenceWeightKg(body.heightCm);
+  // BMI = weight / height² = REFERENCE_BMI × weight / reference.
+  if (
+    !hasBodyFat &&
+    reference !== null &&
+    clean((REFERENCE_BMI * weightKg) / reference) >= OBESE_BMI
+  ) {
+    return {
+      grams: gPerKg * reference,
+      basis: "referenceWeight",
+      kg: reference,
+    };
+  }
+  return { grams: gPerKg * weightKg, basis: "bodyweight", kg: weightKg };
 }
 
 /** Diets where FAT absorbs the day-to-day difference and carbs hold (low-carb,
@@ -355,7 +403,11 @@ export const HEAVY_CARB_AIM_G_PER_KG = 3;
 
 /** What sets a day's macro floors. */
 export type MacroFloorInput = {
+  /** Bodyweight: the fat (0.5 g/kg) and carb (1 g/kg) floors' basis. */
   weightKg: number;
+  /** The kg the 1.2 g/kg protein minimum is taken on — `proteinGrams`' `kg`
+   *  (bodyweight, or the BMI-25 reference weight). */
+  proteinKg: number;
   /** The weekly mean daily target T (kcal): the fat floor's % basis. */
   meanKcal: number;
   /** The goal driving the target (a cut allows the 15% fat floor). */
@@ -375,8 +427,8 @@ function fatFloorGrams(input: MacroFloorInput): number {
  *  gives way. Precedence, highest first:
  *
  *  1. The fat floor — always held (RP's 15% hard floor; Helms 2014).
- *  2. Protein up to the lesser of the setting and 1.2 g/kg bodyweight (the
- *     any-goal floor, DGA 2025–2030).
+ *  2. Protein up to the lesser of the setting and 1.2 g/kg (the any-goal
+ *     floor, DGA 2025–2030), on `proteinKg`.
  *  3. The 1 g/kg carb floor (carb-moving diets only).
  *  4. The rest of the protein setting.
  *
@@ -397,7 +449,7 @@ export function proteinCeilingGrams(
   const withFatFloorOnly = floorStep(afterFat / 4, step);
   const proteinFloor = Math.min(
     roundStep(input.proteinGrams, step),
-    roundStep(PROTEIN_G_PER_KG_MIN * input.weightKg, step),
+    roundStep(PROTEIN_G_PER_KG_MIN * input.proteinKg, step),
   );
   return Math.max(0, withCarbFloor, Math.min(withFatFloorOnly, proteinFloor));
 }
@@ -434,6 +486,8 @@ export type DayMacroInput = {
   /** Daily protein (unrounded) — `weekProteinGrams` for a planned week. */
   proteinGrams: number;
   weightKg: number;
+  /** The kg the 1.2 g/kg protein minimum is taken on (see `MacroFloorInput`). */
+  proteinKg: number;
   /** The goal driving the target (a cut allows the 15% fat floor). */
   goal: PersonalInfo["goal"];
   dietType: PersonalInfo["dietType"];
@@ -475,6 +529,7 @@ export function partitionDayMacros(input: DayMacroInput): {
   const K = input.dayKcal;
   const floors: MacroFloorInput = {
     weightKg: input.weightKg,
+    proteinKg: input.proteinKg,
     meanKcal: input.mean.targetCalories,
     goal: input.goal,
     dietType: input.dietType,
