@@ -13,6 +13,7 @@ import {
 import { useEffect, useState } from "react";
 import {
   isAuthRetryableFetchError,
+  type AuthChangeEvent,
   type SupabaseClient,
   type User,
 } from "@supabase/supabase-js";
@@ -116,6 +117,17 @@ function syncLastKnownUser(identity: Identity): void {
   else if (identity.offlineUserId === null) clearLastKnownUser();
 }
 
+/** Auth events whose session auth-js has just obtained from the auth server
+ *  (a refresh-token grant, a user update): applying one verifies it. Every
+ *  other session event can come from storage — notably SIGNED_IN, which
+ *  auth-js's `_recoverAndRefresh` emits with the stored session while the
+ *  client initializes and whenever the tab becomes visible, without asking
+ *  the server. */
+const SERVER_ISSUED_EVENTS: ReadonlySet<AuthChangeEvent> = new Set([
+  "TOKEN_REFRESHED",
+  "USER_UPDATED",
+]);
+
 /** Subscribes to the Supabase auth session. Updates on sign-in, sign-out,
  * and token refresh, and re-checks an identity resolved from a network
  * failure when the browser comes back online. Falls back to `{ user: null,
@@ -140,21 +152,32 @@ export function useUser(): UserState {
     // Whether the current identity came from a network failure and so must
     // be re-verified when the network returns.
     let unverified = false;
+    // Whether a `verify()` is in flight whose answer would still apply.
+    let checking = false;
+    // The user id the hook currently reports (`null` when none).
+    let shownUserId: string | null = null;
     // Only the latest resolution may apply: an `online` re-check can overlap
     // the initial one, and an auth event supersedes any still in flight.
     let latestResolution = 0;
 
+    const show = (next: Identity) => {
+      shownUserId = next.user?.id ?? null;
+      setIdentity(next);
+    };
+
     const apply = (next: Identity) => {
       syncLastKnownUser(next);
-      setIdentity(next);
+      show(next);
     };
 
     const verify = () => {
       const run = ++latestResolution;
+      checking = true;
       const isCurrent = () => !cancelled && run === latestResolution;
       void resolveUser(supabase).then(
         ({ unverified: stale, ...next }) => {
           if (!isCurrent()) return;
+          checking = false;
           resolved = true;
           unverified = stale;
           apply(next);
@@ -171,9 +194,10 @@ export function useUser(): UserState {
             context: { source: "useUser.resolveUser" },
           });
           if (!isCurrent()) return;
+          checking = false;
           resolved = true;
           unverified = true;
-          setIdentity(SIGNED_OUT);
+          show(SIGNED_OUT);
           setAuthResolved(true);
         },
       );
@@ -188,21 +212,46 @@ export function useUser(): UserState {
           // although nothing signed the user out, so once `verify()` has
           // answered it must not override that answer.
           if (!resolved)
-            setIdentity({ user: session?.user ?? null, offlineUserId: null });
+            show({ user: session?.user ?? null, offlineUserId: null });
           return;
         }
-        // Any other event reflects a session change auth-js just made
-        // (sign-in, refresh, sign-out — including a refresh the server
-        // rejected once the network returned, or another tab signing out).
-        // It is newer than any `verify()` still in flight, whose answer
-        // must then never apply (it would restore the identity this event
-        // replaced), so it takes the next generation and is itself the
-        // resolution.
+        // Any other event reflects the session auth-js holds now (sign-in,
+        // refresh, sign-out — including a refresh the server rejected once
+        // the network returned, or another tab signing out). It is newer
+        // than any `verify()` still in flight, whose answer must then never
+        // apply (it would restore the identity this event replaced), so it
+        // takes the next generation.
         latestResolution++;
-        resolved = true;
-        unverified = false;
-        apply({ user: session?.user ?? null, offlineUserId: null });
-        setAuthResolved(true);
+        const superseded = checking;
+        checking = false;
+        const next: Identity = {
+          user: session?.user ?? null,
+          offlineUserId: null,
+        };
+        if (next.user === null || SERVER_ISSUED_EVENTS.has(event)) {
+          // Signed out, or a session the server has just issued: final.
+          resolved = true;
+          unverified = false;
+          apply(next);
+          setAuthResolved(true);
+          return;
+        }
+        // A session that may come straight from storage. It is the current
+        // one, so it shows at once (provisionally until the first answer),
+        // but it says nothing about whether the server still accepts it
+        // (a banned or deleted user's token stays valid until it expires).
+        // So whenever the server's verdict on it is not already known — a
+        // check was in flight, the identity is unverified, or the session
+        // is not the user the hook reports — the current session is
+        // verified again.
+        const known =
+          resolved &&
+          !superseded &&
+          !unverified &&
+          next.user.id === shownUserId;
+        if (resolved) apply(next);
+        else show(next);
+        if (!known) verify();
       },
     );
 

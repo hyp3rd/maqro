@@ -361,16 +361,89 @@ describe("useUser — an auth event supersedes a check still in flight", () => {
   });
 
   it("a sign-in as another account is not undone by the late answer", async () => {
-    const { result, releaseGetUser, emit } = await startWith(SESSION);
+    const { result, releaseGetUser, emit, answerGetUserWith, getUser } =
+      await startWith(SESSION);
     const other = { id: "u2" } as User;
+    // The new session is checked in turn; the server answers for it.
+    answerGetUserWith({ data: { user: other }, error: null });
     emit("SIGNED_IN", { user: other } as Session);
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
 
     await act(async () =>
       releaseGetUser({ data: { user: USER }, error: null }),
     );
+    expect(getUser).toHaveBeenCalledTimes(2);
     expect(result.current.user).toBe(other);
-    expect(result.current.isLoaded).toBe(true);
     expect(readLastKnownUserId()).toBe("u2");
+  });
+});
+
+/** auth-js emits SIGNED_IN with the STORED session while the client
+ *  initializes (`_recoverAndRefresh`, flushed once `initializePromise`
+ *  settles) and again whenever the tab becomes visible — without asking the
+ *  server. `getUser()` waits for that same `initializePromise`, so this
+ *  SIGNED_IN routinely lands before the `/auth/v1/user` answer. It must not
+ *  stand in for that answer. */
+describe("useUser — SIGNED_IN from storage is still checked with the server", () => {
+  /** A banned or deleted user: the access token still parses, the server
+   *  refuses it. */
+  const bannedGetUser: GetUserResult = {
+    data: { user: null },
+    error: new AuthApiError("User is banned", 403, "user_banned"),
+  };
+
+  it("a rejected session ends signed out and forgotten although SIGNED_IN came first", async () => {
+    writeLastKnownUserId("u1");
+    const { result, releaseGetUser, emit } = await startWith(SESSION);
+    emit("SIGNED_IN", SESSION);
+
+    await act(async () => releaseGetUser(bannedGetUser));
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+    expect(result.current.user).toBeNull();
+    expect(result.current.localUserId).toBeNull();
+    expect(readLastKnownUserId()).toBeNull();
+  });
+
+  it("offline cold start with an unexpired token stays unverified, and 'online' verifies it", async () => {
+    const { result, releaseGetUser, emit, answerGetUserWith, getUser } =
+      await startWith(SESSION);
+    emit("SIGNED_IN", SESSION);
+    await act(async () => releaseGetUser(offlineGetUser));
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+    expect(result.current.user).toBe(USER);
+    const callsWhileOffline = getUser.mock.calls.length;
+
+    const verified = { id: "u1", email: "a@example.com" } as User;
+    answerGetUserWith({ data: { user: verified }, error: null });
+    await goOnline();
+    await waitFor(() => expect(result.current.user).toBe(verified));
+    expect(getUser).toHaveBeenCalledTimes(callsWhileOffline + 1);
+  });
+
+  it("a session the server refused is checked again when SIGNED_IN re-delivers it", async () => {
+    // auth-js keeps a session that `/auth/v1/user` refused with anything but
+    // "session missing", and re-emits it as SIGNED_IN on the next tab focus.
+    const { result, releaseGetUser, emit, getUser } = await startWith(SESSION);
+    await act(async () => releaseGetUser(bannedGetUser));
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+    expect(result.current.user).toBeNull();
+
+    emit("SIGNED_IN", SESSION);
+    await waitFor(() => expect(getUser).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.user).toBeNull());
+    expect(readLastKnownUserId()).toBeNull();
+  });
+
+  it("a verified session re-delivered on tab focus is not checked again", async () => {
+    const { result, releaseGetUser, emit, getUser } = await startWith(SESSION);
+    await act(async () =>
+      releaseGetUser({ data: { user: USER }, error: null }),
+    );
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+
+    emit("SIGNED_IN", SESSION);
+    expect(result.current.user).toBe(USER);
+    expect(getUser).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -406,16 +479,19 @@ describe("useUser — the identity check throws", () => {
 
 describe("useUser — account switch", () => {
   it("signing in as another account replaces the record", async () => {
-    const { result, releaseGetUser, emit } = await startWith(SESSION);
+    const { result, releaseGetUser, emit, answerGetUserWith } =
+      await startWith(SESSION);
     await act(async () =>
       releaseGetUser({ data: { user: USER }, error: null }),
     );
     await waitFor(() => expect(readLastKnownUserId()).toBe("u1"));
 
     const other = { id: "u2" } as User;
+    answerGetUserWith({ data: { user: other }, error: null });
     emit("SIGNED_IN", { user: other } as Session);
     expect(result.current.user).toBe(other);
     expect(readLastKnownUserId()).toBe("u2");
+    await waitFor(() => expect(result.current.user).toBe(other));
   });
 });
 
