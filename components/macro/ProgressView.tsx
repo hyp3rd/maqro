@@ -103,7 +103,8 @@ type Props = {
    *  positive = bulk, 0 = maintain). Read from
    *  `calculatedValues.dailyDelta`. */
   dailyDelta: number;
-  /** Goal label - drives the plateau advisory's wording. */
+  /** The goal driving today's target (the covering phase's when one
+   *  applies, else the linear goal) - drives the plateau advisory's wording. */
   goal: "lose" | "maintain" | "gain";
   /** Gender from the profile - used to pick the body-fat formula
    *  for the Body card. `nonbinary` / `preferNotToSay` disables

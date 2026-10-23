@@ -91,7 +91,7 @@ export function GoalPhasesPlanner({
   today: string;
   goal: PersonalInfo["goal"];
   /** Today's calorie target for a hypothetical phase list (the parent runs the
-   *  real effectiveGoal → computeMacros pipeline). Powers the rise warning. */
+   *  shared targetsForDate resolver). Powers the rise warning. */
   targetForPhases: (phases: GoalPhase[]) => number;
 }) {
   const { tier, resolved: tierResolved } = useTier();

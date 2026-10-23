@@ -39,7 +39,6 @@ import { TemplatesView } from "./components/macro/TemplatesView";
 import { UpgradeDialog } from "./components/macro/UpgradeDialog";
 import { VoiceLogSheet } from "./components/macro/VoiceLogSheet";
 import {
-  CalculatedValues,
   Food,
   FoodItem,
   type GoalPhase,
@@ -53,11 +52,11 @@ import { OnboardingWizard } from "./components/onboarding/OnboardingWizard";
 import { AppShell } from "./components/shell/AppShell";
 import type { ViewKey } from "./components/shell/Sidebar";
 import { foodDatabase } from "./data/food-database";
-import { useTier } from "./hooks/use-ai-usage";
 import { type DayTarget, useDailyLog } from "./hooks/use-daily-log";
 import { useFoodSearch } from "./hooks/use-food-search";
 import { useIsMobile } from "./hooks/use-mobile";
 import { useProfile } from "./hooks/use-profile";
+import { useTargets } from "./hooks/use-targets";
 import { useToday } from "./hooks/use-today";
 import { useUser } from "./hooks/use-user";
 import { addedFoodMessage } from "./lib/add-food-constants";
@@ -65,7 +64,6 @@ import { requestAiMealPlan } from "./lib/ai-plan";
 import type { CoherenceIssue } from "./lib/ai/plan-coherence";
 import { toAiCustomFoods } from "./lib/ai/request-payload";
 import { clientFetch } from "./lib/auth/client-fetch";
-import { FEATURES } from "./lib/billing/tiers";
 import {
   replaceDayIfUnchanged,
   replaceMealIfUnchanged,
@@ -84,11 +82,11 @@ import {
   type MealTemplate,
   type PantryItem,
 } from "./lib/db";
-import { dietBreakNudge, effectiveGoal } from "./lib/goal-phases";
+import { dietBreakNudge } from "./lib/goal-phases";
 import { haptic } from "./lib/haptics";
 import { waterGoalMl } from "./lib/hydration";
 import { addFoodBasis, scaleFoodToItem } from "./lib/log-food";
-import { computeMacros, rescaleFoodMacros, scaleSubMacros } from "./lib/macros";
+import { rescaleFoodMacros, scaleSubMacros } from "./lib/macros";
 import { getMarket, setHomeMarket } from "./lib/market";
 import { planDay, summarisePlan } from "./lib/meal-planner";
 import { recipeIngredientToFood } from "./lib/meal-prep-batch";
@@ -656,64 +654,22 @@ const MacroCalculator = () => {
   const upgradeDialogOpen =
     urlPlan !== null && authLoaded && user !== null && !upgradeDialogDismissed;
 
-  // Goal phases (Pro): the phase active on today's date overrides the linear
-  // goal/rate fed into computeMacros, so the calorie/macro target shifts as
-  // phases transition. Gated on the live tier — while it loads (or for
-  // free/downgraded users) `phasesEnabled` is false and the linear goal
-  // drives the target, so the number is never wrong-by-default.
-  const { tier } = useTier();
-  const goalPhasesEnabled = tier !== null && FEATURES.canUseGoalPhases(tier);
-  const effective = effectiveGoal(personalInfo, today, {
+  // Calorie/macro targets, all from the shared `targetsForDate` resolver
+  // (the same one /report and the emails use). Goal phases (Pro) drive them
+  // when the tier allows — the shared, cached tier, so an offline Pro user
+  // keeps their phase target. `todayTargets` feeds the Calculator, Progress
+  // and the phase planner; `dayTargets` is the DISPLAYED day's target, so a
+  // past day is compared with (and AI-planned against) its own target.
+  const {
     phasesEnabled: goalPhasesEnabled,
-  });
-  const activeGoalPhase = effective.phase;
+    todayTargets,
+    dayTargets,
+    targetForPhases,
+  } = useTargets(personalInfo, today, selectedDate);
+  const activeGoalPhase = todayTargets.phase;
   const goalPhaseNudge = goalPhasesEnabled
     ? dietBreakNudge(personalInfo.goalPhases, today)
     : null;
-
-  // Pin the macro math to the local day so a birthdate-derived age rolls the
-  // target over at midnight. Empty `today` (SSR/first paint) leaves `now`
-  // undefined, letting computeMacros fall back to the present. Passing it
-  // explicitly (rather than relying on a hidden Date.now()) is also what keeps
-  // it an honest memo dependency.
-  const nowMs = today ? new Date(`${today}T00:00:00`).getTime() : undefined;
-  const calculatedValues = useMemo<CalculatedValues>(
-    () =>
-      computeMacros(
-        {
-          ...personalInfo,
-          goal: effective.goal,
-          weeklyRateKg: effective.weeklyRateKg,
-        },
-        nowMs,
-        // The active phase's own maintenance override (Pro), if set, drives the
-        // target ahead of the global manualTdee.
-        effective.phase?.tdeeOverride ?? undefined,
-      ),
-    [
-      personalInfo,
-      effective.goal,
-      effective.weeklyRateKg,
-      effective.phase?.tdeeOverride,
-      nowMs,
-    ],
-  );
-
-  // Today's calorie target for a *hypothetical* goal-phase list, via the same
-  // effectiveGoal → computeMacros pipeline as `calculatedValues` above — so the
-  // planner's "this raises your target" guard can never diverge from the real
-  // number. A cheap pure read of the current profile + today.
-  const targetForPhases = (phasesList: GoalPhase[]): number => {
-    const hypo: PersonalInfo = { ...personalInfo, goalPhases: phasesList };
-    const eff = effectiveGoal(hypo, today, {
-      phasesEnabled: goalPhasesEnabled,
-    });
-    return computeMacros(
-      { ...hypo, goal: eff.goal, weeklyRateKg: eff.weeklyRateKg },
-      nowMs,
-      eff.phase?.tdeeOverride ?? undefined,
-    ).targetCalories;
-  };
 
   // Derived: aggregate macros across all logged foods.
   const totalMacros = useMemo<TotalMacros>(() => {
@@ -1846,10 +1802,10 @@ const MacroCalculator = () => {
       }
 
       const daily = {
-        protein: calculatedValues.protein,
-        carbs: calculatedValues.carbs,
-        fat: calculatedValues.fat,
-        calories: calculatedValues.targetCalories,
+        protein: dayTargets.protein,
+        carbs: dayTargets.carbs,
+        fat: dayTargets.fat,
+        calories: dayTargets.targetCalories,
       };
 
       // Pull the soft-bias signals (recent rotation + pantry on hand)
@@ -1978,10 +1934,10 @@ const MacroCalculator = () => {
         // Proceed with builtins only.
       }
       const daily = {
-        protein: calculatedValues.protein,
-        carbs: calculatedValues.carbs,
-        fat: calculatedValues.fat,
-        calories: calculatedValues.targetCalories,
+        protein: dayTargets.protein,
+        carbs: dayTargets.carbs,
+        fat: dayTargets.fat,
+        calories: dayTargets.targetCalories,
       };
       const { recentlyEatenFoods, pantryItems: aiPantryBias } =
         await loadAiBiasSignals();
@@ -2075,10 +2031,10 @@ const MacroCalculator = () => {
         // Proceed with builtins only.
       }
       const daily = {
-        protein: calculatedValues.protein,
-        carbs: calculatedValues.carbs,
-        fat: calculatedValues.fat,
-        calories: calculatedValues.targetCalories,
+        protein: dayTargets.protein,
+        carbs: dayTargets.carbs,
+        fat: dayTargets.fat,
+        calories: dayTargets.targetCalories,
       };
       const { recentlyEatenFoods, pantryItems: aiPantryBias } =
         await loadAiBiasSignals();
@@ -2216,7 +2172,7 @@ const MacroCalculator = () => {
                 feed straight into them. */}
             <div className="space-y-6 lg:col-span-2">
               <MacroResults
-                calculatedValues={calculatedValues}
+                calculatedValues={todayTargets}
                 totalMacros={totalMacros}
                 units={personalInfo.units}
               />
@@ -2240,7 +2196,7 @@ const MacroCalculator = () => {
 
       {view === "plan" && (
         <MealPlanner
-          calculatedValues={calculatedValues}
+          calculatedValues={dayTargets}
           totalMacros={totalMacros}
           macroBreakdown={macroBreakdown}
           meals={meals}
@@ -2362,10 +2318,13 @@ const MacroCalculator = () => {
 
       {view === "progress" && (
         <ProgressView
-          targetCalories={calculatedValues.targetCalories}
-          formulaTdee={calculatedValues.tdee}
-          dailyDelta={calculatedValues.dailyDelta}
-          goal={personalInfo.goal}
+          targetCalories={todayTargets.targetCalories}
+          formulaTdee={todayTargets.tdee}
+          dailyDelta={todayTargets.dailyDelta}
+          // The goal actually driving today's target (a phase's, when one
+          // covers today) — not the linear profile goal, or a Pro user
+          // cutting via a phase reads "Holding steady… maintaining".
+          goal={todayTargets.goal}
           gender={personalInfo.gender}
           heightCm={personalInfo.height}
           units={personalInfo.units}
@@ -2605,9 +2564,9 @@ const MacroCalculator = () => {
         // order on a zero budget.
         slotBudget={computeSlotBudget(
           {
-            protein: calculatedValues.protein,
-            carbs: calculatedValues.carbs,
-            fat: calculatedValues.fat,
+            protein: dayTargets.protein,
+            carbs: dayTargets.carbs,
+            fat: dayTargets.fat,
           },
           meals.length,
         )}
@@ -2618,10 +2577,10 @@ const MacroCalculator = () => {
       <MealHubSheet
         meal={meals.find((m) => m.id === mealDetailId) ?? null}
         goal={{
-          calories: calculatedValues.targetCalories,
-          protein: calculatedValues.protein,
-          carbs: calculatedValues.carbs,
-          fat: calculatedValues.fat,
+          calories: dayTargets.targetCalories,
+          protein: dayTargets.protein,
+          carbs: dayTargets.carbs,
+          fat: dayTargets.fat,
         }}
         customFoodsRev={customFoodsRev}
         onLogFood={logFoodToMeal}
@@ -2718,10 +2677,10 @@ const MacroCalculator = () => {
           onOpenChange={setSuggestDayOpen}
           meals={meals}
           target={{
-            protein: calculatedValues.protein,
-            carbs: calculatedValues.carbs,
-            fat: calculatedValues.fat,
-            calories: calculatedValues.targetCalories,
+            protein: dayTargets.protein,
+            carbs: dayTargets.carbs,
+            fat: dayTargets.fat,
+            calories: dayTargets.targetCalories,
           }}
           logged={totalMacros}
           onApplyDay={logSuggestedDay}

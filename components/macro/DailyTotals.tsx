@@ -23,7 +23,9 @@ interface DailyTotalsProps {
   breakdown?: MacroBreakdown;
   /** Displayed day + today's key. Used to fire the one-shot "calorie
    *  target met" celebration only while viewing today — never when
-   *  scrolling back to a past day that already crossed its target. */
+   *  scrolling back to a past day that already crossed its target — and
+   *  to word the remaining-kcal line ("left today" only makes sense for
+   *  today). `calculatedValues` is the DISPLAYED day's own target. */
   selectedDate: string;
   today: string;
 }
@@ -85,7 +87,7 @@ const DailyTotals: React.FC<DailyTotalsProps> = ({
     target === 0 ? 0 : Math.min(Math.round((current / target) * 100), 100);
 
   // The single most actionable number on the page: how many calories are
-  // left against today's target. The tiles show consumed/target, which
+  // left against the displayed day's target. The tiles show consumed/target, which
   // forces the user to do the subtraction in their head — this does it for
   // them. Held back until the first food is logged so a brand-new day shows
   // the cold-start guidance below, not a lone "2,100 kcal left".
@@ -94,8 +96,9 @@ const DailyTotals: React.FC<DailyTotalsProps> = ({
   const remainingCalories = targetCalories - consumedCalories;
   const showRemaining = targetCalories > 0 && consumedCalories > 0;
 
+  const isToday = selectedDate === today;
   const goalReached = targetCalories > 0 && consumedCalories >= targetCalories;
-  useGoalReachedCelebration(goalReached, selectedDate === today, today);
+  useGoalReachedCelebration(goalReached, isToday, today);
 
   const rows: Row[] = [
     {
@@ -157,7 +160,10 @@ const DailyTotals: React.FC<DailyTotalsProps> = ({
               <span className="font-semibold tabular-nums text-foreground">
                 {remainingCalories.toLocaleString()}
               </span>{" "}
-              <span className="text-muted-foreground">kcal left today</span>
+              <span className="text-muted-foreground">
+                {/* A past day is closed: nothing is "left", it came in under. */}
+                {isToday ? "kcal left today" : "kcal under target"}
+              </span>
             </>
           ) : remainingCalories === 0 ? (
             <span className="font-medium text-emerald-600 dark:text-emerald-400">
