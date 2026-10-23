@@ -387,8 +387,10 @@ describe("targetsForDate — training days", () => {
       "endurance",
       "rest",
     ]);
-    // Protein fixed at 2.0 g/kg; fat held at the cut split's 86 g → 85;
-    // carbs carry the difference.
+    // Protein fixed at 2.0 g/kg; fat is ONE level for the week, the cut
+    // split's 86 g → 85: the smallest planned day (1,950) keeps it beside
+    // 160 g protein and the 80 g carb floor (room for 110 g), so nothing is
+    // lowered. Carbs carry every cycled calorie: (day − 640 − 765) / 4.
     expect(week.days.map((d) => d.protein)).toEqual(Array(7).fill(160));
     expect(week.days.map((d) => d.fat)).toEqual(Array(7).fill(85));
     expect(week.days.map((d) => d.carbs)).toEqual([

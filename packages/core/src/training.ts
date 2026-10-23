@@ -376,7 +376,7 @@ export type ProteinTarget = {
   /** The kg the g/kg was applied to, and the kg every per-kg floor is
    *  taken on (`MacroFloorInput.floorKg`): bodyweight, or the protein
    *  weight below it at BMI > 30 without a body-fat estimate — never lean
-   *  mass, as the floors are bodyweight figures. */
+   *  mass, as no floor is a per-kg-of-FFM figure. */
   kg: number;
   /** A plausible body-fat estimate would change `grams`: true exactly for
    *  the lean-mass fallback (a `leanMass` setting without one) and for the
@@ -737,7 +737,7 @@ export function fatFloorLiftsChoice(input: WeekMacroInput): boolean {
  *  then at the mean) do the floors give way, in `proteinCeilingGrams`'
  *  order: the fat floor holds, then protein ≥ 1.2 g/kg, then carbs ≥
  *  1 g/kg, then the rest of the protein. Carbs then fall short of 1 g/kg
- *  only for very heavy users at their BMR floor.
+ *  only for very heavy users at (or just above) their BMR floor.
  *
  *  - Fat floor: `fatFloorGrams` — max(0.5 g/kg on `floorKg`, 20% of the
  *    MEAN kcal; 15% in a cut or when the user explicitly chose a low-fat
