@@ -91,3 +91,59 @@ describe("GoalPhasesPlanner — rising-target warning", () => {
     expect(onChange).toHaveBeenCalledTimes(1);
   });
 });
+
+/** A phase without a valid window (e.g. a datetime start synced from an older
+ *  client) is ignored by every schedule computation, so the list must say so
+ *  instead of showing it like any other phase. */
+describe("GoalPhasesPlanner — phases without valid dates", () => {
+  const valid: GoalPhase = {
+    id: "ph_ok",
+    kind: "cut",
+    startDate: "2026-06-01",
+    durationWeeks: 4,
+    weeklyRateKg: 0.4,
+  };
+  const broken: GoalPhase = {
+    id: "ph_broken",
+    kind: "leanBulk",
+    startDate: "2026-06-01T08:00:00",
+    durationWeeks: 4,
+    weeklyRateKg: 0.2,
+  };
+
+  async function renderWith(phases: GoalPhase[]) {
+    const { GoalPhasesPlanner } = await import("./GoalPhasesPlanner");
+    render(
+      <GoalPhasesPlanner
+        {...BASE}
+        phases={phases}
+        onChange={vi.fn()}
+        targetForPhases={() => 2000}
+      />,
+    );
+  }
+
+  it("flags it, and its Edit and Remove buttons say why", async () => {
+    await renderWith([valid, broken]);
+    const note = screen.getByText(/dates can.t be read/i);
+    expect(note.textContent).toMatch(/isn.t used for your targets/i);
+    expect(screen.queryByText(/invalid date/i)).toBeNull();
+
+    const edit = screen.getByRole("button", { name: "Edit Lean bulk phase" });
+    const remove = screen.getByRole("button", {
+      name: "Remove Lean bulk phase",
+    });
+    expect(edit.getAttribute("aria-describedby")).toBe(note.id);
+    expect(remove.getAttribute("aria-describedby")).toBe(note.id);
+  });
+
+  it("leaves phases with valid dates unflagged", async () => {
+    await renderWith([valid]);
+    expect(screen.queryByText(/dates can.t be read/i)).toBeNull();
+    expect(
+      screen
+        .getByRole("button", { name: "Edit Cut phase" })
+        .hasAttribute("aria-describedby"),
+    ).toBe(false);
+  });
+});

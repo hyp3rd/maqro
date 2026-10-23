@@ -12,6 +12,7 @@ import {
   phaseEndDate,
   phaseGoal,
   phaseHasRate,
+  phaseHasValidWindow,
   phaseProgress,
   phasesInWindow,
   presetCut,
@@ -448,6 +449,11 @@ describe("phases without a valid window", () => {
     phase({ id: "nan", startDate: "2026-06-01", durationWeeks: Number.NaN }),
   ];
   const valid = phase({ id: "cut", startDate: "2026-06-01", durationWeeks: 4 });
+
+  it("is what phaseHasValidWindow reports (the planner flags it)", () => {
+    expect(invalid.filter(phaseHasValidWindow)).toEqual([]);
+    expect(phaseHasValidWindow(valid)).toBe(true);
+  });
 
   it.each(invalid.map((p) => [p.id, p] as const))(
     "%s is never active, next, in a window, or nudged",

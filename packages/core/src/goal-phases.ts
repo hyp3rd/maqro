@@ -50,8 +50,8 @@ const DATE_KEY = /^(\d{4})-(\d{2})-(\d{2})$/;
  *  cannot be trusted for them: `"2026-06-01T08:00:00"` sorts before later
  *  dates while its end computes as `"NaN-NaN-NaN"`, which sorts after every
  *  date, so it would cover every day from its start on. Every schedule query
- *  below skips such phases. */
-function hasValidWindow(phase: GoalPhase): boolean {
+ *  below skips such phases; the planner UI uses this to flag them. */
+export function phaseHasValidWindow(phase: GoalPhase): boolean {
   if (!Number.isFinite(phase.durationWeeks) || phase.durationWeeks <= 0) {
     return false;
   }
@@ -101,7 +101,7 @@ export function activePhase(
   if (!phases) return null;
   let best: GoalPhase | null = null;
   for (const phase of phases) {
-    if (!hasValidWindow(phase)) continue;
+    if (!phaseHasValidWindow(phase)) continue;
     if (phase.startDate <= today && today < phaseEndDate(phase)) {
       if (best === null || phase.startDate > best.startDate) best = phase;
     }
@@ -118,7 +118,7 @@ export function nextPhase(
   if (!phases) return null;
   let best: GoalPhase | null = null;
   for (const phase of phases) {
-    if (!hasValidWindow(phase)) continue;
+    if (!phaseHasValidWindow(phase)) continue;
     if (phase.startDate > today) {
       if (best === null || phase.startDate < best.startDate) best = phase;
     }
@@ -180,7 +180,7 @@ const NO_PROGRESS: PhaseProgress = {
 /** How far `today` is through `phase` (clamped to the phase window). A phase
  *  without a valid window has no progress (all zeros) rather than `NaN`s. */
 export function phaseProgress(phase: GoalPhase, today: string): PhaseProgress {
-  if (!hasValidWindow(phase)) return { ...NO_PROGRESS };
+  if (!phaseHasValidWindow(phase)) return { ...NO_PROGRESS };
   const totalDays = phase.durationWeeks * 7;
   const elapsed = clamp(daysBetween(phase.startDate, today), 0, totalDays);
   return {
@@ -304,7 +304,7 @@ export function phasesInWindow(
   return sortPhases(
     phases.filter(
       (p) =>
-        hasValidWindow(p) &&
+        phaseHasValidWindow(p) &&
         p.startDate < endDate &&
         phaseEndDate(p) > startDate,
     ),
@@ -339,7 +339,9 @@ export function inferAdaptiveTdeePerPhase(opts: {
     a.date < b.date ? -1 : a.date > b.date ? 1 : 0,
   );
   const started = sortPhases(
-    opts.phases.filter((p) => hasValidWindow(p) && p.startDate <= opts.today),
+    opts.phases.filter(
+      (p) => phaseHasValidWindow(p) && p.startDate <= opts.today,
+    ),
   );
   return started.map((phase) => {
     const end = phaseEndDate(phase);
@@ -370,7 +372,7 @@ export function inferAdaptiveTdeePerPhase(opts: {
  *  phase, or today). Phases without a valid window have no end to start
  *  after and are skipped. */
 export function newPhase(phases: GoalPhase[], today: string): GoalPhase {
-  const sorted = sortPhases(phases.filter(hasValidWindow));
+  const sorted = sortPhases(phases.filter(phaseHasValidWindow));
   const last = sorted[sorted.length - 1];
   const start = last ? phaseEndDate(last) : today;
   return {

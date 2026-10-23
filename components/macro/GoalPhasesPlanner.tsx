@@ -11,6 +11,7 @@ import {
   PHASE_KINDS,
   PHASE_LABELS,
   phaseHasRate,
+  phaseHasValidWindow,
   presetCut,
   presetCutThenBreak,
   presetLeanBulk,
@@ -23,8 +24,15 @@ import {
   type UnitSystem,
 } from "@/lib/units";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
-import { Pencil, Plus, Sparkles, Target, Trash2 } from "lucide-react";
+import { useId, useState } from "react";
+import {
+  AlertCircle,
+  Pencil,
+  Plus,
+  Sparkles,
+  Target,
+  Trash2,
+} from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -97,6 +105,9 @@ export function GoalPhasesPlanner({
   const { tier, resolved: tierResolved } = useTier();
   const isPro = tier !== null && FEATURES.canUseGoalPhases(tier);
   const [editing, setEditing] = useState<GoalPhase | null>(null);
+  // Prefix for the ids of the "dates can't be read" notes (phase ids are
+  // opaque synced strings, not safe as element ids).
+  const noteIdBase = useId();
   // A pending change held back for confirmation because it would raise today's
   // target while a cut is active (see `applyMaybeWarn`). `null` = no warning.
   const [pendingRaise, setPendingRaise] = useState<{
@@ -209,8 +220,15 @@ export function GoalPhasesPlanner({
         ) : (
           <>
             <ul className="space-y-1.5">
-              {list.map((phase) => {
+              {list.map((phase, index) => {
                 const isActive = active?.id === phase.id;
+                // A phase without a valid window (e.g. a datetime start from
+                // an older client) is ignored by every schedule computation:
+                // say so, and point its Edit/Remove buttons at why.
+                const hasDates = phaseHasValidWindow(phase);
+                const noteId = hasDates
+                  ? undefined
+                  : `${noteIdBase}-no-dates-${index}`;
                 return (
                   <li
                     key={phase.id}
@@ -218,7 +236,9 @@ export function GoalPhasesPlanner({
                       "flex items-center gap-2 rounded-lg border px-3 py-2",
                       isActive
                         ? "border-brand/50 bg-brand/5"
-                        : "border-border/60",
+                        : hasDates
+                          ? "border-border/60"
+                          : "border-amber-500/40",
                     )}
                   >
                     <span className="min-w-0 flex-1">
@@ -230,19 +250,33 @@ export function GoalPhasesPlanner({
                           </span>
                         )}
                       </span>
-                      <span className="block font-mono text-[11px] tabular-nums text-muted-foreground">
-                        {fmtDate(phase.startDate)} →{" "}
-                        {fmtDate(phaseEndDate(phase))} · {phase.durationWeeks}{" "}
-                        wk
-                        {phase.durationWeeks === 1 ? "" : "s"}
-                        {phaseHasRate(phase.kind) &&
-                          ` · ${rateText(phase, units)}`}
-                      </span>
+                      {hasDates ? (
+                        <span className="block font-mono text-[11px] tabular-nums text-muted-foreground">
+                          {fmtDate(phase.startDate)} →{" "}
+                          {fmtDate(phaseEndDate(phase))} · {phase.durationWeeks}{" "}
+                          wk
+                          {phase.durationWeeks === 1 ? "" : "s"}
+                          {phaseHasRate(phase.kind) &&
+                            ` · ${rateText(phase, units)}`}
+                        </span>
+                      ) : (
+                        <span className="mt-0.5 flex items-start gap-1 text-[11px] leading-snug text-amber-700 dark:text-amber-400">
+                          <AlertCircle
+                            aria-hidden="true"
+                            className="mt-px h-3 w-3 shrink-0"
+                          />
+                          <span id={noteId}>
+                            Its dates can&apos;t be read, so it isn&apos;t used
+                            for your targets. Edit or remove it.
+                          </span>
+                        </span>
+                      )}
                     </span>
                     <button
                       type="button"
                       onClick={() => setEditing(phase)}
                       aria-label={`Edit ${PHASE_LABELS[phase.kind]} phase`}
+                      aria-describedby={noteId}
                       className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground"
                     >
                       <Pencil className="h-3.5 w-3.5" />
@@ -253,6 +287,7 @@ export function GoalPhasesPlanner({
                         commit(list.filter((p) => p.id !== phase.id))
                       }
                       aria-label={`Remove ${PHASE_LABELS[phase.kind]} phase`}
+                      aria-describedby={noteId}
                       className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
