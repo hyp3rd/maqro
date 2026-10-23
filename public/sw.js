@@ -23,11 +23,13 @@
 //   we'd risk losing those writes. The UpdateBanner gates the
 //   takeover behind a Refresh click instead.
 
-// Bump the version whenever the SW logic changes — older caches get
-// reaped in `activate` and clients get prompted to reload via the
-// UpdateBanner. v2 added the push-event POST in notificationclick /
-// notificationclose so the admin Engagement tile can compute CTR.
-const VERSION = "v2";
+// Bump the version whenever the SW logic or a SHELL_ASSETS file
+// changes — older caches get reaped in `activate` and clients get
+// prompted to reload via the UpdateBanner. v2 added the push-event
+// POST in notificationclick / notificationclose so the admin
+// Engagement tile can compute CTR. v3 re-precaches the offline page
+// and manifest in the Instrument palette.
+const VERSION = "v3";
 const SHELL_CACHE = `maqro-shell-${VERSION}`;
 const STATIC_CACHE = `maqro-static-${VERSION}`;
 const RUNTIME_CACHE = `maqro-runtime-${VERSION}`;
