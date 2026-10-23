@@ -163,6 +163,16 @@ const config = {
         xl: "calc(var(--radius) + 4px)",
         "2xl": "calc(var(--radius) + 8px)",
       },
+      // Pointer-aware control sizes: `h-touch-9` is `h-9` on a fine pointer
+      // and at least 44px (`--touch-target-min`, app/globals.css) on a
+      // coarse one. One class per dimension, so a call site's plain `h-7`
+      // replaces it outright through cn() (lib/utils.ts registers these).
+      spacing: {
+        "touch-7": "max(1.75rem, var(--touch-target-min))",
+        "touch-8": "max(2rem, var(--touch-target-min))",
+        "touch-9": "max(2.25rem, var(--touch-target-min))",
+        "touch-10": "max(2.5rem, var(--touch-target-min))",
+      },
       // Named small sizes replacing literal `text-[10px]` / `text-[11px]`,
       // plus `label` (13px) for readable sentence-case labels. The coarse-
       // pointer readability floor in app/globals.css matches 3xs/2xs too.
