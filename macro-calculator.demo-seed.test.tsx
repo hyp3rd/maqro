@@ -194,6 +194,20 @@ describe("?demo=1 first load", () => {
     expect(after?.localUpdatedAt).toBe(before?.localUpdatedAt);
   });
 
+  it("shows the demo's cuisine preference as selected", async () => {
+    window.history.replaceState({}, "", "/app?demo=1");
+    renderApp();
+    await findDemoSummary();
+
+    const chip = screen.getByRole("button", { name: "Mediterranean" });
+    expect(chip.getAttribute("aria-pressed")).toBe("true");
+    expect(
+      screen
+        .getByRole("button", { name: "Italian" })
+        .getAttribute("aria-pressed"),
+    ).toBe("false");
+  });
+
   it("still onboards a genuine first visit (no ?demo=1)", async () => {
     window.history.replaceState({}, "", "/app");
     renderApp();

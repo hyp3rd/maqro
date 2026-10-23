@@ -1,3 +1,4 @@
+import { CUISINES } from "@/components/macro/types";
 import { describe, expect, it } from "vitest";
 import {
   getDemoMealLogs,
@@ -128,6 +129,18 @@ describe("getDemoWeightHistory", () => {
     const w = getDemoWeightHistory(TODAY, NOW);
     for (let i = 1; i < w.length; i++) {
       expect(w[i].date > w[i - 1].date).toBe(true);
+    }
+  });
+});
+
+describe("getDemoProfile cuisine preferences", () => {
+  // The Calculator's chips match by exact `CUISINES` value, so a seeded
+  // spelling outside the list never shows as selected.
+  it("uses canonical CUISINES values", () => {
+    const prefs = getDemoProfile(NOW).cuisinePreferences;
+    expect(prefs.length).toBeGreaterThan(0);
+    for (const c of prefs) {
+      expect(CUISINES as readonly string[]).toContain(c);
     }
   });
 });

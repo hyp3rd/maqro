@@ -1,4 +1,5 @@
 import type {
+  Cuisine,
   FoodItem,
   GoalPhase,
   Meal,
@@ -48,7 +49,10 @@ export function getDemoProfile(now: number = Date.now()): PersonalInfo {
     goal: "lose",
     dietType: "balanced",
     dietPreference: "omnivore",
-    cuisinePreferences: ["mediterranean"],
+    // The stored field is an open `string[]` (legacy values must
+    // round-trip), but the form matches chips by exact `CUISINES` value —
+    // `satisfies` keeps the seed on the canonical spelling.
+    cuisinePreferences: ["Mediterranean"] satisfies Cuisine[],
     allergies: [],
     dislikedFoods: [],
     weeklyRateKg: 0.4,
