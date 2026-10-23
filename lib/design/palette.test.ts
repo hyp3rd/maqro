@@ -293,6 +293,19 @@ describe("tailwind.config.mjs", () => {
   });
 });
 
+describe("global focus style", () => {
+  it("outlines every keyboard-focused element in the ring colour", () => {
+    const rule = block(CSS, ":focus-visible");
+    expect(rule).toMatch(/outline:\s*2px solid hsl\(var\(--ring\)\);/);
+    // Base layer, so primitives' own `focus-visible:` utilities still win.
+    const base = CSS.lastIndexOf(
+      "@layer base {",
+      CSS.indexOf(":focus-visible {"),
+    );
+    expect(block(CSS, "@layer base", base)).toContain(":focus-visible {");
+  });
+});
+
 describe("off-DOM renderers use the palette", () => {
   /** Renderers that cannot read CSS variables. Each must import its colours
    *  from lib/design/palette.ts instead of hard-coding hex. */

@@ -275,6 +275,15 @@
       font-size: 12px !important;
     }
   }
+  /* Keyboard focus is always visible. Primitives that draw their own
+     ring (`focus-visible:outline-none focus-visible:ring-2`) override
+     this from the utilities layer; everything else - including the raw
+     <button>s and links without a focus style - gets a brand outline
+     with >= 3:1 against every surface. */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
   /* Use tabular numerals for any element that wants stable digit width. */
   .tabular-nums {
     font-variant-numeric: tabular-nums;
