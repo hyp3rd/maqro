@@ -66,8 +66,9 @@ const SheetContent = React.forwardRef<
       {/* Top/left/right sheets touch the screen's top edge, so the close
           button must clear the notch/status bar (else it's unreachable on
           mobile). A bottom sheet's top edge is mid-screen, so it keeps the
-          plain `top-2`. The 32px target (44px on a finger) is inset so the
-          16px glyph stays centred 24px from the edges. */}
+          plain `top-2`. The 32px target (44px on a finger) is inset 8px; on
+          a precise pointer the 16px glyph stays centred 24px from the
+          edges, on a finger it is centred 30px in. */}
       <SheetPrimitive.Close
         className={cn(
           "absolute right-2 inline-flex h-touch-8 w-touch-8 items-center justify-center rounded-md text-muted-foreground ring-offset-background transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none",

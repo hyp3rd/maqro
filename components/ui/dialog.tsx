@@ -150,8 +150,10 @@ const DialogContent = React.forwardRef<
           <div className="h-1 w-10 rounded-full bg-muted-foreground/30" />
         </div>
         {children}
-        {/* 32px target (44px on a finger), inset so the 16px glyph sits
-          where it always did: centred 24px from the top and right edges. */}
+        {/* 32px target (44px on a finger) inset 8px from the top and right.
+          On a precise pointer the 16px glyph sits where it always did,
+          centred 24px from both edges; on a finger it is centred 30px in
+          and the target covers 8-52px from the corner. */}
         <DialogPrimitive.Close className="absolute right-2 top-2 inline-flex h-touch-8 w-touch-8 items-center justify-center rounded-md text-muted-foreground ring-offset-background transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none">
           <X className="h-4 w-4" />
           <span className="sr-only">Close</span>
