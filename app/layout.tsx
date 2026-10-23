@@ -1,3 +1,4 @@
+import { MotionProvider } from "@/components/motion-provider";
 import { CookieNotice } from "@/components/shell/CookieNotice";
 import { ThemeProvider } from "@/components/theme-provider";
 import { getAppUrl } from "@/lib/app-url";
@@ -171,7 +172,7 @@ export default async function RootLayout({
             enableSystem
             disableTransitionOnChange
           >
-            {children}
+            <MotionProvider>{children}</MotionProvider>
             {/* Toaster lives inside ThemeProvider so `theme="system"`
                 picks up the active class. `richColors` gives semantic
                 green / red for success / error variants. */}
