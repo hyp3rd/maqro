@@ -1,5 +1,7 @@
+import { formatNumber } from "@/lib/i18n/number";
 import { cn } from "@/lib/utils";
 import * as React from "react";
+import { useLocale } from "next-intl";
 import { Meter, type MeterTone } from "./meter";
 import { Stat, type StatProps } from "./stat";
 
@@ -25,8 +27,6 @@ const MACRO: Record<
   fat: { label: "Fat", unit: "g", tone: "fat", swatch: "bg-macro-fat" },
 };
 
-const defaultFormat = (n: number) => Math.round(n).toLocaleString("en-US");
-
 export type MacroStatProps = {
   macro: MacroKey;
   value: number;
@@ -36,7 +36,8 @@ export type MacroStatProps = {
   target?: number;
   /** Overrides the default label ("Protein", "Calories", ...). */
   label?: string;
-  /** Formats the value, target and overshoot. Default: rounded, grouped. */
+  /** Formats the value, target and overshoot. Default: rounded, grouped
+   *  for the app locale. */
   format?: (n: number) => string;
   size?: StatProps["size"];
   className?: string;
@@ -54,11 +55,13 @@ export function MacroStat({
   value,
   target,
   label,
-  format = defaultFormat,
+  format,
   size,
   className,
   children,
 }: MacroStatProps) {
+  const locale = useLocale();
+  const show = format ?? ((n: number) => formatNumber(n, locale));
   const spec = MACRO[macro];
   const name = label ?? spec.label;
   // Same rule as Meter: only a positive, finite target is something to
@@ -66,8 +69,8 @@ export function MacroStat({
   const hasTarget =
     target !== undefined && Number.isFinite(target) && target > 0;
   const overText =
-    hasTarget && value > target ? format(value - target) : undefined;
-  const showOver = overText !== undefined && overText !== format(0);
+    hasTarget && value > target ? show(value - target) : undefined;
+  const showOver = overText !== undefined && overText !== show(0);
 
   return (
     <Stat
@@ -82,9 +85,9 @@ export function MacroStat({
           {name}
         </span>
       }
-      value={children ?? format(value)}
+      value={children ?? show(value)}
       unit={spec.unit}
-      detail={hasTarget ? `/ ${format(target)} ${spec.unit}` : undefined}
+      detail={hasTarget ? `/ ${show(target)} ${spec.unit}` : undefined}
       note={
         showOver ? (
           // The meter speaks the overshoot; this is its visible twin.
@@ -104,7 +107,7 @@ export function MacroStat({
           target={target}
           tone={spec.tone}
           unit={spec.unit}
-          format={format}
+          format={show}
           className="mt-0.5"
         />
       ) : undefined}

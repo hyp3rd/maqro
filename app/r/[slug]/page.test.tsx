@@ -1,6 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
+import { intlWrapper } from "@/lib/i18n/intl-test-wrapper";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import PublicRecipePage from "./page";
@@ -55,6 +56,7 @@ describe("/r/[slug] macros", () => {
       await PublicRecipePage({
         params: Promise.resolve({ slug: "abcdefghij" }),
       }),
+      { wrapper: intlWrapper() },
     );
     const section = screen
       .getByRole("heading", { name: "Macros (full recipe)" })
@@ -90,6 +92,7 @@ describe("/r/[slug] macros", () => {
       await PublicRecipePage({
         params: Promise.resolve({ slug: "abcdefghij" }),
       }),
+      { wrapper: intlWrapper() },
     );
     const section = screen
       .getByRole("heading", { name: "Macros (full recipe)" })

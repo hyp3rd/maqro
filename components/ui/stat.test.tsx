@@ -1,6 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
+import { intlWrapper } from "@/lib/i18n/intl-test-wrapper";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { MacroStat } from "./macro-stat";
@@ -31,6 +32,7 @@ describe("Stat", () => {
           unit="kcal"
         />
       </dl>,
+      { wrapper: intlWrapper() },
     );
     const dl = screen.getByTestId("dl");
     expect(pairs(dl)).toEqual([["Weekly average", ["2,200 kcal"]]]);
@@ -56,6 +58,7 @@ describe("Stat", () => {
           <span>bar</span>
         </Stat>
       </dl>,
+      { wrapper: intlWrapper() },
     );
     const group = screen.getByTestId("dl").firstElementChild as HTMLElement;
     expect(group.tagName).toBe("DIV");
@@ -73,6 +76,7 @@ describe("Stat", () => {
           detail="/ 160 g"
         />
       </dl>,
+      { wrapper: intlWrapper() },
     );
     const dl = screen.getByTestId("dl");
     // Reading order is DOM order: "Protein, 85 g, / 160 g", not the old
@@ -100,6 +104,7 @@ describe("MacroStat", () => {
           target={160}
         />
       </dl>,
+      { wrapper: intlWrapper() },
     );
     const dl = screen.getByTestId("dl");
     expect(pairs(dl)).toEqual([["Protein", ["85 g", "/ 160 g", ""]]]);
@@ -119,6 +124,7 @@ describe("MacroStat", () => {
           target={200}
         />
       </dl>,
+      { wrapper: intlWrapper() },
     );
     const over = screen.getByText("+114");
     expect(over.className).toContain("text-muted-foreground");
@@ -137,6 +143,7 @@ describe("MacroStat", () => {
           format={(n) => n.toFixed(1)}
         />
       </dl>,
+      { wrapper: intlWrapper() },
     );
     expect(pairs(screen.getByTestId("dl"))).toEqual([["Fat", ["12.5 g"]]]);
     expect(screen.queryByRole("meter")).toBeNull();
@@ -153,6 +160,7 @@ describe("MacroStat", () => {
           target={0}
         />
       </dl>,
+      { wrapper: intlWrapper() },
     );
     const dl = screen.getByTestId("dl");
     expect(pairs(dl)).toEqual([["Protein", ["85 g", ""]]]);
@@ -170,10 +178,41 @@ describe("MacroStat", () => {
           value={1234.4}
         />
       </dl>,
+      { wrapper: intlWrapper() },
     );
     expect(pairs(screen.getByTestId("dl"))).toEqual([
       ["Calories", ["1,234 kcal"]],
     ]);
+  });
+
+  it("groups figures for the app locale, not always the English way", () => {
+    // Italian reads "1,234" as 1.234; CLDR Italian leaves four digits
+    // ungrouped and groups five with a dot.
+    render(
+      <dl data-testid="dl">
+        <MacroStat
+          macro="calories"
+          value={1234.4}
+        />
+        <MacroStat
+          macro="carbs"
+          value={12345.6}
+          target={10000}
+        />
+      </dl>,
+      { wrapper: intlWrapper("it") },
+    );
+    const dl = screen.getByTestId("dl");
+    expect(pairs(dl)).toEqual([
+      ["Calories", ["1234 kcal"]],
+      // The "+2346" overshoot is aria-hidden; the meter speaks it.
+      ["Carbs", ["12.346 g +2346", "/ 10.000 g", ""]],
+    ]);
+    expect(
+      within(dl)
+        .getByRole("meter", { name: "Carbs" })
+        .getAttribute("aria-valuetext"),
+    ).toBe("12.346 g of 10.000 g, 2346 g above target");
   });
 
   it("lets a caller replace the figure (e.g. an animated ticker)", () => {
@@ -187,6 +226,7 @@ describe("MacroStat", () => {
           <span data-testid="ticker">84</span>
         </MacroStat>
       </dl>,
+      { wrapper: intlWrapper() },
     );
     expect(screen.getByTestId("ticker").textContent).toBe("84");
     // The meter still reads the real value.
@@ -205,6 +245,7 @@ describe("MacroStat", () => {
           value={10}
         />
       </dl>,
+      { wrapper: intlWrapper() },
     );
     const swatch = screen
       .getByTestId("dl")

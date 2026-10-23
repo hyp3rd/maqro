@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 import type { CustomFood } from "@/lib/db";
+import { intlWrapper } from "@/lib/i18n/intl-test-wrapper";
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render } from "@testing-library/react";
@@ -47,6 +48,7 @@ describe("FoodViewDialog macros (per 100 g)", () => {
         onOpenChange={() => {}}
         food={food}
       />,
+      { wrapper: intlWrapper() },
     );
     expect(readouts()).toMatchObject({
       Calories: "97 kcal",
@@ -74,6 +76,7 @@ describe("OffSavePreviewDialog macros (per 100 g)", () => {
         food={food}
         onSave={() => {}}
       />,
+      { wrapper: intlWrapper() },
     );
     expect(readouts()).toMatchObject({
       Calories: "46 kcal",
@@ -110,6 +113,7 @@ describe("RecipeViewDialog macros (full recipe)", () => {
         onOpenChange={() => {}}
         recipe={recipe}
       />,
+      { wrapper: intlWrapper() },
     );
     expect(readouts()).toMatchObject({
       Calories: "284 kcal",
@@ -141,6 +145,7 @@ describe("RecipeViewDialog macros (full recipe)", () => {
         onOpenChange={() => {}}
         recipe={recipe}
       />,
+      { wrapper: intlWrapper() },
     );
     expect(readouts()).toMatchObject({ Calories: "1,234 kcal" });
   });
@@ -172,7 +177,7 @@ describe("MealDetail macro tiles", () => {
         },
       ],
     };
-    render(<MealDetail meal={meal} />);
+    render(<MealDetail meal={meal} />, { wrapper: intlWrapper() });
     expect(readouts()).toMatchObject({
       Protein: "35 g",
       Carbs: "45 g",

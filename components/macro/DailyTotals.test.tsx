@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 import type { CalculatedValues, TotalMacros } from "@/components/macro/types";
+import { intlWrapper } from "@/lib/i18n/intl-test-wrapper";
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
@@ -30,6 +31,7 @@ function renderTotals(totals: TotalMacros) {
       selectedDate="2026-10-20"
       today="2026-10-23"
     />,
+    { wrapper: intlWrapper() },
   );
 }
 

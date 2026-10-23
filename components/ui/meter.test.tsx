@@ -1,6 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
+import { intlWrapper } from "@/lib/i18n/intl-test-wrapper";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { Meter, meterGeometry } from "./meter";
@@ -70,6 +71,7 @@ describe("Meter", () => {
         target={160}
         unit="g"
       />,
+      { wrapper: intlWrapper() },
     );
     const meter = screen.getByRole("meter", { name: "Protein" });
     expect(meter.getAttribute("aria-valuenow")).toBe("85");
@@ -86,6 +88,7 @@ describe("Meter", () => {
         target={200}
         unit="g"
       />,
+      { wrapper: intlWrapper() },
     );
     const meter = screen.getByRole("meter", { name: "Carbs" });
     // ARIA: valuenow must not exceed valuemax, so the max stretches to the
@@ -105,6 +108,7 @@ describe("Meter", () => {
         target={100}
         tone="carbs"
       />,
+      { wrapper: intlWrapper() },
     );
     const { fill, overflow, tick, track } = parts(
       screen.getByRole("meter", { name: "Carbs" }),
@@ -129,6 +133,7 @@ describe("Meter", () => {
         target={60}
         tone="fat"
       />,
+      { wrapper: intlWrapper() },
     );
     const { overflow, fill, tick } = parts(
       screen.getByRole("meter", { name: "Fat" }),
@@ -145,11 +150,29 @@ describe("Meter", () => {
         target={0}
         unit="kcal"
       />,
+      { wrapper: intlWrapper() },
     );
     const meter = screen.getByRole("meter", { name: "Energy" });
     expect(parts(meter).tick).toBeNull();
     expect(meter.getAttribute("aria-valuemax")).toBe("1200");
     expect(meter.getAttribute("aria-valuetext")).toBe("1,200 kcal, no target");
+  });
+
+  it("formats the reading for the app locale", () => {
+    render(
+      <Meter
+        aria-label="Energy"
+        value={12345}
+        target={20000}
+        unit="kcal"
+      />,
+      { wrapper: intlWrapper("it") },
+    );
+    expect(
+      screen
+        .getByRole("meter", { name: "Energy" })
+        .getAttribute("aria-valuetext"),
+    ).toBe("12.345 kcal of 20.000 kcal");
   });
 
   it("formats figures with the caller's formatter", () => {
@@ -161,6 +184,7 @@ describe("Meter", () => {
         unit="g"
         format={(n) => n.toFixed(1)}
       />,
+      { wrapper: intlWrapper() },
     );
     expect(
       screen
@@ -179,6 +203,7 @@ describe("Meter", () => {
         target={160.4}
         unit="g"
       />,
+      { wrapper: intlWrapper() },
     );
     expect(
       screen
@@ -195,6 +220,7 @@ describe("Meter", () => {
         target={160.4}
         unit="g"
       />,
+      { wrapper: intlWrapper() },
     );
     expect(
       screen

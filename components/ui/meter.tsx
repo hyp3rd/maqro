@@ -1,5 +1,7 @@
+import { formatNumber } from "@/lib/i18n/number";
 import { cn } from "@/lib/utils";
 import * as React from "react";
+import { useLocale } from "next-intl";
 
 export type MeterTone = "protein" | "carbs" | "fat" | "energy" | "neutral";
 
@@ -44,15 +46,14 @@ export function meterGeometry(value: number, target: number): MeterGeometry {
   };
 }
 
-const defaultFormat = (n: number) => Math.round(n).toLocaleString("en-US");
-
 export type MeterProps = {
   value: number;
   target: number;
   tone?: MeterTone;
   /** Unit for the spoken reading ("g", "kcal"). */
   unit?: string;
-  /** Formats figures in the spoken reading. Default: rounded, grouped. */
+  /** Formats figures in the spoken reading. Default: rounded, grouped
+   *  for the app locale. */
   format?: (n: number) => string;
   className?: string;
 } & (
@@ -74,18 +75,20 @@ export function Meter({
   target,
   tone = "neutral",
   unit,
-  format = defaultFormat,
+  format,
   className,
   ...labelling
 }: MeterProps) {
+  const locale = useLocale();
+  const show = format ?? ((n: number) => formatNumber(n, locale));
   const now = Number.isFinite(value) && value > 0 ? value : 0;
   const hasTarget = Number.isFinite(target) && target > 0;
   const geometry = meterGeometry(now, target);
-  const withUnit = (n: number) => (unit ? `${format(n)} ${unit}` : format(n));
+  const withUnit = (n: number) => (unit ? `${show(n)} ${unit}` : show(n));
   // An overshoot that formats to zero ("0 g above target") is noise: skip
   // it, as MacroStat skips its visible "+N".
   const overshoot = hasTarget ? now - target : 0;
-  const spokenOver = overshoot > 0 && format(overshoot) !== format(0);
+  const spokenOver = overshoot > 0 && show(overshoot) !== show(0);
   const valueText = hasTarget
     ? `${withUnit(now)} of ${withUnit(target)}${
         spokenOver ? `, ${withUnit(overshoot)} above target` : ""
