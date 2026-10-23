@@ -14,6 +14,7 @@ import {
   proteinCeilingGrams,
   minDayKcal,
   proteinGrams,
+  proteinWeightKg,
   referenceWeightKg,
 } from "@maqro/core/training";
 import type {
@@ -288,6 +289,7 @@ describe("proteinGrams", () => {
       grams: 160,
       basis: "bodyweight",
       kg: 80,
+      bodyFatWouldChangeProtein: false,
     });
   });
 
@@ -300,19 +302,40 @@ describe("proteinGrams", () => {
     expect(out.grams).toBeCloseTo(166.4, 9);
     // The 1.2 g/kg minimum stays a bodyweight figure.
     expect(out.kg).toBe(80);
+    expect(out.bodyFatWouldChangeProtein).toBe(false);
   });
 
-  it("lean mass without a usable estimate → the 2.0 g/kg bodyweight default", () => {
+  describe("lean mass without a usable estimate → min(2.0, g/kg) × bodyweight", () => {
     // Not the lean-mass 2.6 g/kg applied to bodyweight (208 g): a lean-mass
-    // figure is per kg of FFM and over-prescribes on total weight.
-    for (const bf of [undefined, null, NaN, 2, 70]) {
-      expect(
-        proteinGrams(
-          { basis: "leanMass", gPerKg: 2.6 },
-          { ...lean, bodyFatPct: bf },
-        ),
-      ).toEqual({ grams: 160, basis: "bodyweight", kg: 80 });
+    // figure is per kg of FFM and over-prescribes on total weight. A lower
+    // choice is kept, not raised to the 2.0 default (owner refinement).
+    const rows: [number, number][] = [
+      [2.6, 160],
+      [2.0, 160],
+      [1.4, 112],
+    ];
+    for (const [gPerKg, grams] of rows) {
+      it(`${gPerKg} g/kg at 80 kg → ${grams} g`, () => {
+        for (const bf of [undefined, null, NaN, 2, 70]) {
+          const out = proteinGrams(
+            { basis: "leanMass", gPerKg },
+            { ...lean, bodyFatPct: bf },
+          );
+          expect(out.grams).toBeCloseTo(grams, 9);
+          expect(out.basis).toBe("bodyweight");
+          expect(out.kg).toBe(80);
+          // A body-fat estimate would switch it to lean mass.
+          expect(out.bodyFatWouldChangeProtein).toBe(true);
+        }
+      });
     }
+
+    it("then the BMI taper applies to the weight (120 kg / 180 cm → 81 kg)", () => {
+      const out = proteinGrams({ basis: "leanMass", gPerKg: 1.4 }, obese);
+      expect(out.grams).toBeCloseTo(1.4 * 81, 9);
+      expect(out.basis).toBe("referenceWeight");
+      expect(out.kg).toBeCloseTo(81, 9);
+    });
   });
 
   it("a bodyweight setting keeps its own g/kg", () => {
@@ -320,13 +343,14 @@ describe("proteinGrams", () => {
       grams: 208,
       basis: "bodyweight",
       kg: 80,
+      bodyFatWouldChangeProtein: false,
     });
   });
 
-  describe("BMI ≥ 30 without a body-fat estimate → the BMI-25 weight", () => {
+  describe("BMI > 30 without a body-fat estimate → the tapered weight", () => {
     const rows: [string, Parameters<typeof proteinGrams>, number, string][] = [
       [
-        "bodyweight 2.0 at 180 cm / 120 kg → 2.0 × 81",
+        "bodyweight 2.0 at 180 cm / 120 kg (BMI 37) → 2.0 × 81",
         [{ basis: "bodyweight", gPerKg: 2 }, obese],
         162,
         "referenceWeight",
@@ -338,19 +362,19 @@ describe("proteinGrams", () => {
         "referenceWeight",
       ],
       [
-        "lean mass, no estimate: the 2.0 default on 81 kg",
+        "lean mass, no estimate: 2.0 on 81 kg",
         [{ basis: "leanMass", gPerKg: 2.6 }, obese],
         162,
         "referenceWeight",
       ],
       [
-        "BMI exactly 30 (200 cm / 120 kg) → 2.0 × 100",
+        "BMI exactly 30 (200 cm / 120 kg) → bodyweight, no step",
         [
           { basis: "bodyweight", gPerKg: 2 },
           { weightKg: 120, heightCm: 200 },
         ],
-        200,
-        "referenceWeight",
+        240,
+        "bodyweight",
       ],
       [
         "BMI just under 30 (200 cm / 119.9 kg) → bodyweight",
@@ -400,6 +424,7 @@ describe("proteinGrams", () => {
             : args[1].weightKg,
           9,
         );
+        expect(out.bodyFatWouldChangeProtein).toBe(basis === "referenceWeight");
       });
     }
 
@@ -410,9 +435,73 @@ describe("proteinGrams", () => {
             { basis: "bodyweight", gPerKg: 2 },
             { weightKg: 120, heightCm },
           ),
-        ).toEqual({ grams: 240, basis: "bodyweight", kg: 120 });
+        ).toEqual({
+          grams: 240,
+          basis: "bodyweight",
+          kg: 120,
+          bodyFatWouldChangeProtein: false,
+        });
       }
     });
+  });
+});
+
+describe("proteinWeightKg — the BMI taper (180 cm: BMI 30 = 97.2 kg)", () => {
+  /** The weight at `bmi` for 180 cm. */
+  const at = (bmi: number) => bmi * 1.8 ** 2;
+  const rows: [string, number, number][] = [
+    ["BMI 29.99 → bodyweight", at(29.99), at(29.99)],
+    ["BMI 30 → bodyweight (the BMI-30 weight)", at(30), 97.2],
+    ["BMI 32.5 → halfway to the BMI-25 weight", at(32.5), (97.2 + 81) / 2],
+    ["BMI 35 → the BMI-25 reference weight", at(35), 81],
+    ["BMI 40 → the BMI-25 reference weight", at(40), 81],
+  ];
+  for (const [name, weightKg, kg] of rows) {
+    it(name, () => {
+      expect(proteinWeightKg(weightKg, 180)).toBeCloseTo(kg, 9);
+    });
+  }
+
+  it("the owner's examples: 97.2 → 97.2, 105.3 → ≈ 89, 113.4+ → 81", () => {
+    expect(proteinWeightKg(97.2, 180)).toBeCloseTo(97.2, 9);
+    expect(proteinWeightKg(105.3, 180)).toBeCloseTo(89.1, 9);
+    expect(proteinWeightKg(113.4, 180)).toBeCloseTo(81, 9);
+    expect(proteinWeightKg(150, 180)).toBeCloseTo(81, 9);
+  });
+
+  it("is continuous: no step anywhere, at BMI 30 and 35 included", () => {
+    // Over heights 150–200 cm and weights 40–200 kg, a 1 g change in
+    // weight moves the protein weight by at most 1 g (slope −1 inside the
+    // taper, +1 below it, 0 above it).
+    let worstStep = 0;
+    let worstEdge = 0;
+    for (let heightCm = 150; heightCm <= 200; heightCm += 2.5) {
+      for (let g = 40_000; g < 200_000; g += 7) {
+        const a = proteinWeightKg(g / 1000, heightCm);
+        const b = proteinWeightKg((g + 1) / 1000, heightCm);
+        worstStep = Math.max(worstStep, Math.abs(b - a));
+      }
+      // Both ends of the taper, approached from either side.
+      const m2 = (heightCm / 100) ** 2;
+      for (const bmi of [30, 35]) {
+        const below = proteinWeightKg(bmi * m2 - 1e-6, heightCm);
+        const above = proteinWeightKg(bmi * m2 + 1e-6, heightCm);
+        worstEdge = Math.max(worstEdge, Math.abs(above - below));
+      }
+    }
+    expect(worstStep).toBeLessThanOrEqual(0.001 + 1e-9);
+    expect(worstEdge).toBeLessThan(1e-5);
+  });
+
+  it("never exceeds bodyweight and never goes under the BMI-25 weight", () => {
+    for (let heightCm = 150; heightCm <= 200; heightCm += 5) {
+      const reference = 25 * (heightCm / 100) ** 2;
+      for (let w = 40; w <= 200; w += 0.5) {
+        const kg = proteinWeightKg(w, heightCm);
+        expect(kg).toBeLessThanOrEqual(w);
+        expect(kg).toBeGreaterThanOrEqual(Math.min(w, reference) - 1e-9);
+      }
+    }
   });
 });
 

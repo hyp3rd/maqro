@@ -404,6 +404,7 @@ describe("targetsForDate — training days", () => {
       expect(d.training?.meanCalories).toBe(2200);
       expect(d.training?.cycling).toBe("modest");
       expect(d.training?.proteinBasis).toBe("bodyweight");
+      expect(d.training?.bodyFatWouldChangeProtein).toBe(false);
       expect(d.training?.fatFloorLifted).toBe(false);
     }
     expect(week.days[2].training?.day).toEqual(MOCKUP_WEEK[3]);
@@ -476,11 +477,27 @@ describe("targetsForDate — training days", () => {
     const lean = targetsForDate(p, "2026-10-20", { ...FREE, bodyFatPct: 20 });
     expect(lean.protein).toBe(165); // 2.6 × 64 kg = 166.4 → 165
     expect(lean.training?.proteinBasis).toBe("leanMass");
-    // No estimate → the 2.0 g/kg bodyweight default (2.0 × 80 = 160), not
+    expect(lean.training?.bodyFatWouldChangeProtein).toBe(false);
+    // No estimate → min(2.0, 2.6) g/kg on bodyweight (2.0 × 80 = 160), not
     // the lean-mass 2.6 g/kg on bodyweight (208).
     const noEstimate = targetsForDate(p, "2026-10-20", FREE);
     expect(noEstimate.protein).toBe(160);
     expect(noEstimate.training?.proteinBasis).toBe("bodyweight");
+    // `proteinBasis` reads the same as a chosen bodyweight setting; this
+    // tells the UI a body-fat estimate would change the target.
+    expect(noEstimate.training?.bodyFatWouldChangeProtein).toBe(true);
+    // A lower lean-mass choice is kept, not raised to 2.0: 1.4 × 80 = 112.
+    const low = targetsForDate(
+      mockupProfile({ proteinSetting: { basis: "leanMass", gPerKg: 1.4 } }),
+      "2026-10-20",
+      FREE,
+    );
+    expect(low.protein).toBe(110); // 112 on the 5 g grid
+    expect(low.training?.bodyFatWouldChangeProtein).toBe(true);
+    // A chosen bodyweight setting under BMI 30: nothing to add.
+    const chosen = targetsForDate(mockupProfile(), "2026-10-20", FREE);
+    expect(chosen.training?.proteinBasis).toBe("bodyweight");
+    expect(chosen.training?.bodyFatWouldChangeProtein).toBe(false);
   });
 
   it("a macroSplit override sets the held fat; protein stays g/kg", () => {
@@ -563,12 +580,13 @@ describe("targetsForDate — training days", () => {
     expect(weekTargets(p, "2026-06-10", FREE)?.totalCalories).toBe(7 * 2600);
   });
 
-  it("BMI ≥ 30 without a body-fat estimate: g/kg on the BMI-25 weight", () => {
+  it("BMI ≥ 35 without a body-fat estimate: g/kg on the BMI-25 weight", () => {
     // 120 kg / 180 cm (BMI 37): 2.0 g/kg × 81 kg = 162 g → 160.
     const p = mockupProfile({ weight: 120 });
     const t = targetsForDate(p, "2026-10-20", FREE);
     expect(t.protein).toBe(160);
     expect(t.training?.proteinBasis).toBe("referenceWeight");
+    expect(t.training?.bodyFatWouldChangeProtein).toBe(true);
     // With an estimate, the bodyweight setting applies as set (240 g).
     const withEstimate = targetsForDate(p, "2026-10-20", {
       ...FREE,
@@ -576,6 +594,27 @@ describe("targetsForDate — training days", () => {
     });
     expect(withEstimate.protein).toBe(240);
     expect(withEstimate.training?.proteinBasis).toBe("bodyweight");
+    expect(withEstimate.training?.bodyFatWouldChangeProtein).toBe(false);
+  });
+
+  it("BMI 30–35 without a body-fat estimate: protein tapers, no step", () => {
+    // 180 cm, 2.0 g/kg: 97.2 kg (BMI 30) → 194.4 g; 105.3 kg (BMI 32.5) →
+    // 2.0 × 89.1 = 178.2 g; 113.4 kg (BMI 35) → 2.0 × 81 = 162 g.
+    const protein = (weight: number) =>
+      targetsForDate(mockupProfile({ weight }), "2026-10-20", FREE).protein;
+    expect(protein(97.2)).toBe(195);
+    expect(protein(105.3)).toBe(180);
+    expect(protein(113.4)).toBe(160);
+    // Just over BMI 30 is within a gram of just under it.
+    expect(protein(97.3)).toBe(195);
+    expect(protein(97.1)).toBe(195);
+    const t = targetsForDate(
+      mockupProfile({ weight: 105.3 }),
+      "2026-10-20",
+      FREE,
+    );
+    expect(t.training?.proteinBasis).toBe("referenceWeight");
+    expect(t.training?.bodyFatWouldChangeProtein).toBe(true);
   });
 
   it("cycling narrows rather than plan a day too small for the floors", () => {
@@ -691,10 +730,17 @@ describe("targetsForDate — training days", () => {
                         0.5 * weight,
                         (share * mean) / 9,
                       );
-                      // BMI ≥ 30 (no body-fat estimate here) → g/kg on
-                      // the BMI-25 weight for the height.
+                      // BMI > 30 (no body-fat estimate here) → g/kg on
+                      // the weight tapering from the BMI-30 weight (at 30)
+                      // to the BMI-25 weight (from 35 up).
                       const m2 = (height / 100) ** 2;
-                      const proteinKg = weight / m2 >= 30 ? 25 * m2 : weight;
+                      const bmi = weight / m2;
+                      const proteinKg =
+                        bmi <= 30
+                          ? weight
+                          : bmi >= 35
+                            ? 25 * m2
+                            : 30 * m2 + ((bmi - 30) / 5) * (25 * m2 - 30 * m2);
                       const wanted = round5(gPerKg * proteinKg);
                       expect(new Set(days.map((d) => d.protein)).size).toBe(1);
                       for (const d of days) {

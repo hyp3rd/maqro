@@ -311,9 +311,11 @@ export function distributeWeekCalories(input: WeekCaloriesInput): number[] {
   return out;
 }
 
-/** At or above this BMI, with no body-fat estimate, protein g/kg is taken on
- *  the reference weight instead of total bodyweight. */
+/** Above this BMI, with no body-fat estimate, protein g/kg tapers off total
+ *  bodyweight toward the reference weight (`proteinWeightKg`). */
 export const OBESE_BMI = 30;
+/** From this BMI up, the taper has reached the reference weight. */
+export const TAPER_END_BMI = 35;
 /** The BMI the reference weight is taken at. */
 export const REFERENCE_BMI = 25;
 
@@ -324,7 +326,38 @@ export function referenceWeightKg(heightCm: number): number | null {
   return REFERENCE_BMI * (heightCm / 100) ** 2;
 }
 
-/** The body measure protein g/kg was actually applied to. */
+/** The weight protein g/kg is taken on when there is NO usable body-fat
+ *  estimate (owner refinement: a taper, so protein never steps at BMI 30):
+ *
+ *  | BMI      | protein weight                                         |
+ *  |----------|--------------------------------------------------------|
+ *  | ≤ 30     | bodyweight                                             |
+ *  | 30 – 35  | linear from the BMI-30 weight for the height (at BMI   |
+ *  |          | 30) to the BMI-25 reference weight (at BMI 35)         |
+ *  | ≥ 35     | the BMI-25 reference weight                            |
+ *
+ *  180 cm: 97.2 kg (BMI 30) → 97.2; 105.3 kg (BMI 32.5) → 89.1; from
+ *  113.4 kg (BMI 35) up → 81. Continuous at both ends, and below
+ *  bodyweight everywhere above BMI 30, as total weight over-prescribes
+ *  protein with more body fat (Carbon and MacroFactor ask for a body-fat
+ *  estimate there). A height that isn't a positive number → bodyweight. */
+export function proteinWeightKg(weightKg: number, heightCm: number): number {
+  const reference = referenceWeightKg(heightCm);
+  if (reference === null) return weightKg;
+  // BMI = weight / height² = REFERENCE_BMI × weight / reference. The ends
+  // are compared without float noise; the taper itself uses the exact BMI.
+  const bmi = (REFERENCE_BMI * weightKg) / reference;
+  if (!(clean(bmi) > OBESE_BMI)) return weightKg;
+  if (clean(bmi) >= TAPER_END_BMI) return reference;
+  const atObese = (OBESE_BMI / REFERENCE_BMI) * reference;
+  const t = (bmi - OBESE_BMI) / (TAPER_END_BMI - OBESE_BMI);
+  return atObese + t * (reference - atObese);
+}
+
+/** The body measure protein g/kg was actually applied to. `referenceWeight`
+ *  covers the whole BMI > 30 rule without a body-fat estimate — the taper
+ *  from 30 to 35 as well as the BMI-25 reference weight from 35 up — i.e.
+ *  any protein weight below bodyweight (`proteinWeightKg`). */
 export type ProteinBasis = ProteinSetting["basis"] | "referenceWeight";
 
 /** What `proteinGrams` reads about the body. */
@@ -335,60 +368,69 @@ export type ProteinBody = {
   bodyFatPct?: number | null;
 };
 
+/** `proteinGrams`' result. */
+export type ProteinTarget = {
+  grams: number;
+  /** The basis actually used (see `ProteinBasis`). */
+  basis: ProteinBasis;
+  /** The kg the g/kg was applied to, and the kg every per-kg floor is
+   *  taken on (`MacroFloorInput.floorKg`): bodyweight, or the protein
+   *  weight below it at BMI > 30 without a body-fat estimate — never lean
+   *  mass, as the floors are bodyweight figures. */
+  kg: number;
+  /** A plausible body-fat estimate would change `grams`: true exactly for
+   *  the lean-mass fallback (a `leanMass` setting without one) and for the
+   *  BMI > 30 protein weight (`basis: "referenceWeight"`). The UI's cue to
+   *  suggest adding a body-fat estimate. */
+  bodyFatWouldChangeProtein: boolean;
+};
+
 /** Daily protein grams for the setting, and the kg its g/kg was applied to:
  *
  *  - `leanMass` setting with a plausible body-fat estimate (3–60 %): g/kg ×
  *    lean mass (weight × (1 − body fat %)).
- *  - `leanMass` without one: the 2.0 g/kg default on bodyweight — not its
- *    own g/kg, which is a per-kg-of-FFM figure and would over-prescribe
- *    (owner decision).
- *  - `bodyweight`: its g/kg × bodyweight.
- *  - No body-fat estimate and BMI ≥ 30: the bodyweight figures above are
- *    taken on the reference weight at BMI 25 for the height instead (180 cm
- *    → 81 kg → 162 g at 2.0 g/kg), as total weight over-prescribes protein
- *    with more body fat (owner decision; Carbon and MacroFactor ask for a
- *    body-fat estimate there). With an estimate, the user's chosen basis
- *    applies as set.
+ *  - `bodyweight` setting with one: its g/kg × bodyweight, as set.
+ *  - No usable estimate: g/kg × `proteinWeightKg` (bodyweight up to BMI 30,
+ *    then the taper to the BMI-25 reference weight), where a `leanMass`
+ *    setting's g/kg is capped at the 2.0 g/kg default — its figure is per
+ *    kg of FFM and over-prescribes on total weight, while a lower choice
+ *    (e.g. 1.4) is kept (owner decisions; 80 kg: 1.4 → 112 g, 2.6 → 160 g).
  *
- *  `basis` is the one actually used, so the UI can suggest adding a body-fat
- *  estimate; `kg` is what the any-goal 1.2 g/kg minimum is taken on
- *  (bodyweight, or the reference weight — never lean mass, as that minimum
- *  is a bodyweight figure). */
+ *  `basis` is the one actually used and `bodyFatWouldChangeProtein` says
+ *  whether a body-fat estimate would change the grams. */
 export function proteinGrams(
   setting: ProteinSetting,
   body: ProteinBody,
-): { grams: number; basis: ProteinBasis; kg: number } {
+): ProteinTarget {
   const { weightKg, bodyFatPct } = body;
   const hasBodyFat =
     typeof bodyFatPct === "number" &&
     Number.isFinite(bodyFatPct) &&
     bodyFatPct >= BODY_FAT_MIN_PCT &&
     bodyFatPct <= BODY_FAT_MAX_PCT;
-  if (hasBodyFat && setting.basis === "leanMass") {
+  if (hasBodyFat) {
     return {
-      grams: setting.gPerKg * weightKg * (1 - bodyFatPct / 100),
-      basis: "leanMass",
+      grams:
+        setting.basis === "leanMass"
+          ? setting.gPerKg * weightKg * (1 - bodyFatPct / 100)
+          : setting.gPerKg * weightKg,
+      basis: setting.basis,
       kg: weightKg,
+      bodyFatWouldChangeProtein: false,
     };
   }
   const gPerKg =
     setting.basis === "leanMass"
-      ? DEFAULT_PROTEIN_SETTING.gPerKg
+      ? Math.min(setting.gPerKg, DEFAULT_PROTEIN_SETTING.gPerKg)
       : setting.gPerKg;
-  const reference = referenceWeightKg(body.heightCm);
-  // BMI = weight / height² = REFERENCE_BMI × weight / reference.
-  if (
-    !hasBodyFat &&
-    reference !== null &&
-    clean((REFERENCE_BMI * weightKg) / reference) >= OBESE_BMI
-  ) {
-    return {
-      grams: gPerKg * reference,
-      basis: "referenceWeight",
-      kg: reference,
-    };
-  }
-  return { grams: gPerKg * weightKg, basis: "bodyweight", kg: weightKg };
+  const kg = proteinWeightKg(weightKg, body.heightCm);
+  const tapered = kg < weightKg;
+  return {
+    grams: gPerKg * kg,
+    basis: tapered ? "referenceWeight" : "bodyweight",
+    kg,
+    bodyFatWouldChangeProtein: tapered || setting.basis === "leanMass",
+  };
 }
 
 /** Diets where FAT absorbs the day-to-day difference and carbs hold (low-carb,
@@ -416,7 +458,7 @@ export type MacroFloorInput = {
   /** Bodyweight: the fat (0.5 g/kg) and carb (1 g/kg) floors' basis. */
   weightKg: number;
   /** The kg the 1.2 g/kg protein minimum is taken on — `proteinGrams`' `kg`
-   *  (bodyweight, or the BMI-25 reference weight). */
+   *  (bodyweight, or the protein weight below it at BMI > 30). */
   proteinKg: number;
   /** The weekly mean daily target T (kcal): the fat floor's % basis. */
   meanKcal: number;

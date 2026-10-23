@@ -41,9 +41,9 @@ import {
  *  Gating lives in callers (see goal-phases.ts): pass `phasesEnabled: true`
  *  only after the tier check (`FEATURES.canUseGoalPhases`). `bodyFatPct` is
  *  the latest body-fat estimate (%) if the caller has one — the training
- *  protein reads it (`proteinGrams`): absent, a lean-mass setting takes the
- *  2.0 g/kg bodyweight default, and at BMI ≥ 30 g/kg is taken on the BMI-25
- *  reference weight. */
+ *  protein reads it (`proteinGrams`): absent, a lean-mass setting takes
+ *  min(2.0, its g/kg) on bodyweight, and above BMI 30 g/kg is taken on a
+ *  protein weight that tapers to the BMI-25 reference weight at BMI 35. */
 export type TargetContext = {
   phasesEnabled: boolean;
   bodyFatPct?: number | null;
@@ -57,13 +57,17 @@ export type TrainingDayTargets = {
   cycling: CyclingPreset;
   /** The weekly mean daily target the day is planned around. */
   meanCalories: number;
-  /** The protein basis actually used (`proteinGrams`): a lean-mass setting
-   *  without a body-fat estimate falls back to the 2.0 g/kg bodyweight
-   *  default, so `bodyweight` under a `leanMass` setting means "add a
-   *  body-fat estimate to use lean mass"; `referenceWeight` (BMI ≥ 30, no
-   *  estimate) means g/kg was taken on the BMI-25 weight for the height —
-   *  also a prompt for a body-fat estimate. */
+  /** The protein basis actually used (`proteinGrams`): `bodyweight`,
+   *  `leanMass` (only with a body-fat estimate), or `referenceWeight` (BMI
+   *  > 30 without one: g/kg on the protein weight that tapers from the
+   *  BMI-30 to the BMI-25 weight for the height, `proteinWeightKg`). */
   proteinBasis: ProteinBasis;
+  /** A body-fat estimate would change this protein target — the UI's cue
+   *  to suggest adding one. True exactly for the lean-mass fallback (a
+   *  `leanMass` setting without an estimate, which takes min(2.0, its g/kg)
+   *  on bodyweight) and for `referenceWeight`; `proteinBasis` alone can't
+   *  tell the fallback from a chosen bodyweight setting. */
+  bodyFatWouldChangeProtein: boolean;
   /** Even the weekly-average day can't hold the protein setting, the fat
    *  floor and the 1 g/kg carb floor together (`minDayKcal`) — the UI can
    *  gently suggest a smaller deficit. Every day then sits at the mean, and
@@ -201,6 +205,7 @@ export function targetsForDate(
       cycling: schedule.cycling,
       meanCalories: values.targetCalories,
       proteinBasis: protein.basis,
+      bodyFatWouldChangeProtein: protein.bodyFatWouldChangeProtein,
       floorsExceedMean: values.targetCalories < minDay,
       fatFloorLifted: fatFloorLiftsChoice({ ...floors, meanFat: values.fat }),
     },
