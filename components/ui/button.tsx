@@ -21,12 +21,21 @@ const buttonVariants = cva(
           "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
+        // Brand-filled CTA. `brand-strong` is the fill that keeps the white
+        // label >= 4.5:1 in both themes (raw `brand` does not in dark).
+        brand: "bg-brand-strong text-brand-foreground hover:bg-brand-strong/90",
       },
+      // `touch-N` = `h-N` on a precise pointer and >= 44px on a finger
+      // (tailwind.config.mjs), so every size is a real touch target on
+      // phones without inflating the dense desktop layout. A call site's
+      // plain `h-*` override replaces the touch size outright.
       size: {
-        default: "h-10 px-4 py-2",
-        sm: "h-9 rounded-md px-3",
+        default: "h-touch-10 px-4 py-2",
+        xs: "h-touch-7 gap-1.5 rounded-md px-2.5 text-xs",
+        sm: "h-touch-9 rounded-md px-3",
         lg: "h-11 rounded-md px-8",
         icon: "h-11 w-11",
+        "icon-sm": "h-touch-8 w-touch-8",
       },
     },
     defaultVariants: { variant: "default", size: "default" },
