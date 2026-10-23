@@ -65,6 +65,7 @@ import { requestAiMealPlan } from "./lib/ai-plan";
 import type { CoherenceIssue } from "./lib/ai/plan-coherence";
 import { toAiCustomFoods } from "./lib/ai/request-payload";
 import { clientFetch } from "./lib/auth/client-fetch";
+import { OFFLINE_UNVERIFIED_HINT } from "./lib/auth/offline-unverified-copy";
 import {
   replaceDayIfUnchanged,
   replaceMealIfUnchanged,
@@ -439,7 +440,12 @@ const MacroCalculator = () => {
   // AI route is auth-gated; surface the Photo tab only when signed in.
   // The Anthropic env gate runs server-side - clicking with a stale
   // session surfaces a clear 503 error in the sheet's error state.
-  const { user, isLoaded: authLoaded, isUnconfigured } = useUser();
+  const {
+    user,
+    isLoaded: authLoaded,
+    isUnconfigured,
+    isOfflineUnverified,
+  } = useUser();
 
   // URL-driven upgrade dialog. The landing page's "Start free trial"
   // CTAs link to `/app?upgrade=plus` (or `pro`) so a visitor lands
@@ -634,6 +640,10 @@ const MacroCalculator = () => {
   //   - signed-in user → derived state opens the dialog (no-op here)
   //   - unconfigured Supabase → toast (dialog won't open anyway
   //     because user is null)
+  //   - offline-unverified → toast, no redirect: the account is on this
+  //     device but the auth server can't be reached, so /login can't help.
+  //     `?upgrade=` stays, and the dialog opens once the session is
+  //     verified again (`user` is set then).
   //   - signed-out + configured → bounce to /login?next=<this URL>,
   //     so they land back on `/app?upgrade=…` after sign-in and the
   //     dialog opens on the next mount.
@@ -645,9 +655,15 @@ const MacroCalculator = () => {
       toast.error("Upgrades aren't available on this deployment.");
       return;
     }
+    if (isOfflineUnverified) {
+      toast.info(
+        `${OFFLINE_UNVERIFIED_HINT}. The upgrade opens once it can be reached.`,
+      );
+      return;
+    }
     const next = encodeURIComponent(`/app?upgrade=${urlPlan}`);
     window.location.href = `/login?next=${next}`;
-  }, [urlPlan, authLoaded, user, isUnconfigured]);
+  }, [urlPlan, authLoaded, user, isUnconfigured, isOfflineUnverified]);
 
   // Dialog open state - purely derived. URL has a valid plan AND
   // auth is resolved AND a user is signed in AND the user hasn't
