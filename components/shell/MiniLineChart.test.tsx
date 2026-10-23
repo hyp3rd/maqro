@@ -251,6 +251,37 @@ describe("MiniLineChart axes", () => {
     }
   });
 
+  it.each([200, 240])(
+    "names the year on the lone label of a multi-year range at %ipx",
+    (width) => {
+      // Monthly from 2019-03-10 to 2026-10-23: too many years for a label
+      // each at this width, so only the first day is labelled.
+      const years: LinePoint[] = [
+        ...Array.from({ length: 91 }, (_, i) => ({
+          x: dayIndexFromIsoDate("2019-03-10") + i * 30,
+          y: 80 - i / 20,
+        })),
+        { x: dayIndexFromIsoDate("2026-10-23"), y: 75 },
+      ];
+      for (const variant of ["line", "bar"] as const) {
+        const { container, unmount } = render(
+          <MiniLineChart
+            data={years}
+            xType="day"
+            variant={variant}
+          />,
+        );
+        resizeAll(width);
+        expect({ variant, labels: xLabels(container) }).toEqual({
+          variant,
+          labels: ["Mar 10, 2019"],
+        });
+        unmount();
+        FakeResizeObserver.all = [];
+      }
+    },
+  );
+
   it("keeps the date labels evenly stepped at every width", () => {
     // Starts on a one-digit day ("Oct 1") but most labels have two digits.
     const month: LinePoint[] = Array.from({ length: 31 }, (_, i) => ({

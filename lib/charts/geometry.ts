@@ -199,13 +199,16 @@ export function dayTicks(
     year: "numeric",
     timeZone: "UTC",
   });
-  const dayTick = (day: number): DayTick => ({
+  const dayTick = (day: number, fmt = dayFmt): DayTick => ({
     day,
-    label: dayFmt.format(dateFromDayIndex(day)),
+    label: fmt.format(dateFromDayIndex(day)),
   });
   // Nothing fits (not even one tick of the coarsest step): label the first
-  // day alone.
-  let calendar: DayTick[] = [dayTick(lo)];
+  // day alone - with its year when the range crosses one, as no other label
+  // is left to say which year that is.
+  let calendar: DayTick[] = [
+    dayTick(lo, multiYear ? datedFormat(locale) : dayFmt),
+  ];
   for (const step of DAY_STEPS) {
     const days = daysFor(step, lo, hi);
     if (days.length === 0) continue;
@@ -245,6 +248,16 @@ export function dayTicks(
 
 function dayFormat(locale?: string): Intl.DateTimeFormat {
   return new Intl.DateTimeFormat(locale, {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/** "Mar 10, 2019": a day label that names its year. */
+function datedFormat(locale?: string): Intl.DateTimeFormat {
+  return new Intl.DateTimeFormat(locale, {
+    year: "numeric",
     month: "short",
     day: "numeric",
     timeZone: "UTC",

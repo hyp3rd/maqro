@@ -272,6 +272,13 @@ describe("dayTicks", () => {
     ]);
   });
 
+  it("names the year on that lone label when the range crosses a year", () => {
+    const first = dayIndexFromIsoDate("2019-03-10");
+    expect(
+      dayTicks(first, dayIndexFromIsoDate("2026-10-23"), () => false, "en-US"),
+    ).toEqual([{ day: first, label: "Mar 10, 2019" }]);
+  });
+
   it("labels a single day", () => {
     expect(dayTicks(oct(9), oct(9), atMost(5), "en-US")).toEqual([
       { day: oct(9), label: "Oct 9" },
