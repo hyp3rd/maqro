@@ -187,6 +187,20 @@ describe("profile", () => {
     const loaded = await getProfile();
     expect(loaded?.weight).toBe(75);
   });
+
+  // The `?demo=1` seed writes the profile behind the mounted `useProfile`,
+  // which re-loads only on the `profile` data-bus rev. `saveProfile` stays
+  // quiet: its caller is `useProfile` itself.
+  it("saveDemoProfile bumps the profile data-bus rev; saveProfile does not", async () => {
+    const { saveDemoProfile, saveProfile } = await freshDb();
+    const { getDataVersion } = await import("./sync/data-bus");
+
+    await saveProfile(BASELINE_PROFILE);
+    expect(getDataVersion("profile")).toBe(0);
+
+    await saveDemoProfile(BASELINE_PROFILE);
+    expect(getDataVersion("profile")).toBe(1);
+  });
 });
 
 describe("daily logs", () => {

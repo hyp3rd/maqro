@@ -96,9 +96,11 @@ export function DemoSeed() {
           // Storage disabled — fine; the flag is informational
           // for future features, not load-bearing.
         }
-        // Tell the profile-driven hooks (sidebar UserMenu,
-        // useProfile) to re-fetch so the UI populates without
-        // a manual refresh.
+        // `saveDemoProfile` already woke the data-bus readers
+        // (`useProfile`, the fasting status). The profile-bus is a
+        // separate channel for the readers that load the profile on
+        // their own (sidebar UserMenu, `useDisplayName`) — tell them
+        // too so the "Sample" name shows without a manual refresh.
         notifyProfileChanged();
         toast.success(
           "Sample data loaded — explore freely, then start over from Settings.",
