@@ -417,24 +417,39 @@ describe("targetsForDate — training days", () => {
     });
   });
 
-  it("cycling off: every day at the average, protein still fixed", () => {
+  it("cycling off: flat days — only the fixed protein applies", () => {
     const week = weekTargets(
       mockupProfile({ training: schedule({ cycling: "off" }) }),
       "2026-10-19",
       FREE,
     );
     expect(week?.days).toHaveLength(7);
+    // Every day, the heavy Wednesday included, has the same macros: no
+    // per-day shifts without cycled calories (fat held at the cut split's
+    // 86 g → 85; carbs take the rest).
+    expect(week?.days[2].training?.dayClass).toBe("heavy");
     for (const d of week?.days ?? []) {
       expect(d.targetCalories).toBe(2200);
-      expect(d.protein).toBe(160);
+      expect([d.protein, d.carbs, d.fat]).toEqual([160, 200, 85]);
     }
-    const [mon, , wed] = week?.days ?? [];
-    expect([mon.fat, mon.carbs]).toEqual([85, 200]);
-    // Wednesday is heavy: at 2,200 kcal its carbs (199 g) are under the
-    // 3 g/kg aim, so fat trades down (above its 40 g floor) to make room.
+  });
+
+  it("a heavy day's extra carbs come only from its cycled calories", () => {
+    // A high-fat custom split (30/25/45 → 110 g fat at 2,200): heavy
+    // Wednesday (2,500) gets 2,500 − 2,200 = 300 kcal more carbs than the
+    // mean day, under the 3 g/kg aim (240 g), and fat stays at 110.
+    const days =
+      weekTargets(
+        mockupProfile({ macroSplit: { protein: 30, carbs: 25, fat: 45 } }),
+        "2026-10-19",
+        FREE,
+      )?.days ?? [];
+    expect(days).toHaveLength(7);
+    const wed = days[2];
     expect(wed.training?.dayClass).toBe("heavy");
-    expect(wed.fat).toBe(65);
-    expect(wed.carbs).toBeGreaterThanOrEqual(240);
+    expect(wed.targetCalories).toBe(2500);
+    expect([wed.protein, wed.carbs, wed.fat]).toEqual([160, 220, 110]);
+    for (const d of days) expect(d.fat).toBe(110);
   });
 
   it("pronounced moves more between days, same weekly total", () => {
@@ -600,7 +615,6 @@ describe("targetsForDate — training days", () => {
   });
 
   describe("floors hold across a grid of profiles and settings", () => {
-    const ORDER = ["rest", "light", "training", "endurance", "heavy"];
     const round5 = (x: number) => Math.round(x / 5) * 5;
     const goals: [PersonalInfo["goal"], number][] = [
       ["lose", 0.5],
@@ -658,17 +672,15 @@ describe("targetsForDate — training days", () => {
                           Math.abs(kcal - d.targetCalories),
                         ).toBeLessThanOrEqual(45);
                       }
-                      // Same calories → carbs never fall as the class gets harder.
+                      // Same calories → same macros, whatever the class.
                       for (const a of days) {
                         for (const b of days) {
-                          const rank = (d: typeof a) =>
-                            ORDER.indexOf(d.training?.dayClass ?? "");
-                          if (
-                            dietType !== "lowCarb" &&
-                            a.targetCalories === b.targetCalories &&
-                            rank(a) < rank(b)
-                          ) {
-                            expect(b.carbs).toBeGreaterThanOrEqual(a.carbs);
+                          if (a.targetCalories === b.targetCalories) {
+                            expect([b.protein, b.carbs, b.fat]).toEqual([
+                              a.protein,
+                              a.carbs,
+                              a.fat,
+                            ]);
                           }
                         }
                       }

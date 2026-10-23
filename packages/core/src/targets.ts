@@ -180,7 +180,6 @@ export function targetsForDate(
   });
   const macros = partitionDayMacros({
     dayKcal,
-    dayClass,
     mean: values,
     proteinGrams: weekProtein.grams,
     weightKg: floors.weightKg,

@@ -558,7 +558,6 @@ describe("partitionDayMacros", () => {
   function input(over: Partial<DayMacroInput> = {}): DayMacroInput {
     return {
       dayKcal: 2200,
-      dayClass: "training",
       mean: { targetCalories: 2200, carbs: 138, fat: 86 },
       proteinGrams: 160,
       weightKg: 80,
@@ -573,10 +572,8 @@ describe("partitionDayMacros", () => {
     4 * m.protein + 4 * m.carbs + 9 * m.fat;
 
   it("protein and fat stay put; carbs absorb the day's difference", () => {
-    const rest = partitionDayMacros(input({ dayKcal: 1950, dayClass: "rest" }));
-    const heavy = partitionDayMacros(
-      input({ dayKcal: 2500, dayClass: "heavy" }),
-    );
+    const rest = partitionDayMacros(input({ dayKcal: 1950 }));
+    const heavy = partitionDayMacros(input({ dayKcal: 2500 }));
     expect(rest).toEqual({ protein: 160, carbs: 135, fat: 85 });
     expect(heavy).toEqual({ protein: 160, carbs: 275, fat: 85 });
   });
@@ -642,7 +639,6 @@ describe("partitionDayMacros", () => {
       input({
         goal: "maintain",
         dayKcal: 1800,
-        dayClass: "rest",
         mean: { targetCalories: 2200, carbs: 110, fat: 120 },
       }),
     );
@@ -652,34 +648,38 @@ describe("partitionDayMacros", () => {
     expect(m.protein).toBe(160);
   });
 
-  it("heavy days aim for 3 g/kg carbs when the budget allows", () => {
+  it("a heavy day's extra carbs come only from its extra calories", () => {
+    // A 2,500 heavy day on a high-fat week (120 g): 195 g carbs is under the
+    // 3 g/kg (240 g) aim, but fat stays at the weekly level — it is never
+    // traded down to reach the aim.
     expect(
       partitionDayMacros(
         input({
           goal: "maintain",
           dayKcal: 2500,
-          dayClass: "heavy",
           mean: { targetCalories: 2200, carbs: 110, fat: 120 },
         }),
       ),
-    ).toEqual({ protein: 160, carbs: 240, fat: 100 });
-  });
-
-  it("…and stop at the fat floor when it doesn't", () => {
-    const m = partitionDayMacros(
-      input({ goal: "maintain", dayKcal: 2000, dayClass: "heavy" }),
-    );
-    expect(m.fat).toBe(50);
-    expect(m.carbs).toBe(230);
+    ).toEqual({ protein: 160, carbs: 195, fat: 120 });
+    // At the mean's own calories the split is the mean day's.
+    expect(
+      partitionDayMacros(
+        input({
+          goal: "maintain",
+          dayKcal: 2000,
+          mean: { targetCalories: 2000, carbs: 150, fat: 86 },
+        }),
+      ),
+    ).toEqual({ protein: 160, carbs: 150, fat: 85 });
   });
 
   it("low-carb: carbs hold at the weekly level and fat moves instead", () => {
     const mean = { targetCalories: 2200, carbs: 110, fat: 110 };
     const rest = partitionDayMacros(
-      input({ dietType: "lowCarb", mean, dayKcal: 1950, dayClass: "rest" }),
+      input({ dietType: "lowCarb", mean, dayKcal: 1950 }),
     );
     const heavy = partitionDayMacros(
-      input({ dietType: "lowCarb", mean, dayKcal: 2500, dayClass: "heavy" }),
+      input({ dietType: "lowCarb", mean, dayKcal: 2500 }),
     );
     expect(rest).toEqual({ protein: 160, carbs: 110, fat: 95 });
     expect(heavy).toEqual({ protein: 160, carbs: 110, fat: 160 });
@@ -692,7 +692,6 @@ describe("partitionDayMacros", () => {
         dietType: "lowCarb",
         mean: { targetCalories: 2200, carbs: 110, fat: 110 },
         dayKcal: 1400,
-        dayClass: "rest",
       }),
     );
     expect(m.fat).toBeGreaterThanOrEqual(48.9);
@@ -702,11 +701,9 @@ describe("partitionDayMacros", () => {
 
   it("stays energy-consistent with the day's kcal", () => {
     for (const dietType of ["balanced", "lowCarb", "lowFat"] as const) {
-      for (const dayClass of ["rest", "light", "training", "heavy"] as const) {
-        for (let dayKcal = 1800; dayKcal <= 2750; dayKcal += 50) {
-          const m = partitionDayMacros(input({ dietType, dayClass, dayKcal }));
-          expect(Math.abs(kcal(m) - dayKcal)).toBeLessThanOrEqual(45);
-        }
+      for (let dayKcal = 1800; dayKcal <= 2750; dayKcal += 50) {
+        const m = partitionDayMacros(input({ dietType, dayKcal }));
+        expect(Math.abs(kcal(m) - dayKcal)).toBeLessThanOrEqual(45);
       }
     }
   });
@@ -717,7 +714,6 @@ describe("partitionDayMacros", () => {
     const m = partitionDayMacros(
       input({
         dayKcal: 2150,
-        dayClass: "rest",
         mean: { targetCalories: 2150, carbs: 135, fat: 70 },
         proteinGrams: 408,
         weightKg: 120,
@@ -763,7 +759,6 @@ describe("partitionDayMacros", () => {
               const m = partitionDayMacros(
                 input({
                   dayKcal,
-                  dayClass: "rest",
                   mean,
                   goal,
                   dietType,
@@ -783,37 +778,25 @@ describe("partitionDayMacros", () => {
     }
   });
 
-  it("at equal calories, carbs never decrease as the day gets harder", () => {
-    // Rest → light → training → endurance → heavy.
-    const order: TrainingDayClass[] = [
-      "rest",
-      "light",
-      "training",
-      "endurance",
-      "heavy",
-    ];
-    // 102 kg on a cut, flat at the 1,870 floor (the case where rest days
-    // used to out-carb training days), plus roomier days and fat levels.
+  it("keeps the 1 g/kg carb floor, trading fat down no further", () => {
+    // 102 kg on a cut, from the 1,870 floor up, at several weekly fat levels:
+    // carbs never drop under 1 g/kg, and fat only leaves its weekly level
+    // (never its floor) when that is what makes room for them.
     for (const fat of [40, 70, 120]) {
       for (let dayKcal = 1870; dayKcal <= 3200; dayKcal += 110) {
-        const carbs = order.map(
-          (dayClass) =>
-            partitionDayMacros(
-              input({
-                dayKcal,
-                dayClass,
-                weightKg: 102,
-                proteinGrams: 204,
-                mean: { targetCalories: dayKcal, carbs: 150, fat },
-              }),
-            ).carbs,
+        const m = partitionDayMacros(
+          input({
+            dayKcal,
+            weightKg: 102,
+            proteinGrams: 204,
+            mean: { targetCalories: dayKcal, carbs: 150, fat },
+          }),
         );
-        for (let i = 1; i < carbs.length; i++) {
-          expect(carbs[i]).toBeGreaterThanOrEqual(carbs[i - 1]);
+        expect(m.carbs).toBeGreaterThanOrEqual(102);
+        expect(m.fat).toBeGreaterThanOrEqual(51); // 0.5 g/kg
+        if (m.fat < Math.round(fat / 5) * 5) {
+          expect(m.carbs).toBeLessThanOrEqual(115); // the 105 g floor + one fat step
         }
-        // Every non-heavy day gets the same split.
-        expect(new Set(carbs.slice(0, 4)).size).toBe(1);
-        expect(carbs[0]).toBeGreaterThanOrEqual(102);
       }
     }
   });
