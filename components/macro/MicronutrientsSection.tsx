@@ -10,6 +10,7 @@ import {
 import { useAiUsage } from "@/hooks/use-ai-usage";
 import { effectiveAge } from "@/lib/age";
 import { FEATURES } from "@/lib/billing/tiers";
+import { dayIndexFromIsoDate } from "@/lib/charts/geometry";
 import type { DailyLog, Supplement, SupplementIntake } from "@/lib/db";
 import {
   getProfile,
@@ -395,6 +396,8 @@ function NutrientBar({
               data={trend}
               height={180}
               yUnit={` ${meta.unit}`}
+              xType="day"
+              title={`${meta.label} per day`}
               yIncludeZero
               targetY={target}
               targetLabel={`Target ${target} ${meta.unit}`}
@@ -417,7 +420,11 @@ function trendPoints(
   for (const day of window) {
     const v = day.totals[nutrient];
     if (typeof v === "number") {
-      points.push({ x: dayIndex(day.date), y: v, label: shortLabel(day.date) });
+      points.push({
+        x: dayIndexFromIsoDate(day.date),
+        y: v,
+        label: shortLabel(day.date),
+      });
     }
   }
   return points;
@@ -426,10 +433,6 @@ function trendPoints(
 function parseLocalDate(d: string): Date {
   const [y, m, day] = d.split("-").map(Number);
   return new Date(y, m - 1, day);
-}
-
-function dayIndex(d: string): number {
-  return Math.floor(parseLocalDate(d).getTime() / 86_400_000);
 }
 
 function shortLabel(d: string): string {
