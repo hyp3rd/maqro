@@ -51,4 +51,16 @@ describe("DailyTotals remaining-kcal line", () => {
     expect(line).toBe("600 kcal under target");
     expect(line).not.toMatch(/today/i);
   });
+
+  it("a future day being planned ahead has kcal to plan", () => {
+    render(
+      <DailyTotals
+        calculatedValues={TARGET}
+        totalMacros={EATEN}
+        selectedDate="2026-06-12"
+        today="2026-06-10"
+      />,
+    );
+    expect(screen.getByRole("status").textContent).toBe("600 kcal to plan");
+  });
 });

@@ -25,7 +25,8 @@ interface DailyTotalsProps {
    *  target met" celebration only while viewing today — never when
    *  scrolling back to a past day that already crossed its target — and
    *  to word the remaining-kcal line ("left today" only makes sense for
-   *  today). `calculatedValues` is the DISPLAYED day's own target. */
+   *  today; a past day came in "under target"; a future day has kcal "to
+   *  plan"). `calculatedValues` is the DISPLAYED day's own target. */
   selectedDate: string;
   today: string;
 }
@@ -97,6 +98,8 @@ const DailyTotals: React.FC<DailyTotalsProps> = ({
   const showRemaining = targetCalories > 0 && consumedCalories > 0;
 
   const isToday = selectedDate === today;
+  // `YYYY-MM-DD` keys order lexicographically.
+  const isFuture = selectedDate > today;
   const goalReached = targetCalories > 0 && consumedCalories >= targetCalories;
   useGoalReachedCelebration(goalReached, isToday, today);
 
@@ -161,8 +164,13 @@ const DailyTotals: React.FC<DailyTotalsProps> = ({
                 {remainingCalories.toLocaleString()}
               </span>{" "}
               <span className="text-muted-foreground">
-                {/* A past day is closed: nothing is "left", it came in under. */}
-                {isToday ? "kcal left today" : "kcal under target"}
+                {/* Today has calories "left"; a past day is closed (it came
+                    in under); a future day is being planned ahead. */}
+                {isToday
+                  ? "kcal left today"
+                  : isFuture
+                    ? "kcal to plan"
+                    : "kcal under target"}
               </span>
             </>
           ) : remainingCalories === 0 ? (
