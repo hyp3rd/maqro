@@ -1,4 +1,5 @@
 import { CUISINES } from "@/components/macro/types";
+import { computeFastStatus, protocolHours } from "@/lib/fasting";
 import { describe, expect, it } from "vitest";
 import {
   getDemoMealLogs,
@@ -142,6 +143,44 @@ describe("getDemoProfile cuisine preferences", () => {
     for (const c of prefs) {
       expect(CUISINES as readonly string[]).toContain(c);
     }
+  });
+});
+
+describe("getDemoProfile fasting state", () => {
+  /** Local wall-clock instants on TODAY — the meals are stamped in local
+   *  time (12:15 / 14:30 / 16:45 / 19:30). */
+  const at = (h: number, m = 0) => new Date(2026, 4, 20, h, m).getTime();
+
+  /** Every food the demo log says was eaten by `now`. */
+  const eatenAt = (now: number): number[] =>
+    getDemoMealLogs(TODAY, now)
+      .flatMap((log) => log.meals.flatMap((meal) => meal.foods))
+      .map((food) => food.loggedAt)
+      .filter((t): t is number => t !== undefined);
+
+  it.each([
+    ["before today's first meal", at(9), "fasting"],
+    ["mid eating window (the audit's 5:34 PM)", at(17, 34), "eating"],
+    ["after today's last food", at(21), "fasting"],
+  ] as const)("%s: the fast agrees with the seeded meals", (_, now, phase) => {
+    const fasting = getDemoProfile(now).fasting;
+    expect(fasting?.enabled).toBe(true);
+    const start = fasting?.fastStartedAt ?? null;
+    expect(start).not.toBeNull();
+    const status = computeFastStatus({
+      fastStartedAt: start,
+      fastingHours: protocolHours(fasting),
+      now,
+    });
+    expect(status.phase).toBe(phase);
+
+    const eaten = eatenAt(now);
+    // The fast starts when the last food before it was logged...
+    expect(eaten).toContain(start);
+    // ...and nothing is eaten while it runs (up to now, or until the fast
+    // reached its target and the eating window opened).
+    const fastedUntil = Math.min(now, status.fastEndsAt!);
+    expect(eaten.filter((t) => t > start! && t < fastedUntil)).toEqual([]);
   });
 });
 

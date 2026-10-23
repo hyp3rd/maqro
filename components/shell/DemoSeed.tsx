@@ -1,12 +1,12 @@
 "use client";
 
 import {
+  dateKey,
   getProfile,
   saveDailyLog,
   saveDemoProfile,
   saveWeightEntry,
   setWaterTotal,
-  todayKey,
 } from "@/lib/db";
 import {
   DEMO_FLAG_KEY,
@@ -72,20 +72,24 @@ export function DemoSeed() {
           return;
         }
 
-        const today = todayKey();
+        // One instant for the whole dataset: the profile's running fast
+        // is derived from which of today's meals are already eaten, so
+        // both must be built against the same `now`.
+        const now = Date.now();
+        const today = dateKey(new Date(now));
         // `saveDemoProfile` (not `saveProfile`) sets an `_demoSeeded`
         // flag on the IDB profile row — a durable signal so a private
         // window or quota-exceeded localStorage write doesn't drop the
         // `DEMO_FLAG_KEY` and let demo data leak into the signed-in
         // user's account on the next sync.
-        await saveDemoProfile(getDemoProfile());
-        for (const log of getDemoMealLogs(today)) {
+        await saveDemoProfile(getDemoProfile(now));
+        for (const log of getDemoMealLogs(today, now)) {
           await saveDailyLog(log.date, log.meals);
         }
-        for (const w of getDemoWeightHistory(today)) {
+        for (const w of getDemoWeightHistory(today, now)) {
           await saveWeightEntry(w.date, w.kg);
         }
-        for (const wi of getDemoWaterLogs(today)) {
+        for (const wi of getDemoWaterLogs(today, now)) {
           await setWaterTotal(wi.date, wi.ml);
         }
 
