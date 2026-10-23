@@ -4,6 +4,7 @@
 import type { Meal, PersonalInfo } from "@/components/macro/types";
 import { IDBFactory } from "fake-indexeddb";
 import "fake-indexeddb/auto";
+import { openDB } from "idb";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 async function freshDb() {
@@ -537,6 +538,40 @@ describe("clearAllStores", () => {
     expect(await db.listCustomFoods()).toHaveLength(0);
     expect(await db.listMealTemplates()).toHaveLength(0);
     expect(await db.listRecipes()).toHaveLength(0);
+  });
+
+  it("empties every object store the live database holds", async () => {
+    const db = await freshDb();
+    // Any call opens the module's connection, which runs the upgrade chain.
+    await db.listCustomFoods();
+    // A second connection at the current version reads the store list the
+    // upgrade actually produced, so a store added later is covered without
+    // editing this test.
+    const raw = await openDB("maqro");
+    try {
+      const storeNames = Array.from(raw.objectStoreNames);
+      expect(storeNames).toContain("mealSchedules");
+      for (const name of storeNames) {
+        const store = raw.transaction(name, "readwrite").store;
+        const { keyPath } = store;
+        if (typeof keyPath !== "string") {
+          throw new Error(`store ${name} has an unexpected keyPath`);
+        }
+        await store.put({ [keyPath]: `seed-${name}` });
+        expect(await store.count()).toBe(1);
+      }
+
+      await db.clearAllStores();
+
+      const leftovers: Record<string, number> = {};
+      for (const name of storeNames) {
+        const count = await raw.count(name);
+        if (count > 0) leftovers[name] = count;
+      }
+      expect(leftovers).toEqual({});
+    } finally {
+      raw.close();
+    }
   });
 
   it("is idempotent - running on an already-empty DB is a no-op", async () => {
