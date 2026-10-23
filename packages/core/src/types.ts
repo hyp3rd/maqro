@@ -281,7 +281,8 @@ export type TrainingIntensity = "light" | "moderate" | "hard";
 
 /** One weekday in the training template. `time` is the planned local start
  *  (`HH:MM`, 24 h) and `durationMin` the planned length; both optional, and
- *  only `durationMin` (long endurance) affects the target today. */
+ *  only `durationMin` affects the target today (a long endurance session,
+ *  or a long `light` one — see `classifyTrainingDay`). */
 export type TrainingDay = {
   type: TrainingType;
   intensity?: TrainingIntensity;

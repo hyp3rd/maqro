@@ -52,13 +52,17 @@ export type TrainingDayClass =
 
 /** An endurance session longer than this (minutes) is "long endurance". */
 export const LONG_ENDURANCE_MIN = 60;
+/** A session longer than this (minutes) is never a `light` day. */
+export const NEVER_LIGHT_OVER_MIN = 90;
 
 /** Relative day weights per preset, normalized to the template week's mean
  *  before use (so only their ratios matter). Modest is the default;
  *  Pronounced is opt-in. Practice-based, not trial-based: MacroFactor's
  *  coached calorie shifts ("modest by default"), Leangains / RippedBody
  *  training- vs rest-day targets, and RP Diet Coach's per-weekday templates
- *  (its "Diet Setup" docs). */
+ *  (its "Diet Setup" docs). A long endurance day counts at least as heavy
+ *  (owner decision), so it weighs the same as `heavy`; it stays a class of
+ *  its own so the day can be told apart from a heavy lifting day. */
 export const CYCLING_WEIGHTS: Record<
   Exclude<CyclingPreset, "off">,
   Record<TrainingDayClass, number>
@@ -68,14 +72,14 @@ export const CYCLING_WEIGHTS: Record<
     light: 1.0,
     training: 1.05,
     heavy: 1.15,
-    endurance: 1.1,
+    endurance: 1.15,
   },
   pronounced: {
     rest: 0.8,
     light: 1.05,
     training: 1.1,
     heavy: 1.25,
-    endurance: 1.2,
+    endurance: 1.25,
   },
 };
 
@@ -200,28 +204,30 @@ export function normalizeProteinSetting(raw: unknown): ProteinSetting {
 
 /** The session → day-class table. First matching row wins:
  *
- *  | # | session                                   | class       |
- *  |---|-------------------------------------------|-------------|
- *  | 1 | type `rest` (any intensity)               | `rest`      |
- *  | 2 | intensity `light` (any type)              | `light`     |
- *  | 3 | `endurance` longer than 60 min            | `endurance` |
- *  | 4 | intensity `hard` (any type)               | `heavy`     |
- *  | 5 | `lower` with no intensity ("leg day")     | `heavy`     |
- *  | 6 | everything else (moderate / unspecified)  | `training`  |
+ *  | # | session                                        | class       |
+ *  |---|------------------------------------------------|-------------|
+ *  | 1 | type `rest` (any intensity or duration)        | `rest`      |
+ *  | 2 | `endurance` longer than 60 min (any intensity) | `endurance` |
+ *  | 3 | intensity `light`, up to 90 min                | `light`     |
+ *  | 4 | intensity `hard` (any type)                    | `heavy`     |
+ *  | 5 | `lower` with no intensity ("leg day")          | `heavy`     |
+ *  | 6 | everything else (moderate / unspecified, and   | `training`  |
+ *  |   | a `light` session longer than 90 min)          |             |
  *
- *  Only endurance uses the duration: over 60 min is where the carbohydrate
- *  guidance changes (Thomas et al. 2016, the joint sports-nutrition
- *  position stand). A long hard endurance session is `endurance`, a short
- *  hard one `heavy`. */
+ *  Duration-aware (owner decision): an endurance session over 60 min counts
+ *  at least as heavy (`endurance` weighs the same as `heavy`), whatever its
+ *  intensity — over 60 min is where the carbohydrate guidance changes
+ *  (Thomas et al. 2016, the joint sports-nutrition position stand); any
+ *  session over 90 min is never `light` (at least `training`); a shorter
+ *  session, or one with no duration, keeps its intensity-based class. */
 export function classifyTrainingDay(day: TrainingDay): TrainingDayClass {
   if (day.type === "rest") return "rest";
-  if (day.intensity === "light") return "light";
-  if (
-    day.type === "endurance" &&
-    day.durationMin !== undefined &&
-    day.durationMin > LONG_ENDURANCE_MIN
-  ) {
+  const minutes = day.durationMin ?? 0;
+  if (day.type === "endurance" && minutes > LONG_ENDURANCE_MIN) {
     return "endurance";
+  }
+  if (day.intensity === "light" && minutes <= NEVER_LIGHT_OVER_MIN) {
+    return "light";
   }
   if (day.intensity === "hard") return "heavy";
   if (day.type === "lower" && day.intensity === undefined) return "heavy";

@@ -375,7 +375,7 @@ describe("targetsForDate — training days", () => {
     expect(week.days.map((d) => d.date)).toEqual(MOCKUP_DATES);
     // Mon Tue Wed Thu Fri Sat Sun
     expect(week.days.map((d) => d.targetCalories)).toEqual([
-      2300, 2000, 2500, 1950, 2300, 2400, 1950,
+      2300, 1950, 2500, 1950, 2250, 2500, 1950,
     ]);
     expect(week.totalCalories).toBe(15400); // 7 × 2,200, nothing added on top
     expect(week.days.map((d) => d.training?.dayClass)).toEqual([
@@ -392,7 +392,7 @@ describe("targetsForDate — training days", () => {
     expect(week.days.map((d) => d.protein)).toEqual(Array(7).fill(160));
     expect(week.days.map((d) => d.fat)).toEqual(Array(7).fill(85));
     expect(week.days.map((d) => d.carbs)).toEqual([
-      225, 150, 275, 135, 225, 250, 135,
+      225, 135, 275, 135, 210, 275, 135,
     ]);
     for (const d of week.days) {
       // The weekly energy balance is untouched.

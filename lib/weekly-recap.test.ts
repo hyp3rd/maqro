@@ -231,11 +231,12 @@ describe("computeWeeklyRecap", () => {
     const r = computeWeeklyRecap(logs, [], targetFor, "2026-10-25");
     expect(r.daysLogged).toBe(7);
     expect(r.adherenceDays).toBe(7);
-    // The same eating scored against the flat weekly mean misses the two
-    // 1,950 rest days and the 2,500 heavy day: planned cycling would read
+    // The same eating scored against the flat weekly mean misses the three
+    // 1,950 rest days and the two 2,500 days (the heavy Wednesday and the
+    // long-run Saturday, which counts as heavy): planned cycling would read
     // as "off plan".
     expect(
       computeWeeklyRecap(logs, [], flat(2200), "2026-10-25").adherenceDays,
-    ).toBe(4);
+    ).toBe(2);
   });
 });

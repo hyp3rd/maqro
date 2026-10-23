@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CYCLING_WEIGHTS,
   type DayMacroInput,
   type TrainingDayClass,
   classifyTrainingDay,
@@ -66,8 +67,18 @@ describe("classifyTrainingDay", () => {
       "endurance",
     ],
     [
-      "long endurance, light",
+      "long endurance, light → still at least heavy",
+      { type: "endurance", intensity: "light", durationMin: 75 },
+      "endurance",
+    ],
+    [
+      "very long endurance, light → still at least heavy",
       { type: "endurance", intensity: "light", durationMin: 120 },
+      "endurance",
+    ],
+    [
+      "short endurance, light keeps its intensity class",
+      { type: "endurance", intensity: "light", durationMin: 45 },
       "light",
     ],
     [
@@ -80,6 +91,31 @@ describe("classifyTrainingDay", () => {
       { type: "upper", intensity: "moderate", durationMin: 120 },
       "training",
     ],
+    [
+      "light 90 min keeps its intensity class",
+      { type: "upper", intensity: "light", durationMin: 90 },
+      "light",
+    ],
+    [
+      "light over 90 min is never light → training",
+      { type: "sport", intensity: "light", durationMin: 91 },
+      "training",
+    ],
+    [
+      "hard over 90 min stays heavy",
+      { type: "fullBody", intensity: "hard", durationMin: 120 },
+      "heavy",
+    ],
+    [
+      "lower, unspecified, over 90 min stays heavy",
+      { type: "lower", durationMin: 120 },
+      "heavy",
+    ],
+    [
+      "rest is rest whatever the duration",
+      { type: "rest", durationMin: 120 },
+      "rest",
+    ],
   ];
   for (const [name, day, cls] of rows) {
     it(name, () => {
@@ -89,6 +125,16 @@ describe("classifyTrainingDay", () => {
 
   it("classifies the mockup week", () => {
     expect(MOCKUP_WEEK.map(classifyTrainingDay)).toEqual(MOCKUP_CLASSES);
+  });
+
+  it("a long endurance day weighs at least as much as a heavy day", () => {
+    for (const preset of ["modest", "pronounced"] as const) {
+      const w = CYCLING_WEIGHTS[preset];
+      expect(w.endurance).toBeGreaterThanOrEqual(w.heavy);
+      expect(w.heavy).toBeGreaterThan(w.training);
+      expect(w.training).toBeGreaterThan(w.light);
+      expect(w.light).toBeGreaterThan(w.rest);
+    }
   });
 });
 
@@ -261,9 +307,10 @@ describe("distributeWeekCalories", () => {
       cycling: "modest",
       floorKcal: 1780,
     });
-    // Sun Mon Tue Wed Thu Fri Sat. Naive per-day rounding gives 15,350; the
-    // largest remainder hands the missing 50 to the first rest day (Tue).
-    expect(days).toEqual([1950, 2300, 2000, 2500, 1950, 2300, 2400]);
+    // Sun Mon Tue Wed Thu Fri Sat. The long endurance Saturday weighs as
+    // much as the heavy Wednesday. Naive per-day rounding gives 15,450; the
+    // largest remainder leaves the extra 50 off the later training day (Fri).
+    expect(days).toEqual([1950, 2300, 1950, 2500, 1950, 2250, 2500]);
     expect(sum(days)).toBe(15400);
   });
 
