@@ -245,6 +245,27 @@ describe("dayTicks", () => {
     expect(t.map((x) => x.label)).toEqual(["2026", "Jul"]);
   });
 
+  it("keeps the calendar ticks of a range that crosses a year, at any span", () => {
+    // 364 days: under a year, but across one. Its ends would read
+    // "Oct 24 | Apr 24 | Oct 23" - neighbouring days, in the wrong order.
+    const t = dayTicks(
+      dayIndexFromIsoDate("2025-10-24"),
+      dayIndexFromIsoDate("2026-10-23"),
+      atMost(3),
+      "en-US",
+    );
+    expect(t.map((x) => x.label)).toEqual(["2026", "Jul"]);
+    // A fortnight over New Year keeps its two Mondays as well.
+    expect(
+      dayTicks(
+        dayIndexFromIsoDate("2025-12-25"),
+        dayIndexFromIsoDate("2026-01-07"),
+        atMost(2),
+        "en-US",
+      ).map((x) => x.label),
+    ).toEqual(["Dec 29", "Jan 5"]);
+  });
+
   it("labels the first day alone when nothing fits", () => {
     expect(dayTicks(oct(1), oct(30), () => false, "en-US")).toEqual([
       { day: oct(1), label: "Oct 1" },

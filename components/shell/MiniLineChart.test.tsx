@@ -216,6 +216,41 @@ describe("MiniLineChart axes", () => {
     },
   );
 
+  /** The x-axis labels: the chart's centred text (these charts have no
+   *  target, so no bar overshoot labels). */
+  function xLabels(container: HTMLElement): string[] {
+    return [
+      ...svg(container).querySelectorAll('text[text-anchor="middle"]'),
+    ].map((t) => t.textContent ?? "");
+  }
+
+  /** A day a week of calories over 364 days, 2025-10-24 to 2026-10-23:
+   *  under a year, but across one. */
+  const yearAcross: LinePoint[] = Array.from({ length: 53 }, (_, i) => ({
+    x: dayIndexFromIsoDate("2025-10-24") + i * 7,
+    y: 1800 + (i % 5) * 100,
+  }));
+
+  it("never dates the ends of a range that crosses a year at 200px", () => {
+    for (const variant of ["line", "bar"] as const) {
+      const { container, unmount } = render(
+        <MiniLineChart
+          data={yearAcross}
+          xType="day"
+          variant={variant}
+        />,
+      );
+      resizeAll(200);
+      // Not "Oct 24 | Apr 24 | Oct 23": the year-aware calendar ticks.
+      expect({ variant, labels: xLabels(container) }).toEqual({
+        variant,
+        labels: ["2026", "Jul"],
+      });
+      unmount();
+      FakeResizeObserver.all = [];
+    }
+  });
+
   it("keeps the date labels evenly stepped at every width", () => {
     // Starts on a one-digit day ("Oct 1") but most labels have two digits.
     const month: LinePoint[] = Array.from({ length: 31 }, (_, i) => ({
