@@ -494,6 +494,42 @@ describe("useUser — SIGNED_IN from storage is still checked with the server", 
     expect(readLastKnownUserId()).toBeNull();
   });
 
+  it("an unverified session re-delivered by SIGNED_IN is checked with the server", async () => {
+    // Resolved offline with an unexpired token: shown, but never verified.
+    // Another tab then broadcasts the same session with no check in flight
+    // here — that is still no verdict from the server, so it is asked.
+    writeLastKnownUserId("u1");
+    const { result, releaseGetUser, emit, answerGetUserWith, getUser } =
+      await startWith(SESSION);
+    await act(async () => releaseGetUser(offlineGetUser));
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+    expect(result.current.user).toBe(USER);
+    expect(getUser).toHaveBeenCalledTimes(1);
+
+    answerGetUserWith(bannedGetUser);
+    emit("SIGNED_IN", SESSION);
+    await waitFor(() => expect(getUser).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(result.current.user).toBeNull());
+    expect(readLastKnownUserId()).toBeNull();
+  });
+
+  it.each(["TOKEN_REFRESHED", "USER_UPDATED"] as const)(
+    "%s carries a session the server just issued: it verifies without another check",
+    async (event) => {
+      const { result, releaseGetUser, emit, getUser } =
+        await startWith(SESSION);
+      await act(async () => releaseGetUser(offlineGetUser));
+      await waitFor(() => expect(result.current.isLoaded).toBe(true));
+
+      emit(event, SESSION);
+      expect(result.current.user).toBe(USER);
+      expect(readLastKnownUserId()).toBe("u1");
+      // Verified: neither the event nor a later 'online' asks the server.
+      await goOnline();
+      expect(getUser).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it("a verified session re-delivered on tab focus is not checked again", async () => {
     const { result, releaseGetUser, emit, getUser } = await startWith(SESSION);
     await act(async () =>
