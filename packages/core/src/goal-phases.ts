@@ -42,6 +42,31 @@ function daysBetween(a: string, b: string): number {
   return Math.round((bms - ams) / DAY_MS);
 }
 
+const DATE_KEY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** Whether `phase` has a real calendar window: a `startDate` that is an
+ *  actual local `YYYY-MM-DD` day and a positive, finite `durationWeeks`.
+ *  Phases synced from an older client can lack either. String comparison
+ *  cannot be trusted for them: `"2026-06-01T08:00:00"` sorts before later
+ *  dates while its end computes as `"NaN-NaN-NaN"`, which sorts after every
+ *  date, so it would cover every day from its start on. Every schedule query
+ *  below skips such phases. */
+function hasValidWindow(phase: GoalPhase): boolean {
+  if (!Number.isFinite(phase.durationWeeks) || phase.durationWeeks <= 0) {
+    return false;
+  }
+  const match = DATE_KEY.exec(phase.startDate);
+  if (match === null) return false;
+  const [y, m, d] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const date = new Date(y, m - 1, d);
+  // Rejects an out-of-range month/day (2026-02-30 rolls over to March).
+  return (
+    date.getFullYear() === y &&
+    date.getMonth() === m - 1 &&
+    date.getDate() === d
+  );
+}
+
 /** The `computeMacros` goal direction a phase kind maps to. */
 export function phaseGoal(kind: GoalPhaseKind): PersonalInfo["goal"] {
   if (kind === "cut") return "lose";
@@ -67,7 +92,8 @@ export function sortPhases(phases: GoalPhase[]): GoalPhase[] {
 }
 
 /** The phase whose `[startDate, end)` window contains `today`; on overlap the
- *  latest-starting one wins. `null` when none cover today. */
+ *  latest-starting one wins. `null` when none cover today. A phase without a
+ *  valid window is never active. */
 export function activePhase(
   phases: GoalPhase[] | undefined,
   today: string,
@@ -75,6 +101,7 @@ export function activePhase(
   if (!phases) return null;
   let best: GoalPhase | null = null;
   for (const phase of phases) {
+    if (!hasValidWindow(phase)) continue;
     if (phase.startDate <= today && today < phaseEndDate(phase)) {
       if (best === null || phase.startDate > best.startDate) best = phase;
     }
@@ -82,7 +109,8 @@ export function activePhase(
   return best;
 }
 
-/** The soonest phase that starts strictly after `today`. */
+/** The soonest phase that starts strictly after `today` (phases without a
+ *  valid window are skipped). */
 export function nextPhase(
   phases: GoalPhase[] | undefined,
   today: string,
@@ -90,6 +118,7 @@ export function nextPhase(
   if (!phases) return null;
   let best: GoalPhase | null = null;
   for (const phase of phases) {
+    if (!hasValidWindow(phase)) continue;
     if (phase.startDate > today) {
       if (best === null || phase.startDate < best.startDate) best = phase;
     }
@@ -139,8 +168,19 @@ export type PhaseProgress = {
   pct: number;
 };
 
-/** How far `today` is through `phase` (clamped to the phase window). */
+/** No progress: what a phase without a valid window reports. */
+const NO_PROGRESS: PhaseProgress = {
+  weekOf: 0,
+  totalWeeks: 0,
+  daysElapsed: 0,
+  daysRemaining: 0,
+  pct: 0,
+};
+
+/** How far `today` is through `phase` (clamped to the phase window). A phase
+ *  without a valid window has no progress (all zeros) rather than `NaN`s. */
 export function phaseProgress(phase: GoalPhase, today: string): PhaseProgress {
+  if (!hasValidWindow(phase)) return { ...NO_PROGRESS };
   const totalDays = phase.durationWeeks * 7;
   const elapsed = clamp(daysBetween(phase.startDate, today), 0, totalDays);
   return {
@@ -252,8 +292,9 @@ export function presetLeanBulk(today: string, weightKg: number): GoalPhase[] {
 }
 
 /** All phases overlapping the window `[startDate, endDate)` (both
- *  `YYYY-MM-DD`), ordered oldest-first. Drives the phase-boundary markers on
- *  the Trends charts and scopes the per-phase TDEE read. */
+ *  `YYYY-MM-DD`), ordered oldest-first; phases without a valid window are
+ *  skipped. Drives the phase-boundary markers on the Trends charts and scopes
+ *  the per-phase TDEE read. */
 export function phasesInWindow(
   phases: GoalPhase[] | undefined,
   startDate: string,
@@ -261,7 +302,12 @@ export function phasesInWindow(
 ): GoalPhase[] {
   if (!phases) return [];
   return sortPhases(
-    phases.filter((p) => p.startDate < endDate && phaseEndDate(p) > startDate),
+    phases.filter(
+      (p) =>
+        hasValidWindow(p) &&
+        p.startDate < endDate &&
+        phaseEndDate(p) > startDate,
+    ),
   );
 }
 
@@ -277,7 +323,8 @@ export type PhaseTdee = { phase: GoalPhase; tdee: AdaptiveTdee };
  *  (lower-confidence) estimate. Oldest-first; the caller picks the active
  *  phase. Phases with too little data come back with `observedTdee: null`
  *  (confidence "none") rather than being dropped, so the active phase always
- *  appears. */
+ *  appears. Phases without a valid window have no date range to scope to and
+ *  are skipped. */
 export function inferAdaptiveTdeePerPhase(opts: {
   weights: WeightEntry[];
   intake: { date: string; calories: number }[];
@@ -292,7 +339,7 @@ export function inferAdaptiveTdeePerPhase(opts: {
     a.date < b.date ? -1 : a.date > b.date ? 1 : 0,
   );
   const started = sortPhases(
-    opts.phases.filter((p) => p.startDate <= opts.today),
+    opts.phases.filter((p) => hasValidWindow(p) && p.startDate <= opts.today),
   );
   return started.map((phase) => {
     const end = phaseEndDate(phase);

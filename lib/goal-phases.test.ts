@@ -430,3 +430,66 @@ describe("inferAdaptiveTdeePerPhase", () => {
     ).toEqual([]);
   });
 });
+
+describe("phases without a valid window", () => {
+  // Legacy/synced phases can carry a blank or malformed start, or a
+  // non-positive duration. A start like "2026-06-01T08:00:00" compares below
+  // later dates while its end computes as "NaN-NaN-NaN" (above every date),
+  // so without a guard it "covers" every day from its start on.
+  const invalid: GoalPhase[] = [
+    phase({ id: "blank", startDate: "" }),
+    phase({ id: "datetime", startDate: "2026-06-01T08:00:00" }),
+    phase({ id: "garbage", startDate: "not-a-date" }),
+    phase({ id: "no-day", startDate: "2026-06" }),
+    phase({ id: "rollover", startDate: "2026-02-30" }),
+    phase({ id: "zero", startDate: "2026-06-01", durationWeeks: 0 }),
+    phase({ id: "negative", startDate: "2026-06-01", durationWeeks: -2 }),
+    phase({ id: "nan", startDate: "2026-06-01", durationWeeks: Number.NaN }),
+  ];
+  const valid = phase({ id: "cut", startDate: "2026-06-01", durationWeeks: 4 });
+
+  it.each(invalid.map((p) => [p.id, p] as const))(
+    "%s is never active, next, in a window, or nudged",
+    (_id, p) => {
+      expect(activePhase([p], "2026-06-10")).toBeNull();
+      expect(activePhase([p], "1999-01-01")).toBeNull();
+      expect(nextPhase([p], "1999-01-01")).toBeNull();
+      expect(phasesInWindow([p], "1999-01-01", "2999-01-01")).toEqual([]);
+      expect(dietBreakNudge([{ ...p, kind: "cut" }], "2027-06-10")).toBeNull();
+      expect(
+        effectiveGoal(profile({ goalPhases: [p] }), "2026-06-10", {
+          phasesEnabled: true,
+        }).phase,
+      ).toBeNull();
+    },
+  );
+
+  it.each(invalid.map((p) => [p.id, p] as const))(
+    "%s reports no progress instead of NaN",
+    (_id, p) => {
+      expect(phaseProgress(p, "2026-06-10")).toEqual({
+        weekOf: 0,
+        totalWeeks: 0,
+        daysElapsed: 0,
+        daysRemaining: 0,
+        pct: 0,
+      });
+    },
+  );
+
+  it("never shadows a valid phase, whatever the order", () => {
+    expect(activePhase([...invalid, valid], "2026-06-10")?.id).toBe("cut");
+    expect(activePhase([valid, ...invalid], "2026-06-10")?.id).toBe("cut");
+    expect(nextPhase([...invalid, valid], "2026-05-01")?.id).toBe("cut");
+  });
+
+  it("is left out of the per-phase TDEE read", () => {
+    const out = inferAdaptiveTdeePerPhase({
+      weights: [],
+      intake: [],
+      phases: [...invalid, valid],
+      today: "2026-06-10",
+    });
+    expect(out.map((p) => p.phase.id)).toEqual(["cut"]);
+  });
+});
