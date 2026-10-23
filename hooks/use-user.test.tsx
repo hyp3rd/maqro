@@ -89,9 +89,15 @@ function fakeAuthClient(
   };
 }
 
-const supabase = vi.hoisted(() => ({ client: null as unknown }));
+const supabase = vi.hoisted(() => ({
+  client: null as unknown,
+  /** The user id of the session auth-js keeps in storage (see
+   *  lib/supabase/stored-session.ts), or `null` for none. */
+  storedSessionUserId: null as string | null,
+}));
 vi.mock("@/lib/supabase/client", () => ({
   getSupabaseBrowser: () => supabase.client,
+  readStoredSessionUserId: () => Promise.resolve(supabase.storedSessionUserId),
 }));
 const reportClientError = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/error-reporter", () => ({ reportClientError }));
@@ -124,6 +130,7 @@ const fetchMock =
 
 beforeEach(() => {
   window.localStorage.clear();
+  supabase.storedSessionUserId = null;
   reportClientError.mockReset();
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
@@ -149,9 +156,11 @@ async function startWith(
   return { ...hook, ...fake };
 }
 
-/** Opened offline after the access token expired, with `u1` recorded. */
+/** Opened offline after u1's access token expired (the expired session is
+ *  still stored), with `u1` recorded. */
 async function startExpiredOffline() {
   writeLastKnownUserId("u1");
+  supabase.storedSessionUserId = "u1";
   const started = await startWith(null, expiredOfflineSession);
   await act(async () => started.releaseGetUser(offlineGetUser));
   await waitFor(() => expect(started.result.current.isLoaded).toBe(true));
@@ -241,6 +250,35 @@ describe("useUser — offline open after the access token expired", () => {
     await waitFor(() => expect(result.current.isLoaded).toBe(true));
     expect(result.current.localUserId).toBeNull();
     expect(result.current.isOfflineUnverified).toBe(false);
+  });
+
+  it("a record naming another account than the stored session is ignored and cleared", async () => {
+    // An older bundle (mid service-worker rollover) signed u1 out and u2 in
+    // without updating the record, then u2's token expired offline.
+    writeLastKnownUserId("u1");
+    supabase.storedSessionUserId = "u2";
+    const { result, releaseGetUser } = await startWith(
+      null,
+      expiredOfflineSession,
+    );
+    await act(async () => releaseGetUser(offlineGetUser));
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+    expect(result.current.localUserId).toBeNull();
+    expect(result.current.isOfflineUnverified).toBe(false);
+    expect(readLastKnownUserId()).toBeNull();
+  });
+
+  it("with no readable stored session the record is not used", async () => {
+    writeLastKnownUserId("u1");
+    const { result, releaseGetUser } = await startWith(
+      null,
+      expiredOfflineSession,
+    );
+    await act(async () => releaseGetUser(offlineGetUser));
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+    expect(result.current.localUserId).toBeNull();
+    expect(result.current.isOfflineUnverified).toBe(false);
+    expect(readLastKnownUserId()).toBeNull();
   });
 
   it("a late INITIAL_SESSION(null) does not undo the resolved state", async () => {
@@ -441,6 +479,7 @@ describe("offline start: cached Pro tier and phase target", () => {
   it("after the access token expired, the last-known user keeps the 1,900 target without calling the server", async () => {
     writeCachedTier("u1", "pro");
     writeLastKnownUserId("u1");
+    supabase.storedSessionUserId = "u1";
     const fake = fakeAuthClient(null, expiredOfflineSession);
     supabase.client = fake.client;
     const { result } = renderHook(() => useTargets(PROFILE, TODAY, TODAY), {

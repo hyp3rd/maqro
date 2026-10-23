@@ -6,7 +6,10 @@ import {
   writeLastKnownUserId,
 } from "@/lib/auth/last-known-user";
 import { reportClientError } from "@/lib/error-reporter";
-import { getSupabaseBrowser } from "@/lib/supabase/client";
+import {
+  getSupabaseBrowser,
+  readStoredSessionUserId,
+} from "@/lib/supabase/client";
 import { useEffect, useState } from "react";
 import {
   isAuthRetryableFetchError,
@@ -63,7 +66,8 @@ const SIGNED_OUT: Identity = { user: null, offlineUserId: null };
  *  When the access token has also expired, `getSession()` needs a refresh
  *  that can't happen offline: it reports no session, with the same retryable
  *  error. Only then is the last-known record used — as `offlineUserId`, with
- *  `user` left `null`, because there is no token to act on.
+ *  `user` left `null`, because there is no token to act on — and only when
+ *  it names the user of that stored session (`matchingLastKnownUserId`).
  *
  *  Any other outcome (no stored session, a missing or revoked one) is a
  *  definite "signed out". */
@@ -79,11 +83,29 @@ async function resolveUser(supabase: SupabaseClient): Promise<Resolution> {
   if (localError !== null && isAuthRetryableFetchError(localError)) {
     return {
       user: null,
-      offlineUserId: readLastKnownUserId(),
+      offlineUserId: await matchingLastKnownUserId(),
       unverified: true,
     };
   }
   return { ...SIGNED_OUT, unverified: false };
+}
+
+/** The last-known record, if it names the user of the session auth-js keeps
+ *  in storage (read without a refresh, so also when it has expired);
+ *  otherwise `null`, and the caller's signed-out answer then clears the
+ *  record (`syncLastKnownUser`).
+ *
+ *  The record can be stale: during a service-worker rollover an older
+ *  bundle — which doesn't maintain the record — can sign out and sign in as
+ *  another account, leaving the record naming the previous one. Showing
+ *  that account's data for the new session would be wrong, so a record that
+ *  doesn't match is never used. With no readable stored session there is
+ *  nothing it can be checked against, so it isn't used either (the session
+ *  may just have been signed out, e.g. in another tab). */
+async function matchingLastKnownUserId(): Promise<string | null> {
+  const recorded = readLastKnownUserId();
+  if (recorded === null) return null;
+  return (await readStoredSessionUserId()) === recorded ? recorded : null;
 }
 
 /** Keep the last-known record in step with what the hook reports: a session

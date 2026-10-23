@@ -29,6 +29,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/supabase/client", () => ({
   getSupabaseBrowser: () => mocks.client,
+  // The expired session auth-js still keeps in storage belongs to u1.
+  readStoredSessionUserId: () => Promise.resolve("u1"),
 }));
 vi.mock("@/lib/sync", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/sync")>()),

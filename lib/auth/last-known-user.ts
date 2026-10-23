@@ -10,10 +10,12 @@
  *
  *  What it is NOT: a credential. It holds only the user id — no token, no
  *  email, nothing that can authenticate a request. `useUser` reads it only
- *  when the auth server cannot be reached AND no usable session exists, and
- *  reports that state as `isOfflineUnverified` with `user: null`, so sync,
- *  AI, billing and account actions (which key off `user`) stay off. Every
- *  server route keeps re-authenticating the request itself.
+ *  when the auth server cannot be reached AND no usable session exists, uses
+ *  it only if it names the user of the (expired) session auth-js still keeps
+ *  in storage — an older bundle may have switched accounts without updating
+ *  it — and reports that state as `isOfflineUnverified` with `user: null`,
+ *  so sync, AI, billing and account actions (which key off `user`) stay
+ *  off. Every server route keeps re-authenticating the request itself.
  *
  *  Lifecycle: written whenever `useUser` observes a session (so an account
  *  switch replaces it); cleared when the server says the session is gone, on
