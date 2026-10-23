@@ -978,7 +978,7 @@ function EngagementSection({
             ? "Nothing logged yet this week."
             : targetCalories === 0
               ? `${recap.daysLogged} day${recap.daysLogged === 1 ? "" : "s"} logged.`
-              : `${adherencePct}% of those within ±10% of ${targetCalories} kcal.`}
+              : `${adherencePct}% of those within ±10% of each day's target.`}
         </p>
       </div>
 
