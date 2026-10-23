@@ -81,7 +81,7 @@ export function UserMenu({
   const safeSignOut = useSafeSignOut(async () => {
     const supabase = getSupabaseBrowser();
     if (!supabase) return;
-    await signOutAndClearLocal(supabase);
+    await signOutAndClearLocal(supabase, user?.id);
     window.location.assign("/login");
   });
 

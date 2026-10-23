@@ -36,6 +36,23 @@ describe("signOutAndClearLocal", () => {
     expect(readLastKnownUserId()).toBeNull();
   });
 
+  it("forgets the account it is given even when the last-known record names another", async () => {
+    // The record can be stale (an older bundle switched accounts without
+    // updating it); the caller's signed-in user is the account signing out.
+    writeCachedTier("u1", "pro");
+    writeCachedTier("u2", "plus");
+    writeLastKnownUserId("u2");
+    const supabase = {
+      auth: { signOut: vi.fn(async () => ({ error: null })) },
+    } as unknown as SupabaseClient;
+
+    await signOutAndClearLocal(supabase, "u1");
+
+    expect(readCachedTier("u1")).toBeNull();
+    expect(readCachedTier("u2")).toBe("plus");
+    expect(readLastKnownUserId()).toBeNull();
+  });
+
   it("forgets the last-known tier before the session is torn down", async () => {
     writeCachedTier("u1", "pro");
     writeLastKnownUserId("u1");

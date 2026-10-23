@@ -10,13 +10,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  *  cached tier and the last-known user — so the next user on this device is
  *  never shown as the previous one, and the signed-out account is not gated
  *  on a tier the server no longer vouches for. The account is `userId` when
- *  the caller knows it (forced sign-out is scoped to one), else the one the
- *  last-known record names (whose local data this device holds) — a record
- *  that can be stale, so it is only the fallback. Other accounts' cached
- *  tiers stay, since each applies only to its own user. With neither, whose
- *  tier it is cannot be told, so every cached tier is forgotten. Used by
- *  sign-out and forced sign-out. Never throws (both records degrade to
- *  "absent" on storage errors). */
+ *  the caller knows it (the signed-in user signing out, or the account a
+ *  forced sign-out is scoped to), else the one the last-known record names
+ *  (whose local data this device holds) — a record that can be stale, so it
+ *  is only the fallback. Other accounts' cached tiers stay, since each
+ *  applies only to its own user. With neither, whose tier it is cannot be
+ *  told, so every cached tier is forgotten. Used by sign-out and forced
+ *  sign-out. Never throws (both records degrade to "absent" on storage
+ *  errors). */
 export function clearAccountRecords(userId?: string): void {
   const account = userId ?? readLastKnownUserId();
   if (account === null) clearCachedTier();
@@ -43,13 +44,17 @@ export function clearAllAccountRecords(): void {
  *  Errors during the wipe are swallowed: storage being unavailable (a
  *  private window with persistence blocked, an extension intercepting
  *  IDB) must not strand the user in a half-signed-out state. The auth
- *  call is the user-visible step; the wipe is best-effort defence. */
+ *  call is the user-visible step; the wipe is best-effort defence.
+ *
+ *  `userId` is the account signing out, when the caller knows it; see
+ *  `clearAccountRecords` for the fallback when it does not. */
 export async function signOutAndClearLocal(
   supabase: SupabaseClient,
+  userId?: string,
 ): Promise<void> {
   await clearAllStores().catch(() => {});
   // Cleared here rather than left to the SIGNED_OUT event, which never
   // fires when `signOut()` can't load an expired session offline.
-  clearAccountRecords();
+  clearAccountRecords(userId);
   await supabase.auth.signOut();
 }

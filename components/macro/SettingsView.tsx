@@ -247,7 +247,7 @@ export function SettingsView({
         await import("@/lib/devices/registry");
       await unregisterCurrentDevice(supabase, user.id).catch(() => {});
     }
-    await signOutAndClearLocal(supabase);
+    await signOutAndClearLocal(supabase, user?.id);
     // Hard navigation, like reset / delete-account: drops every in-memory
     // copy of this account's data (the displayed day, the profile form) so
     // nothing is written back into the freshly wiped store.

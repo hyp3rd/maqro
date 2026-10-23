@@ -135,6 +135,9 @@ describe("UserMenu sign-out", () => {
       expect(mockSignOutAndClearLocal).toHaveBeenCalledTimes(1),
     );
     expect(mockTriggerSync).toHaveBeenCalledWith(SUPABASE, "user-a");
+    // The signed-in user, not the possibly stale last-known record, names
+    // the account whose records are forgotten.
+    expect(mockSignOutAndClearLocal).toHaveBeenCalledWith(SUPABASE, "user-a");
     expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 
