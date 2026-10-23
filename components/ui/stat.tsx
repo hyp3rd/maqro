@@ -56,15 +56,16 @@ export function Stat({
         )}
       >
         {value}
+        {/* The separating spaces sit inside the small text so they stay
+            narrow (a space at the figure's mono size reads as a gap) while
+            the text still reads "85 g" to assistive tech and copy/paste. */}
         {unit !== undefined && (
-          <>
+          <span className="text-xs font-medium text-muted-foreground">
             {" "}
-            <span className="text-xs font-medium text-muted-foreground">
-              {unit}
-            </span>
-          </>
+            {unit}
+          </span>
         )}
-        {note !== undefined && <> {note}</>}
+        {note !== undefined && <span className="text-xs"> {note}</span>}
       </dd>
       {children !== undefined && <dd className="col-span-2">{children}</dd>}
     </div>
