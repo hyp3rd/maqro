@@ -85,7 +85,7 @@ export const CYCLING_WEIGHTS: Record<
 };
 
 /** Day bounds relative to the weekly mean: never below 80%, never above
- *  125% (and never below the safety floor — see `distributeWeekCalories`). */
+ *  125% (and never below the per-day floor — see `distributeWeekCalories`). */
 export const DAY_MIN_OF_MEAN = 0.8;
 export const DAY_MAX_OF_MEAN = 1.25;
 /** No generated day goes under this, whatever floor the caller passes
@@ -241,7 +241,9 @@ export type WeekCaloriesInput = {
   /** The seven day classes, indexed by `getDay()` (0 = Sunday). */
   classes: readonly TrainingDayClass[];
   cycling: CyclingPreset;
-  /** The per-day safety floor (`max(BMR, 1200)`). */
+  /** The per-day floor no planned day may go under: the safety floor
+   *  (`max(BMR, 1200)`) and, from `targetsForDate`, the macro floors'
+   *  `minDayKcal`. */
   floorKcal: number;
 };
 
@@ -504,26 +506,29 @@ export function proteinCeilingGrams(
   return Math.max(0, withCarbFloor, Math.min(withFatFloorOnly, proteinFloor));
 }
 
-/** The protein every day of a planned week gets (g, a 5 g step): the
- *  setting's grams, capped by `proteinCeilingGrams` on the week's SMALLEST
- *  day, so protein is the same every day and no day breaks a floor.
- *  `capped` says the setting didn't fit (`training.proteinCapped`). */
-export function weekProteinGrams(
+/** The smallest day (kcal) that holds the protein setting, the fat floor
+ *  and the 1 g/kg carb floor (none on a fat-moving diet) together, on the
+ *  5 g grid the partition uses: 4P + 9F + 4C. `targetsForDate` passes it to
+ *  `distributeWeekCalories` as part of the per-day floor, so cycling NARROWS
+ *  its spread rather than plan a day that can't hold them (owner decision,
+ *  the same idea as the kcal floor). Only when the weekly mean itself is
+ *  below it (`training.floorsExceedMean`) do the floors give way, in
+ *  `proteinCeilingGrams`' order. */
+export function minDayKcal(
   input: MacroFloorInput & {
     /** The protein the setting asks for (unrounded) — `proteinGrams`. */
     proteinGrams: number;
-    /** The seven planned day calories. */
-    dayCalories: readonly number[];
   },
-): { grams: number; capped: boolean } {
-  const wanted = roundStep(input.proteinGrams, MACRO_GRAM_STEP);
-  const ceiling = proteinCeilingGrams({
-    ...input,
-    dayKcal: Math.min(...input.dayCalories),
-  });
-  return wanted <= ceiling
-    ? { grams: wanted, capped: false }
-    : { grams: ceiling, capped: true };
+): number {
+  const step = MACRO_GRAM_STEP;
+  const carbFloor = fatMovesForDiet(input.dietType)
+    ? 0
+    : ceilStep(CARB_FLOOR_G_PER_KG * input.weightKg, step);
+  return (
+    4 * roundStep(input.proteinGrams, step) +
+    9 * ceilStep(fatFloorGrams(input), step) +
+    4 * carbFloor
+  );
 }
 
 export type DayMacroInput = {
@@ -532,7 +537,7 @@ export type DayMacroInput = {
   /** The weekly mean day from `computeMacros` (its split, or the user's
    *  `macroSplit` override, applied to T): sets the held macro's level. */
   mean: { targetCalories: number; carbs: number; fat: number };
-  /** Daily protein (unrounded) — `weekProteinGrams` for a planned week. */
+  /** Daily protein the setting asks for (unrounded) — `proteinGrams`. */
   proteinGrams: number;
   weightKg: number;
   /** The kg the 1.2 g/kg protein minimum is taken on (see `MacroFloorInput`). */
@@ -557,8 +562,9 @@ export type DayMacroInput = {
  *  macros: only the fixed protein differs from the plain targets.
  *
  *  - Protein: the given grams, capped by this day's `proteinCeilingGrams`.
- *    Pass `weekProteinGrams` and the cap never binds, so protein is the same
- *    every day of the week.
+ *    In a `targetsForDate` week the cap binds only when the weekly mean is
+ *    under `minDayKcal`, and then every day is the mean — so protein is the
+ *    same every day of the week either way.
  *  - Fat floor: `fatFloorGrams` — max(0.5 g/kg, 20% of the MEAN kcal; 15% in
  *    a cut or when the user explicitly chose a low-fat diet type or a custom
  *    split). It always holds; protein gives way first.

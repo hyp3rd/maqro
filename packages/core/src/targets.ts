@@ -8,11 +8,11 @@ import {
   distributeWeekCalories,
   explicitFatChoice,
   fatFloorLiftsChoice,
+  minDayKcal,
   normalizeProteinSetting,
   normalizeTrainingSchedule,
   partitionDayMacros,
   proteinGrams,
-  weekProteinGrams,
 } from "./training";
 import {
   type CalculatedValues,
@@ -64,10 +64,14 @@ export type TrainingDayTargets = {
    *  estimate) means g/kg was taken on the BMI-25 weight for the height —
    *  also a prompt for a body-fat estimate. */
   proteinBasis: ProteinBasis;
-  /** The setting's protein didn't fit the week's smallest day alongside the
-   *  fat and carb floors, so every day's protein was lowered to what does
-   *  (`weekProteinGrams`). */
-  proteinCapped: boolean;
+  /** Even the weekly-average day can't hold the protein setting, the fat
+   *  floor and the 1 g/kg carb floor together (`minDayKcal`) — the UI can
+   *  gently suggest a smaller deficit. Every day then sits at the mean, and
+   *  the floors give way in `proteinCeilingGrams`' order: the fat floor
+   *  holds, then protein ≥ 1.2 g/kg, then carbs ≥ 1 g/kg, then the rest of
+   *  the protein. When false, every planned day holds all of them: cycling
+   *  narrows its spread rather than plan a day that can't. */
+  floorsExceedMean: boolean;
   /** The fat floor lifted the user's explicit fat choice (a `lowFat` diet
    *  type or a custom macro split asking for less than max(15% of the mean
    *  kcal, 0.5 g/kg)), so fat is held at the floor — the UI's info note
@@ -148,14 +152,6 @@ export function targetsForDate(
   const weekday = midnight.getDay();
   const classes = schedule.days.map(classifyTrainingDay);
   const dayClass = classes[weekday];
-  const weekKcal = distributeWeekCalories({
-    meanKcal: values.targetCalories,
-    classes,
-    cycling: schedule.cycling,
-    // The same per-day floor computeMacros applies, max(BMR, 1200).
-    floorKcal: Math.max(values.bmr, MIN_DAILY_KCAL),
-  });
-  const dayKcal = weekKcal[weekday];
   const protein = proteinGrams(
     normalizeProteinSetting(profile.proteinSetting),
     {
@@ -172,16 +168,23 @@ export function targetsForDate(
     dietType: profile.dietType,
     explicitFatChoice: explicitFatChoice(profile),
   };
-  // One protein figure for the whole week, sized to fit its smallest day.
-  const weekProtein = weekProteinGrams({
-    ...floors,
-    proteinGrams: protein.grams,
-    dayCalories: weekKcal,
+  // The smallest day that holds the protein and the fat + carb floors.
+  const minDay = minDayKcal({ ...floors, proteinGrams: protein.grams });
+  const weekKcal = distributeWeekCalories({
+    meanKcal: values.targetCalories,
+    classes,
+    cycling: schedule.cycling,
+    // The same per-day floor computeMacros applies, max(BMR, 1200), and no
+    // day too small for the macro floors: cycling narrows its spread
+    // instead. A mean under `minDay` leaves no room, so every day is the
+    // mean.
+    floorKcal: Math.max(values.bmr, MIN_DAILY_KCAL, minDay),
   });
+  const dayKcal = weekKcal[weekday];
   const macros = partitionDayMacros({
     dayKcal,
     mean: values,
-    proteinGrams: weekProtein.grams,
+    proteinGrams: protein.grams,
     weightKg: floors.weightKg,
     proteinKg: floors.proteinKg,
     goal: floors.goal,
@@ -198,7 +201,7 @@ export function targetsForDate(
       cycling: schedule.cycling,
       meanCalories: values.targetCalories,
       proteinBasis: protein.basis,
-      proteinCapped: weekProtein.capped,
+      floorsExceedMean: values.targetCalories < minDay,
       fatFloorLifted: fatFloorLiftsChoice({ ...floors, meanFat: values.fat }),
     },
   };

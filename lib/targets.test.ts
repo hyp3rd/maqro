@@ -578,6 +578,43 @@ describe("targetsForDate — training days", () => {
     expect(withEstimate.training?.proteinBasis).toBe("bodyweight");
   });
 
+  it("cycling narrows rather than plan a day too small for the floors", () => {
+    // 100 kg / 180 cm male maintaining at 2,400 (BMR 1,980), 3.4 g/kg protein
+    // (340 g; a body-fat estimate keeps the bodyweight basis at BMI 30.9):
+    // the smallest day that holds it beside the 55 g fat and 100 g carb
+    // floors is 4·340 + 9·55 + 4·100 = 2,255 kcal. Without narrowing,
+    // pronounced rest days would be ~1,893 (2,000 under the kcal floor).
+    const ctx = { ...FREE, bodyFatPct: 25 };
+    const p = profile({
+      weight: 100,
+      manualTdee: 2400,
+      training: schedule({ cycling: "pronounced" }),
+      proteinSetting: { basis: "bodyweight", gPerKg: 3.4 },
+    });
+    const week = weekTargets(p, "2026-10-19", ctx);
+    const days = week?.days ?? [];
+    expect(days).toHaveLength(7);
+    expect(week?.totalCalories).toBe(7 * 2400);
+    // Mon Tue Wed Thu Fri Sat Sun: still a spread, just a narrower one.
+    expect(days.map((d) => d.targetCalories)).toEqual([
+      2450, 2300, 2500, 2300, 2450, 2500, 2300,
+    ]);
+    for (const d of days) {
+      expect(d.protein).toBe(340);
+      expect(d.fat).toBeGreaterThanOrEqual(55);
+      expect(d.carbs).toBeGreaterThanOrEqual(100);
+      expect(d.training?.floorsExceedMean).toBe(false);
+    }
+    // At the default 2.0 g/kg only the kcal floor narrows it.
+    const kcal =
+      weekTargets(
+        { ...p, proteinSetting: undefined },
+        "2026-10-19",
+        ctx,
+      )?.days.map((d) => d.targetCalories) ?? [];
+    expect(Math.min(...kcal)).toBe(2000);
+  });
+
   it("protein gives way to the fat and carb floors, the same every day", () => {
     // 120 kg / 180 cm / 35 y sedentary male cutting 0.5 kg/week: the cut
     // lands under the 2,155 BMR floor, so every day sits at 2,155. A
@@ -598,20 +635,21 @@ describe("targetsForDate — training days", () => {
     expect(days).toHaveLength(7);
     for (const d of days) {
       expect(d.targetCalories).toBe(2155);
-      // 3.4 g/kg (408 g) doesn't fit beside 60 g fat + 120 g carbs.
+      // 3.4 g/kg (408 g) doesn't fit beside 60 g fat + 120 g carbs even on
+      // the mean day: protein gives way, and the UI is told.
       expect(d.protein).toBe(280);
-      expect(d.training?.proteinCapped).toBe(true);
+      expect(d.training?.floorsExceedMean).toBe(true);
       expect(d.fat).toBeGreaterThanOrEqual(60);
       expect(d.carbs).toBeGreaterThanOrEqual(120);
     }
-    // The default 2.0 g/kg (240 g) fits, so nothing is capped.
+    // The default 2.0 g/kg (240 g) fits, so nothing gives way.
     const byDefault = targetsForDate(
       { ...p, proteinSetting: undefined },
       "2026-10-20",
       ctx,
     );
     expect(byDefault.protein).toBe(240);
-    expect(byDefault.training?.proteinCapped).toBe(false);
+    expect(byDefault.training?.floorsExceedMean).toBe(false);
   });
 
   describe("floors hold across a grid of profiles and settings", () => {
@@ -664,9 +702,12 @@ describe("targetsForDate — training days", () => {
                         if (dietType !== "lowCarb") {
                           expect(d.carbs).toBeGreaterThanOrEqual(weight);
                         }
-                        expect(d.training?.proteinCapped).toBe(
-                          d.protein < wanted,
-                        );
+                        // Protein only gives way when even the mean day
+                        // can't fit the floors — and then every day is it.
+                        const tight = d.training?.floorsExceedMean;
+                        if (d.protein < wanted) expect(tight).toBe(true);
+                        if (tight) expect(d.targetCalories).toBe(mean);
+                        else expect(d.protein).toBe(wanted);
                         const kcal = 4 * (d.protein + d.carbs) + 9 * d.fat;
                         expect(
                           Math.abs(kcal - d.targetCalories),

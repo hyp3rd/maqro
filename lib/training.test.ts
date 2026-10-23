@@ -12,9 +12,9 @@ import {
   normalizeTrainingSchedule,
   partitionDayMacros,
   proteinCeilingGrams,
+  minDayKcal,
   proteinGrams,
   referenceWeightKg,
-  weekProteinGrams,
 } from "@maqro/core/training";
 import type {
   CyclingPreset,
@@ -893,7 +893,7 @@ describe("explicitFatChoice", () => {
   });
 });
 
-describe("proteinCeilingGrams / weekProteinGrams", () => {
+describe("proteinCeilingGrams / minDayKcal", () => {
   const floors = {
     weightKg: 120,
     proteinKg: 120,
@@ -919,23 +919,28 @@ describe("proteinCeilingGrams / weekProteinGrams", () => {
     ).toBe(400);
   });
 
-  it("a setting that fits every day is kept as asked", () => {
+  it("minDayKcal: the protein setting plus the fat and carb floors", () => {
+    // 4·160 + 9·60 (fat) + 4·120 (carbs) on the 5 g grid.
+    expect(minDayKcal({ ...floors, proteinGrams: 160 })).toBe(1660);
+    // 4·410 (408 → 410) + 540 + 480.
+    expect(minDayKcal({ ...floors, proteinGrams: 408 })).toBe(2660);
+    // Low-carb has no carb floor.
     expect(
-      weekProteinGrams({
-        ...floors,
-        proteinGrams: 240,
-        dayCalories: [2150, 2400, 2150, 2600, 2150, 2400, 2500],
-      }),
-    ).toEqual({ grams: 240, capped: false });
+      minDayKcal({ ...floors, dietType: "lowCarb", proteinGrams: 160 }),
+    ).toBe(1180);
   });
 
-  it("one that doesn't is cut to the week's smallest day, for every day", () => {
-    expect(
-      weekProteinGrams({
-        ...floors,
-        proteinGrams: 408,
-        dayCalories: [2600, 2400, 2150, 2600, 2300, 2400, 2500],
-      }),
-    ).toEqual({ grams: 280, capped: true });
+  it("a day of minDayKcal holds the whole setting", () => {
+    for (const proteinGrams of [160, 241, 408]) {
+      const dayKcal = minDayKcal({ ...floors, proteinGrams });
+      const wanted = Math.round(proteinGrams / 5) * 5;
+      expect(proteinCeilingGrams({ ...floors, dayKcal, proteinGrams })).toBe(
+        wanted,
+      );
+      // One kcal less and it doesn't.
+      expect(
+        proteinCeilingGrams({ ...floors, dayKcal: dayKcal - 1, proteinGrams }),
+      ).toBeLessThan(wanted);
+    }
   });
 });
