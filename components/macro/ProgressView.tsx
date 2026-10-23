@@ -86,6 +86,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { toast } from "sonner";
+import { isDateKey } from "@maqro/core/date";
 import { ExportReportDialog } from "./ExportReportDialog";
 
 const WINDOW_DAYS = 60;
@@ -340,14 +341,19 @@ export function ProgressView({
 
   // Phase-boundary markers for the weight/calorie charts — one per phase
   // start. MiniLineChart clips them to each chart's visible x-range, so
-  // passing every phase is fine. Pro + has-phases only.
+  // passing every phase is fine. Pro + has-phases only. The phase plan lives
+  // in the synced profile blob, which no database constraint checks, so a
+  // phase whose start isn't a real date key (an older build could save "")
+  // has no place on the axis and is left off rather than thrown on.
   const phaseMarkers = useMemo<ChartMarker[]>(
     () =>
       isProTrends && goalPhases && goalPhases.length > 0
-        ? sortPhases(goalPhases).map((p) => ({
-            x: dayIndexFromIsoDate(p.startDate),
-            label: PHASE_LABELS[p.kind],
-          }))
+        ? sortPhases(goalPhases)
+            .filter((p) => isDateKey(p.startDate))
+            .map((p) => ({
+              x: dayIndexFromIsoDate(p.startDate),
+              label: PHASE_LABELS[p.kind],
+            }))
         : [],
     [isProTrends, goalPhases],
   );
