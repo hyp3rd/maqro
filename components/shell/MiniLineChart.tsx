@@ -1,22 +1,39 @@
 "use client";
 
+import { useElementWidth } from "@/hooks/use-element-width";
+import {
+  dayTicks,
+  formatDayIndex,
+  layoutBars,
+  linearPath,
+  monotonePath,
+  niceTicks,
+  type Pt,
+  stepPath,
+  xUnit,
+} from "@/lib/charts/geometry";
+import { cn } from "@/lib/utils";
 import { useId, useMemo, useState } from "react";
 
 export type LinePoint = {
-  /** Numeric x value - for time series, pass a unix-day index or epoch ms. */
+  /** Numeric x value. With `xType="day"` this is a calendar-day index
+   *  (`dayIndexFromIsoDate` in lib/charts/geometry.ts). */
   x: number;
   y: number;
-  /** Optional human label shown on a few ticks. */
+  /** Optional human label, used for x-axis labels when `xType="number"`. */
   label?: string;
-  /** Optional human label for the hover tooltip. Falls back to `label`
-   *  then to the raw `x` value when not set. */
+  /** Optional human label for the tooltip and data table. Falls back to
+   *  `label`, then the formatted date (day series) or raw `x`. */
   tooltipLabel?: string;
 };
 
+/** One point of a per-x target series (e.g. a day's calorie target). */
+export type TargetPoint = { x: number; y: number };
+
 /** A vertical annotation drawn across the plot — e.g. a goal-phase boundary. */
 export type ChartMarker = {
-  /** Position in the same x-space as the data points (unix-day index / epoch).
-   *  Markers outside the data's x-range are skipped. */
+  /** Position in the same x-space as the data points. Markers outside the
+   *  data's x-range are skipped. */
   x: number;
   /** Short label drawn at the top of the line (e.g. "Cut", "Diet break"). */
   label?: string;
@@ -24,310 +41,436 @@ export type ChartMarker = {
 
 type Props = {
   data: LinePoint[];
-  /** Total width / height of the SVG (CSS pixels). */
+  /** Drawing width used until the container has been measured (server
+   *  render, first frame, no ResizeObserver). After that the chart draws
+   *  at the container's real width. */
   width?: number;
+  /** Height in CSS pixels. */
   height?: number;
-  /** Force the y axis to include 0; useful for some metrics, off for weight. */
+  /** Force the y axis to include 0; useful for some metrics, off for
+   *  weight. Bar charts always include 0. */
   yIncludeZero?: boolean;
-  /** Number of x-axis labels to render. Picked evenly across the data. */
+  /** Upper bound on the number of x-axis labels. The chart already fits as
+   *  many as the measured width allows; this only caps it further. */
   xTicks?: number;
-  /** Unit suffix shown on the y-axis ticks (e.g. "kg"). */
+  /** Unit of the y values (e.g. " kg"). Shown once above the y axis and
+   *  after values in the tooltip, summary and table. */
   yUnit?: string;
-  /** Optional horizontal reference line (e.g. target calories). The line
-   * is dashed and labelled at the right edge. */
+  /** `"day"`: x values are calendar-day indices, and the x axis gets
+   *  evenly spaced date labels (daily, Mondays or month starts). `"number"`
+   *  (default): x is any number, labelled from each point's `label`. */
+  xType?: "number" | "day";
+  /** `"bar"` draws one bar per x unit (daily totals) from zero; any part
+   *  past that point's target is drawn in the same hue at lower intensity
+   *  with a neutral "+N". */
+  variant?: "line" | "bar";
+  /** Optional single horizontal reference line (e.g. a flat calorie
+   *  target), dashed. */
   targetY?: number;
-  /** Short text shown next to the reference line. */
+  /** Optional per-x targets, drawn as a step line (a level per day). Where
+   *  a point has a series entry it beats `targetY` for that point's
+   *  overshoot, tooltip and table. */
+  targetSeries?: TargetPoint[];
+  /** Short text labelling the reference: the `targetY` line when set,
+   *  otherwise the step series. */
   targetLabel?: string;
-  /** When true, smooth the line via Catmull–Rom interpolation. Off
-   *  reverts to the straight-segment polyline. Default on. */
+  /** Monotone cubic smoothing (never overshoots the data). Default off:
+   *  straight segments are the honest default for daily data. */
   smooth?: boolean;
   /** Optional vertical markers (e.g. goal-phase boundaries) drawn as thin
    *  dashed lines with a short top label, under the data line. */
   markers?: ChartMarker[];
+  /** x of "today / now", drawn in the signal colour. */
+  highlightX?: number;
+  /** What the chart shows ("Weight"), used in its accessible summary and
+   *  as the data table's caption. */
+  title?: string;
 };
 
-/** Lightweight line chart in pure SVG. No charting library - Catmull–Rom
- *  smoothing, gradient fill, hover crosshair, and tooltip are all
- *  hand-rolled in ~30 lines extra.
+/** Text metrics. Labels use `text-xs` (12px) Geist Mono, whose glyphs
+ *  advance about 0.6em, so label widths are estimated from character
+ *  counts instead of measuring DOM text (which would need a second layout
+ *  pass per render). Used for gutter sizing and label spacing only. */
+const FONT_PX = 12;
+const MONO_CHAR_PX = FONT_PX * 0.6;
+const PAD = { top: 24, right: 12, bottom: 26 } as const;
+/** Minimum vertical room per y interval, px. */
+const Y_INTERVAL_PX = 44;
+/** Gap kept between neighbouring x labels, px. */
+const X_LABEL_GAP_PX = 14;
+
+const monoWidth = (s: string) => s.length * MONO_CHAR_PX;
+
+/** Lightweight line / bar chart in pure SVG, drawn at the container's real
+ *  pixel width (so labels are true-size on phones). No charting library:
+ *  ticks, paths and bar layout come from lib/charts/geometry.ts.
  *
- *  Returns null if `data` is empty - the caller renders the empty state. */
+ *  Returns null if `data` is empty — the caller renders the empty state. */
 export function MiniLineChart({
   data,
   width = 640,
   height = 220,
   yIncludeZero = false,
-  xTicks = 5,
+  xTicks,
   yUnit = "",
+  xType = "number",
+  variant = "line",
   targetY,
+  targetSeries,
   targetLabel,
-  smooth = true,
+  smooth = false,
   markers = [],
+  highlightX,
+  title,
 }: Props) {
   const gradientId = useId();
+  const [wrapRef, measured] = useElementWidth<HTMLDivElement>();
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
 
-  // Hooks must run before the early return. The expensive
-  // path-string builds are memoized so hover-driven re-renders only
-  // touch the tooltip overlay, not the line itself.
-  const { xMin, xSpan, yMin, ySpan } = useMemo(() => {
-    if (data.length === 0) {
-      return { xMin: 0, xSpan: 1, yMin: 0, ySpan: 1 };
-    }
-    const xs = data.map((p) => p.x);
-    const ys = data.map((p) => p.y);
+  const W = Math.max(120, measured ?? width);
+  const H = Math.max(80, height);
+  const unit = yUnit.trim();
+  const isBar = variant === "bar";
+
+  // Sorted copies: every path builder below assumes ascending x.
+  const points = useMemo(() => [...data].sort((a, b) => a.x - b.x), [data]);
+  const targets = useMemo(
+    () => [...(targetSeries ?? [])].sort((a, b) => a.x - b.x),
+    [targetSeries],
+  );
+
+  const numberFmt = useMemo(
+    () => new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }),
+    [],
+  );
+  const fmtValue = (v: number) => numberFmt.format(v);
+  const withUnit = (v: number) => `${fmtValue(v)}${yUnit}`;
+
+  const chart = useMemo(() => {
+    if (points.length === 0) return null;
+    const targetAt = (x: number) =>
+      targets.find((t) => t.x === x)?.y ?? targetY;
+    const fmtNum = (n: number) => numberFmt.format(n);
+    const xs = points.map((p) => p.x);
     const xMin = Math.min(...xs);
     const xMax = Math.max(...xs);
-    const xSpan = Math.max(1, xMax - xMin);
-    let yMin = Math.min(...ys);
-    let yMax = Math.max(...ys);
-    if (yIncludeZero) yMin = Math.min(yMin, 0);
-    if (targetY !== undefined) {
-      yMin = Math.min(yMin, targetY);
-      yMax = Math.max(yMax, targetY);
-    }
-    if (yMin === yMax) {
-      yMin -= 1;
-      yMax += 1;
-    }
-    const pad = (yMax - yMin) * 0.1;
-    yMin -= pad;
-    yMax += pad;
-    return { xMin, xSpan, yMin, ySpan: yMax - yMin };
-  }, [data, yIncludeZero, targetY]);
+    const inRange = targets.filter((t) => t.x >= xMin && t.x <= xMax);
 
-  // Left axis gutter, sized to the WIDEST actual y-tick label so the
-  // right-anchored tick text — which grows LEFTWARD from `padding.left` —
-  // never clips off the SVG's left edge. A fixed 56 fit "165.3 lb" / kcal but
-  // clipped 4-digit micronutrient values with a decimal + a multi-char unit
-  // ("5876.6 mg"). Measured the same way the ticks render. text-[10px] mono ≈
-  // 6.2 user-units/char (matches the tooltip's own estimate), + the 6px gap to
-  // the grid line + breathing room. Floored at 44 (tidy gutter for short labels
-  // like "20kg"), capped at 96 so a pathological value can't swallow the chart.
-  const padding = useMemo(() => {
-    const widest = Math.max(
-      ...[0, 0.25, 0.5, 0.75, 1].map(
-        (t) => `${Math.round((yMin + t * ySpan) * 10) / 10}${yUnit}`.length,
+    // --- y scale -------------------------------------------------------
+    const ys = points.map((p) => p.y);
+    if (targetY !== undefined) ys.push(targetY);
+    for (const t of inRange) ys.push(t.y);
+    if (yIncludeZero || isBar) ys.push(0);
+    const innerH = H - PAD.top - PAD.bottom;
+    const scale = niceTicks(
+      Math.min(...ys),
+      Math.max(...ys),
+      Math.max(2, Math.floor(innerH / Y_INTERVAL_PX)),
+    );
+    const tickFmt = new Intl.NumberFormat(undefined, {
+      minimumFractionDigits: scale.decimals,
+      maximumFractionDigits: scale.decimals,
+    });
+    const yTicks = scale.ticks.map((v) => ({ v, label: tickFmt.format(v) }));
+    // Left gutter sized to the widest tick label (right-anchored text grows
+    // leftward from it), floored for a tidy axis, capped so a pathological
+    // value can't swallow the plot.
+    const left = Math.min(
+      96,
+      Math.max(
+        28,
+        Math.ceil(Math.max(...yTicks.map((t) => monoWidth(t.label)))) + 10,
       ),
     );
-    const left = Math.min(96, Math.max(44, Math.ceil(widest * 6.2) + 14));
-    return { top: 12, right: 16, bottom: 28, left };
-  }, [yMin, ySpan, yUnit]);
-  const innerW = width - padding.left - padding.right;
-  const innerH = height - padding.top - padding.bottom;
+    const innerW = Math.max(1, W - left - PAD.right);
+    const ySpan = scale.max - scale.min || 1;
+    const yToPx = (y: number) =>
+      PAD.top + (1 - (y - scale.min) / ySpan) * innerH;
+    const baseline = PAD.top + innerH;
 
-  const xScale = (x: number) => padding.left + ((x - xMin) / xSpan) * innerW;
-  const yScale = (y: number) => padding.top + (1 - (y - yMin) / ySpan) * innerH;
+    // --- x scale -------------------------------------------------------
+    const step = xUnit(xs);
+    const bars = isBar
+      ? layoutBars(
+          points.map((p) => ({ x: p.x, value: p.y, target: targetAt(p.x) })),
+          {
+            left,
+            width: innerW,
+            yToPx,
+            baselinePx: yToPx(Math.max(scale.min, Math.min(0, scale.max))),
+          },
+        )
+      : null;
+    const xSpan = xMax - xMin;
+    const xToPx = bars
+      ? bars.xToPx
+      : (x: number) =>
+          xSpan === 0
+            ? left + innerW / 2
+            : left + ((x - xMin) / xSpan) * innerW;
+    // Pixels per x unit: a bar slot, or the gap between consecutive days.
+    const unitPx = bars
+      ? bars.slotWidth
+      : xSpan === 0
+        ? innerW
+        : (step / xSpan) * innerW;
 
-  // Build the line + area path. Catmull–Rom for ≥3 points; fall back to
-  // straight segments otherwise (smoothing 2 points isn't meaningful).
-  // Scale math is inlined here so the useMemo's deps stay primitive
-  // (the outer xScale/yScale closures would otherwise re-trigger on
-  // every render, defeating the memo).
-  const { linePath, areaPath } = useMemo(() => {
-    if (data.length === 0) return { linePath: "", areaPath: "" };
-    const xs = (x: number) => padding.left + ((x - xMin) / xSpan) * innerW;
-    const ys = (y: number) => padding.top + (1 - (y - yMin) / ySpan) * innerH;
-    const pts = data.map((p) => ({ x: xs(p.x), y: ys(p.y) }));
-    let line: string;
-    if (!smooth || pts.length < 3) {
-      line = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`).join(" ");
-    } else {
-      // Catmull–Rom → cubic Bezier. For each segment P[i]→P[i+1],
-      // control points are derived from P[i-1] and P[i+2]. Edge
-      // segments clamp to the endpoint so the curve starts and
-      // ends anchored at the first/last data point.
-      const ctrl = (a: number, b: number) => (b - a) / 6;
-      line = `M${pts[0].x},${pts[0].y}`;
-      for (let i = 0; i < pts.length - 1; i++) {
-        const p0 = pts[Math.max(0, i - 1)];
-        const p1 = pts[i];
-        const p2 = pts[i + 1];
-        const p3 = pts[Math.min(pts.length - 1, i + 2)];
-        const c1x = p1.x + ctrl(p0.x, p2.x);
-        const c1y = p1.y + ctrl(p0.y, p2.y);
-        const c2x = p2.x - ctrl(p1.x, p3.x);
-        const c2y = p2.y - ctrl(p1.y, p3.y);
-        line += ` C${c1x},${c1y} ${c2x},${c2y} ${p2.x},${p2.y}`;
-      }
+    // --- x labels ------------------------------------------------------
+    type XLabel = { x: number; text: string };
+    const candidates: XLabel[] =
+      xType === "day"
+        ? (() => {
+            const sample = formatDayIndex(xMin);
+            const fit = Math.floor(
+              innerW / (monoWidth(sample) + X_LABEL_GAP_PX),
+            );
+            return dayTicks(
+              xMin,
+              xMax,
+              Math.max(1, Math.min(fit, xTicks ?? Infinity)),
+            ).map((t) => ({ x: t.day, text: t.label }));
+          })()
+        : points.map((p) => ({ x: p.x, text: p.label ?? fmtNum(p.x) }));
+    const cap = xTicks ?? Infinity;
+    const xLabels: { px: number; text: string }[] = [];
+    let lastRight = -Infinity;
+    for (const c of candidates) {
+      const w = monoWidth(c.text);
+      // Clamp inside the SVG so edge labels never clip.
+      const px = Math.min(Math.max(xToPx(c.x), w / 2), W - w / 2);
+      if (px - w / 2 < lastRight + X_LABEL_GAP_PX) continue;
+      if (xLabels.length >= cap) break;
+      xLabels.push({ px, text: c.text });
+      lastRight = px + w / 2;
     }
-    const baseline = padding.top + innerH;
-    const area = `${line} L${pts[pts.length - 1].x},${baseline} L${pts[0].x},${baseline} Z`;
-    return { linePath: line, areaPath: area };
+
+    // --- paths ---------------------------------------------------------
+    const pts: Pt[] = points.map((p) => ({ x: xToPx(p.x), y: yToPx(p.y) }));
+    const linePath = isBar ? "" : smooth ? monotonePath(pts) : linearPath(pts);
+    const first = pts[0];
+    const last = pts[pts.length - 1];
+    const areaPath =
+      !isBar && first && last
+        ? `${linePath} L${last.x},${baseline} L${first.x},${baseline} Z`
+        : "";
+    const stepPts = inRange.map((t) => ({ x: xToPx(t.x), y: yToPx(t.y) }));
+    const stepFirst = stepPts[0];
+    const stepLast = stepPts[stepPts.length - 1];
+    const targetStepPath =
+      stepFirst && stepLast
+        ? stepPath(stepPts, {
+            left: Math.max(left, stepFirst.x - unitPx / 2),
+            right: Math.min(left + innerW, stepLast.x + unitPx / 2),
+          })
+        : "";
+
+    return {
+      xMin,
+      xMax,
+      left,
+      innerW,
+      innerH,
+      baseline,
+      yToPx,
+      xToPx,
+      yTicks,
+      xLabels,
+      bars,
+      pts,
+      linePath,
+      areaPath,
+      targetStepPath,
+      stepFirstY: stepFirst?.y,
+    };
   }, [
-    data,
+    points,
+    targets,
+    targetY,
+    yIncludeZero,
+    isBar,
+    H,
+    W,
+    xType,
+    xTicks,
     smooth,
-    padding.top,
-    padding.left,
-    innerH,
-    innerW,
-    xMin,
-    xSpan,
-    yMin,
-    ySpan,
+    numberFmt,
   ]);
 
-  if (data.length === 0) return null;
+  if (!chart) return null;
 
-  // Y-axis ticks: 4 evenly spaced.
-  const yTickValues = [0, 0.25, 0.5, 0.75, 1].map((t) => yMin + t * ySpan);
+  const targetFor = (x: number) => targets.find((t) => t.x === x)?.y ?? targetY;
+  const labelFor = (p: LinePoint) =>
+    p.tooltipLabel ??
+    p.label ??
+    (xType === "day" ? formatDayIndex(p.x) : fmtValue(p.x));
 
-  const xLabelIndices: number[] =
-    data.length === 1
-      ? [0]
-      : Array.from(
-          new Set(
-            Array.from({ length: xTicks }, (_, i) =>
-              Math.round((i * (data.length - 1)) / (xTicks - 1)),
-            ),
-          ),
-        );
+  // --- accessible summary ------------------------------------------------
+  const ys = points.map((p) => p.y);
+  const firstPoint = points[0];
+  const lastPoint = points[points.length - 1];
+  const hasTargets = targetY !== undefined || targets.length > 0;
+  const summary = (() => {
+    if (!firstPoint || !lastPoint) return "";
+    const n = points.length;
+    const kind = isBar ? "Bar chart" : "Line chart";
+    const span =
+      n === 1
+        ? `1 entry on ${labelFor(firstPoint)}`
+        : `${n} entries from ${labelFor(firstPoint)} to ${labelFor(lastPoint)}`;
+    let s = `${title ? `${title}. ` : ""}${kind}, ${span}. Lowest ${withUnit(Math.min(...ys))}, highest ${withUnit(Math.max(...ys))}, latest ${withUnit(lastPoint.y)}.`;
+    if (targetY !== undefined) s += ` Target ${withUnit(targetY)}.`;
+    if (targets.length > 0) {
+      const tys = targets.map((t) => t.y);
+      const lo = Math.min(...tys);
+      const hi = Math.max(...tys);
+      s +=
+        lo === hi
+          ? ` Daily target ${withUnit(lo)}.`
+          : ` Daily targets from ${withUnit(lo)} to ${withUnit(hi)}.`;
+    }
+    return s;
+  })();
 
-  // Hover: translate the pointer's x into the nearest data index.
-  function pointerToIndex(clientX: number, rect: DOMRect): number {
-    // SVG is rendered with viewBox + responsive width; map the
-    // client x back into the viewBox coordinate, then find the
-    // closest data point by `x` value.
-    const svgX = ((clientX - rect.left) / rect.width) * width;
-    if (svgX < padding.left || svgX > padding.left + innerW) return -1;
-    // Walk the data and pick the closest. With < 100 points this is
-    // negligible cost - binary search would be premature.
+  // --- pointer → nearest point ------------------------------------------
+  function pointerToIndex(
+    svg: SVGSVGElement,
+    clientX: number,
+    clientY: number,
+  ): number {
+    if (!chart) return -1;
+    // Map screen → user space. getScreenCTM accounts for any CSS transform
+    // on an ancestor (the fullscreen viewer rotates and pinch-scales the
+    // chart); the bounding-rect fallback covers environments without it.
+    let x: number;
+    const ctm = svg.getScreenCTM?.();
+    if (ctm) {
+      const inv = ctm.inverse();
+      x = inv.a * clientX + inv.c * clientY + inv.e;
+    } else {
+      const rect = svg.getBoundingClientRect();
+      if (rect.width === 0) return -1;
+      x = ((clientX - rect.left) / rect.width) * W;
+    }
+    if (x < chart.left || x > chart.left + chart.innerW) return -1;
     let best = 0;
     let bestDist = Infinity;
-    for (let i = 0; i < data.length; i++) {
-      const d = Math.abs(xScale(data[i].x) - svgX);
+    chart.pts.forEach((p, i) => {
+      const d = Math.abs(p.x - x);
       if (d < bestDist) {
         bestDist = d;
         best = i;
       }
-    }
+    });
     return best;
   }
 
-  const active = activeIndex !== null ? data[activeIndex] : null;
-  const tooltipLabel = active
-    ? (active.tooltipLabel ?? active.label ?? String(active.x))
-    : "";
+  const active = activeIndex !== null ? points[activeIndex] : undefined;
+  const activePt = activeIndex !== null ? chart.pts[activeIndex] : undefined;
+
+  const visibleMarkers = markers.filter(
+    (m) => m.x >= chart.xMin && m.x <= chart.xMax,
+  );
+  const plotRight = chart.left + chart.innerW;
+  const targetLinePx = targetY !== undefined ? chart.yToPx(targetY) : undefined;
+  // The reference label starts at the plot's left edge (the top-right
+  // corner belongs to the expand button), above its line unless that
+  // would leave the plot, with a card-coloured halo so it stays legible
+  // over bars and lines.
+  const labelY = targetLinePx ?? chart.stepFirstY;
+  const labelBelow = labelY !== undefined && labelY - PAD.top < 16;
 
   return (
-    <svg
-      viewBox={`0 0 ${width} ${height}`}
-      className="w-full h-auto text-foreground"
-      role="img"
-      aria-label={`Line chart with ${data.length} data points`}
+    <div
+      ref={wrapRef}
+      className="w-full text-foreground"
     >
-      <defs>
-        <linearGradient
-          id={gradientId}
-          x1="0"
-          y1="0"
-          x2="0"
-          y2="1"
-        >
-          <stop
-            offset="0%"
-            stopColor="currentColor"
-            stopOpacity="0.18"
-          />
-          <stop
-            offset="100%"
-            stopColor="currentColor"
-            stopOpacity="0"
-          />
-        </linearGradient>
-      </defs>
-
-      {/* Horizontal gridlines + y-axis labels */}
-      {yTickValues.map((v) => {
-        const y = yScale(v);
-        return (
-          <g key={v.toFixed(3)}>
-            <line
-              x1={padding.left}
-              x2={padding.left + innerW}
-              y1={y}
-              y2={y}
-              className="stroke-border/50"
-              strokeWidth={1}
-            />
-            <text
-              x={padding.left - 6}
-              y={y}
-              dy="0.32em"
-              textAnchor="end"
-              className="fill-muted-foreground text-[10px] tabular-nums"
-              style={{ fontFamily: "var(--font-mono)" }}
-            >
-              {Math.round(v * 10) / 10}
-              {yUnit}
-            </text>
-          </g>
-        );
-      })}
-
-      {/* X-axis labels. First / last anchor to "start" / "end" so
-       *  they hug the chart bounds rather than extending past them
-       *  — with the default `textAnchor="middle"`, a date like
-       *  "May 25" at the rightmost data point would render half its
-       *  width to the right of the chart and clip off the SVG (the
-       *  bug visible on the /progress weight chart). Interior
-       *  labels stay middle-anchored so they sit centred over
-       *  their data point. */}
-      {xLabelIndices.map((i, position) => {
-        const p = data[i];
-        if (!p) return null;
-        const isFirst = position === 0;
-        const isLast = position === xLabelIndices.length - 1;
-        const anchor = isFirst ? "start" : isLast ? "end" : "middle";
-        return (
-          <text
-            key={`x-${i}`}
-            x={xScale(p.x)}
-            y={padding.top + innerH + 16}
-            textAnchor={anchor}
-            className="fill-muted-foreground text-[10px] tabular-nums"
-            style={{ fontFamily: "var(--font-mono)" }}
+      <svg
+        width="100%"
+        height={H}
+        viewBox={`0 0 ${W} ${H}`}
+        className="block overflow-visible"
+        role="img"
+        aria-label={summary}
+      >
+        <defs>
+          <linearGradient
+            id={gradientId}
+            x1="0"
+            y1="0"
+            x2="0"
+            y2="1"
           >
-            {p.label ?? p.x}
+            <stop
+              offset="0%"
+              stopColor="currentColor"
+              stopOpacity="0.14"
+            />
+            <stop
+              offset="100%"
+              stopColor="currentColor"
+              stopOpacity="0"
+            />
+          </linearGradient>
+        </defs>
+
+        {/* Unit, once, above the y labels. */}
+        {unit && (
+          <text
+            x={chart.left - 8}
+            y={PAD.top - 12}
+            textAnchor="end"
+            className="fill-faint-foreground text-xs"
+          >
+            {unit}
           </text>
-        );
-      })}
+        )}
 
-      {/* Optional target reference line + label */}
-      {targetY !== undefined && (
-        <g>
-          <line
-            x1={padding.left}
-            x2={padding.left + innerW}
-            y1={yScale(targetY)}
-            y2={yScale(targetY)}
-            className="stroke-foreground/50"
-            strokeWidth={1}
-            strokeDasharray="3 3"
-          />
-          {targetLabel && (
-            <text
-              x={padding.left + innerW - 4}
-              y={yScale(targetY) - 4}
-              textAnchor="end"
-              className="fill-muted-foreground text-[10px]"
-              style={{ fontFamily: "var(--font-mono)" }}
-            >
-              {targetLabel}
-            </text>
-          )}
-        </g>
-      )}
+        {/* Horizontal gridlines + y-axis labels. */}
+        {chart.yTicks.map(({ v, label }) => {
+          const y = chart.yToPx(v);
+          return (
+            <g key={label}>
+              <line
+                x1={chart.left}
+                x2={plotRight}
+                y1={y}
+                y2={y}
+                className="stroke-border/60"
+                strokeWidth={1}
+              />
+              <text
+                x={chart.left - 8}
+                y={y}
+                dy="0.32em"
+                textAnchor="end"
+                className="fill-muted-foreground font-mono text-xs tabular-nums"
+              >
+                {label}
+              </text>
+            </g>
+          );
+        })}
 
-      {/* Vertical markers (e.g. goal-phase boundaries). Clipped to the
-          visible x-range; drawn under the data line as context. */}
-      {markers
-        .filter((m) => m.x >= xMin && m.x <= xMin + xSpan)
-        .map((m, i) => {
-          const mx = xScale(m.x);
+        {/* X-axis labels: evenly spaced, clamped inside the chart. */}
+        {chart.xLabels.map((l) => (
+          <text
+            key={`x-${l.px}`}
+            x={l.px}
+            y={chart.baseline + 18}
+            textAnchor="middle"
+            className="fill-muted-foreground font-mono text-xs tabular-nums"
+          >
+            {l.text}
+          </text>
+        ))}
+
+        {/* Vertical markers (e.g. goal-phase boundaries), under the data. */}
+        {visibleMarkers.map((m, i) => {
+          const mx = chart.xToPx(m.x);
           const anchor =
-            mx <= padding.left + innerW * 0.15
+            mx <= chart.left + chart.innerW * 0.15
               ? "start"
-              : mx >= padding.left + innerW * 0.85
+              : mx >= chart.left + chart.innerW * 0.85
                 ? "end"
                 : "middle";
           return (
@@ -335,8 +478,8 @@ export function MiniLineChart({
               <line
                 x1={mx}
                 x2={mx}
-                y1={padding.top}
-                y2={padding.top + innerH}
+                y1={PAD.top}
+                y2={chart.baseline}
                 className="stroke-foreground/25"
                 strokeWidth={1}
                 strokeDasharray="2 3"
@@ -344,9 +487,9 @@ export function MiniLineChart({
               {m.label && (
                 <text
                   x={mx}
-                  y={padding.top + 8}
+                  y={PAD.top + 12}
                   textAnchor={anchor}
-                  className="fill-muted-foreground text-[9px]"
+                  className="fill-muted-foreground text-xs"
                 >
                   {m.label}
                 </text>
@@ -355,116 +498,276 @@ export function MiniLineChart({
           );
         })}
 
-      {/* Area under the line */}
-      <path
-        d={areaPath}
-        fill={`url(#${gradientId})`}
-        stroke="none"
-      />
-
-      {/* The line itself */}
-      <path
-        d={linePath}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={1.5}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-
-      {/* Data point dots */}
-      {data.map((p, i) => (
-        <circle
-          key={`dot-${i}`}
-          cx={xScale(p.x)}
-          cy={yScale(p.y)}
-          r={2}
-          fill="currentColor"
-        />
-      ))}
-
-      {/* Hover crosshair + emphasized dot + tooltip. Rendered on top
-          of the line so it always wins z-order. */}
-      {active && (
-        <g pointerEvents="none">
-          <line
-            x1={xScale(active.x)}
-            x2={xScale(active.x)}
-            y1={padding.top}
-            y2={padding.top + innerH}
-            className="stroke-foreground/30"
-            strokeWidth={1}
-            strokeDasharray="2 2"
-          />
-          <circle
-            cx={xScale(active.x)}
-            cy={yScale(active.y)}
-            r={4}
-            className="fill-background stroke-foreground"
-            strokeWidth={1.5}
-          />
-          {/* Tooltip - anchored so it stays on-screen at both edges. */}
-          {(() => {
-            const tx = xScale(active.x);
-            const ty = yScale(active.y);
-            const text = `${tooltipLabel} · ${active.y.toFixed(1)}${yUnit}`;
-            const charW = 6.2; // text-[10px] mono ≈ 6.2 px/char
-            const tooltipW = Math.min(width - 10, text.length * charW + 16);
-            const tooltipH = 22;
-            // Prefer right of the dot; flip left if it'd overflow.
-            const goLeft = tx + tooltipW + 10 > padding.left + innerW;
-            const rectX = goLeft ? tx - tooltipW - 10 : tx + 10;
-            // Prefer above the dot; flip below if it'd overflow.
-            const rectY =
-              ty - tooltipH - 6 < padding.top ? ty + 12 : ty - tooltipH - 6;
-            return (
-              <g>
+        {/* Bars: solid to the target, the same hue fainter past it. */}
+        {chart.bars?.bars.map((b) => {
+          const p = points[b.index];
+          const today = p !== undefined && p.x === highlightX;
+          const overText = b.over ? `+${fmtValue(b.over.amount)}` : "";
+          const radius = Math.min(2, b.width / 4);
+          const showOverText =
+            b.over !== undefined &&
+            chart.bars !== null &&
+            chart.bars.slotWidth >= monoWidth(overText) + 4;
+          return (
+            <g key={`bar-${b.index}`}>
+              {/* The faint full-height bar goes underneath and the solid
+                  part over it, so the bar reads as one continuous shape
+                  that simply gets lighter past the target. */}
+              {b.over && (
                 <rect
-                  x={rectX}
-                  y={rectY}
-                  width={tooltipW}
-                  height={tooltipH}
-                  rx={4}
-                  className="fill-popover stroke-border/60"
-                  strokeWidth={1}
+                  data-part="bar-over"
+                  x={b.left}
+                  y={b.over.top}
+                  width={b.width}
+                  height={Math.max(0, b.base.bottom - b.over.top)}
+                  rx={radius}
+                  className={today ? "fill-signal/30" : "fill-foreground/25"}
                 />
+              )}
+              <rect
+                data-part="bar"
+                x={b.left}
+                y={b.base.top}
+                width={b.width}
+                height={Math.max(0, b.base.bottom - b.base.top)}
+                rx={b.over ? 0 : radius}
+                className={today ? "fill-signal" : "fill-foreground/70"}
+              />
+              {b.over && showOverText && (
                 <text
-                  x={rectX + 8}
-                  y={rectY + tooltipH / 2}
-                  dy="0.32em"
-                  className="fill-popover-foreground text-[10px] tabular-nums"
-                  style={{ fontFamily: "var(--font-mono)" }}
+                  x={b.cx}
+                  y={b.over.top - 4}
+                  textAnchor="middle"
+                  className="fill-muted-foreground font-mono text-xs tabular-nums"
                 >
-                  {text}
+                  {overText}
                 </text>
-              </g>
-            );
-          })()}
-        </g>
-      )}
+              )}
+            </g>
+          );
+        })}
 
-      {/* Pointer-catching overlay. Transparent so it doesn't repaint
-          anything visible; sized to the inner chart area. */}
-      <rect
-        x={padding.left}
-        y={padding.top}
-        width={innerW}
-        height={innerH}
-        fill="transparent"
-        onPointerMove={(e) => {
-          const rect = e.currentTarget.ownerSVGElement?.getBoundingClientRect();
-          if (!rect) return;
-          const idx = pointerToIndex(e.clientX, rect);
-          setActiveIndex(idx >= 0 ? idx : null);
-        }}
-        onPointerLeave={() => setActiveIndex(null)}
-        onTouchStart={(e) => {
-          const rect = e.currentTarget.ownerSVGElement?.getBoundingClientRect();
-          if (!rect || e.touches.length === 0) return;
-          const idx = pointerToIndex(e.touches[0].clientX, rect);
-          setActiveIndex(idx >= 0 ? idx : null);
-        }}
-      />
-    </svg>
+        {/* Target: single dashed line and/or per-day step line. */}
+        {targetLinePx !== undefined && (
+          <line
+            data-part="target-line"
+            x1={chart.left}
+            x2={plotRight}
+            y1={targetLinePx}
+            y2={targetLinePx}
+            className="stroke-foreground/50"
+            strokeWidth={1}
+            strokeDasharray="3 3"
+          />
+        )}
+        {chart.targetStepPath && (
+          <path
+            data-part="target-step"
+            d={chart.targetStepPath}
+            fill="none"
+            className="stroke-foreground/60"
+            strokeWidth={1.5}
+            strokeLinejoin="round"
+          />
+        )}
+        {targetLabel && labelY !== undefined && (
+          <text
+            x={chart.left + 4}
+            y={labelBelow ? labelY + 16 : labelY - 6}
+            textAnchor="start"
+            className="fill-muted-foreground stroke-card text-xs"
+            strokeWidth={4}
+            strokeLinejoin="round"
+            paintOrder="stroke"
+          >
+            {targetLabel}
+          </text>
+        )}
+
+        {!isBar && (
+          <>
+            <path
+              d={chart.areaPath}
+              fill={`url(#${gradientId})`}
+              stroke="none"
+            />
+            <path
+              data-part="line"
+              d={chart.linePath}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            {chart.pts.map((p, i) => {
+              const today = points[i]?.x === highlightX;
+              return (
+                <circle
+                  key={`dot-${i}`}
+                  cx={p.x}
+                  cy={p.y}
+                  r={today ? 3.5 : 2}
+                  className={today ? "fill-signal" : undefined}
+                  fill={today ? undefined : "currentColor"}
+                />
+              );
+            })}
+          </>
+        )}
+
+        {/* Hover crosshair + tooltip, on top of everything. */}
+        {active && activePt && (
+          <g pointerEvents="none">
+            <line
+              x1={activePt.x}
+              x2={activePt.x}
+              y1={PAD.top}
+              y2={chart.baseline}
+              className="stroke-foreground/30"
+              strokeWidth={1}
+              strokeDasharray="2 2"
+            />
+            {!isBar && (
+              <circle
+                cx={activePt.x}
+                cy={activePt.y}
+                r={4}
+                className="fill-background stroke-foreground"
+                strokeWidth={1.5}
+              />
+            )}
+            {(() => {
+              const t = targetFor(active.x);
+              const text = `${labelFor(active)} · ${withUnit(active.y)}${
+                t !== undefined ? ` · target ${fmtValue(t)}` : ""
+              }`;
+              const tooltipW = Math.min(W - 8, monoWidth(text) + 16);
+              const tooltipH = 24;
+              const goLeft = activePt.x + tooltipW + 10 > plotRight;
+              const rectX = Math.max(
+                0,
+                goLeft ? activePt.x - tooltipW - 10 : activePt.x + 10,
+              );
+              const rectY =
+                activePt.y - tooltipH - 6 < 0
+                  ? activePt.y + 12
+                  : activePt.y - tooltipH - 6;
+              return (
+                <g>
+                  <rect
+                    x={rectX}
+                    y={Math.min(rectY, H - tooltipH)}
+                    width={tooltipW}
+                    height={tooltipH}
+                    rx={6}
+                    className="fill-popover stroke-border"
+                    strokeWidth={1}
+                  />
+                  <text
+                    x={rectX + 8}
+                    y={Math.min(rectY, H - tooltipH) + tooltipH / 2}
+                    dy="0.32em"
+                    className="fill-popover-foreground font-mono text-xs tabular-nums"
+                  >
+                    {text}
+                  </text>
+                </g>
+              );
+            })()}
+          </g>
+        )}
+
+        {/* Pointer-catching overlay over the plot. A tap (touch) keeps its
+            tooltip up after the finger lifts; a mouse clears it on leave. */}
+        <rect
+          data-part="hit"
+          x={chart.left}
+          y={PAD.top}
+          width={chart.innerW}
+          height={chart.innerH}
+          fill="transparent"
+          onPointerDown={(e) => {
+            const svg = e.currentTarget.ownerSVGElement;
+            if (!svg) return;
+            const idx = pointerToIndex(svg, e.clientX, e.clientY);
+            setActiveIndex(idx >= 0 ? idx : null);
+          }}
+          onPointerMove={(e) => {
+            const svg = e.currentTarget.ownerSVGElement;
+            if (!svg) return;
+            const idx = pointerToIndex(svg, e.clientX, e.clientY);
+            setActiveIndex(idx >= 0 ? idx : null);
+          }}
+          onPointerLeave={(e) => {
+            if (e.pointerType === "mouse") setActiveIndex(null);
+          }}
+        />
+      </svg>
+
+      {/* Text alternative: every value, reachable by keyboard and screen
+          reader. Off paper - the printed chart is the report's form. */}
+      <details className="print-hide mt-1 text-xs">
+        <summary className="inline-flex min-h-8 cursor-pointer items-center rounded-sm text-muted-foreground hover:text-foreground coarse:min-h-11">
+          Show data table
+        </summary>
+        <div className="mt-1 max-h-64 overflow-auto rounded-md border border-border/60">
+          <table className="w-full text-left text-xs tabular-nums">
+            <caption className="sr-only">{title ?? "Chart data"}</caption>
+            <thead className="sticky top-0 bg-card">
+              <tr className="border-b border-border/60 text-muted-foreground">
+                <th
+                  scope="col"
+                  className="px-2 py-1.5 font-medium"
+                >
+                  Date
+                </th>
+                <th
+                  scope="col"
+                  className="px-2 py-1.5 text-right font-medium"
+                >
+                  {unit ? `Value (${unit})` : "Value"}
+                </th>
+                {hasTargets && (
+                  <th
+                    scope="col"
+                    className="px-2 py-1.5 text-right font-medium"
+                  >
+                    {unit ? `Target (${unit})` : "Target"}
+                  </th>
+                )}
+              </tr>
+            </thead>
+            <tbody className="font-mono">
+              {points.map((p) => {
+                const t = targetFor(p.x);
+                return (
+                  <tr
+                    key={`row-${p.x}`}
+                    className={cn(
+                      "border-b border-border/40 last:border-0",
+                      p.x === highlightX && "text-signal",
+                    )}
+                  >
+                    <th
+                      scope="row"
+                      className="px-2 py-1 font-sans font-normal"
+                    >
+                      {labelFor(p)}
+                    </th>
+                    <td className="px-2 py-1 text-right">{fmtValue(p.y)}</td>
+                    {hasTargets && (
+                      <td className="px-2 py-1 text-right text-muted-foreground">
+                        {t !== undefined ? fmtValue(t) : "—"}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </details>
+    </div>
   );
 }
