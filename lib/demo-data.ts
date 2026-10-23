@@ -590,6 +590,12 @@ export async function clearDemoModeData(): Promise<void> {
   // Bump the data-bus versions for the stores we actually touched so
   // any mounted view re-reads from the now-empty IDB and shows a brief
   // loading state until the upcoming sync pull lands the real rows.
+  // `profile` included: the data-bus is what re-loads `useProfile` and the
+  // fasting status, which would otherwise keep showing — and on the next
+  // edit save — the sample profile. The profile-bus is a separate channel,
+  // for the readers that load the profile on their own (UserMenu,
+  // `useDisplayName`).
+  notifyDataChanged("profile");
   notifyProfileChanged();
   notifyDataChanged("dailyLogs");
   notifyDataChanged("weightHistory");
