@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { Checkbox } from "./checkbox";
+import { CommandDialog, CommandInput } from "./command";
 import { Dialog, DialogContent, DialogTitle } from "./dialog";
 import { Sheet, SheetContent, SheetTitle } from "./sheet";
 
@@ -47,6 +48,24 @@ describe("overlay close buttons", () => {
       );
     },
   );
+});
+
+describe("CommandDialog", () => {
+  it("pads the search field clear of the close button's hit area", () => {
+    render(
+      <CommandDialog open>
+        <CommandInput placeholder="Search" />
+      </CommandDialog>,
+    );
+    const close = screen.getByRole("button", { name: "Close" });
+    expect(close.className).toContain("right-2");
+    expect(close.className).toContain("w-touch-8");
+    const root = screen.getByRole("combobox").closest("[cmdk-root]");
+    // right-2 (8px) + 32px close = 40px < pr-12 (48px);
+    // right-2 (8px) + 44px close on a finger = 52px < pr-14 (56px).
+    expect(root?.className).toContain("[&_[cmdk-input-wrapper]]:pr-12");
+    expect(root?.className).toContain("coarse:[&_[cmdk-input-wrapper]]:pr-14");
+  });
 });
 
 describe("Checkbox", () => {
