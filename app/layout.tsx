@@ -1,3 +1,4 @@
+import { AppToaster } from "@/components/app-toaster";
 import { MotionProvider } from "@/components/motion-provider";
 import { CookieNotice } from "@/components/shell/CookieNotice";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -7,7 +8,6 @@ import type { Metadata, Viewport } from "next";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
 import { Geist, Geist_Mono } from "next/font/google";
-import { Toaster } from "sonner";
 import "./globals.css";
 
 /** Two-family system (the "Instrument" direction):
@@ -173,15 +173,9 @@ export default async function RootLayout({
             disableTransitionOnChange
           >
             <MotionProvider>{children}</MotionProvider>
-            {/* Toaster lives inside ThemeProvider so `theme="system"`
-                picks up the active class. `richColors` gives semantic
-                green / red for success / error variants. */}
-            <Toaster
-              position="bottom-center"
-              richColors
-              closeButton
-              theme="system"
-            />
+            {/* Inside ThemeProvider: follows next-themes' resolved theme
+                rather than the OS preference. */}
+            <AppToaster />
             {/* Cookie/privacy notice - informational only because
              *  Maqro doesn't set non-essential cookies. Mounted in
              *  the root layout so it covers /, /app, /login, and

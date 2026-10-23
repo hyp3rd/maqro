@@ -284,6 +284,16 @@
     outline: 2px solid hsl(var(--ring));
     outline-offset: 2px;
   }
+  /* Toasts clear the mobile tab bar. The Toaster (components/
+     app-toaster.tsx) offsets by `--toast-offset-bottom`; it is only set
+     while the bar is mounted and visible (it hides from `md` up), so
+     pages without it keep Sonner's default edge offset. The bar is
+     ~58px + the home-indicator inset; 4.75rem leaves an 18px gap. */
+  @media not all and (min-width: 48rem) {
+    :root:has([data-mobile-bottom-nav]) {
+      --toast-offset-bottom: calc(env(safe-area-inset-bottom) + 4.75rem);
+    }
+  }
   /* Use tabular numerals for any element that wants stable digit width. */
   .tabular-nums {
     font-variant-numeric: tabular-nums;
