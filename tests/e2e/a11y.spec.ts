@@ -31,14 +31,11 @@ for (const { path, name } of PAGES) {
     // interactive controls — false greens.
     await page.waitForLoadState("networkidle");
 
+    // `color-contrast` is on: every token pair meets AA
+    // (lib/design/palette.test.ts), so a failure here is a component
+    // using an off-token colour or opacity.
     const results = await new AxeBuilder({ page })
       .withTags(["wcag2a", "wcag2aa", "best-practice"])
-      // `color-contrast` is allowed to flag warnings during dev —
-      // some of our muted-foreground combos are at the edge of
-      // 4.5:1 and tuning them is a separate visual-design pass.
-      // We disable it here so the suite stays actionable; a
-      // contrast-only sweep belongs in its own spec.
-      .disableRules(["color-contrast"])
       .analyze();
 
     // Build a useful failure message when violations exist.
