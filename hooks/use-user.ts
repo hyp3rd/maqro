@@ -2,7 +2,11 @@
 
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { useEffect, useState } from "react";
-import type { User } from "@supabase/supabase-js";
+import {
+  isAuthRetryableFetchError,
+  type SupabaseClient,
+  type User,
+} from "@supabase/supabase-js";
 
 export type UserState = {
   user: User | null;
@@ -12,6 +16,32 @@ export type UserState = {
    * disabled in that case but the rest of the app still works. */
   isUnconfigured: boolean;
 };
+
+/** The signed-in user per the auth server, or — when the server can't be
+ *  reached — per the locally persisted session.
+ *
+ *  `getUser()` validates the session against `/auth/v1/user`. Offline (common
+ *  for this PWA) that request fails with an `AuthRetryableFetchError` and
+ *  auth-js resolves `{ user: null }` — which is "couldn't ask", not "signed
+ *  out": auth-js deliberately keeps the stored session on retryable failures
+ *  and refreshes it once the network is back. Reporting `null` there would
+ *  flip every signed-in surface to guest mode for the whole offline session
+ *  (the cached Pro tier, the day log's identity, sync). So on a network
+ *  failure we fall back to `getSession()`, which reads the persisted session
+ *  without a network round-trip.
+ *
+ *  That identity is unverified, which is acceptable here: it only selects
+ *  which local data / cached client-side gates to show on this device, and
+ *  every server route re-authenticates the request itself. Any other error
+ *  (missing or revoked session) still means signed out. */
+async function resolveUser(supabase: SupabaseClient): Promise<User | null> {
+  const { data, error } = await supabase.auth.getUser();
+  if (error === null || !isAuthRetryableFetchError(error)) {
+    return data.user ?? null;
+  }
+  const { data: local } = await supabase.auth.getSession();
+  return local.session?.user ?? null;
+}
 
 /** Subscribes to the Supabase auth session. Updates on sign-in, sign-out,
  * and token refresh. Falls back to `{ user: null, isLoaded: true,
@@ -30,9 +60,9 @@ export function useUser(): UserState {
 
     let cancelled = false;
 
-    supabase.auth.getUser().then(({ data }) => {
+    resolveUser(supabase).then((resolved) => {
       if (cancelled) return;
-      setUser(data.user ?? null);
+      setUser(resolved);
       setAuthResolved(true);
     });
 
