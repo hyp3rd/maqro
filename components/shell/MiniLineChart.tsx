@@ -224,15 +224,31 @@ export function MiniLineChart({
     const candidates: XLabel[] =
       xType === "day"
         ? (() => {
-            const sample = formatDayIndex(xMin);
-            const fit = Math.floor(
-              innerW / (monoWidth(sample) + X_LABEL_GAP_PX),
-            );
-            return dayTicks(
-              xMin,
-              xMax,
-              Math.max(1, Math.min(fit, xTicks ?? Infinity)),
-            ).map((t) => ({ x: t.day, text: t.label }));
+            // Ticks must sit at least one label (plus gap) apart, in days,
+            // or the collision pass below drops some and the step turns
+            // uneven. unitPx is the px width of one day here.
+            const ticksFor = (labelW: number) => {
+              const room = labelW + X_LABEL_GAP_PX;
+              return dayTicks(
+                xMin,
+                xMax,
+                Math.max(
+                  1,
+                  Math.min(Math.floor(innerW / room), xTicks ?? Infinity),
+                ),
+                undefined,
+                room / unitPx,
+              );
+            };
+            const assumedW = monoWidth(formatDayIndex(xMin));
+            let ticks = ticksFor(assumedW);
+            // The first day's label can be narrower than the ones picked
+            // ("Oct 1" vs "Oct 10"): refit once on the widest label actually
+            // chosen. Coarser steps never use wider labels (month and year
+            // ticks are shorter), so once is enough.
+            const widestW = Math.max(...ticks.map((t) => monoWidth(t.label)));
+            if (widestW > assumedW) ticks = ticksFor(widestW);
+            return ticks.map((t) => ({ x: t.day, text: t.label }));
           })()
         : points.map((p) => ({ x: p.x, text: p.label ?? fmtNum(p.x) }));
     const cap = xTicks ?? Infinity;

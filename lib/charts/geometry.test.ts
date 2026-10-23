@@ -163,6 +163,19 @@ describe("dayTicks", () => {
     expect(year?.day).toBe(dayIndexFromIsoDate("2026-01-01"));
   });
 
+  it("skips a step whose ticks would sit closer than minGapDays", () => {
+    // Four Mondays fit the count, but they are only 7 days apart.
+    const weekly = dayTicks(oct(1), oct(30), 4, "en-US");
+    expect(weekly.map((x) => x.label)).toEqual([
+      "Oct 5",
+      "Oct 12",
+      "Oct 19",
+      "Oct 26",
+    ]);
+    const roomy = dayTicks(oct(1), oct(30), 4, "en-US", 8);
+    expect(roomy.map((x) => x.label)).toEqual(["Oct 5", "Oct 19"]);
+  });
+
   it("labels a single day", () => {
     expect(dayTicks(oct(9), oct(9), 5, "en-US")).toEqual([
       { day: oct(9), label: "Oct 9" },

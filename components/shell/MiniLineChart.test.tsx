@@ -136,6 +136,33 @@ describe("MiniLineChart axes", () => {
       expect(["Oct 5", "Oct 12", "Oct 19", "Oct 26"]).toContain(d);
     }
   });
+
+  it("keeps the date labels evenly stepped at every width", () => {
+    // Starts on a one-digit day ("Oct 1") but most labels have two digits.
+    const month: LinePoint[] = Array.from({ length: 31 }, (_, i) => ({
+      x: day(1 + i),
+      y: 1800 + (i % 4) * 100,
+    }));
+    const { container } = render(
+      <MiniLineChart
+        data={month}
+        xType="day"
+      />,
+    );
+    for (let w = 200; w <= 960; w += 4) {
+      resizeAll(w);
+      const days = texts(container)
+        .map((l) => /^Oct (\d+)$/.exec(l)?.[1])
+        .filter((d): d is string => d !== undefined)
+        .map(Number);
+      const gaps = new Set(days.slice(1).map((d, i) => d - (days[i] ?? 0)));
+      // One calendar step throughout: no tick dropped from the middle.
+      expect({ width: w, gaps: gaps.size <= 1 }).toEqual({
+        width: w,
+        gaps: true,
+      });
+    }
+  });
 });
 
 describe("MiniLineChart line", () => {

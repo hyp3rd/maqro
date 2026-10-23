@@ -163,14 +163,21 @@ function daysFor(step: DayStep, first: number, last: number): number[] {
 
 /** Evenly spaced calendar ticks across `[first, last]` (day indices):
  *  every 1/2/3 days, Mondays (weekly / fortnightly), or month starts -
- *  whichever is the finest step that yields at most `maxTicks` labels.
- *  Labels are locale-formatted ("Oct 23", or "Oct" for month steps, with
- *  the year on January ticks when the range spans more than one year). */
+ *  whichever is the finest step that yields at most `maxTicks` labels, each
+ *  at least `minGapDays` after the one before. Labels are locale-formatted
+ *  ("Oct 23", or "Oct" for month steps, with the year on January ticks when
+ *  the range spans more than one year).
+ *
+ *  A count alone can't say whether labels fit: four weekly ticks over a
+ *  30-day range sit 7 days apart however wide the axis is. A caller that
+ *  knows its pixels per day passes the label width (plus gap) in days as
+ *  `minGapDays`, so every chosen label has room and none is dropped. */
 export function dayTicks(
   first: number,
   last: number,
   maxTicks: number,
   locale?: string,
+  minGapDays = 0,
 ): DayTick[] {
   const lo = Math.min(first, last);
   const hi = Math.max(first, last);
@@ -178,6 +185,9 @@ export function dayTicks(
   for (const step of DAY_STEPS) {
     const days = daysFor(step, lo, hi);
     if (days.length === 0 || days.length > cap) continue;
+    if (days.some((d, i) => i > 0 && d - (days[i - 1] ?? d) < minGapDays)) {
+      continue;
+    }
     if (step.kind !== "month") {
       return days.map((day) => ({ day, label: formatDayIndex(day, locale) }));
     }
