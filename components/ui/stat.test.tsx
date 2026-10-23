@@ -134,6 +134,69 @@ describe("MacroStat", () => {
     expect(meter.querySelector("[data-part=overflow]")).not.toBeNull();
   });
 
+  it("derives +N from the figures it shows for a fractional target", () => {
+    // 161.6 vs 160.4 reads "162 / 160 g", so the note says +2 (raw 1.2
+    // would say +1) and the meter speaks the same numbers.
+    render(
+      <dl data-testid="dl">
+        <MacroStat
+          macro="protein"
+          value={161.6}
+          target={160.4}
+        />
+      </dl>,
+      { wrapper: intlWrapper() },
+    );
+    const dl = screen.getByTestId("dl");
+    expect(pairs(dl)).toEqual([["Protein", ["162 g +2", "/ 160 g", ""]]]);
+    expect(
+      within(dl)
+        .getByRole("meter", { name: "Protein" })
+        .getAttribute("aria-valuetext"),
+    ).toBe("162 g of 160 g, 2 g above target");
+  });
+
+  it("is not over target when value and target show the same figure", () => {
+    render(
+      <dl data-testid="dl">
+        <MacroStat
+          macro="protein"
+          value={160.45}
+          target={160.2}
+        />
+      </dl>,
+      { wrapper: intlWrapper() },
+    );
+    const dl = screen.getByTestId("dl");
+    expect(pairs(dl)).toEqual([["Protein", ["160 g", "/ 160 g", ""]]]);
+    const meter = within(dl).getByRole("meter", { name: "Protein" });
+    expect(meter.getAttribute("aria-valuetext")).toBe("160 g of 160 g");
+    expect(meter.querySelector("[data-part=overflow]")).toBeNull();
+  });
+
+  it("rounds at the given precision before comparing", () => {
+    // 161.66 vs 160.34 at one decimal: 161.7 / 160.3, so +1.4 (raw 1.32
+    // would read +1.3).
+    render(
+      <dl data-testid="dl">
+        <MacroStat
+          macro="carbs"
+          value={161.66}
+          target={160.34}
+          decimals={1}
+        />
+      </dl>,
+      { wrapper: intlWrapper() },
+    );
+    const dl = screen.getByTestId("dl");
+    expect(pairs(dl)).toEqual([["Carbs", ["161.7 g +1.4", "/ 160.3 g", ""]]]);
+    expect(
+      within(dl)
+        .getByRole("meter", { name: "Carbs" })
+        .getAttribute("aria-valuetext"),
+    ).toBe("161.7 g of 160.3 g, 1.4 g above target");
+  });
+
   it("omits the target, meter and +N without a target", () => {
     render(
       <dl data-testid="dl">

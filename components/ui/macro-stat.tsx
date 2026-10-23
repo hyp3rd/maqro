@@ -2,7 +2,7 @@ import { formatNumber } from "@/lib/i18n/number";
 import { cn } from "@/lib/utils";
 import * as React from "react";
 import { useLocale } from "next-intl";
-import { Meter, type MeterTone } from "./meter";
+import { Meter, meterReading, type MeterTone } from "./meter";
 import { Stat, type StatProps } from "./stat";
 
 export type MacroKey = "calories" | "protein" | "carbs" | "fat";
@@ -30,15 +30,20 @@ const MACRO: Record<
 export type MacroStatProps = {
   macro: MacroKey;
   value: number;
-  /** When set, adds a Meter. A positive target also adds "/ target" and,
-   *  past it, a neutral "+N"; zero or less (no goals yet) leaves the meter
-   *  as an empty track that reads "no target", with no "/ 0" figure. */
+  /** When set, adds a Meter. A target that rounds to a positive figure also
+   *  adds "/ target" and, past it, a neutral "+N"; zero or less (no goals
+   *  yet) leaves the meter as an empty track that reads "no target", with
+   *  no "/ 0" figure. */
   target?: number;
   /** Overrides the default label ("Protein", "Calories", ...). */
   label?: string;
-  /** Formats the value, target and overshoot. Default: rounded, grouped
-   *  for the app locale. */
+  /** Formats the value, target and overshoot. Default: grouped for the app
+   *  locale, at `decimals`. */
   format?: (n: number) => string;
+  /** Precision of the figures (default 0). Over/under and the "+N" are
+   *  worked out on value and target rounded to it, so they match the
+   *  figures shown. Set it to match a custom `format`. */
+  decimals?: number;
   size?: StatProps["size"];
   className?: string;
   /** Replaces the formatted figure (e.g. an animated ticker); `value` still
@@ -56,21 +61,19 @@ export function MacroStat({
   target,
   label,
   format,
+  decimals = 0,
   size,
   className,
   children,
 }: MacroStatProps) {
   const locale = useLocale();
-  const show = format ?? ((n: number) => formatNumber(n, locale));
+  const show = format ?? ((n: number) => formatNumber(n, locale, decimals));
   const spec = MACRO[macro];
   const name = label ?? spec.label;
-  // Same rule as Meter: only a positive, finite target is something to
-  // measure against, so the visible and spoken readouts agree.
-  const hasTarget =
-    target !== undefined && Number.isFinite(target) && target > 0;
-  const overText =
-    hasTarget && value > target ? show(value - target) : undefined;
-  const showOver = overText !== undefined && overText !== show(0);
+  // The same rounded reading the Meter speaks: "/ target" and "+N" are the
+  // figures it says, and "+N" is always the shown value minus the shown
+  // target.
+  const reading = meterReading(value, target, decimals);
 
   return (
     <Stat
@@ -87,15 +90,19 @@ export function MacroStat({
       }
       value={children ?? show(value)}
       unit={spec.unit}
-      detail={hasTarget ? `/ ${show(target)} ${spec.unit}` : undefined}
+      detail={
+        reading.target !== null
+          ? `/ ${show(reading.target)} ${spec.unit}`
+          : undefined
+      }
       note={
-        showOver ? (
+        reading.over > 0 ? (
           // The meter speaks the overshoot; this is its visible twin.
           <span
             aria-hidden
             className="text-xs font-medium text-muted-foreground"
           >
-            +{overText}
+            +{show(reading.over)}
           </span>
         ) : undefined
       }
@@ -108,6 +115,7 @@ export function MacroStat({
           tone={spec.tone}
           unit={spec.unit}
           format={show}
+          decimals={decimals}
           className="mt-0.5"
         />
       ) : undefined}

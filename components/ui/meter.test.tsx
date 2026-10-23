@@ -4,7 +4,7 @@
 import { intlWrapper } from "@/lib/i18n/intl-test-wrapper";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { Meter, meterGeometry } from "./meter";
+import { Meter, meterGeometry, meterReading } from "./meter";
 
 afterEach(() => cleanup());
 
@@ -175,7 +175,7 @@ describe("Meter", () => {
     ).toBe("12.345 kcal of 20.000 kcal");
   });
 
-  it("formats figures with the caller's formatter", () => {
+  it("formats figures with the caller's formatter at its precision", () => {
     render(
       <Meter
         aria-label="Protein"
@@ -183,6 +183,7 @@ describe("Meter", () => {
         target={20}
         unit="g"
         format={(n) => n.toFixed(1)}
+        decimals={1}
       />,
       { wrapper: intlWrapper() },
     );
@@ -193,39 +194,90 @@ describe("Meter", () => {
     ).toBe("12.3 g of 20.0 g");
   });
 
-  it("does not speak an overshoot that formats to zero", () => {
-    // 160.6 vs 160.4 both round to 160: the screen shows no "+N", so the
-    // reading must not announce "0 g above target" either.
+  const reading = (value: number, target: number, decimals?: number) => {
     render(
       <Meter
         aria-label="Protein"
-        value={160.6}
-        target={160.4}
+        value={value}
+        target={target}
         unit="g"
+        decimals={decimals}
       />,
       { wrapper: intlWrapper() },
     );
-    expect(
-      screen
-        .getByRole("meter", { name: "Protein" })
-        .getAttribute("aria-valuetext"),
-    ).toBe("161 g of 160 g");
+    return screen.getByRole("meter", { name: "Protein" });
+  };
+
+  it("takes the overshoot from the shown figures, not the raw ones", () => {
+    // Raw 161.6 - 160.4 = 1.2 would read "+1"; the figures say 162 and
+    // 160, so the reading says 2.
+    const meter = reading(161.6, 160.4);
+    expect(meter.getAttribute("aria-valuetext")).toBe(
+      "162 g of 160 g, 2 g above target",
+    );
+    expect(meter.getAttribute("aria-valuenow")).toBe("162");
+    expect(meter.getAttribute("aria-valuemax")).toBe("162");
   });
 
-  it("speaks the smallest overshoot the formatter can show", () => {
-    render(
-      <Meter
-        aria-label="Protein"
-        value={161.6}
-        target={160.4}
-        unit="g"
-      />,
-      { wrapper: intlWrapper() },
+  it("calls a figure over target whenever it shows above it", () => {
+    // Raw 0.2 over, but 161 is shown against 160: one over, not silent.
+    expect(reading(160.6, 160.4).getAttribute("aria-valuetext")).toBe(
+      "161 g of 160 g, 1 g above target",
     );
-    expect(
-      screen
-        .getByRole("meter", { name: "Protein" })
-        .getAttribute("aria-valuetext"),
-    ).toBe("162 g of 160 g, 1 g above target");
+  });
+
+  it("is on target, with no overflow, when the figures are equal", () => {
+    // Raw 160.45 is over 160.2, but both show as 160.
+    const meter = reading(160.45, 160.2);
+    expect(meter.getAttribute("aria-valuetext")).toBe("160 g of 160 g");
+    expect(parts(meter).overflow).toBeNull();
+  });
+
+  it("rounds a fractional target at the given precision", () => {
+    // 161.66 vs 160.34 shows 161.7 vs 160.3: 1.4 over (raw 1.32 says 1.3).
+    expect(reading(161.66, 160.34, 1).getAttribute("aria-valuetext")).toBe(
+      "161.7 g of 160.3 g, 1.4 g above target",
+    );
+  });
+
+  it("has no target when the target rounds to zero", () => {
+    expect(reading(85, 0.4).getAttribute("aria-valuetext")).toBe(
+      "85 g, no target",
+    );
+  });
+});
+
+describe("meterReading", () => {
+  it("rounds value and target before comparing them", () => {
+    expect(meterReading(161.6, 160.4, 0)).toEqual({
+      value: 162,
+      target: 160,
+      over: 2,
+    });
+    expect(meterReading(160.45, 160.2, 0)).toEqual({
+      value: 160,
+      target: 160,
+      over: 0,
+    });
+    expect(meterReading(161.66, 160.34, 1)).toEqual({
+      value: 161.7,
+      target: 160.3,
+      over: 1.4,
+    });
+  });
+
+  it("has no target unless the target shows as a positive figure", () => {
+    for (const target of [undefined, 0, -5, 0.4, Number.NaN]) {
+      expect(meterReading(85, target, 0)).toEqual({
+        value: 85,
+        target: null,
+        over: 0,
+      });
+    }
+  });
+
+  it("treats negative or non-finite values as zero", () => {
+    expect(meterReading(-3, 100, 0).value).toBe(0);
+    expect(meterReading(Number.NaN, 100, 0).value).toBe(0);
   });
 });

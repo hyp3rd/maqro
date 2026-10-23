@@ -1,4 +1,4 @@
-import { formatNumber } from "@/lib/i18n/number";
+import { formatNumber, roundTo } from "@/lib/i18n/number";
 import { cn } from "@/lib/utils";
 import * as React from "react";
 import { useLocale } from "next-intl";
@@ -46,15 +46,54 @@ export function meterGeometry(value: number, target: number): MeterGeometry {
   };
 }
 
+export type MeterReading = {
+  /** The value as shown: zero or more, rounded to the readout precision. */
+  value: number;
+  /** The target as shown, or null when it is not a positive figure. */
+  target: number | null;
+  /** Shown value minus shown target when that is positive, else 0. */
+  over: number;
+};
+
+/** The figures a readout shows for `value` against `target`, rounded to
+ *  `decimals` before anything is compared: over or under, and by how much,
+ *  come from the same numbers as the figures on screen. 161.6 against
+ *  160.4 shows "162 / 160" and so is 2 over, not the raw 1.2 ("+1"); 160.4
+ *  against 160.2 shows "160 / 160" and is not over at all. */
+export function meterReading(
+  value: number,
+  target: number | undefined,
+  decimals: number,
+): MeterReading {
+  const shown = roundTo(
+    Number.isFinite(value) && value > 0 ? value : 0,
+    decimals,
+  );
+  const goal =
+    target !== undefined && Number.isFinite(target)
+      ? roundTo(target, decimals)
+      : 0;
+  if (!(goal > 0)) return { value: shown, target: null, over: 0 };
+  return {
+    value: shown,
+    target: goal,
+    over: Math.max(roundTo(shown - goal, decimals), 0),
+  };
+}
+
 export type MeterProps = {
   value: number;
   target: number;
   tone?: MeterTone;
   /** Unit for the spoken reading ("g", "kcal"). */
   unit?: string;
-  /** Formats figures in the spoken reading. Default: rounded, grouped
-   *  for the app locale. */
+  /** Formats figures in the spoken reading. Default: grouped for the app
+   *  locale, at `decimals`. */
   format?: (n: number) => string;
+  /** Precision of the figures (default 0): value and target are rounded to
+   *  it before they are compared, drawn or formatted. Set it to match a
+   *  custom `format`. */
+  decimals?: number;
   className?: string;
 } & (
   | { "aria-label": string; "aria-labelledby"?: never }
@@ -68,7 +107,9 @@ export type MeterProps = {
  *
  *  ARIA `meter` (name required). `aria-valuemax` is the larger of target and
  *  value because the spec forbids `aria-valuenow` above the max; the target
- *  and any overshoot are spoken through `aria-valuetext`.
+ *  and any overshoot are spoken through `aria-valuetext`. Every figure, and
+ *  the bar, uses the rounded `meterReading`, so the reading never disagrees
+ *  with itself or with the figures beside it.
  *  https://www.w3.org/TR/wai-aria-1.2/#meter */
 export function Meter({
   value,
@@ -76,24 +117,21 @@ export function Meter({
   tone = "neutral",
   unit,
   format,
+  decimals = 0,
   className,
   ...labelling
 }: MeterProps) {
   const locale = useLocale();
-  const show = format ?? ((n: number) => formatNumber(n, locale));
-  const now = Number.isFinite(value) && value > 0 ? value : 0;
-  const hasTarget = Number.isFinite(target) && target > 0;
-  const geometry = meterGeometry(now, target);
+  const show = format ?? ((n: number) => formatNumber(n, locale, decimals));
+  const reading = meterReading(value, target, decimals);
+  const geometry = meterGeometry(reading.value, reading.target ?? 0);
   const withUnit = (n: number) => (unit ? `${show(n)} ${unit}` : show(n));
-  // An overshoot that formats to zero ("0 g above target") is noise: skip
-  // it, as MacroStat skips its visible "+N".
-  const overshoot = hasTarget ? now - target : 0;
-  const spokenOver = overshoot > 0 && show(overshoot) !== show(0);
-  const valueText = hasTarget
-    ? `${withUnit(now)} of ${withUnit(target)}${
-        spokenOver ? `, ${withUnit(overshoot)} above target` : ""
-      }`
-    : `${withUnit(now)}, no target`;
+  const valueText =
+    reading.target !== null
+      ? `${withUnit(reading.value)} of ${withUnit(reading.target)}${
+          reading.over > 0 ? `, ${withUnit(reading.over)} above target` : ""
+        }`
+      : `${withUnit(reading.value)}, no target`;
   const classes = TONE[tone];
 
   return (
@@ -101,8 +139,12 @@ export function Meter({
       role="meter"
       {...labelling}
       aria-valuemin={0}
-      aria-valuemax={hasTarget ? Math.max(target, now) : now}
-      aria-valuenow={now}
+      aria-valuemax={
+        reading.target !== null
+          ? Math.max(reading.target, reading.value)
+          : reading.value
+      }
+      aria-valuenow={reading.value}
       aria-valuetext={valueText}
       className={cn("relative h-2 w-full", className)}
     >
