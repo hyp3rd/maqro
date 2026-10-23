@@ -75,6 +75,22 @@ describe("SegmentedControl", () => {
     expect(radio("lb").tabIndex).toBe(-1);
   });
 
+  it("moves the tab stop to the first enabled radio when the checked one is disabled", () => {
+    render(
+      <Harness
+        initial="off"
+        disabled="off"
+      />,
+    );
+    // A disabled button cannot be focused, so leaving the tab stop on it
+    // would take the whole group out of the tab order.
+    expect(radio("Off").tabIndex).toBe(-1);
+    expect(radio("Modest").tabIndex).toBe(0);
+    expect(radio("Pronounced").tabIndex).toBe(-1);
+    // The checked state itself is not rewritten.
+    expect(radio("Off").getAttribute("aria-checked")).toBe("true");
+  });
+
   it("checks a radio on click", () => {
     const onChange = vi.fn();
     render(<Harness onChange={onChange} />);

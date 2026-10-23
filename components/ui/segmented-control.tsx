@@ -24,9 +24,10 @@ const PREV_KEYS = new Set(["ArrowLeft", "ArrowUp"]);
 
 /** One-of-N choice drawn as equal segments (the Instrument "Off / Modest /
  *  Pronounced" control). WAI-ARIA radio group: Tab enters on the checked
- *  radio (or the first one when none matches), the arrow keys move focus
- *  and check the adjacent radio, wrapping at the ends and skipping disabled
- *  options, and Space or a click checks the focused radio.
+ *  radio (or on the first enabled one when none matches or the checked one
+ *  is disabled, since a disabled button cannot take focus), the arrow keys
+ *  move focus and check the adjacent radio, wrapping at the ends and
+ *  skipping disabled options, and Space or a click checks the focused radio.
  *  https://www.w3.org/WAI/ARIA/apg/patterns/radio/
  *
  *  Each segment is 36px tall on a precise pointer and 44px on a finger. */
@@ -40,7 +41,10 @@ export function SegmentedControl<T extends string>({
   const refs = React.useRef<(HTMLButtonElement | null)[]>([]);
   const checkedIndex = options.findIndex((o) => o.value === value);
   const firstEnabled = options.findIndex((o) => !o.disabled);
-  const tabStop = checkedIndex >= 0 ? checkedIndex : firstEnabled;
+  const tabStop =
+    checkedIndex >= 0 && !options[checkedIndex]?.disabled
+      ? checkedIndex
+      : firstEnabled;
 
   const onKeyDown = (event: React.KeyboardEvent, from: number) => {
     const step = NEXT_KEYS.has(event.key)
