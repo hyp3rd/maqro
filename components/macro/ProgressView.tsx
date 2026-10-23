@@ -12,7 +12,7 @@ import { NumberTicker } from "@/components/shell/NumberTicker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useAiUsage } from "@/hooks/use-ai-usage";
+import { useTier } from "@/hooks/use-ai-usage";
 import { useToday } from "@/hooks/use-today";
 import { FEATURES } from "@/lib/billing/tiers";
 import { bodyFatCategory, estimateBodyFat } from "@/lib/body-fat";
@@ -315,10 +315,8 @@ export function ProgressView({
   // and the per-phase maintenance reads. Self-gated here (mirrors how
   // MicronutrientsSection gates) so the markers + the Pro section all read one
   // tier decision.
-  const { state: usageState } = useAiUsage();
-  const isProTrends =
-    usageState.status === "ok" &&
-    FEATURES.canViewTdeeHistory(usageState.data.tier);
+  const { tier } = useTier();
+  const isProTrends = tier !== null && FEATURES.canViewTdeeHistory(tier);
 
   const tdeeHistory = useMemo<TdeePoint[]>(
     () =>

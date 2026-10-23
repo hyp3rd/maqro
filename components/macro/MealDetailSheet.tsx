@@ -6,7 +6,7 @@ import type {
   Meal,
   PersonalInfo,
 } from "@/components/macro/types";
-import { useAiUsage } from "@/hooks/use-ai-usage";
+import { useTier } from "@/hooks/use-ai-usage";
 import { effectiveAge } from "@/lib/age";
 import { AI_MAX_NAME_CHARS } from "@/lib/ai/request-limits";
 import { clampAiText } from "@/lib/ai/request-payload";
@@ -67,10 +67,8 @@ function sexFromGender(g: PersonalInfo["gender"] | undefined): BiologicalSex {
  *  Header-less — the host (MealHubSheet) renders the meal title — and
  *  keyed by meal id at the call site so it remounts (fresh data) per open. */
 export function MealDetail({ meal, goal }: { meal: Meal; goal?: DailyGoal }) {
-  const { state } = useAiUsage();
-  const isPro =
-    state.status === "ok" && FEATURES.canTrackMicronutrients(state.data.tier);
-  const tierResolved = state.status === "ok" || state.status === "anon";
+  const { tier, resolved: tierResolved } = useTier();
+  const isPro = tier !== null && FEATURES.canTrackMicronutrients(tier);
 
   const [profiles, setProfiles] = useState<MicronutrientProfile[] | null>(null);
   const [userProfile, setUserProfile] = useState<PersonalInfo | null>(null);

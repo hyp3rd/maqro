@@ -1,5 +1,6 @@
 "use client";
 
+import { AiUsageProvider } from "@/hooks/use-ai-usage";
 import { Suspense } from "react";
 import dynamic from "next/dynamic";
 
@@ -21,15 +22,20 @@ import dynamic from "next/dynamic";
  *  The `<Suspense>` wrapper stays: `MacroCalculator` reads `?upgrade=…` via
  *  `useSearchParams`, and the boundary satisfies the production build's
  *  "useSearchParams() should be wrapped in a suspense boundary" check. The
- *  fallback is `null` — there's no meaningful pre-hydration UI to show. */
+ *  fallback is `null` — there's no meaningful pre-hydration UI to show.
+ *
+ *  `AiUsageProvider` owns the app's single `/api/billing/usage` fetch and the
+ *  cached last-known tier every Pro gate below it reads. */
 const MacroCalculator = dynamic(() => import("../../macro-calculator"), {
   ssr: false,
 });
 
 export default function AppPage() {
   return (
-    <Suspense fallback={null}>
-      <MacroCalculator />
-    </Suspense>
+    <AiUsageProvider>
+      <Suspense fallback={null}>
+        <MacroCalculator />
+      </Suspense>
+    </AiUsageProvider>
   );
 }

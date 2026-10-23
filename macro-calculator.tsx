@@ -53,7 +53,7 @@ import { OnboardingWizard } from "./components/onboarding/OnboardingWizard";
 import { AppShell } from "./components/shell/AppShell";
 import type { ViewKey } from "./components/shell/Sidebar";
 import { foodDatabase } from "./data/food-database";
-import { useAiUsage } from "./hooks/use-ai-usage";
+import { useTier } from "./hooks/use-ai-usage";
 import { type DayTarget, useDailyLog } from "./hooks/use-daily-log";
 import { useFoodSearch } from "./hooks/use-food-search";
 import { useIsMobile } from "./hooks/use-mobile";
@@ -661,10 +661,8 @@ const MacroCalculator = () => {
   // phases transition. Gated on the live tier — while it loads (or for
   // free/downgraded users) `phasesEnabled` is false and the linear goal
   // drives the target, so the number is never wrong-by-default.
-  const { state: aiUsageState } = useAiUsage();
-  const goalPhasesEnabled =
-    aiUsageState.status === "ok" &&
-    FEATURES.canUseGoalPhases(aiUsageState.data.tier);
+  const { tier } = useTier();
+  const goalPhasesEnabled = tier !== null && FEATURES.canUseGoalPhases(tier);
   const effective = effectiveGoal(personalInfo, today, {
     phasesEnabled: goalPhasesEnabled,
   });

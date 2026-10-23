@@ -1,0 +1,231 @@
+"use client";
+
+import { useUser } from "@/hooks/use-user";
+import {
+  clearCachedTier,
+  readCachedTier,
+  writeCachedTier,
+} from "@/lib/billing/tier-cache";
+import type { Tier } from "@/lib/billing/tiers";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+
+export type AiUsage = {
+  used: number;
+  /** `null` for unmetered tiers (Pro and beyond). */
+  cap: number | null;
+  /** Resolved C2 tier — the canonical signal for feature gating
+   *  on the client. */
+  tier: Tier;
+  /** Legacy backwards-compat boolean for C1-era call sites.
+   *  Equivalent to `tier !== "free"`. */
+  isPremium: boolean;
+  /** Stripe subscription status. `null` if the user has never
+   *  subscribed. */
+  subscriptionStatus?: string | null;
+  /** ISO timestamp of the current paid-period end. `null` for
+   *  free users. */
+  currentPeriodEnd?: string | null;
+};
+
+export type AiUsageState =
+  | { status: "loading" }
+  | { status: "anon" } // not signed in — no usage to fetch
+  | { status: "ok"; data: AiUsage }
+  | { status: "error"; message: string };
+
+export type UseAiUsageResult = {
+  state: AiUsageState;
+  /** Imperatively re-fetch (e.g. user clicks the "Refresh" button in
+   *  Settings, or after an AI call lands a 200 OK and we want the
+   *  counter to update without waiting for window-focus). */
+  refresh: () => void;
+};
+
+/** The tier to gate client-side features on.
+ *
+ *  - `tier`: the live server answer when there is one; the last
+ *    server-confirmed tier for this user when the live request FAILED
+ *    (offline, server error); otherwise `null` (still loading, signed out,
+ *    or failed with nothing cached).
+ *  - `resolved`: whether the gate decision is final enough to render an
+ *    upgrade prompt — true once a tier is known or the user is signed out,
+ *    false while loading (so a Pro user never sees a flash of the upsell). */
+export type TierState = { tier: Tier | null; resolved: boolean };
+
+/** Pure gate policy behind `useTier` — exported for direct tests. The cached
+ *  tier is consulted ONLY when the live request failed, never in place of a
+ *  live answer, so it can't grant more than the server last said. */
+export function resolveTierState(
+  state: AiUsageState,
+  cachedTier: () => Tier | null,
+): TierState {
+  switch (state.status) {
+    case "ok":
+      return { tier: state.data.tier, resolved: true };
+    case "anon":
+      return { tier: null, resolved: true };
+    case "loading":
+      return { tier: null, resolved: false };
+    case "error": {
+      const cached = cachedTier();
+      return cached === null
+        ? { tier: null, resolved: false }
+        : { tier: cached, resolved: true };
+    }
+  }
+}
+
+type AiUsageContextValue = UseAiUsageResult & { tier: TierState };
+
+const AiUsageContext = createContext<AiUsageContextValue | null>(null);
+
+/** The ONE `/api/billing/usage` fetch for a subtree. Every usage/tier reader
+ *  below it shares this state, so separate components can never disagree
+ *  about the tier (each used to fetch on its own), and the last-known tier
+ *  is persisted per user (lib/billing/tier-cache.ts) so an offline Pro user
+ *  keeps their Pro-gated targets.
+ *
+ *  Auto-refresh:
+ *    - On mount / when the signed-in user changes (initial fetch)
+ *    - Window focus (`visibilitychange` → if the tab becomes visible,
+ *      re-fetch). Covers the common case where the user makes an AI call,
+ *      switches back to Settings, and expects to see the bumped counter.
+ *    - `refresh()` for explicit triggers. */
+export function AiUsageProvider({ children }: { children: ReactNode }) {
+  const { user, isLoaded } = useUser();
+  const userId = user?.id ?? null;
+  // The settled response, tagged with the user it belongs to: after an
+  // account switch the previous user's answer must never surface for the
+  // new one while their own request is in flight.
+  const [settled, setSettled] = useState<{
+    userId: string;
+    state: AiUsageState;
+  } | null>(null);
+  // `tick` is the load trigger — bumping it re-runs the effect.
+  // Both window-focus refresh and the imperative refresh() function
+  // route through it so the data path stays single.
+  const [tick, setTick] = useState(0);
+
+  const refresh = useCallback(() => {
+    setTick((t) => t + 1);
+  }, []);
+
+  useEffect(() => {
+    // Signed-out users have no usage to fetch — skip the auth-only endpoint
+    // entirely rather than fire a guaranteed 401 at it. The "anon"/"loading"
+    // gate states are derived below, so there's nothing to set here.
+    if (!isLoaded || !userId) return;
+    let cancelled = false;
+    const settle = (state: AiUsageState) => {
+      if (!cancelled) setSettled({ userId, state });
+    };
+    fetch("/api/billing/usage")
+      .then(async (res) => {
+        if (cancelled) return;
+        if (res.status === 401) {
+          // Session expired mid-flight — fall back to anon, and forget the
+          // tier: the server no longer vouches for this session.
+          clearCachedTier();
+          settle({ status: "anon" });
+          return;
+        }
+        if (!res.ok) {
+          const data = (await res.json().catch(() => ({}))) as {
+            error?: string;
+          };
+          settle({
+            status: "error",
+            message: data.error ?? `HTTP ${res.status}`,
+          });
+          return;
+        }
+        const data = (await res.json()) as AiUsage;
+        if (cancelled) return;
+        writeCachedTier(userId, data.tier);
+        settle({ status: "ok", data });
+      })
+      .catch((err) => {
+        settle({
+          status: "error",
+          message: err instanceof Error ? err.message : "Couldn't load usage.",
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tick, userId, isLoaded]);
+
+  // Refresh whenever the tab regains visibility. The user might have
+  // been on the meal planner making AI calls, switched away, and is
+  // now back looking at Settings — the counter should reflect what
+  // just happened.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const handler = () => {
+      if (document.visibilityState === "visible") {
+        setTick((t) => t + 1);
+      }
+    };
+    document.addEventListener("visibilitychange", handler);
+    return () => document.removeEventListener("visibilitychange", handler);
+  }, []);
+
+  // Derive the gate states instead of setting them in the effect (a sync
+  // setState there triggers cascading renders): a guest is "anon", an
+  // unresolved session is "loading", a response for another user (or none
+  // yet) is "loading", otherwise the settled state.
+  const state: AiUsageState = useMemo(
+    () =>
+      !isLoaded
+        ? { status: "loading" }
+        : !userId
+          ? { status: "anon" }
+          : settled?.userId === userId
+            ? settled.state
+            : { status: "loading" },
+    [isLoaded, userId, settled],
+  );
+
+  const value = useMemo<AiUsageContextValue>(
+    () => ({
+      state,
+      refresh,
+      tier: resolveTierState(state, () =>
+        userId ? readCachedTier(userId) : null,
+      ),
+    }),
+    [state, refresh, userId],
+  );
+
+  return <AiUsageContext value={value}>{children}</AiUsageContext>;
+}
+
+function useAiUsageContext(hook: string): AiUsageContextValue {
+  const ctx = useContext(AiUsageContext);
+  if (ctx === null) {
+    throw new Error(`${hook} must be used inside <AiUsageProvider>.`);
+  }
+  return ctx;
+}
+
+/** The caller's current-month AI usage from the shared provider. Returns
+ *  `{ state, refresh }` so consumers can render the four states (loading /
+ *  anon / ok / error) and trigger a manual re-fetch. Live data only — for
+ *  feature gating use `useTier`, which also survives an offline fetch. */
+export function useAiUsage(): UseAiUsageResult {
+  const { state, refresh } = useAiUsageContext("useAiUsage");
+  return useMemo(() => ({ state, refresh }), [state, refresh]);
+}
+
+/** The tier to gate client-side features on (see `TierState`). */
+export function useTier(): TierState {
+  return useAiUsageContext("useTier").tier;
+}

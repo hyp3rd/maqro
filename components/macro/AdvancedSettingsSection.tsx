@@ -1,7 +1,7 @@
 "use client";
 
 import { useAdaptiveTdee } from "@/hooks/use-adaptive-tdee";
-import { useAiUsage } from "@/hooks/use-ai-usage";
+import { useTier } from "@/hooks/use-ai-usage";
 import { FEATURES } from "@/lib/billing/tiers";
 import { ADAPTIVE_DELTA_THRESHOLD, confidenceLabel } from "@/lib/trends";
 import React from "react";
@@ -39,9 +39,8 @@ export function AdvancedSettingsSection({
 
   // Hands-off weekly auto-adapt is Pro; only surface the opt-in to those who
   // can use it (the weekly cron re-checks the tier independently).
-  const { state: usage } = useAiUsage();
-  const autoAdaptAvailable =
-    usage.status === "ok" && FEATURES.canAutoAdaptTdee(usage.data.tier);
+  const { tier } = useTier();
+  const autoAdaptAvailable = tier !== null && FEATURES.canAutoAdaptTdee(tier);
 
   return (
     <Section

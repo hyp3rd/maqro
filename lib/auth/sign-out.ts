@@ -1,3 +1,4 @@
+import { clearCachedTier } from "@/lib/billing/tier-cache";
 import { clearAllStores } from "@/lib/db";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -17,5 +18,8 @@ export async function signOutAndClearLocal(
   supabase: SupabaseClient,
 ): Promise<void> {
   await clearAllStores().catch(() => {});
+  // The last-known tier is per-account state too: the next user on this
+  // device must never be gated on it.
+  clearCachedTier();
   await supabase.auth.signOut();
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { UpgradeDialog } from "@/components/macro/UpgradeDialog";
-import { useAiUsage } from "@/hooks/use-ai-usage";
+import { useTier } from "@/hooks/use-ai-usage";
 import { FEATURES } from "@/lib/billing/tiers";
 import {
   activePhase,
@@ -94,10 +94,8 @@ export function GoalPhasesPlanner({
    *  real effectiveGoal → computeMacros pipeline). Powers the rise warning. */
   targetForPhases: (phases: GoalPhase[]) => number;
 }) {
-  const { state } = useAiUsage();
-  const isPro =
-    state.status === "ok" && FEATURES.canUseGoalPhases(state.data.tier);
-  const tierResolved = state.status === "ok" || state.status === "anon";
+  const { tier, resolved: tierResolved } = useTier();
+  const isPro = tier !== null && FEATURES.canUseGoalPhases(tier);
   const [editing, setEditing] = useState<GoalPhase | null>(null);
   // A pending change held back for confirmation because it would raise today's
   // target while a cut is active (see `applyMaybeWarn`). `null` = no warning.
