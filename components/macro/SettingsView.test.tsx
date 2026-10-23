@@ -16,12 +16,14 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { SettingsView } from "./SettingsView";
 
-/** Signing out from Settings names the signed-in account to
- *  `signOutAndClearLocal`, so the records forgotten are that account's — not
- *  whichever account a possibly stale last-known record names. */
+/** Signing out from Settings, and deleting the account, name the signed-in
+ *  account to `signOutAndClearLocal`, so the records forgotten are that
+ *  account's — not whichever account a possibly stale last-known record
+ *  names. */
 
 const mocks = vi.hoisted(() => ({
   signOutAndClearLocal: vi.fn(async () => {}),
@@ -36,6 +38,8 @@ const mocks = vi.hoisted(() => ({
     data: { session: { user: { id: "user-a" } } },
     error: null,
   })),
+  // The account-deletion route accepts the request.
+  clientFetch: vi.fn(async () => new Response(null, { status: 200 })),
 }));
 const SUPABASE = vi.hoisted(() => ({
   auth: { getSession: () => mocks.getSession() },
@@ -49,6 +53,7 @@ vi.mock("@/lib/supabase/client", () => ({
   getSupabaseBrowser: () => SUPABASE,
 }));
 vi.mock("@/lib/sync", () => ({ triggerSync: mocks.triggerSync }));
+vi.mock("@/lib/auth/client-fetch", () => ({ clientFetch: mocks.clientFetch }));
 vi.mock("@/lib/devices/registry", () => ({
   unregisterCurrentDevice: mocks.unregisterCurrentDevice,
 }));
@@ -99,21 +104,48 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+function renderSettings() {
+  render(
+    <NextIntlClientProvider
+      locale="en"
+      messages={en}
+    >
+      <SettingsView
+        units="metric"
+        onUnitsChange={() => {}}
+        homeMarket={undefined}
+        onHomeMarketChange={() => {}}
+      />
+    </NextIntlClientProvider>,
+  );
+}
+
+describe("SettingsView account deletion", () => {
+  it("forgets the deleted account's records", async () => {
+    renderSettings();
+
+    fireEvent.click(screen.getByRole("button", { name: /^delete account$/i }));
+    fireEvent.change(screen.getByLabelText(/to confirm/i), {
+      target: { value: "a@example.com" },
+    });
+    fireEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: /^delete account$/i,
+      }),
+    );
+
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("/login"));
+    expect(mocks.clientFetch).toHaveBeenCalledWith("/api/delete-account", {
+      method: "POST",
+    });
+    expect(mocks.signOutAndClearLocal).toHaveBeenCalledTimes(1);
+    expect(mocks.signOutAndClearLocal).toHaveBeenCalledWith(SUPABASE, "user-a");
+  });
+});
+
 describe("SettingsView sign-out", () => {
   it("forgets the signed-in account's records", async () => {
-    render(
-      <NextIntlClientProvider
-        locale="en"
-        messages={en}
-      >
-        <SettingsView
-          units="metric"
-          onUnitsChange={() => {}}
-          homeMarket={undefined}
-          onHomeMarketChange={() => {}}
-        />
-      </NextIntlClientProvider>,
-    );
+    renderSettings();
 
     fireEvent.click(screen.getByRole("button", { name: /^sign out$/i }));
 

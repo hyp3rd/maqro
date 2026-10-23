@@ -657,6 +657,7 @@ export function SettingsView({
 
       {user && (
         <DeleteAccountSection
+          userId={user.id}
           userEmail={user.email ?? null}
           configured={!isUnconfigured}
         />
@@ -1102,9 +1103,11 @@ function Row({
 }
 
 function DeleteAccountSection({
+  userId,
   userEmail,
   configured,
 }: {
+  userId: string;
   userEmail: string | null;
   configured: boolean;
 }) {
@@ -1138,10 +1141,11 @@ function DeleteAccountSection({
         );
       }
       // Wipe the local cache so a future sign-in on this device starts
-      // empty rather than re-uploading the deleted user's data.
+      // empty rather than re-uploading the deleted user's data. Named by
+      // id so the deleted account's own records are the ones forgotten.
       const supabase = getSupabaseBrowser();
       if (supabase) {
-        await signOutAndClearLocal(supabase);
+        await signOutAndClearLocal(supabase, userId);
       } else {
         await clearAllStores();
       }
