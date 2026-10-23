@@ -124,8 +124,11 @@ export function PantryScanReviewDialog({
             rows.map((row, index) => (
               <div
                 key={index}
-                className="flex items-center gap-2 rounded-md border border-border/60 px-2 py-1.5"
+                className="flex items-center gap-2 rounded-md border border-border/60 px-2 py-1.5 coarse:gap-3 coarse:px-3"
               >
+                {/* On touch the checkbox hit area reaches 12px past the
+                    box; the coarse gap and padding keep it off the name
+                    field and inside the scroll container's clip. */}
                 <Checkbox
                   checked={row.include}
                   onCheckedChange={(v) => patch(index, { include: v === true })}

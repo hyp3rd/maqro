@@ -61,10 +61,17 @@ describe("Checkbox", () => {
     const { className } = screen.getByRole("checkbox", {
       name: "Include eggs",
     });
-    // 20px box + 12px of invisible hit area on each side = 44px.
+    // jsdom has no layout, so this pins the mechanism rather than the
+    // pixels: a 20px box plus an invisible ::after sized to the touch
+    // token and centred on the box. An inset ::after would be measured
+    // from the padding box (18px inside the 1px border) and fall short.
     expect(className).toContain("coarse:h-5 coarse:w-5");
-    expect(className).toContain("coarse:after:absolute");
-    expect(className).toContain("coarse:after:-inset-3");
     expect(className).toContain("relative");
+    expect(className).toContain("coarse:after:absolute");
+    expect(className).toContain("coarse:after:size-(--touch-target-min)");
+    expect(className).toContain("coarse:after:left-1/2");
+    expect(className).toContain("coarse:after:top-1/2");
+    expect(className).toContain("coarse:after:-translate-1/2");
+    expect(className).not.toMatch(/coarse:after:-?inset/);
   });
 });
