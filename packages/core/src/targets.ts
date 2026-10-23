@@ -16,9 +16,7 @@ import type { CalculatedValues, GoalPhase, PersonalInfo } from "./types";
 /** What the caller has resolved about the user before asking for a target.
  *  Gating lives in callers (see goal-phases.ts): pass `phasesEnabled: true`
  *  only after the tier check (`FEATURES.canUseGoalPhases`). */
-export type TargetContext = {
-  phasesEnabled: boolean;
-};
+export type TargetContext = { phasesEnabled: boolean };
 
 /** A day's resolved target: the engine output plus what produced it. */
 export type DateTargets = CalculatedValues & {
@@ -58,20 +56,11 @@ export function targetsForDate(
     phasesEnabled: ctx.phasesEnabled,
   });
   const values = computeMacros(
-    {
-      ...profile,
-      goal: effective.goal,
-      weeklyRateKg: effective.weeklyRateKg,
-    },
+    { ...profile, goal: effective.goal, weeklyRateKg: effective.weeklyRateKg },
     localMidnightMs(date),
     // The covering phase's own maintenance override (Pro), if set, wins over
     // the global manualTdee; computeMacros ignores null / ≤ 0.
     effective.phase?.tdeeOverride ?? undefined,
   );
-  return {
-    ...values,
-    date,
-    goal: effective.goal,
-    phase: effective.phase,
-  };
+  return { ...values, date, goal: effective.goal, phase: effective.phase };
 }

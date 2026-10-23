@@ -1,7 +1,7 @@
-import type { GoalPhase, PersonalInfo } from "@maqro/core/types";
+import { describe, expect, it } from "vitest";
 import { computeMacros } from "@maqro/core/macros";
 import { targetsForDate } from "@maqro/core/targets";
-import { describe, expect, it } from "vitest";
+import type { GoalPhase, PersonalInfo } from "@maqro/core/types";
 
 /** 80 kg / 180 cm / 30 y male on a linear "maintain" goal with a calibrated
  *  2600 kcal maintenance. BMR = 1780, so the safety floor (max(BMR, 1200))
