@@ -2,7 +2,7 @@
 
 import { useUser } from "@/hooks/use-user";
 import {
-  clearCachedTier,
+  forgetCachedTier,
   readCachedTier,
   writeCachedTier,
 } from "@/lib/billing/tier-cache";
@@ -180,9 +180,10 @@ export function AiUsageProvider({ children }: { children: ReactNode }) {
       .then(async (res) => {
         if (cancelled) return;
         if (res.status === 401) {
-          // Session expired mid-flight — fall back to anon, and forget the
-          // tier: the server no longer vouches for this session.
-          clearCachedTier();
+          // Session expired mid-flight — fall back to anon, and forget this
+          // user's tier: the server no longer vouches for this session. It
+          // says nothing about another account's entry.
+          forgetCachedTier(userId);
           settle({ status: "anon" });
           return;
         }

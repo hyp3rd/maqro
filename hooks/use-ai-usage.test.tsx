@@ -1,7 +1,11 @@
 /**
  * @vitest-environment jsdom
  */
-import { readCachedTier, writeCachedTier } from "@/lib/billing/tier-cache";
+import {
+  TIER_CACHE_MAX_AGE_MS,
+  readCachedTier,
+  writeCachedTier,
+} from "@/lib/billing/tier-cache";
 import type { Tier } from "@/lib/billing/tiers";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -253,6 +257,36 @@ describe("AiUsageProvider / useTier", () => {
       expect(result.current).toEqual({ tier: null, resolved: true }),
     );
     expect(readCachedTier("u1")).toBeNull();
+  });
+
+  it("a 401 drops only the current user's entry, never another account's", async () => {
+    writeCachedTier("u2", "pro");
+    fetchMock.mockResolvedValue(new Response("{}", { status: 401 }));
+    const { result } = renderHook(() => useTier(), { wrapper });
+    await waitFor(() =>
+      expect(result.current).toEqual({ tier: null, resolved: true }),
+    );
+    expect(readCachedTier("u2")).toBe("pro");
+  });
+
+  it("offline: a tier confirmed more than 30 days ago no longer applies", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(Date.UTC(2026, 5, 1));
+      writeCachedTier("u1", "pro");
+      vi.setSystemTime(Date.UTC(2026, 5, 1) + TIER_CACHE_MAX_AGE_MS + 1);
+      fetchMock.mockImplementation(offline);
+      const { result } = renderHook(
+        () => ({ tier: useTier(), usage: useAiUsage() }),
+        { wrapper },
+      );
+      await waitFor(() =>
+        expect(result.current.usage.state.status).toBe("error"),
+      );
+      expect(result.current.tier).toEqual({ tier: null, resolved: false });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("every reader under one provider shares a single fetch", async () => {

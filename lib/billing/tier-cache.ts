@@ -9,8 +9,12 @@ import type { Tier } from "./tiers";
  *      exactly what the server last said (a downgrade overwrites it at once);
  *    - it is only READ when the live request failed, never in place of a live
  *      answer;
+ *    - it expires: an entry the server confirmed more than
+ *      `TIER_CACHE_MAX_AGE_MS` ago is ignored and dropped, so a device kept
+ *      offline cannot keep a lapsed plan's gates open indefinitely;
  *    - it is keyed to one user id, so a different account on the same device
- *      never inherits it, and sign-out clears it;
+ *      never inherits it; a 401 drops only that user's entry and sign-out
+ *      clears it;
  *    - it only gates client-side views of local data: every server route and
  *      cron re-checks the tier itself.
  *
@@ -21,9 +25,15 @@ import type { Tier } from "./tiers";
 
 const STORAGE_KEY = "maqro:billing:last-known-tier:v1";
 
+/** How long a server-confirmed tier may stand in for a failed live request:
+ *  30 days, the length of a monthly billing period. */
+export const TIER_CACHE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
 const TIERS: ReadonlySet<string> = new Set<Tier>(["free", "plus", "pro"]);
 
-type Entry = { userId: string; tier: Tier };
+/** `confirmedAt` is the device-clock time (ms) of the server response the
+ *  tier came from. */
+type Entry = { userId: string; tier: Tier; confirmedAt: number };
 
 function isEntry(value: unknown): value is Entry {
   if (typeof value !== "object" || value === null) return false;
@@ -32,13 +42,24 @@ function isEntry(value: unknown): value is Entry {
     typeof v.userId === "string" &&
     v.userId.length > 0 &&
     typeof v.tier === "string" &&
-    TIERS.has(v.tier)
+    TIERS.has(v.tier) &&
+    typeof v.confirmedAt === "number" &&
+    Number.isFinite(v.confirmedAt)
   );
 }
 
-/** The last server-confirmed tier for `userId`, or `null` when nothing valid
- *  is cached for that user (or storage is unavailable). */
-export function readCachedTier(userId: string): Tier | null {
+/** Whether `entry` is still inside its maximum age. A confirmation time in
+ *  the future means the device clock moved back since; the entry's age is
+ *  then unknown, so it counts as expired. */
+function isFresh(entry: Entry, nowMs: number): boolean {
+  const ageMs = nowMs - entry.confirmedAt;
+  return ageMs >= 0 && ageMs <= TIER_CACHE_MAX_AGE_MS;
+}
+
+/** The stored entry, or `null` when nothing usable is stored. Malformed
+ *  entries (including ones written before entries carried `confirmedAt`) and
+ *  expired ones are dropped, so they can never apply again. */
+function readEntry(): Entry | null {
   let raw: string | null;
   try {
     raw = window.localStorage.getItem(STORAGE_KEY);
@@ -50,9 +71,18 @@ export function readCachedTier(userId: string): Tier | null {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return null; // corrupt entry → treated as absent; next write replaces it
+    parsed = null; // corrupt entry → treated as absent and dropped below
   }
-  return isEntry(parsed) && parsed.userId === userId ? parsed.tier : null;
+  if (isEntry(parsed) && isFresh(parsed, Date.now())) return parsed;
+  clearCachedTier();
+  return null;
+}
+
+/** The last server-confirmed tier for `userId`, or `null` when nothing valid
+ *  and fresh is cached for that user (or storage is unavailable). */
+export function readCachedTier(userId: string): Tier | null {
+  const entry = readEntry();
+  return entry !== null && entry.userId === userId ? entry.tier : null;
 }
 
 /** Remember the tier the server just confirmed for `userId`. Replaces any
@@ -62,15 +92,20 @@ export function writeCachedTier(userId: string, tier: Tier): void {
   try {
     window.localStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({ userId, tier } satisfies Entry),
+      JSON.stringify({ userId, tier, confirmedAt: Date.now() } satisfies Entry),
     );
   } catch {
     // Storage unavailable → nothing cached (see module note).
   }
 }
 
-/** Forget the cached tier (sign-out, or the server says the session is
- *  gone). */
+/** Forget `userId`'s cached tier (the server no longer vouches for that
+ *  session). Another account's entry is left alone. */
+export function forgetCachedTier(userId: string): void {
+  if (readEntry()?.userId === userId) clearCachedTier();
+}
+
+/** Forget the cached tier, whoever it belongs to (sign-out). */
 export function clearCachedTier(): void {
   try {
     window.localStorage.removeItem(STORAGE_KEY);
