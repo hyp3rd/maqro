@@ -453,6 +453,62 @@ describe("targetsForDate — training days", () => {
     for (const d of days) expect(d.fat).toBe(110);
   });
 
+  describe("one fat level per week (owner refinement, 2026-10-24)", () => {
+    /** The owner's reproduction: 100 kg / 190 cm / 30 y moderately active
+     *  male cutting 0.5 kg/week (a 2,616 kcal mean), 3.4 g/kg protein
+     *  (340 g), pronounced cycling over the mockup week. */
+    const heavyCut = (over: Partial<PersonalInfo> = {}) =>
+      profile({
+        weight: 100,
+        height: 190,
+        goal: "lose",
+        weeklyRateKg: 0.5,
+        manualTdee: null,
+        training: schedule({ cycling: "pronounced" }),
+        proteinSetting: { basis: "bodyweight", gPerKg: 3.4 },
+        ...over,
+      });
+
+    it("cycled calories land on carbs; fat is one level all week", () => {
+      const week = weekTargets(heavyCut(), "2026-10-19", FREE);
+      const days = week?.days ?? [];
+      expect(days).toHaveLength(7);
+      // Mon Tue Wed Thu Fri Sat Sun — the day calories are unchanged.
+      expect(days.map((d) => d.targetCalories)).toEqual([
+        2750, 2250, 3050, 2250, 2750, 3000, 2250,
+      ]);
+      expect(days[0].training?.meanCalories).toBe(2616);
+      // The cut split's 102 g fat can't stay: the 2,250 rest days need
+      // 340 g protein + 100 g carbs (1 g/kg), leaving 54 g → 50, which is
+      // also the 0.5 g/kg floor. It was 100 g on the bigger days, so their
+      // cycled calories went to fat; now every day is 50 g and carbs carry
+      // the whole spread (110 g on rest days → 310 g on heavy Wednesday).
+      expect(days.map((d) => d.fat)).toEqual(Array(7).fill(50));
+      expect(days.map((d) => d.protein)).toEqual(Array(7).fill(340));
+      expect(days.map((d) => d.carbs)).toEqual([
+        235, 110, 310, 110, 235, 300, 110,
+      ]);
+      expect(days.every((d) => d.training?.floorsExceedMean === false)).toBe(
+        true,
+      );
+    });
+
+    it("low-carb mirrors it: carbs are one level all week, fat moves", () => {
+      const days =
+        weekTargets(heavyCut({ dietType: "lowCarb" }), "2026-10-19", FREE)
+          ?.days ?? [];
+      expect(days).toHaveLength(7);
+      expect(days.map((d) => d.targetCalories)).toEqual([
+        2800, 2100, 3200, 2100, 2800, 3200, 2100,
+      ]);
+      // The low-carb split's 100 g carbs leave the 2,100 rest days under
+      // the 50 g fat floor beside 340 g protein, so the WEEK's carbs drop to
+      // (2,100 − 1,360 − 450) / 4 = 72.5 → 70 — not just the rest days'.
+      expect(days.map((d) => d.carbs)).toEqual(Array(7).fill(70));
+      expect(days.map((d) => d.fat)).toEqual([130, 50, 175, 50, 130, 175, 50]);
+    });
+  });
+
   it("pronounced moves more between days, same weekly total", () => {
     const spread = (cycling: TrainingSchedule["cycling"]) => {
       const p = mockupProfile({ training: schedule({ cycling }) });
@@ -811,10 +867,28 @@ describe("targetsForDate — training days", () => {
                         if (d.protein < wanted) expect(tight).toBe(true);
                         if (tight) expect(d.targetCalories).toBe(mean);
                         else expect(d.protein).toBe(wanted);
+                        // Within half a step of the moving macro.
                         const kcal = 4 * (d.protein + d.carbs) + 9 * d.fat;
                         expect(
                           Math.abs(kcal - d.targetCalories),
-                        ).toBeLessThanOrEqual(45);
+                        ).toBeLessThanOrEqual(
+                          dietType === "lowCarb" ? 22.5 : 10,
+                        );
+                      }
+                      // One held level per week: fat on carb-moving diets,
+                      // carbs on low-carb.
+                      const held = days.map((d) =>
+                        dietType === "lowCarb" ? d.carbs : d.fat,
+                      );
+                      expect(new Set(held).size).toBe(1);
+                      // A bigger day never has fewer carbs (or fat).
+                      for (const a of days) {
+                        for (const b of days) {
+                          if (a.targetCalories > b.targetCalories) {
+                            expect(a.carbs).toBeGreaterThanOrEqual(b.carbs);
+                            expect(a.fat).toBeGreaterThanOrEqual(b.fat);
+                          }
+                        }
                       }
                       // Same calories → same macros, whatever the class.
                       for (const a of days) {

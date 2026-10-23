@@ -188,6 +188,9 @@ export function targetsForDate(
   const dayKcal = weekKcal[weekday];
   const macros = partitionDayMacros({
     dayKcal,
+    // The week's held fat (or carbs) is set on its smallest planned day,
+    // so every day of the week shares it.
+    weekMinKcal: Math.min(...weekKcal),
     mean: values,
     proteinGrams: protein.grams,
     floorKg: floors.floorKg,
