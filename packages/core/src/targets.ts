@@ -165,8 +165,9 @@ export function targetsForDate(
     },
   );
   const floors = {
-    weightKg: profile.weight,
-    proteinKg: protein.kg,
+    // Bodyweight, or the BMI > 30 protein weight without a body-fat
+    // estimate: every per-kg floor follows the protein's weight.
+    floorKg: protein.kg,
     meanKcal: values.targetCalories,
     goal: effective.goal,
     dietType: profile.dietType,
@@ -189,8 +190,7 @@ export function targetsForDate(
     dayKcal,
     mean: values,
     proteinGrams: protein.grams,
-    weightKg: floors.weightKg,
-    proteinKg: floors.proteinKg,
+    floorKg: floors.floorKg,
     goal: floors.goal,
     dietType: floors.dietType,
     explicitFatChoice: floors.explicitFatChoice,

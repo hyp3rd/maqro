@@ -654,6 +654,62 @@ describe("targetsForDate — training days", () => {
     expect(Math.min(...kcal)).toBe(2000);
   });
 
+  it("BMI > 30 without body fat: the per-kg floors use the protein weight", () => {
+    // 120 kg / 180 cm (BMI 37 → 81 kg) on an explicit 10%-fat split at a
+    // flat 2,200 (the 2,180 BMR floor leaves no room to cycle): the fat
+    // floor is max(0.5 g/kg × 81 = 40.5, 15% → 36.7) → 45, not the 60 g of
+    // 0.5 g/kg bodyweight.
+    const p = mockupProfile({
+      weight: 120,
+      macroSplit: { protein: 40, carbs: 50, fat: 10 },
+    });
+    for (const d of weekTargets(p, "2026-10-19", FREE)?.days ?? []) {
+      expect(d.targetCalories).toBe(2200);
+      expect([d.protein, d.carbs, d.fat]).toEqual([160, 290, 45]);
+    }
+    // With a body-fat estimate protein and the floors are on bodyweight.
+    const withEstimate = targetsForDate(p, "2026-10-20", {
+      ...FREE,
+      bodyFatPct: 32,
+    });
+    expect([
+      withEstimate.protein,
+      withEstimate.carbs,
+      withEstimate.fat,
+    ]).toEqual([240, 175, 60]);
+  });
+
+  it("floors over the mean at BMI > 30 without body fat: all on the protein weight", () => {
+    // 150 cm / 81 kg woman (BMI 36 → the 56.25 kg reference weight), 75,
+    // sedentary, cutting at her 1,212 kcal BMR floor with 3.4 g/kg
+    // (191.25 g): 4·190 + 9·30 + 4·60 = 1,270 kcal of floors don't fit.
+    // Every floor is on the 56.25 kg protein weight: fat max(28.1, 15% →
+    // 20.2) → 30, carbs 1 g/kg → 60, protein ≥ 1.2 g/kg → 70; protein
+    // gives way to (1,212 − 270 − 240) / 4 = 175.5 → 175. On bodyweight
+    // (81 kg) the floors would be 45 g fat and 85 g carbs, protein 115.
+    const p = profile({
+      gender: "female",
+      age: 75,
+      weight: 81,
+      height: 150,
+      activityLevel: "sedentary",
+      goal: "lose",
+      weeklyRateKg: 0.8,
+      manualTdee: null,
+      training: schedule(),
+      proteinSetting: { basis: "bodyweight", gPerKg: 3.4 },
+    });
+    const days = weekTargets(p, "2026-10-19", FREE)?.days ?? [];
+    expect(days).toHaveLength(7);
+    for (const d of days) {
+      expect(d.training?.proteinBasis).toBe("referenceWeight");
+      expect(d.training?.floorsExceedMean).toBeTruthy();
+      expect(d.targetCalories).toBe(1212);
+      expect([d.protein, d.carbs, d.fat]).toEqual([175, 60, 30]);
+      expect(d.protein).toBeGreaterThanOrEqual(1.2 * 56.25);
+    }
+  });
+
   it("protein gives way to the fat and carb floors, the same every day", () => {
     // 120 kg / 180 cm / 35 y sedentary male cutting 0.5 kg/week: the cut
     // lands under the 2,155 BMR floor, so every day sits at 2,155. A
@@ -723,13 +779,6 @@ describe("targetsForDate — training days", () => {
                       const days = weekTargets(p, "2026-10-19", FREE)?.days;
                       if (!days) throw new Error("expected a week");
                       const mean = days[0].training?.meanCalories ?? 0;
-                      // 15% in a cut or for the explicit lowFat choice.
-                      const share =
-                        goal === "lose" || dietType === "lowFat" ? 0.15 : 0.2;
-                      const fatFloor = Math.max(
-                        0.5 * weight,
-                        (share * mean) / 9,
-                      );
                       // BMI > 30 (no body-fat estimate here) → g/kg on
                       // the weight tapering from the BMI-30 weight (at 30)
                       // to the BMI-25 weight (from 35 up).
@@ -742,11 +791,19 @@ describe("targetsForDate — training days", () => {
                             ? 25 * m2
                             : 30 * m2 + ((bmi - 30) / 5) * (25 * m2 - 30 * m2);
                       const wanted = round5(gPerKg * proteinKg);
+                      // 15% in a cut or for the explicit lowFat choice; the
+                      // per-kg floors follow the protein weight.
+                      const share =
+                        goal === "lose" || dietType === "lowFat" ? 0.15 : 0.2;
+                      const fatFloor = Math.max(
+                        0.5 * proteinKg,
+                        (share * mean) / 9,
+                      );
                       expect(new Set(days.map((d) => d.protein)).size).toBe(1);
                       for (const d of days) {
                         expect(d.fat).toBeGreaterThanOrEqual(fatFloor);
                         if (dietType !== "lowCarb") {
-                          expect(d.carbs).toBeGreaterThanOrEqual(weight);
+                          expect(d.carbs).toBeGreaterThanOrEqual(proteinKg);
                         }
                         // Protein only gives way when even the mean day
                         // can't fit the floors — and then every day is it.

@@ -649,8 +649,7 @@ describe("partitionDayMacros", () => {
       dayKcal: 2200,
       mean: { targetCalories: 2200, carbs: 138, fat: 86 },
       proteinGrams: 160,
-      weightKg: 80,
-      proteinKg: over.weightKg ?? 80,
+      floorKg: 80,
       goal: "lose",
       dietType: "balanced",
       explicitFatChoice: false,
@@ -700,7 +699,7 @@ describe("partitionDayMacros", () => {
     // 20% floor (48.9 g) would lift it; the hard floor (36.7 g) doesn't.
     const over = {
       goal: "maintain" as const,
-      weightKg: 60,
+      floorKg: 60,
       proteinGrams: 120,
       mean: { targetCalories: 2200, carbs: 330, fat: 37 },
     };
@@ -714,7 +713,7 @@ describe("partitionDayMacros", () => {
     const m = partitionDayMacros(
       input({
         goal: "maintain",
-        weightKg: 120,
+        floorKg: 120,
         proteinGrams: 240,
         mean: { targetCalories: 2200, carbs: 300, fat: 24 },
         dayKcal: 2600,
@@ -805,7 +804,7 @@ describe("partitionDayMacros", () => {
         dayKcal: 2150,
         mean: { targetCalories: 2150, carbs: 135, fat: 70 },
         proteinGrams: 408,
-        weightKg: 120,
+        floorKg: 120,
       }),
     );
     expect(m.fat).toBeGreaterThanOrEqual(60);
@@ -824,7 +823,7 @@ describe("partitionDayMacros", () => {
           dayKcal: 2400,
           mean: { targetCalories: 2400, carbs: 200, fat: 80 },
           proteinGrams: 400,
-          weightKg: 200,
+          floorKg: 200,
         }),
       ),
     ).toEqual({ protein: 240, carbs: 135, fat: 100 });
@@ -833,7 +832,7 @@ describe("partitionDayMacros", () => {
   it("a day under the fat floor's own energy is all fat", () => {
     expect(
       partitionDayMacros(
-        input({ proteinGrams: 300, weightKg: 150, dayKcal: 500 }),
+        input({ proteinGrams: 300, floorKg: 150, dayKcal: 500 }),
       ),
     ).toEqual({ protein: 0, carbs: 0, fat: 55 });
   });
@@ -841,7 +840,7 @@ describe("partitionDayMacros", () => {
   it("never plans fat under its floor, whatever protein is asked for", () => {
     for (const dietType of ["balanced", "lowCarb", "lowFat"] as const) {
       for (const goal of ["lose", "maintain", "gain"] as const) {
-        for (const weightKg of [45, 80, 120, 160]) {
+        for (const floorKg of [45, 80, 120, 160]) {
           for (const gPerKg of [1.2, 2.0, 3.4]) {
             for (let dayKcal = 1200; dayKcal <= 3600; dayKcal += 150) {
               const mean = { targetCalories: dayKcal, carbs: 150, fat: 70 };
@@ -851,12 +850,12 @@ describe("partitionDayMacros", () => {
                   mean,
                   goal,
                   dietType,
-                  weightKg,
-                  proteinGrams: gPerKg * weightKg,
+                  floorKg,
+                  proteinGrams: gPerKg * floorKg,
                 }),
               );
               const share = goal === "lose" ? 0.15 : 0.2;
-              const floor = Math.max(0.5 * weightKg, (share * dayKcal) / 9);
+              const floor = Math.max(0.5 * floorKg, (share * dayKcal) / 9);
               expect(m.fat).toBeGreaterThanOrEqual(floor);
               expect(m.carbs).toBeGreaterThanOrEqual(0);
               expect(Math.abs(kcal(m) - dayKcal)).toBeLessThanOrEqual(45);
@@ -876,7 +875,7 @@ describe("partitionDayMacros", () => {
         const m = partitionDayMacros(
           input({
             dayKcal,
-            weightKg: 102,
+            floorKg: 102,
             proteinGrams: 204,
             mean: { targetCalories: dayKcal, carbs: 150, fat },
           }),
@@ -893,8 +892,7 @@ describe("partitionDayMacros", () => {
 
 describe("fatFloorGrams / fatFloorLiftsChoice", () => {
   const base = {
-    weightKg: 80,
-    proteinKg: 80,
+    floorKg: 80,
     meanKcal: 2200,
     goal: "maintain" as const,
     dietType: "balanced" as const,
@@ -913,15 +911,15 @@ describe("fatFloorGrams / fatFloorLiftsChoice", () => {
     ],
     [
       "an explicit choice at 60 kg: 15% of the mean kcal",
-      { explicitFatChoice: true, weightKg: 60 },
+      { explicitFatChoice: true, floorKg: 60 },
       (0.15 * 2200) / 9,
     ],
     [
       "an explicit choice while gaining: 15%",
-      { explicitFatChoice: true, goal: "gain", meanKcal: 3000, weightKg: 60 },
+      { explicitFatChoice: true, goal: "gain", meanKcal: 3000, floorKg: 60 },
       50,
     ],
-    ["0.5 g/kg wins at 120 kg", { weightKg: 120 }, 60],
+    ["0.5 g/kg wins at 120 kg", { floorKg: 120 }, 60],
   ];
   for (const [name, over, grams] of rows) {
     it(name, () => {
@@ -933,19 +931,19 @@ describe("fatFloorGrams / fatFloorLiftsChoice", () => {
     ["a 10% custom split is lifted", { explicitFatChoice: true }, 24, true],
     [
       "a 15% choice is kept (the floor is 15% too)",
-      { explicitFatChoice: true, weightKg: 60 },
+      { explicitFatChoice: true, floorKg: 60 },
       37,
       false,
     ],
     [
       "...even when computeMacros rounded it down (36.33 to 36)",
-      { explicitFatChoice: true, weightKg: 60, meanKcal: 2180 },
+      { explicitFatChoice: true, floorKg: 60, meanKcal: 2180 },
       36,
       false,
     ],
     [
       "0.5 g/kg lifts a 45 kg user's 15% choice at 1,200 kcal",
-      { explicitFatChoice: true, weightKg: 45, meanKcal: 1200 },
+      { explicitFatChoice: true, floorKg: 45, meanKcal: 1200 },
       20,
       true,
     ],
@@ -984,8 +982,7 @@ describe("explicitFatChoice", () => {
 
 describe("proteinCeilingGrams / minDayKcal", () => {
   const floors = {
-    weightKg: 120,
-    proteinKg: 120,
+    floorKg: 120,
     meanKcal: 2150,
     goal: "lose" as const,
     dietType: "balanced" as const,

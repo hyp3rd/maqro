@@ -443,23 +443,25 @@ export function fatMovesForDiet(dietType: PersonalInfo["dietType"]): boolean {
  *  (RippedBody's minimum; a low-carb diet has no carb floor). */
 export const CARB_FLOOR_G_PER_KG = 1;
 
-/** The carb floor in planned grams: 1 g/kg bodyweight on the 5 g grid taken
- *  upward, or 0 on a fat-moving diet. */
+/** The carb floor in planned grams: 1 g/kg (on `floorKg`) on the 5 g grid
+ *  taken upward, or 0 on a fat-moving diet. */
 function carbFloorStep(
-  input: Pick<MacroFloorInput, "weightKg" | "dietType">,
+  input: Pick<MacroFloorInput, "floorKg" | "dietType">,
 ): number {
   return fatMovesForDiet(input.dietType)
     ? 0
-    : ceilStep(CARB_FLOOR_G_PER_KG * input.weightKg, MACRO_GRAM_STEP);
+    : ceilStep(CARB_FLOOR_G_PER_KG * input.floorKg, MACRO_GRAM_STEP);
 }
 
 /** What sets a day's macro floors. */
 export type MacroFloorInput = {
-  /** Bodyweight: the fat (0.5 g/kg) and carb (1 g/kg) floors' basis. */
-  weightKg: number;
-  /** The kg the 1.2 g/kg protein minimum is taken on — `proteinGrams`' `kg`
-   *  (bodyweight, or the protein weight below it at BMI > 30). */
-  proteinKg: number;
+  /** The kg every per-kg floor is taken on — the 0.5 g/kg fat floor, the
+   *  1 g/kg carb floor and the 1.2 g/kg protein minimum: `proteinGrams`'
+   *  `kg`. That is bodyweight, except at BMI > 30 without a body-fat
+   *  estimate, where it is the same tapered / reference weight the protein
+   *  g/kg is taken on (owner refinement: the floors follow the protein
+   *  weight); with an estimate the floors stay on bodyweight. */
+  floorKg: number;
   /** The weekly mean daily target T (kcal): the fat floor's % basis. */
   meanKcal: number;
   /** The goal driving the target (a cut allows the 15% fat floor). */
@@ -476,8 +478,8 @@ export type MacroFloorInput = {
  *  goes below 15%), which a cut or an explicit low-fat choice may use. */
 export const FAT_FLOOR_SHARE = 0.2;
 export const FAT_HARD_FLOOR_SHARE = 0.15;
-/** Every fat floor is also at least this many g/kg bodyweight (RippedBody;
- *  Iraki 2019). */
+/** Every fat floor is also at least this many g/kg (RippedBody; Iraki
+ *  2019), on `MacroFloorInput.floorKg`. */
 export const FAT_FLOOR_G_PER_KG = 0.5;
 
 /** Whether the profile chose its fat level explicitly: the `lowFat` diet
@@ -500,7 +502,7 @@ export function fatFloorGrams(input: MacroFloorInput): number {
       ? FAT_HARD_FLOOR_SHARE
       : FAT_FLOOR_SHARE;
   return Math.max(
-    FAT_FLOOR_G_PER_KG * input.weightKg,
+    FAT_FLOOR_G_PER_KG * input.floorKg,
     (share * input.meanKcal) / 9,
   );
 }
@@ -532,7 +534,7 @@ export function fatFloorLiftsChoice(
  *
  *  1. The fat floor — always held (RP's 15% hard floor; Helms 2014).
  *  2. Protein up to the lesser of the setting and 1.2 g/kg (the any-goal
- *     floor, DGA 2025–2030), on `proteinKg`.
+ *     floor, DGA 2025–2030), on `floorKg`.
  *  3. The 1 g/kg carb floor (carb-moving diets only).
  *  4. The rest of the protein setting.
  *
@@ -551,7 +553,7 @@ export function proteinCeilingGrams(
   const withFatFloorOnly = floorStep(afterFat / 4, step);
   const proteinFloor = Math.min(
     roundStep(input.proteinGrams, step),
-    roundStep(PROTEIN_G_PER_KG_MIN * input.proteinKg, step),
+    roundStep(PROTEIN_G_PER_KG_MIN * input.floorKg, step),
   );
   return Math.max(0, withCarbFloor, Math.min(withFatFloorOnly, proteinFloor));
 }
@@ -587,9 +589,8 @@ export type DayMacroInput = {
   mean: { targetCalories: number; carbs: number; fat: number };
   /** Daily protein the setting asks for (unrounded) — `proteinGrams`. */
   proteinGrams: number;
-  weightKg: number;
-  /** The kg the 1.2 g/kg protein minimum is taken on (see `MacroFloorInput`). */
-  proteinKg: number;
+  /** The kg every per-kg floor is taken on (see `MacroFloorInput`). */
+  floorKg: number;
   /** The goal driving the target (a cut allows the 15% fat floor). */
   goal: PersonalInfo["goal"];
   dietType: PersonalInfo["dietType"];
@@ -613,9 +614,10 @@ export type DayMacroInput = {
  *    In a `targetsForDate` week the cap binds only when the weekly mean is
  *    under `minDayKcal`, and then every day is the mean — so protein is the
  *    same every day of the week either way.
- *  - Fat floor: `fatFloorGrams` — max(0.5 g/kg, 20% of the MEAN kcal; 15% in
- *    a cut or when the user explicitly chose a low-fat diet type or a custom
- *    split). It always holds; protein gives way first.
+ *  - Fat floor: `fatFloorGrams` — max(0.5 g/kg on `floorKg`, 20% of the
+ *    MEAN kcal; 15% in a cut or when the user explicitly chose a low-fat
+ *    diet type or a custom split). It always holds; protein gives way
+ *    first.
  *  - Default (carbs move): fat holds at the mean day's level (at least the
  *    floor) and carbs take the rest. Every day keeps ≥ 1 g/kg carbs — the
  *    one case where fat trades down from its weekly level, never below its
@@ -639,8 +641,7 @@ export function partitionDayMacros(input: DayMacroInput): {
   const step = MACRO_GRAM_STEP;
   const K = input.dayKcal;
   const floors: MacroFloorInput = {
-    weightKg: input.weightKg,
-    proteinKg: input.proteinKg,
+    floorKg: input.floorKg,
     meanKcal: input.mean.targetCalories,
     goal: input.goal,
     dietType: input.dietType,
