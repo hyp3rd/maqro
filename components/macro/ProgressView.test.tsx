@@ -67,7 +67,8 @@ beforeEach(async () => {
     const date = addDays(today, -i);
     await saveWeightEntry(date, 80 - i * 0.1);
     await saveDailyLog(date, [
-      { id: 1, name: "Breakfast", foods: [food(1800 + i * 50)] },
+      // Today 1800, then 1950 … 2400: three days past a 2000 kcal target.
+      { id: 1, name: "Breakfast", foods: [food(1800 + i * 150)] },
     ]);
   }
 });
@@ -114,5 +115,38 @@ describe("ProgressView", () => {
     expect(screen.queryAllByText("Lean bulk", { selector: "text" })).toEqual(
       [],
     );
+  });
+
+  it("draws daily calories as bars against the target, today in the signal colour", async () => {
+    const { container } = render(<ProgressView {...BASE} />);
+    const chart = await screen.findByRole("img", {
+      name: /^Calories per day\. Bar chart, 5 entries/,
+    });
+    expect(chart.getAttribute("aria-label")).toMatch(/Target 2,000 kcal\./);
+    expect(chart.querySelectorAll('[data-part="bar"]')).toHaveLength(5);
+    expect(chart.querySelectorAll('[data-part="bar-over"]')).toHaveLength(3);
+    expect(chart.querySelector('[data-part="target-line"]')).not.toBeNull();
+    // Only today's bar carries the signal token.
+    expect(
+      container.querySelectorAll('[data-part="bar"].fill-signal'),
+    ).toHaveLength(1);
+  });
+
+  it("draws plain bars with no target line while the profile has no target", async () => {
+    render(
+      <ProgressView
+        {...BASE}
+        targetCalories={0}
+      />,
+    );
+    const chart = await screen.findByRole("img", {
+      name: /^Calories per day\. Bar chart/,
+    });
+    expect(chart.getAttribute("aria-label")).not.toMatch(/Target/);
+    expect(chart.querySelectorAll('[data-part="bar"]')).toHaveLength(5);
+    // Not every day "over" a 0 kcal line.
+    expect(chart.querySelectorAll('[data-part="bar-over"]')).toHaveLength(0);
+    expect(chart.querySelector('[data-part="target-line"]')).toBeNull();
+    expect(screen.queryByText(/0 kcal target/)).toBeNull();
   });
 });

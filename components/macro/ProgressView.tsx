@@ -1255,8 +1255,12 @@ function CalorieSection({
               yUnit=" kcal"
               title="Calories per day"
               highlightX={dayIndexFromIsoDate(today)}
-              targetY={targetCalories}
-              targetLabel={`${targetCalories} kcal target`}
+              // An incomplete profile has no target (0): draw plain bars
+              // rather than every day "over" a 0 kcal line.
+              targetY={targetCalories > 0 ? targetCalories : undefined}
+              targetLabel={
+                targetCalories > 0 ? `${targetCalories} kcal target` : undefined
+              }
               markers={markers}
             />
           </ChartZoomDialog>
