@@ -198,6 +198,20 @@ describe("UserMenu while offline-unverified", () => {
     expect(screen.queryByRole("link", { name: /sign in/i })).toBeNull();
   });
 
+  it("on desktop, the explanation is screen-reader text, not only a title", async () => {
+    const { UserMenu } = await import("./UserMenu");
+    renderWithIntl(<UserMenu />);
+    const hint = within(screen.getByRole("status")).getByText(HINT);
+    expect(hint.classList.contains("sr-only")).toBe(true);
+  });
+
+  it("compact, the explanation is screen-reader text too", async () => {
+    const { UserMenu } = await import("./UserMenu");
+    renderWithIntl(<UserMenu compact />);
+    const hint = within(screen.getByRole("status")).getByText(HINT);
+    expect(hint.classList.contains("sr-only")).toBe(true);
+  });
+
   it("the mobile menu explains the state and offers no Sign in", async () => {
     const { UserMenu } = await import("./UserMenu");
     renderWithIntl(

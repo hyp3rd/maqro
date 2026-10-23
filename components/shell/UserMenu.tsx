@@ -59,7 +59,8 @@ type UserMenuProps = {
  *   - Offline-unverified: a non-interactive "Server unreachable" chip — not
  *     "Sign in", since the account's data is still shown, and no Sign out,
  *     which needs the session (it is re-checked as soon as the network
- *     returns).
+ *     returns). Its explanation is in the title and, for screen readers, in
+ *     visually hidden text.
  *   - Signed out (or unconfigured): "Sign in" link to /login.
  *   - Signed in: avatar + email + dropdown with Sign out. */
 export function UserMenu({
@@ -134,11 +135,12 @@ export function UserMenu({
             aria-hidden
           />
         </div>
-        {compact ? (
-          <span className="sr-only">{OFFLINE_UNVERIFIED_HINT}</span>
-        ) : (
+        {!compact && (
           <span className="flex-1 text-left">{OFFLINE_UNVERIFIED_LABEL}</span>
         )}
+        {/* `title` alone is not reliably announced, so the explanation is
+            in the accessible text too, compact or not. */}
+        <span className="sr-only">{OFFLINE_UNVERIFIED_HINT}</span>
       </div>
     );
   }
