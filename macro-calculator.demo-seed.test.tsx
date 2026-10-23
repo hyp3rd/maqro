@@ -1,7 +1,12 @@
 /**
  * @vitest-environment jsdom
  */
-import { clearAllStores, getProfile, getProfileRecord } from "@/lib/db";
+import {
+  clearAllStores,
+  getProfile,
+  getProfileRecord,
+  isProfileMarkedAsDemo,
+} from "@/lib/db";
 import { computeMacros } from "@/lib/macros";
 import en from "@/messages/en.json";
 import "fake-indexeddb/auto";
@@ -20,8 +25,9 @@ import MacroCalculator from "./macro-calculator";
 /** The landing page's "Try with sample data" funnel lands on `/app?demo=1`.
  *  This renders the real app (guest mode: no Supabase env in tests) against
  *  fake-indexeddb and checks the first load the way a visitor sees it: the
- *  seeded profile and its target replace the defaults without a reload,
- *  and loading it does not dirty the seeded row. */
+ *  seeded profile and its target replace the defaults without a reload, and
+ *  the first-run onboarding wizard (plus its anonymous funnel POST) stays out
+ *  of a visit that is exploring sample data. */
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(window.location.search),
@@ -35,12 +41,19 @@ vi.mock("@/hooks/use-ai-usage", () => ({
   useAiUsage: () => ({ state: { status: "loading" } }),
 }));
 
+const ONBOARDING_EVENTS = "/api/onboarding/events";
 /** Past the onboarding gate's 1.5 s safety timeout (macro-calculator). */
 const PAST_ONBOARDING_GATE_MS = 2_000;
 
 const fetchMock = vi.fn<typeof fetch>(
   async () => new Response("{}", { status: 404 }),
 );
+
+function onboardingPosts(): number {
+  return fetchMock.mock.calls.filter(([input]) =>
+    String(input).includes(ONBOARDING_EVENTS),
+  ).length;
+}
 
 function installBrowserStubs(): void {
   vi.stubGlobal("fetch", fetchMock);
@@ -85,6 +98,14 @@ function renderApp() {
  *  the demo's sex/age instead of DEFAULT_PROFILE's "Male · 30 yrs". */
 async function findDemoSummary(): Promise<HTMLElement> {
   return screen.findByText("Female", {}, { timeout: 3_000 });
+}
+
+/** Resolves once the seed routine has written its profile row — independent
+ *  of whether the UI picked it up. */
+async function seedWritten(): Promise<void> {
+  await waitFor(async () => expect(await isProfileMarkedAsDemo()).toBe(true), {
+    timeout: 3_000,
+  });
 }
 
 /** Let the onboarding gate's safety timeout fire (and anything it renders
@@ -151,6 +172,16 @@ describe("?demo=1 first load", () => {
     );
   });
 
+  it("does not open the onboarding wizard or count the visit in the funnel", async () => {
+    window.history.replaceState({}, "", "/app?demo=1");
+    renderApp();
+    await seedWritten();
+    await passOnboardingGate();
+
+    expect(screen.queryByText("Welcome to Maqro")).toBeNull();
+    expect(onboardingPosts()).toBe(0);
+  });
+
   it("leaves the seeded profile row alone once it is loaded (no re-save)", async () => {
     window.history.replaceState({}, "", "/app?demo=1");
     renderApp();
@@ -161,5 +192,14 @@ describe("?demo=1 first load", () => {
     await passOnboardingGate();
     const after = await getProfileRecord();
     expect(after?.localUpdatedAt).toBe(before?.localUpdatedAt);
+  });
+
+  it("still onboards a genuine first visit (no ?demo=1)", async () => {
+    window.history.replaceState({}, "", "/app");
+    renderApp();
+    await passOnboardingGate();
+
+    expect(await screen.findByText("Welcome to Maqro")).toBeTruthy();
+    expect(onboardingPosts()).toBeGreaterThan(0);
   });
 });

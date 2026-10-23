@@ -498,6 +498,14 @@ export function getDemoWaterLogs(
   return entries;
 }
 
+/** True when `search` (a `location.search`-style query string) asks for the
+ *  sample dataset — the landing page's "Try with sample data" link,
+ *  `/app?demo=1`. The one definition of that request, shared by the seed
+ *  routine and the onboarding gate so the two can't drift apart. */
+export function isDemoSeedRequest(search: string): boolean {
+  return new URLSearchParams(search).get("demo") === "1";
+}
+
 /** localStorage flag set by the seed routine. Kept alongside the
  *  durable IDB marker on the profile row so synchronous callers (the
  *  Settings page, a "this is sample data" banner) can check demo mode

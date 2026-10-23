@@ -14,6 +14,7 @@ import {
   getDemoProfile,
   getDemoWaterLogs,
   getDemoWeightHistory,
+  isDemoSeedRequest,
 } from "@/lib/demo-data";
 import { notifyProfileChanged } from "@/lib/profile-bus";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
@@ -37,8 +38,7 @@ import { toast } from "sonner";
 export function DemoSeed() {
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("demo") !== "1") return;
+    if (!isDemoSeedRequest(window.location.search)) return;
 
     let cancelled = false;
     (async () => {

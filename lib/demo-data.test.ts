@@ -3,6 +3,7 @@ import {
   getDemoMealLogs,
   getDemoProfile,
   getDemoWeightHistory,
+  isDemoSeedRequest,
 } from "./demo-data";
 
 const TODAY = "2026-05-20";
@@ -128,5 +129,18 @@ describe("getDemoWeightHistory", () => {
     for (let i = 1; i < w.length; i++) {
       expect(w[i].date > w[i - 1].date).toBe(true);
     }
+  });
+});
+
+describe("isDemoSeedRequest", () => {
+  it.each([
+    ["?demo=1", true],
+    ["?view=plan&demo=1", true],
+    ["", false],
+    ["?demo=0", false],
+    ["?demo=true", false],
+    ["?view=demo", false],
+  ])("%s → %s", (search, expected) => {
+    expect(isDemoSeedRequest(search)).toBe(expected);
   });
 });

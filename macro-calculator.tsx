@@ -84,6 +84,7 @@ import {
   type MealTemplate,
   type PantryItem,
 } from "./lib/db";
+import { isDemoSeedRequest } from "./lib/demo-data";
 import { dietBreakNudge, effectiveGoal } from "./lib/goal-phases";
 import { haptic } from "./lib/haptics";
 import { waterGoalMl } from "./lib/hydration";
@@ -296,9 +297,21 @@ const MacroCalculator = () => {
   // hydrated profile is still the default. The latter check avoids
   // re-onboarding users whose data synced from another device before
   // they got a chance to dismiss it.
+  //
+  // A "Try with sample data" visit (`?demo=1`) is never onboarded: the
+  // visitor asked to explore a seeded dataset, not to set up a profile, and
+  // the profile check alone can't keep the wizard out — it reads the default
+  // profile until the seed lands (past the 1.5 s gate on a slow device) and
+  // for the render between the seed's data-bus bump and `useProfile`'s
+  // re-load. Either way the wizard would mount and count the visit in the
+  // anonymous onboarding funnel. Read once, here: `DemoSeed` strips the param
+  // after seeding, and this lazy initializer runs before any effect does. Not
+  // marked done, so a reload after "start over" still onboards normally.
   const [onboardingOpen, setOnboardingOpen] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
-    return !hasCompletedOnboarding();
+    return (
+      !hasCompletedOnboarding() && !isDemoSeedRequest(window.location.search)
+    );
   });
   // Grace window so the wizard doesn't FLASH for a fraction of a
   // second on devices where IDB hydrates as default (empty cache,
@@ -2688,6 +2701,7 @@ const MacroCalculator = () => {
         //      user, flashing the wizard for ~1 frame before
         //      hydration replaces the profile.
         //   2. The device hasn't recorded a completion (localStorage)
+        //      and this mount isn't a `?demo=1` visit (`onboardingOpen`)
         //   3. The hydrated profile is still default (no synced data
         //      arrived to indicate this user has been here before)
         // If profile sync brings in customized values mid-session,
