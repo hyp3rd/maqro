@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAiUsage } from "@/hooks/use-ai-usage";
+import { useUser } from "@/hooks/use-user";
 
 /** Surfaces the caller's monthly AI-call usage against the free-tier
  *  cap. Hidden for guests (no usage to show), collapsed to a one-line
@@ -10,11 +11,17 @@ import { useAiUsage } from "@/hooks/use-ai-usage";
  *  + counter for free users. A "near cap" warning fires at 80% used
  *  so the user has a chance to upgrade before they're locked out
  *  mid-task. Lives in the Profile "Billing & subscription" subsection
- *  beside the plan/upgrade card (both read the same `useAiUsage`). */
+ *  beside the plan/upgrade card (both read the same `useAiUsage`).
+ *
+ *  Offline-unverified (see `UserState`) there is no session to fetch the
+ *  usage with, so instead of a Refresh that cannot work the card says why
+ *  the usage isn't shown; it loads once the identity is verified again. */
 export function AiUsageSection() {
   const { state: usage, refresh } = useAiUsage();
+  const { isOfflineUnverified } = useUser();
 
-  if (usage.status === "anon" || usage.status === "error") return null;
+  if (usage.status === "anon") return null;
+  if (usage.status === "error" && !isOfflineUnverified) return null;
 
   const header = (
     <header className="flex items-center justify-between gap-2 border-b border-border/60 px-5 py-3">
@@ -25,18 +32,34 @@ export function AiUsageSection() {
           photos) share one monthly quota.
         </p>
       </div>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        onClick={refresh}
-        className="h-8 shrink-0 text-xs text-muted-foreground"
-        title="Refresh your usage count"
-      >
-        Refresh
-      </Button>
+      {!isOfflineUnverified && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={refresh}
+          className="h-8 shrink-0 text-xs text-muted-foreground"
+          title="Refresh your usage count"
+        >
+          Refresh
+        </Button>
+      )}
     </header>
   );
+
+  if (usage.status === "error") {
+    return (
+      <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
+        {header}
+        <p
+          role="status"
+          className="px-5 py-4 text-sm text-muted-foreground"
+        >
+          {usage.message}
+        </p>
+      </section>
+    );
+  }
 
   // Reserve the meter's height while the counter loads, so the card holds
   // its place instead of popping in from nothing when it resolves.

@@ -58,7 +58,7 @@ export function ProfileView({
   onSelectView,
 }: ProfileViewProps) {
   const [sub, setSub] = useState<Sub>("home");
-  const { user } = useUser();
+  const { user, isOfflineUnverified } = useUser();
 
   if (sub === "measurements") {
     return (
@@ -106,7 +106,10 @@ export function ProfileView({
           title="Billing & subscription"
           onBack={() => setSub("home")}
         />
-        {user ? (
+        {/* Offline-unverified, the account is still on this device: not
+            "Sign in", but the usage card's explanation of why its live
+            data can't load (BillingSection renders nothing without it). */}
+        {user || isOfflineUnverified ? (
           <>
             <BillingSection />
             <AiUsageSection />
