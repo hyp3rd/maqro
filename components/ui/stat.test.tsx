@@ -117,6 +117,26 @@ describe("MacroStat", () => {
     expect(screen.queryByRole("meter")).toBeNull();
   });
 
+  it("treats a zero target as no target on screen and in the meter", () => {
+    // No goals yet: the meter keeps its slot as an empty track, but there
+    // is no "/ 0 g" figure or "+N" note to contradict its "no target".
+    render(
+      <dl data-testid="dl">
+        <MacroStat
+          macro="protein"
+          value={85}
+          target={0}
+        />
+      </dl>,
+    );
+    const dl = screen.getByTestId("dl");
+    expect(pairs(dl)).toEqual([["Protein", ["85 g", ""]]]);
+    expect(within(dl).queryByText(/^\+/)).toBeNull();
+    const meter = within(dl).getByRole("meter", { name: "Protein" });
+    expect(meter.getAttribute("aria-valuetext")).toBe("85 g, no target");
+    expect(meter.querySelector("[data-part=target]")).toBeNull();
+  });
+
   it("labels energy as Calories in kcal", () => {
     render(
       <dl data-testid="dl">

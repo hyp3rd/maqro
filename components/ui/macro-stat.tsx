@@ -30,7 +30,9 @@ const defaultFormat = (n: number) => Math.round(n).toLocaleString("en-US");
 export type MacroStatProps = {
   macro: MacroKey;
   value: number;
-  /** When set, adds "/ target", a Meter and, past it, a neutral "+N". */
+  /** When set, adds a Meter. A positive target also adds "/ target" and,
+   *  past it, a neutral "+N"; zero or less (no goals yet) leaves the meter
+   *  as an empty track that reads "no target", with no "/ 0" figure. */
   target?: number;
   /** Overrides the default label ("Protein", "Calories", ...). */
   label?: string;
@@ -59,7 +61,10 @@ export function MacroStat({
 }: MacroStatProps) {
   const spec = MACRO[macro];
   const name = label ?? spec.label;
-  const hasTarget = target !== undefined;
+  // Same rule as Meter: only a positive, finite target is something to
+  // measure against, so the visible and spoken readouts agree.
+  const hasTarget =
+    target !== undefined && Number.isFinite(target) && target > 0;
   const overText =
     hasTarget && value > target ? format(value - target) : undefined;
   const showOver = overText !== undefined && overText !== format(0);
@@ -92,7 +97,7 @@ export function MacroStat({
         ) : undefined
       }
     >
-      {hasTarget ? (
+      {target !== undefined ? (
         <Meter
           aria-label={name}
           value={value}
