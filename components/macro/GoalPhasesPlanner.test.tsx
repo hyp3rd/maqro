@@ -91,3 +91,63 @@ describe("GoalPhasesPlanner — rising-target warning", () => {
     expect(onChange).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("GoalPhasesPlanner — start date", () => {
+  it("won't save a phase whose start date was cleared", async () => {
+    const onChange = vi.fn();
+    const { GoalPhasesPlanner } = await import("./GoalPhasesPlanner");
+    const { container } = render(
+      <GoalPhasesPlanner
+        {...BASE}
+        onChange={onChange}
+        targetForPhases={() => 2000}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /build your own/i }));
+    const start =
+      container.querySelector<HTMLInputElement>('input[type="date"]');
+    if (!start) throw new Error("start-date input not rendered");
+    // What a cleared or half-typed date input reports.
+    fireEvent.change(start, { target: { value: "" } });
+
+    const save = screen.getByRole("button", { name: "Save phase" });
+    expect((save as HTMLButtonElement).disabled).toBe(true);
+    expect(start.getAttribute("aria-invalid")).toBe("true");
+    expect(start.getAttribute("aria-describedby")).toBeTruthy();
+    expect(screen.getByText(/pick a start date/i)).toBeTruthy();
+    fireEvent.click(save);
+    expect(onChange).not.toHaveBeenCalled();
+
+    // A real date makes it savable again.
+    fireEvent.change(start, { target: { value: "2026-06-10" } });
+    expect((save as HTMLButtonElement).disabled).toBe(false);
+    expect(start.getAttribute("aria-invalid")).toBe("false");
+    fireEvent.click(save);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const saved = onChange.mock.calls[0]?.[0] as GoalPhase[];
+    expect(saved.map((p) => p.startDate)).toEqual(["2026-06-10"]);
+  });
+
+  it("names a missing date in the list instead of printing Invalid Date", async () => {
+    const { GoalPhasesPlanner } = await import("./GoalPhasesPlanner");
+    render(
+      <GoalPhasesPlanner
+        {...BASE}
+        phases={[
+          {
+            id: "legacy",
+            kind: "cut",
+            startDate: "",
+            durationWeeks: 4,
+            weeklyRateKg: 0.3,
+          },
+        ]}
+        onChange={vi.fn()}
+        targetForPhases={() => 2000}
+      />,
+    );
+    expect(screen.queryByText(/invalid date/i)).toBeNull();
+    expect(screen.getByText(/no date →/)).toBeTruthy();
+  });
+});
