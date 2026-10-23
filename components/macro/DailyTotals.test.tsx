@@ -41,7 +41,7 @@ describe("DailyTotals", () => {
     expect(reading("Protein")).toBe("85 g of 160 g");
     expect(reading("Carbs")).toBe("120 g of 200 g");
     expect(reading("Fat")).toBe("40 g of 70 g");
-    expect(reading("Calories")).toBe("1,240 kcal of 2,200 kcal");
+    expect(reading("Calories")).toBe("1240 kcal of 2200 kcal");
   });
 
   it("shows 157% of carbs past the target tick, calmly, without clamping", () => {

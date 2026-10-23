@@ -67,6 +67,12 @@ const SUB_MACRO_LABELS: Record<keyof MacroBreakdown, string> = {
   polyFat: "Poly-unsat. fat",
 };
 
+/** Whole numbers without grouping, matching the animated NumberTicker
+ *  figure so "/ 2200 kcal" and "1240" read alike. */
+function wholeNumber(n: number): string {
+  return String(Math.round(n));
+}
+
 const DailyTotals: React.FC<DailyTotalsProps> = ({
   calculatedValues,
   totalMacros,
@@ -151,6 +157,7 @@ const DailyTotals: React.FC<DailyTotalsProps> = ({
             macro={macro}
             value={totalMacros[macro]}
             target={target}
+            format={wholeNumber}
             size="lg"
           >
             <NumberTicker value={totalMacros[macro]} />
