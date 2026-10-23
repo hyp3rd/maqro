@@ -6,6 +6,7 @@ import {
   clearAllStores,
   saveDailyLog,
   saveWeightEntry,
+  setWaterTotal,
   todayKey,
 } from "@/lib/db";
 import "fake-indexeddb/auto";
@@ -148,5 +149,49 @@ describe("ProgressView", () => {
     expect(chart.querySelectorAll('[data-part="bar-over"]')).toHaveLength(0);
     expect(chart.querySelector('[data-part="target-line"]')).toBeNull();
     expect(screen.queryByText(/0 kcal target/)).toBeNull();
+  });
+
+  describe("hydration chart", () => {
+    beforeEach(async () => {
+      const today = todayKey();
+      await setWaterTotal(addDays(today, -1), 1500);
+      await setWaterTotal(today, 2000);
+    });
+
+    it("plots millilitres for a metric profile", async () => {
+      render(<ProgressView {...BASE} />);
+      const chart = await screen.findByRole("img", {
+        name: /^Water per day\. Line chart/,
+      });
+      const name = chart.getAttribute("aria-label") ?? "";
+      expect(name).toContain("Lowest 1,500 ml, highest 2,000 ml");
+      expect(name).toContain("Target 2,500 ml.");
+      expect(screen.getByText("2.5 L goal", { selector: "text" })).toBeTruthy();
+    });
+
+    it("plots fluid ounces for an imperial profile, matching its goal", async () => {
+      render(
+        <ProgressView
+          {...BASE}
+          units="imperial"
+        />,
+      );
+      const chart = await screen.findByRole("img", {
+        name: /^Water per day\. Line chart/,
+      });
+      const name = chart.getAttribute("aria-label") ?? "";
+      // 1500 ml = 50.7 fl oz, 2000 ml = 67.6, 2500 ml = 84.5: whole ounces,
+      // as formatVolume shows the goal.
+      expect(name).toContain("Lowest 51 fl oz, highest 68 fl oz");
+      expect(name).toContain("Target 85 fl oz.");
+      expect(name).not.toMatch(/\bml\b/);
+      expect(
+        screen.getByText("85 fl oz goal", { selector: "text" }),
+      ).toBeTruthy();
+      // The unit above the y axis is the same one.
+      expect(
+        [...chart.querySelectorAll("text")].map((t) => t.textContent),
+      ).toContain("fl oz");
+    });
   });
 });

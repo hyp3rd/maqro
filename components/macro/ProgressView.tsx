@@ -1435,9 +1435,12 @@ function HydrationSection({
     .slice(-targetWindow);
   const hasData = series.length > 0;
 
+  // Plotted in the user's volume unit, rounded the way the goal label
+  // (formatVolume) and today's total are, so the axis, the goal line and
+  // the header always agree.
   const points: LinePoint[] = series.map((e) => ({
     x: dayIndexFromIsoDate(e.date),
-    y: e.ml,
+    y: mlToDisplay(e.ml, units),
     label: shortLabel(e.date),
   }));
 
@@ -1510,10 +1513,10 @@ function HydrationSection({
             <MiniLineChart
               data={points}
               height={240}
-              yUnit=" ml"
+              yUnit={` ${volumeUnitSuffix(units)}`}
               xType="day"
               title="Water per day"
-              targetY={goalMl}
+              targetY={mlToDisplay(goalMl, units)}
               targetLabel={`${formatVolume(goalMl, units)} goal`}
             />
           </ChartZoomDialog>
