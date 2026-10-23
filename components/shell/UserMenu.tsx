@@ -13,6 +13,10 @@ import {
 import { useNotificationDrawer } from "@/hooks/use-notification-drawer";
 import { useSafeSignOut } from "@/hooks/use-safe-sign-out";
 import { useUser } from "@/hooks/use-user";
+import {
+  OFFLINE_UNVERIFIED_HINT,
+  OFFLINE_UNVERIFIED_LABEL,
+} from "@/lib/auth/offline-unverified-copy";
 import { signOutAndClearLocal } from "@/lib/auth/sign-out";
 import { getProfile } from "@/lib/db";
 import { subscribeProfileChanged } from "@/lib/profile-bus";
@@ -50,16 +54,12 @@ type UserMenuProps = {
   onSelectView?: (key: ViewKey) => void;
 };
 
-/** Shown while offline-unverified (see `UserState`): the account's local
- *  data is on screen, but there is no session to act on until it is
- *  verified again. */
-const OFFLINE_UNVERIFIED_HINT = "Offline — reconnect to verify your account";
-
 /** Sidebar footer chip (or topbar avatar in compact mode). Four states:
  *   - Loading: muted "…" placeholder while the auth client resolves.
- *   - Offline-unverified: a non-interactive "Offline" chip — not "Sign in",
- *     since the account's data is still shown, and no Sign out, which needs
- *     the session (it is re-checked as soon as the network returns).
+ *   - Offline-unverified: a non-interactive "Server unreachable" chip — not
+ *     "Sign in", since the account's data is still shown, and no Sign out,
+ *     which needs the session (it is re-checked as soon as the network
+ *     returns).
  *   - Signed out (or unconfigured): "Sign in" link to /login.
  *   - Signed in: avatar + email + dropdown with Sign out. */
 export function UserMenu({
@@ -137,7 +137,7 @@ export function UserMenu({
         {compact ? (
           <span className="sr-only">{OFFLINE_UNVERIFIED_HINT}</span>
         ) : (
-          <span className="flex-1 text-left">Offline</span>
+          <span className="flex-1 text-left">{OFFLINE_UNVERIFIED_LABEL}</span>
         )}
       </div>
     );
@@ -365,9 +365,9 @@ export function UserMenu({
  *  user with no path to either view — they could see the app's
  *  data but not change anything.
  *
- *  Offline-unverified uses the same menu, labelled "Offline" and without
- *  "Sign in": the account is still on this device and is verified again
- *  when the network returns. */
+ *  Offline-unverified uses the same menu, labelled with the offline-
+ *  unverified explanation and without "Sign in": the account is still on
+ *  this device and is verified again when the network returns. */
 function SignedOutMenu({
   isUnconfigured,
   isOfflineUnverified,

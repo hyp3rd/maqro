@@ -19,6 +19,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 
 /** Sign-out from the in-app account menu must never silently delete local
@@ -179,22 +180,25 @@ describe("UserMenu sign-out", () => {
 });
 
 describe("UserMenu while offline-unverified", () => {
+  const HINT =
+    "Can't reach the account server — your data stays on this device";
+
   beforeEach(() => {
     auth.offlineUnverified = true;
   });
 
-  it("shows an Offline status instead of a Sign in link", async () => {
+  it("shows a server-unreachable status instead of a Sign in link", async () => {
     const { UserMenu } = await import("./UserMenu");
     renderWithIntl(<UserMenu />);
     const status = screen.getByRole("status");
-    expect(status.textContent).toBe("Offline");
-    expect(status.getAttribute("title")).toBe(
-      "Offline — reconnect to verify your account",
-    );
+    expect(within(status).getByText("Server unreachable")).toBeTruthy();
+    expect(status.getAttribute("title")).toBe(HINT);
+    // Also reached online when the auth server answers 5xx: never "offline".
+    expect(status.textContent).not.toMatch(/offline|reconnect/i);
     expect(screen.queryByRole("link", { name: /sign in/i })).toBeNull();
   });
 
-  it("the mobile menu says Offline and offers no Sign in", async () => {
+  it("the mobile menu explains the state and offers no Sign in", async () => {
     const { UserMenu } = await import("./UserMenu");
     renderWithIntl(
       <UserMenu
@@ -205,9 +209,7 @@ describe("UserMenu while offline-unverified", () => {
     fireEvent.keyDown(screen.getByRole("button", { name: /account menu/i }), {
       key: "Enter",
     });
-    expect(
-      await screen.findByText("Offline — reconnect to verify your account"),
-    ).toBeTruthy();
+    expect(await screen.findByText(HINT)).toBeTruthy();
     expect(screen.queryByText("Guest mode")).toBeNull();
     expect(screen.queryByRole("menuitem", { name: /sign in/i })).toBeNull();
     expect(screen.getByRole("menuitem", { name: /settings/i })).toBeTruthy();

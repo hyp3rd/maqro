@@ -1,6 +1,7 @@
 "use client";
 
 import { useUser } from "@/hooks/use-user";
+import { OFFLINE_UNVERIFIED_HINT } from "@/lib/auth/offline-unverified-copy";
 import {
   forgetCachedTier,
   readCachedTier,
@@ -99,7 +100,7 @@ export const USAGE_FETCH_TIMEOUT_MS = 8_000;
  *  made, and the gate falls back to the cached tier as for a failed one. */
 export const OFFLINE_UNVERIFIED_USAGE: AiUsageState = {
   status: "error",
-  message: "You're offline. Usage loads once you're back online.",
+  message: `${OFFLINE_UNVERIFIED_HINT}. Usage loads once it can be reached.`,
 };
 
 type AiUsageContextValue = UseAiUsageResult & {
