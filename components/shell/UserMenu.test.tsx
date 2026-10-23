@@ -39,12 +39,26 @@ vi.mock("@/lib/db", () => ({ getProfile: () => Promise.resolve(null) }));
 vi.mock("@/lib/supabase/client", () => ({
   getSupabaseBrowser: () => SUPABASE,
 }));
+/** Signed in by default; `offlineUnverified` switches to an expired session
+ *  opened offline (no session, the last-known user's local data). */
+const auth = vi.hoisted(() => ({ offlineUnverified: false }));
 vi.mock("@/hooks/use-user", () => ({
-  useUser: () => ({
-    user: { id: "user-a", email: "a@example.com" } as User,
-    isLoaded: true,
-    isUnconfigured: false,
-  }),
+  useUser: () =>
+    auth.offlineUnverified
+      ? {
+          user: null,
+          localUserId: "user-a",
+          isOfflineUnverified: true,
+          isLoaded: true,
+          isUnconfigured: false,
+        }
+      : {
+          user: { id: "user-a", email: "a@example.com" } as User,
+          localUserId: "user-a",
+          isOfflineUnverified: false,
+          isLoaded: true,
+          isUnconfigured: false,
+        },
 }));
 vi.mock("@/hooks/use-notification-drawer", () => ({
   useNotificationDrawer: () => ({
@@ -88,6 +102,7 @@ async function clickSignOut() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  auth.offlineUnverified = false;
   __resetSyncStatusForTests();
   mockGetSession.mockResolvedValue({
     data: { session: { user: { id: "user-a" } } },
@@ -160,5 +175,41 @@ describe("UserMenu sign-out", () => {
     await waitFor(() =>
       expect(mockSignOutAndClearLocal).toHaveBeenCalledTimes(1),
     );
+  });
+});
+
+describe("UserMenu while offline-unverified", () => {
+  beforeEach(() => {
+    auth.offlineUnverified = true;
+  });
+
+  it("shows an Offline status instead of a Sign in link", async () => {
+    const { UserMenu } = await import("./UserMenu");
+    renderWithIntl(<UserMenu />);
+    const status = screen.getByRole("status");
+    expect(status.textContent).toBe("Offline");
+    expect(status.getAttribute("title")).toBe(
+      "Offline — reconnect to verify your account",
+    );
+    expect(screen.queryByRole("link", { name: /sign in/i })).toBeNull();
+  });
+
+  it("the mobile menu says Offline and offers no Sign in", async () => {
+    const { UserMenu } = await import("./UserMenu");
+    renderWithIntl(
+      <UserMenu
+        compact
+        onSelectView={() => {}}
+      />,
+    );
+    fireEvent.keyDown(screen.getByRole("button", { name: /account menu/i }), {
+      key: "Enter",
+    });
+    expect(
+      await screen.findByText("Offline — reconnect to verify your account"),
+    ).toBeTruthy();
+    expect(screen.queryByText("Guest mode")).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: /sign in/i })).toBeNull();
+    expect(screen.getByRole("menuitem", { name: /settings/i })).toBeTruthy();
   });
 });
