@@ -742,9 +742,10 @@ export async function saveDemoProfile(profile: PersonalInfo): Promise<void> {
   }));
   // Wake the data-bus like `saveDailyLog` does: the seed writes behind the
   // back of the already-mounted `useProfile` (and the fasting status), which
-  // re-load only on this rev. Unlike `saveProfile` — whose caller IS
-  // `useProfile`, so notifying would make it re-load its own write — nothing
-  // else would ever tell them the profile changed.
+  // re-load only on this rev. `saveProfile` leaves the refresh to its callers
+  // (`useProfile` already holds its own write, `useFastingStatus.writeFasting`
+  // notifies itself, the backup import reloads the page), but this seed has no
+  // such caller — nothing else would ever tell them the profile changed.
   notifyDataChanged("profile");
 }
 
