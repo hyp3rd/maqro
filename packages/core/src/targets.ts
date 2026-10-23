@@ -1,6 +1,24 @@
+import { addDays } from "./date";
 import { effectiveGoal } from "./goal-phases";
 import { computeMacros } from "./macros";
-import type { CalculatedValues, GoalPhase, PersonalInfo } from "./types";
+import {
+  type TrainingDayClass,
+  classifyTrainingDay,
+  distributeWeekCalories,
+  normalizeProteinSetting,
+  normalizeTrainingSchedule,
+  partitionDayMacros,
+  proteinGrams,
+} from "./training";
+import {
+  type CalculatedValues,
+  type CyclingPreset,
+  type GoalPhase,
+  MIN_DAILY_KCAL,
+  type PersonalInfo,
+  type ProteinSetting,
+  type TrainingDay,
+} from "./types";
 
 /** The ONE resolver for a calendar day's calorie/macro target. Every surface
  *  that shows or sends a target (the app's day view + calculator, the AI
@@ -10,15 +28,42 @@ import type { CalculatedValues, GoalPhase, PersonalInfo } from "./types";
  *  Pipeline: the goal phase covering `date` (when the caller has cleared the
  *  Pro gate) → that phase's goal/rate and optional TDEE override → the shared
  *  `computeMacros` engine, with the age clock pinned to local midnight of
- *  `date`. Pure: the date and the tier decision are inputs, never read from
- *  the environment, so it runs identically on web, server and native. */
+ *  `date`. With an enabled training schedule (FREE) that result is the
+ *  WEEKLY MEAN, and the day's own planned share of it comes from the
+ *  template (training.ts). Pure: the date, the tier decision and any
+ *  body-fat estimate are inputs, never read from the environment, so it runs
+ *  identically on web, server and native. */
 
 /** What the caller has resolved about the user before asking for a target.
  *  Gating lives in callers (see goal-phases.ts): pass `phasesEnabled: true`
- *  only after the tier check (`FEATURES.canUseGoalPhases`). */
-export type TargetContext = { phasesEnabled: boolean };
+ *  only after the tier check (`FEATURES.canUseGoalPhases`). `bodyFatPct` is
+ *  the latest body-fat estimate (%) if the caller has one — only a lean-mass
+ *  protein basis reads it; absent → bodyweight basis. */
+export type TargetContext = {
+  phasesEnabled: boolean;
+  bodyFatPct?: number | null;
+};
 
-/** A day's resolved target: the engine output plus what produced it. */
+/** What drove a training-day target (present only while a schedule is on). */
+export type TrainingDayTargets = {
+  /** The template entry for this weekday. */
+  day: TrainingDay;
+  dayClass: TrainingDayClass;
+  cycling: CyclingPreset;
+  /** The weekly mean daily target the day is planned around. */
+  meanCalories: number;
+  /** The protein basis actually used (lean mass falls back to bodyweight
+   *  without a body-fat estimate). */
+  proteinBasis: ProteinSetting["basis"];
+};
+
+/** A day's resolved target: the engine output plus what produced it.
+ *
+ *  With an enabled training schedule, `targetCalories` and the three macros
+ *  are the DAY's planned values, while `bmr`, `tdee`, `dailyDelta` and
+ *  `requestedDelta` stay the weekly-average energy balance (what moves the
+ *  weight trend) and `training` says how the day was planned. Without one,
+ *  there is no `training` key and every value is `computeMacros`' own. */
 export type DateTargets = CalculatedValues & {
   /** The local `YYYY-MM-DD` these targets are for. */
   date: string;
@@ -27,19 +72,19 @@ export type DateTargets = CalculatedValues & {
   goal: PersonalInfo["goal"];
   /** The goal phase driving the target, or `null` (linear goal). */
   phase: GoalPhase | null;
+  training?: TrainingDayTargets;
 };
 
-/** Local midnight (ms epoch) of a `YYYY-MM-DD` key, or `undefined` for a key
- *  that isn't a real calendar date (e.g. the empty key `useToday` returns
- *  before hydration) — `computeMacros` then falls back to the present.
- *  Component-based like `addDays`, so DST never shifts the day.
+/** Local midnight of a `YYYY-MM-DD` key, or `undefined` for a key that isn't
+ *  a real calendar date (e.g. the empty key `useToday` returns before
+ *  hydration). Component-based like `addDays`, so DST never shifts the day.
  *
  *  "Local" is the PROCESS timezone (`new Date(y, m, d)`): the user's zone in
  *  the browser, but UTC on the server, so in the crons the instant is UTC
  *  midnight of `date`. That only moves the age clock (a birthdate-derived
  *  age rolls over at UTC rather than local midnight), never which day — and
- *  so which goal phase — the target is resolved for. */
-function localMidnightMs(date: string): number | undefined {
+ *  so which goal phase or training weekday — the target is resolved for. */
+function localMidnight(date: string): Date | undefined {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
   if (!match) return undefined;
   const y = Number(match[1]);
@@ -49,7 +94,7 @@ function localMidnightMs(date: string): number | undefined {
   // Reject roll-overs like 2026-02-31 → March 3.
   if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d)
     return undefined;
-  return dt.getTime();
+  return dt;
 }
 
 /** Resolve the calorie/macro target for `date` (local `YYYY-MM-DD`). */
@@ -61,12 +106,91 @@ export function targetsForDate(
   const effective = effectiveGoal(profile, date, {
     phasesEnabled: ctx.phasesEnabled,
   });
+  const midnight = localMidnight(date);
+  // `computeMacros` falls back to the present clock for a non-date key.
   const values = computeMacros(
     { ...profile, goal: effective.goal, weeklyRateKg: effective.weeklyRateKg },
-    localMidnightMs(date),
+    midnight?.getTime(),
     // The covering phase's own maintenance override (Pro), if set, wins over
     // the global manualTdee; computeMacros ignores null / ≤ 0.
     effective.phase?.tdeeOverride ?? undefined,
   );
-  return { ...values, date, goal: effective.goal, phase: effective.phase };
+  const base: DateTargets = {
+    ...values,
+    date,
+    goal: effective.goal,
+    phase: effective.phase,
+  };
+
+  // No enabled schedule (absent, disabled or malformed) → exactly the above.
+  // A non-date key has no weekday to plan, so it keeps the weekly mean.
+  const schedule = normalizeTrainingSchedule(profile.training);
+  if (!schedule?.enabled || !midnight) return base;
+
+  const weekday = midnight.getDay();
+  const classes = schedule.days.map(classifyTrainingDay);
+  const dayClass = classes[weekday];
+  const dayKcal = distributeWeekCalories({
+    meanKcal: values.targetCalories,
+    classes,
+    cycling: schedule.cycling,
+    // The same per-day floor computeMacros applies, max(BMR, 1200).
+    floorKcal: Math.max(values.bmr, MIN_DAILY_KCAL),
+  })[weekday];
+  const protein = proteinGrams(
+    normalizeProteinSetting(profile.proteinSetting),
+    profile.weight,
+    ctx.bodyFatPct,
+  );
+  const macros = partitionDayMacros({
+    dayKcal,
+    dayClass,
+    mean: values,
+    proteinGrams: protein.grams,
+    weightKg: profile.weight,
+    goal: effective.goal,
+    dietType: profile.dietType,
+  });
+  return {
+    ...base,
+    targetCalories: dayKcal,
+    ...macros,
+    training: {
+      day: schedule.days[weekday],
+      dayClass,
+      cycling: schedule.cycling,
+      meanCalories: values.targetCalories,
+      proteinBasis: protein.basis,
+    },
+  };
+}
+
+/** A Monday-to-Sunday week of day targets — the training-week screen. */
+export type WeekTargets = {
+  /** The week's Monday (local `YYYY-MM-DD`). */
+  weekStart: string;
+  /** Monday → Sunday, each exactly what `targetsForDate` returns for it. */
+  days: DateTargets[];
+  /** Sum of the seven `targetCalories`. */
+  totalCalories: number;
+};
+
+/** The seven day targets of the Monday-first week containing `anyDateInWeek`,
+ *  or `null` for a key that isn't a calendar date. */
+export function weekTargets(
+  profile: PersonalInfo,
+  anyDateInWeek: string,
+  ctx: TargetContext,
+): WeekTargets | null {
+  const midnight = localMidnight(anyDateInWeek);
+  if (!midnight) return null;
+  const weekStart = addDays(anyDateInWeek, -((midnight.getDay() + 6) % 7));
+  const days = Array.from({ length: 7 }, (_, i) =>
+    targetsForDate(profile, addDays(weekStart, i), ctx),
+  );
+  return {
+    weekStart,
+    days,
+    totalCalories: days.reduce((sum, d) => sum + d.targetCalories, 0),
+  };
 }
