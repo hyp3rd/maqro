@@ -304,13 +304,22 @@ const MacroCalculator = () => {
   // profile until the seed lands (past the 1.5 s gate on a slow device) and
   // for the render between the seed's data-bus bump and `useProfile`'s
   // re-load. Either way the wizard would mount and count the visit in the
-  // anonymous onboarding funnel. Read once, here: `DemoSeed` strips the param
-  // after seeding, and this lazy initializer runs before any effect does. Not
-  // marked done, so a reload after "start over" still onboards normally.
+  // anonymous onboarding funnel. Not marked done, so a reload after "start
+  // over" still onboards normally.
+  //
+  // The flag comes from the router's `useSearchParams`, not
+  // `window.location`: the landing page reaches `/app?demo=1` through a
+  // `<Link>` soft navigation, and Next renders the new route with its params
+  // but writes the address bar only in the commit phase (`HistoryUpdater`'s
+  // insertion effect), so during this first render `window.location` can
+  // still be the landing page's. Read once, in the lazy initializer: the
+  // wizard state is decided at mount, and `DemoSeed`'s later strip of the
+  // param must not reopen it.
+  const searchParams = useSearchParams();
   const [onboardingOpen, setOnboardingOpen] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return (
-      !hasCompletedOnboarding() && !isDemoSeedRequest(window.location.search)
+      !hasCompletedOnboarding() && !isDemoSeedRequest(searchParams.toString())
     );
   });
   // Grace window so the wizard doesn't FLASH for a fraction of a
@@ -465,8 +474,7 @@ const MacroCalculator = () => {
   // "undefined"` → returns null) and client hydration would reuse
   // that null forever. `useSearchParams` returns the real URL params
   // on both server and client, so the value is correct from the
-  // first render.
-  const searchParams = useSearchParams();
+  // first render. (`searchParams` is read above, for the onboarding gate.)
   const urlUpgradeParam = searchParams.get("upgrade");
   const urlPlan: "plus" | "pro" | null =
     urlUpgradeParam === "plus" || urlUpgradeParam === "pro"

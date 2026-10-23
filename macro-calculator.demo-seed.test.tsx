@@ -9,6 +9,7 @@ import {
 } from "@/lib/db";
 import { computeMacros } from "@/lib/macros";
 import en from "@/messages/en.json";
+import { useInsertionEffect } from "react";
 import "fake-indexeddb/auto";
 import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -29,8 +30,16 @@ import MacroCalculator from "./macro-calculator";
  *  the first-run onboarding wizard (plus its anonymous funnel POST) stays out
  *  of a visit that is exploring sample data. */
 
+/** The query string the router is rendering, when it differs from the address
+ *  bar. A Next `<Link>` soft navigation renders the target route with its
+ *  params in `useSearchParams` but only writes the URL in the commit phase
+ *  (`HistoryUpdater`'s insertion effect), so during that render
+ *  `window.location` still shows the previous page. `search: null` = in step. */
+const router = vi.hoisted(() => ({ search: null as string | null }));
+
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(window.location.search),
+  useSearchParams: () =>
+    new URLSearchParams(router.search ?? window.location.search),
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
   usePathname: () => window.location.pathname,
 }));
@@ -94,6 +103,34 @@ function renderApp() {
   );
 }
 
+/** Stands in for Next's `HistoryUpdater`: writes the navigated-to URL into
+ *  the address bar in an insertion effect — after the route has rendered,
+ *  before any of its layout or passive effects run. */
+function HistoryWrite({ url }: { url: string }) {
+  useInsertionEffect(() => {
+    window.history.replaceState({}, "", url);
+    router.search = null;
+  }, [url]);
+  return null;
+}
+
+/** Render the app the way the landing page's `<Link href="/app?demo=1">`
+ *  reaches it: the router renders `url` while the address bar still shows
+ *  `/`, then commits the URL. */
+function renderAppBySoftNavigation(url: string) {
+  window.history.replaceState({}, "", "/");
+  router.search = new URL(url, window.location.origin).search;
+  return render(
+    <NextIntlClientProvider
+      locale="en"
+      messages={en}
+    >
+      <MacroCalculator />
+      <HistoryWrite url={url} />
+    </NextIntlClientProvider>,
+  );
+}
+
 /** Resolves once the seed's profile is visible: the summary strip leads with
  *  the demo's sex/age instead of DEFAULT_PROFILE's "Male · 30 yrs". */
 async function findDemoSummary(): Promise<HTMLElement> {
@@ -132,6 +169,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   cleanup();
+  router.search = null;
   vi.useRealTimers();
   vi.unstubAllGlobals();
   window.history.replaceState({}, "", "/");
@@ -175,6 +213,16 @@ describe("?demo=1 first load", () => {
   it("does not open the onboarding wizard or count the visit in the funnel", async () => {
     window.history.replaceState({}, "", "/app?demo=1");
     renderApp();
+    await seedWritten();
+    await passOnboardingGate();
+
+    expect(screen.queryByText("Welcome to Maqro")).toBeNull();
+    expect(onboardingPosts()).toBe(0);
+  });
+
+  it("keeps the wizard and the funnel POST out of a soft navigation from the landing page", async () => {
+    renderAppBySoftNavigation("/app?demo=1");
+    // The URL write landed before DemoSeed's effect, which seeded.
     await seedWritten();
     await passOnboardingGate();
 
