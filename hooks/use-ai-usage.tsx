@@ -41,7 +41,13 @@ export type AiUsageState =
   | { status: "loading" }
   | { status: "anon" } // not signed in — no usage to fetch
   | { status: "ok"; data: AiUsage }
-  | { status: "error"; message: string };
+  | {
+      status: "error";
+      message: string;
+      /** Set only on `OFFLINE_UNVERIFIED_USAGE`: no request was made, because
+       *  the identity is offline-unverified (see `UserState`). */
+      offlineUnverified?: true;
+    };
 
 export type UseAiUsageResult = {
   state: AiUsageState;
@@ -101,6 +107,7 @@ export const USAGE_FETCH_TIMEOUT_MS = 8_000;
 export const OFFLINE_UNVERIFIED_USAGE: AiUsageState = {
   status: "error",
   message: `${OFFLINE_UNVERIFIED_HINT}. Usage loads once it can be reached.`,
+  offlineUnverified: true,
 };
 
 type AiUsageContextValue = UseAiUsageResult & {

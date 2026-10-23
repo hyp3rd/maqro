@@ -3,7 +3,6 @@
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAiUsage } from "@/hooks/use-ai-usage";
-import { useUser } from "@/hooks/use-user";
 
 /** Surfaces the caller's monthly AI-call usage against the free-tier
  *  cap. Hidden for guests (no usage to show), collapsed to a one-line
@@ -15,10 +14,14 @@ import { useUser } from "@/hooks/use-user";
  *
  *  Offline-unverified (see `UserState`) there is no session to fetch the
  *  usage with, so instead of a Refresh that cannot work the card says why
- *  the usage isn't shown; it loads once the identity is verified again. */
+ *  the usage isn't shown; it loads once the identity is verified again.
+ *  That state is read from the provider's usage state, which made the call
+ *  not to fetch, rather than from a `useUser()` of its own (not shared
+ *  state: a second identity check that could momentarily disagree). */
 export function AiUsageSection() {
   const { state: usage, refresh } = useAiUsage();
-  const { isOfflineUnverified } = useUser();
+  const isOfflineUnverified =
+    usage.status === "error" && usage.offlineUnverified === true;
 
   if (usage.status === "anon") return null;
   if (usage.status === "error" && !isOfflineUnverified) return null;

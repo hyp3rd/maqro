@@ -94,6 +94,22 @@ describe("Profile billing while offline-unverified", () => {
     expect(screen.queryByRole("button", { name: /refresh/i })).toBeNull();
     expect(screen.queryByText(/sign in to view/i)).toBeNull();
   });
+
+  it("the usage card follows the provider's usage state, not an identity check of its own", () => {
+    // `useUser` is not shared state: a second instance can momentarily
+    // disagree with the one behind the provider. The card must render what
+    // the provider decided.
+    auth.state = {
+      ...auth.state,
+      user: { id: "u1" } as User,
+      isOfflineUnverified: false,
+    };
+    openBilling();
+    expect(screen.getByRole("status").textContent).toBe(
+      "Can't reach the account server — your data stays on this device. Usage loads once it can be reached.",
+    );
+    expect(screen.queryByRole("button", { name: /refresh/i })).toBeNull();
+  });
 });
 
 describe("Profile billing, controls", () => {
