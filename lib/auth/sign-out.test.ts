@@ -86,6 +86,24 @@ describe("clearAccountRecords", () => {
     expect(readCachedTier("u1")).toBeNull();
     expect(readCachedTier("u2")).toBeNull();
   });
+
+  it("an explicit account wins over the last-known record", () => {
+    writeCachedTier("u1", "pro");
+    writeCachedTier("u2", "plus");
+    writeLastKnownUserId("u2");
+    clearAccountRecords("u1");
+    expect(readCachedTier("u1")).toBeNull();
+    expect(readCachedTier("u2")).toBe("plus");
+    expect(readLastKnownUserId()).toBeNull();
+  });
+
+  it("an explicit account with no record forgets only that account's tier", () => {
+    writeCachedTier("u1", "pro");
+    writeCachedTier("u2", "plus");
+    clearAccountRecords("u1");
+    expect(readCachedTier("u1")).toBeNull();
+    expect(readCachedTier("u2")).toBe("plus");
+  });
 });
 
 describe("clearAllAccountRecords", () => {

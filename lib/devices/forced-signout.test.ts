@@ -86,6 +86,25 @@ describe("watchForForcedSignOut", () => {
     expect(readCachedTier("u1")).toBeNull();
   });
 
+  it("forgets the disconnected account's tier, not the one a stale record names", async () => {
+    writeCachedTier("u1", "pro");
+    writeCachedTier("u2", "plus");
+    // Stale: an older bundle switched accounts without updating the record.
+    writeLastKnownUserId("u2");
+    const { client, deleteRow } = fakeClient();
+
+    watchForForcedSignOut(client, "u1");
+    await sessionIdCaptured();
+    deleteRow("sid-mine");
+
+    await vi.waitFor(() =>
+      expect(assign).toHaveBeenCalledWith("/login?disconnected=1"),
+    );
+    expect(readCachedTier("u1")).toBeNull();
+    expect(readCachedTier("u2")).toBe("plus");
+    expect(readLastKnownUserId()).toBeNull();
+  });
+
   it("another session's disconnect leaves this device alone", async () => {
     writeLastKnownUserId("u1");
     const { client, signOut, deleteRow } = fakeClient();

@@ -9,16 +9,18 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 /** Forget the signed-out account's records kept outside IndexedDB — its
  *  cached tier and the last-known user — so the next user on this device is
  *  never shown as the previous one, and the signed-out account is not gated
- *  on a tier the server no longer vouches for. The account is the one the
- *  last-known record names (whose local data this device holds); other
- *  accounts' cached tiers stay, since each applies only to its own user.
- *  With no record, whose tier it is cannot be told, so every cached tier is
- *  forgotten. Used by sign-out and forced sign-out. Never throws (both
- *  records degrade to "absent" on storage errors). */
-export function clearAccountRecords(): void {
-  const userId = readLastKnownUserId();
-  if (userId === null) clearCachedTier();
-  else forgetCachedTier(userId);
+ *  on a tier the server no longer vouches for. The account is `userId` when
+ *  the caller knows it (forced sign-out is scoped to one), else the one the
+ *  last-known record names (whose local data this device holds) — a record
+ *  that can be stale, so it is only the fallback. Other accounts' cached
+ *  tiers stay, since each applies only to its own user. With neither, whose
+ *  tier it is cannot be told, so every cached tier is forgotten. Used by
+ *  sign-out and forced sign-out. Never throws (both records degrade to
+ *  "absent" on storage errors). */
+export function clearAccountRecords(userId?: string): void {
+  const account = userId ?? readLastKnownUserId();
+  if (account === null) clearCachedTier();
+  else forgetCachedTier(account);
   clearLastKnownUser();
 }
 
