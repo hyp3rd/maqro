@@ -76,10 +76,13 @@ export type TrainingDayTargets = {
    *  the protein. When false, every planned day holds all of them: cycling
    *  narrows its spread rather than plan a day that can't. */
   floorsExceedMean: boolean;
-  /** The fat floor lifted the user's explicit fat choice (a `lowFat` diet
-   *  type or a custom macro split asking for less than max(15% of the mean
-   *  kcal, 0.5 g/kg)), so fat is held at the floor — the UI's info note
-   *  (`fatFloorLiftsChoice`). */
+  /** The fat floor raised the plan's fat above what the user's explicit fat
+   *  choice (a `lowFat` diet type or a custom macro split) yields for the
+   *  mean day — the UI's info note (`fatFloorLiftsChoice`). Carb-moving:
+   *  the choice is under max(15% of the mean kcal, 0.5 g/kg), so the week
+   *  holds the floor. Low-carb: the floor lowered the week's carbs under
+   *  the split's, raising fat on every day; a low fat share that the fixed
+   *  protein already lifted well above the floor is not flagged. */
   fatFloorLifted: boolean;
 };
 
@@ -186,8 +189,7 @@ export function targetsForDate(
     floorKcal: Math.max(values.bmr, MIN_DAILY_KCAL, minDay),
   });
   const dayKcal = weekKcal[weekday];
-  const macros = partitionDayMacros({
-    dayKcal,
+  const week = {
     // The week's held fat (or carbs) is set on its smallest planned day,
     // so every day of the week shares it.
     weekMinKcal: Math.min(...weekKcal),
@@ -197,7 +199,8 @@ export function targetsForDate(
     goal: floors.goal,
     dietType: floors.dietType,
     explicitFatChoice: floors.explicitFatChoice,
-  });
+  };
+  const macros = partitionDayMacros({ ...week, dayKcal });
   return {
     ...base,
     targetCalories: dayKcal,
@@ -210,7 +213,7 @@ export function targetsForDate(
       proteinBasis: protein.basis,
       bodyFatWouldChangeProtein: protein.bodyFatWouldChangeProtein,
       floorsExceedMean: values.targetCalories < minDay,
-      fatFloorLifted: fatFloorLiftsChoice({ ...floors, meanFat: values.fat }),
+      fatFloorLifted: fatFloorLiftsChoice(week),
     },
   };
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CYCLING_WEIGHTS,
   type DayMacroInput,
+  type MacroFloorInput,
   type TrainingDayClass,
   classifyTrainingDay,
   distributeWeekCalories,
@@ -947,16 +948,14 @@ describe("partitionDayMacros", () => {
 });
 
 describe("fatFloorGrams / fatFloorLiftsChoice", () => {
-  const base = {
+  const base: MacroFloorInput = {
     floorKg: 80,
     meanKcal: 2200,
-    goal: "maintain" as const,
-    dietType: "balanced" as const,
+    goal: "maintain",
+    dietType: "balanced",
     explicitFatChoice: false,
   };
-  type Over = Partial<Omit<typeof base, "goal">> & {
-    goal?: "lose" | "maintain" | "gain";
-  };
+  type Over = Partial<MacroFloorInput>;
   const rows: [string, Over, number][] = [
     ["default: 20% of the mean kcal", {}, (0.2 * 2200) / 9],
     ["a cut: 15%, but at least 0.5 g/kg", { goal: "lose" }, 40],
@@ -1005,11 +1004,51 @@ describe("fatFloorGrams / fatFloorLiftsChoice", () => {
     ],
     ["a default split is never reported", {}, 24, false],
   ];
+  /** A flat week at the mean (its smallest day IS the mean), 2.0 g/kg. */
+  const week = (over: Over, meanFat: number, meanCarbs = 150) => {
+    const { meanKcal, ...floors } = { ...base, ...over };
+    return {
+      ...floors,
+      weekMinKcal: meanKcal,
+      mean: { targetCalories: meanKcal, carbs: meanCarbs, fat: meanFat },
+      proteinGrams: 2 * floors.floorKg,
+    };
+  };
   for (const [name, over, meanFat, lifted] of lifts) {
     it(name, () => {
-      expect(fatFloorLiftsChoice({ ...base, ...over, meanFat })).toBe(lifted);
+      expect(fatFloorLiftsChoice(week(over, meanFat))).toBe(lifted);
     });
   }
+
+  describe("low-carb: only when the floor took the week's carbs", () => {
+    // A 50/40/10 split at 2,200 (24 g fat, 220 g carbs) beside 160 g
+    // protein: fat is whatever is left, (2,200 − 640 − 880) / 9 = 75.6 g on
+    // the mean day — far above the 40 g floor (max(15%, 0.5 g/kg) for an
+    // explicit choice) that the split's 10% alone would be under.
+    const lowCarb = { explicitFatChoice: true, dietType: "lowCarb" as const };
+    it("not lifted when the smallest day holds the floor at the split's carbs", () => {
+      // 1,950: (1,950 − 640 − 880) / 9 = 47.8 g, over the floor.
+      expect(
+        fatFloorLiftsChoice({ ...week(lowCarb, 24, 220), weekMinKcal: 1950 }),
+      ).toBe(false);
+      expect(fatFloorLiftsChoice(week(lowCarb, 24, 220))).toBe(false);
+    });
+    it("lifted when the floor lowered the week's carbs", () => {
+      // 1,760: the split's 220 g carbs would leave 26.7 g fat, so the week's
+      // carbs drop to (1,760 − 640 − 360) / 4 = 190.
+      expect(
+        fatFloorLiftsChoice({ ...week(lowCarb, 24, 220), weekMinKcal: 1760 }),
+      ).toBe(true);
+    });
+    it("never for a default low-carb split", () => {
+      expect(
+        fatFloorLiftsChoice({
+          ...week({ dietType: "lowCarb" }, 24, 220),
+          weekMinKcal: 1760,
+        }),
+      ).toBe(false);
+    });
+  });
 });
 
 describe("explicitFatChoice", () => {
