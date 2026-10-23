@@ -401,6 +401,16 @@ export function fatMovesForDiet(dietType: PersonalInfo["dietType"]): boolean {
  *  (RippedBody's minimum; a low-carb diet has no carb floor). */
 export const CARB_FLOOR_G_PER_KG = 1;
 
+/** The carb floor in planned grams: 1 g/kg bodyweight on the 5 g grid taken
+ *  upward, or 0 on a fat-moving diet. */
+function carbFloorStep(
+  input: Pick<MacroFloorInput, "weightKg" | "dietType">,
+): number {
+  return fatMovesForDiet(input.dietType)
+    ? 0
+    : ceilStep(CARB_FLOOR_G_PER_KG * input.weightKg, MACRO_GRAM_STEP);
+}
+
 /** What sets a day's macro floors. */
 export type MacroFloorInput = {
   /** Bodyweight: the fat (0.5 g/kg) and carb (1 g/kg) floors' basis. */
@@ -494,9 +504,7 @@ export function proteinCeilingGrams(
 ): number {
   const step = MACRO_GRAM_STEP;
   const afterFat = input.dayKcal - 9 * ceilStep(fatFloorGrams(input), step);
-  const carbFloor = fatMovesForDiet(input.dietType)
-    ? 0
-    : ceilStep(CARB_FLOOR_G_PER_KG * input.weightKg, step);
+  const carbFloor = carbFloorStep(input);
   const withCarbFloor = floorStep((afterFat - 4 * carbFloor) / 4, step);
   const withFatFloorOnly = floorStep(afterFat / 4, step);
   const proteinFloor = Math.min(
@@ -521,9 +529,7 @@ export function minDayKcal(
   },
 ): number {
   const step = MACRO_GRAM_STEP;
-  const carbFloor = fatMovesForDiet(input.dietType)
-    ? 0
-    : ceilStep(CARB_FLOOR_G_PER_KG * input.weightKg, step);
+  const carbFloor = carbFloorStep(input);
   return (
     4 * roundStep(input.proteinGrams, step) +
     9 * ceilStep(fatFloorGrams(input), step) +
@@ -571,10 +577,10 @@ export type DayMacroInput = {
  *  - Default (carbs move): fat holds at the mean day's level (at least the
  *    floor) and carbs take the rest. Every day keeps ≥ 1 g/kg carbs — the
  *    one case where fat trades down from its weekly level, never below its
- *    floor. The 1 g/kg is guaranteed unless 1.2 g/kg protein, the fat floor and 1 g/kg carbs
- *    don't all fit the day — rule 2 of `proteinCeilingGrams` then keeps the
- *    protein and carbs fall short (heavy, short, older users at their BMR
- *    floor: ≥ 138 kg in a 20,000-profile fuzz).
+ *    floor. On every day `targetsForDate` plans that holds unless
+ *    `training.floorsExceedMean`: then rule 2 of `proteinCeilingGrams`
+ *    keeps 1.2 g/kg protein and carbs fall short (in a 20,000-profile fuzz,
+ *    only users of ≥ 169 kg at their BMR floor).
  *  - Low-carb (fat moves): carbs hold at the mean day's level and fat takes
  *    the rest; if that would put fat under its floor, carbs give way.
  *  - Everything is in 5 g steps; the moving macro is derived last from the
@@ -623,7 +629,7 @@ export function partitionDayMacros(input: DayMacroInput): {
     return { protein: P, carbs: C, fat: F };
   }
 
-  const carbFloor = ceilStep(CARB_FLOOR_G_PER_KG * input.weightKg, step);
+  const carbFloor = carbFloorStep(input);
   const held = Math.max(input.mean.fat, fatFloor);
   let F = Math.max(roundStep(held, step), fatFloorStep);
   if ((afterProtein - 9 * F) / 4 < carbFloor) {
