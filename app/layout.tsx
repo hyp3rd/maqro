@@ -1,6 +1,7 @@
 import { AppToaster } from "@/components/app-toaster";
 import { MotionProvider } from "@/components/motion-provider";
 import { CookieNotice } from "@/components/shell/CookieNotice";
+import { ThemeColorSync } from "@/components/theme-color-sync";
 import { ThemeProvider } from "@/components/theme-provider";
 import { getAppUrl } from "@/lib/app-url";
 import { THEME_COLOR } from "@/lib/design/palette";
@@ -138,6 +139,8 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
+  // First paint follows the OS; ThemeColorSync retargets both metas to
+  // the manual theme once next-themes resolves it.
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: THEME_COLOR.light },
     { media: "(prefers-color-scheme: dark)", color: THEME_COLOR.dark },
@@ -173,9 +176,10 @@ export default async function RootLayout({
             disableTransitionOnChange
           >
             <MotionProvider>{children}</MotionProvider>
-            {/* Inside ThemeProvider: follows next-themes' resolved theme
-                rather than the OS preference. */}
+            {/* Inside ThemeProvider: both follow next-themes' resolved
+                theme rather than the OS preference. */}
             <AppToaster />
+            <ThemeColorSync />
             {/* Cookie/privacy notice - informational only because
              *  Maqro doesn't set non-essential cookies. Mounted in
              *  the root layout so it covers /, /app, /login, and
