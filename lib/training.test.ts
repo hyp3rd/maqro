@@ -7,7 +7,9 @@ import {
   normalizeProteinSetting,
   normalizeTrainingSchedule,
   partitionDayMacros,
+  proteinCeilingGrams,
   proteinGrams,
+  weekProteinGrams,
 } from "@maqro/core/training";
 import type {
   CyclingPreset,
@@ -517,19 +519,155 @@ describe("partitionDayMacros", () => {
     }
   });
 
-  it("when protein + the fat floor exceed the day, carbs go to 0 and fat gives way", () => {
-    expect(
-      partitionDayMacros(
-        input({ proteinGrams: 300, weightKg: 150, dayKcal: 1500 }),
-      ),
-    ).toEqual({ protein: 300, carbs: 0, fat: 30 });
+  it("protein gives way so the fat and carb floors hold", () => {
+    // 120 kg on a cut at the 2,150 BMR floor, protein set to 3.4 g/kg
+    // (408 g): fat floor 60 g (0.5 g/kg), carb floor 120 g (1 g/kg).
+    const m = partitionDayMacros(
+      input({
+        dayKcal: 2150,
+        dayClass: "rest",
+        mean: { targetCalories: 2150, carbs: 135, fat: 70 },
+        proteinGrams: 408,
+        weightKg: 120,
+      }),
+    );
+    expect(m.fat).toBeGreaterThanOrEqual(60);
+    expect(m.carbs).toBeGreaterThanOrEqual(120);
+    expect(m.protein).toBe(280); // (2,150 − 9·60 − 4·120) / 4 = 282 → 280
+    expect(Math.abs(kcal(m) - 2150)).toBeLessThanOrEqual(45);
   });
 
-  it("protein alone over the day is capped to the day's energy", () => {
+  it("protein keeps 1.2 g/kg ahead of the carb floor, never ahead of fat", () => {
+    // 200 kg on a 2,400 day: fat floor 100 g leaves 1,500 kcal, under
+    // 1.2 g/kg protein (240 g) + 1 g/kg carbs (200 g).
     expect(
       partitionDayMacros(
-        input({ proteinGrams: 400, weightKg: 150, dayKcal: 1500 }),
+        input({
+          goal: "maintain",
+          dayKcal: 2400,
+          mean: { targetCalories: 2400, carbs: 200, fat: 80 },
+          proteinGrams: 400,
+          weightKg: 200,
+        }),
       ),
-    ).toEqual({ protein: 375, carbs: 0, fat: 0 });
+    ).toEqual({ protein: 240, carbs: 135, fat: 100 });
+  });
+
+  it("a day under the fat floor's own energy is all fat", () => {
+    expect(
+      partitionDayMacros(
+        input({ proteinGrams: 300, weightKg: 150, dayKcal: 500 }),
+      ),
+    ).toEqual({ protein: 0, carbs: 0, fat: 55 });
+  });
+
+  it("never plans fat under its floor, whatever protein is asked for", () => {
+    for (const dietType of ["balanced", "lowCarb", "lowFat"] as const) {
+      for (const goal of ["lose", "maintain", "gain"] as const) {
+        for (const weightKg of [45, 80, 120, 160]) {
+          for (const gPerKg of [1.2, 2.0, 3.4]) {
+            for (let dayKcal = 1200; dayKcal <= 3600; dayKcal += 150) {
+              const mean = { targetCalories: dayKcal, carbs: 150, fat: 70 };
+              const m = partitionDayMacros(
+                input({
+                  dayKcal,
+                  dayClass: "rest",
+                  mean,
+                  goal,
+                  dietType,
+                  weightKg,
+                  proteinGrams: gPerKg * weightKg,
+                }),
+              );
+              const share = goal === "lose" ? 0.15 : 0.2;
+              const floor = Math.max(0.5 * weightKg, (share * dayKcal) / 9);
+              expect(m.fat).toBeGreaterThanOrEqual(floor);
+              expect(m.carbs).toBeGreaterThanOrEqual(0);
+              expect(Math.abs(kcal(m) - dayKcal)).toBeLessThanOrEqual(45);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it("at equal calories, carbs never decrease as the day gets harder", () => {
+    // Rest → light → training → endurance → heavy.
+    const order: TrainingDayClass[] = [
+      "rest",
+      "light",
+      "training",
+      "endurance",
+      "heavy",
+    ];
+    // 102 kg on a cut, flat at the 1,870 floor (the case where rest days
+    // used to out-carb training days), plus roomier days and fat levels.
+    for (const fat of [40, 70, 120]) {
+      for (let dayKcal = 1870; dayKcal <= 3200; dayKcal += 110) {
+        const carbs = order.map(
+          (dayClass) =>
+            partitionDayMacros(
+              input({
+                dayKcal,
+                dayClass,
+                weightKg: 102,
+                proteinGrams: 204,
+                mean: { targetCalories: dayKcal, carbs: 150, fat },
+              }),
+            ).carbs,
+        );
+        for (let i = 1; i < carbs.length; i++) {
+          expect(carbs[i]).toBeGreaterThanOrEqual(carbs[i - 1]);
+        }
+        // Every non-heavy day gets the same split.
+        expect(new Set(carbs.slice(0, 4)).size).toBe(1);
+        expect(carbs[0]).toBeGreaterThanOrEqual(102);
+      }
+    }
+  });
+});
+
+describe("proteinCeilingGrams / weekProteinGrams", () => {
+  const floors = {
+    weightKg: 120,
+    meanKcal: 2150,
+    goal: "lose" as const,
+    dietType: "balanced" as const,
+  };
+
+  it("leaves the fat and carb floors room on the day", () => {
+    // 2,150 − 9·60 (fat) − 4·120 (carbs) = 1,130 kcal → 282 g → 280.
+    expect(
+      proteinCeilingGrams({ ...floors, dayKcal: 2150, proteinGrams: 408 }),
+    ).toBe(280);
+    // Low-carb has no carb floor: only the fat floor's 540 kcal is held.
+    expect(
+      proteinCeilingGrams({
+        ...floors,
+        dietType: "lowCarb",
+        dayKcal: 2150,
+        proteinGrams: 408,
+      }),
+    ).toBe(400);
+  });
+
+  it("a setting that fits every day is kept as asked", () => {
+    expect(
+      weekProteinGrams({
+        ...floors,
+        proteinGrams: 240,
+        dayCalories: [2150, 2400, 2150, 2600, 2150, 2400, 2500],
+      }),
+    ).toEqual({ grams: 240, capped: false });
+  });
+
+  it("one that doesn't is cut to the week's smallest day, for every day", () => {
+    expect(
+      weekProteinGrams({
+        ...floors,
+        proteinGrams: 408,
+        dayCalories: [2600, 2400, 2150, 2600, 2300, 2400, 2500],
+      }),
+    ).toEqual({ grams: 280, capped: true });
   });
 });

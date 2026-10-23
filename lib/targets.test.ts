@@ -504,6 +504,116 @@ describe("targetsForDate — training days", () => {
     expect(weekTargets(p, "2026-06-10", FREE)?.totalCalories).toBe(7 * 2600);
   });
 
+  it("protein gives way to the fat and carb floors, the same every day", () => {
+    // 120 kg / 180 cm / 35 y sedentary male cutting 0.5 kg/week: the cut
+    // lands under the 2,155 BMR floor, so every day sits at 2,155.
+    const p = profile({
+      weight: 120,
+      age: 35,
+      activityLevel: "sedentary",
+      goal: "lose",
+      weeklyRateKg: 0.5,
+      manualTdee: null,
+      training: schedule(),
+      proteinSetting: { basis: "bodyweight", gPerKg: 3.4 },
+    });
+    const days = weekTargets(p, "2026-10-19", FREE)?.days ?? [];
+    expect(days).toHaveLength(7);
+    for (const d of days) {
+      expect(d.targetCalories).toBe(2155);
+      // 3.4 g/kg (408 g) doesn't fit beside 60 g fat + 120 g carbs.
+      expect(d.protein).toBe(280);
+      expect(d.training?.proteinCapped).toBe(true);
+      expect(d.fat).toBeGreaterThanOrEqual(60);
+      expect(d.carbs).toBeGreaterThanOrEqual(120);
+    }
+    // The default 2.0 g/kg (240 g) fits, so nothing is capped.
+    const byDefault = targetsForDate(
+      { ...p, proteinSetting: undefined },
+      "2026-10-20",
+      FREE,
+    );
+    expect(byDefault.protein).toBe(240);
+    expect(byDefault.training?.proteinCapped).toBe(false);
+  });
+
+  describe("floors hold across a grid of profiles and settings", () => {
+    const ORDER = ["rest", "light", "training", "endurance", "heavy"];
+    const round5 = (x: number) => Math.round(x / 5) * 5;
+    const goals: [PersonalInfo["goal"], number][] = [
+      ["lose", 0.5],
+      ["lose", 1.0],
+      ["maintain", 0],
+      ["gain", 0.25],
+    ];
+    for (const dietType of ["balanced", "lowCarb", "lowFat"] as const) {
+      for (const cycling of ["modest", "pronounced", "off"] as const) {
+        it(`${dietType}, cycling ${cycling}`, () => {
+          for (const weight of [45, 62, 80, 102, 120, 140, 160]) {
+            for (const height of [155, 180]) {
+              for (const gender of ["male", "female"] as const) {
+                for (const activityLevel of ["sedentary", "active"] as const) {
+                  for (const [goal, weeklyRateKg] of goals) {
+                    for (const gPerKg of [1.2, 2.0, 3.4]) {
+                      const p = profile({
+                        weight,
+                        height,
+                        gender,
+                        activityLevel,
+                        goal,
+                        weeklyRateKg,
+                        dietType,
+                        manualTdee: null,
+                        training: schedule({ cycling }),
+                        proteinSetting: { basis: "bodyweight", gPerKg },
+                      });
+                      const days = weekTargets(p, "2026-10-19", FREE)?.days;
+                      if (!days) throw new Error("expected a week");
+                      const mean = days[0].training?.meanCalories ?? 0;
+                      const fatFloor = Math.max(
+                        0.5 * weight,
+                        ((goal === "lose" ? 0.15 : 0.2) * mean) / 9,
+                      );
+                      const wanted = round5(gPerKg * weight);
+                      expect(new Set(days.map((d) => d.protein)).size).toBe(1);
+                      for (const d of days) {
+                        expect(d.fat).toBeGreaterThanOrEqual(fatFloor);
+                        if (dietType !== "lowCarb") {
+                          expect(d.carbs).toBeGreaterThanOrEqual(weight);
+                        }
+                        expect(d.training?.proteinCapped).toBe(
+                          d.protein < wanted,
+                        );
+                        const kcal = 4 * (d.protein + d.carbs) + 9 * d.fat;
+                        expect(
+                          Math.abs(kcal - d.targetCalories),
+                        ).toBeLessThanOrEqual(45);
+                      }
+                      // Same calories → carbs never fall as the class gets harder.
+                      for (const a of days) {
+                        for (const b of days) {
+                          const rank = (d: typeof a) =>
+                            ORDER.indexOf(d.training?.dayClass ?? "");
+                          if (
+                            dietType !== "lowCarb" &&
+                            a.targetCalories === b.targetCalories &&
+                            rank(a) < rank(b)
+                          ) {
+                            expect(b.carbs).toBeGreaterThanOrEqual(a.carbs);
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        });
+      }
+    }
+  });
+
   it("a key that isn't a calendar date has no week and no training day", () => {
     expect(weekTargets(mockupProfile(), "", FREE)).toBeNull();
     expect(weekTargets(mockupProfile(), "2026-02-31", FREE)).toBeNull();

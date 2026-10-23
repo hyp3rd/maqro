@@ -329,6 +329,84 @@ export function fatMovesForDiet(dietType: PersonalInfo["dietType"]): boolean {
   return dietType === "lowCarb";
 }
 
+/** Every carb-moving day keeps at least this many g/kg of carbs
+ *  (RippedBody's minimum; a low-carb diet has no carb floor). */
+export const CARB_FLOOR_G_PER_KG = 1;
+/** Heavy days aim for this many g/kg of carbs, by trading fat down to its
+ *  floor, when the day's budget allows (Iraki 2019; Thomas 2016). */
+export const HEAVY_CARB_AIM_G_PER_KG = 3;
+
+/** What sets a day's macro floors. */
+export type MacroFloorInput = {
+  weightKg: number;
+  /** The weekly mean daily target T (kcal): the fat floor's % basis. */
+  meanKcal: number;
+  /** The goal driving the target (a cut allows the 15% fat floor). */
+  goal: PersonalInfo["goal"];
+  dietType: PersonalInfo["dietType"];
+};
+
+/** The fat floor (g, unrounded): max(0.5 g/kg, 20% of the MEAN kcal — 15%
+ *  in a cut). Plans hold its 5 g step taken upward. */
+function fatFloorGrams(input: MacroFloorInput): number {
+  const share = input.goal === "lose" ? 0.15 : 0.2;
+  return Math.max(0.5 * input.weightKg, (share * input.meanKcal) / 9);
+}
+
+/** The most protein (g, a 5 g step) a day of `dayKcal` can hold without
+ *  breaking a macro floor: when they collide, the protein setting is what
+ *  gives way. Precedence, highest first:
+ *
+ *  1. The fat floor — always held (RP's 15% hard floor; Helms 2014).
+ *  2. Protein up to the lesser of the setting and 1.2 g/kg bodyweight (the
+ *     any-goal floor, DGA 2025–2030).
+ *  3. The 1 g/kg carb floor (carb-moving diets only).
+ *  4. The rest of the protein setting.
+ *
+ *  0 when the day can't even hold the fat floor. */
+export function proteinCeilingGrams(
+  input: MacroFloorInput & {
+    dayKcal: number;
+    /** The protein the setting asks for (unrounded) — bounds rule 2. */
+    proteinGrams: number;
+  },
+): number {
+  const step = MACRO_GRAM_STEP;
+  const afterFat = input.dayKcal - 9 * ceilStep(fatFloorGrams(input), step);
+  const carbFloor = fatMovesForDiet(input.dietType)
+    ? 0
+    : ceilStep(CARB_FLOOR_G_PER_KG * input.weightKg, step);
+  const withCarbFloor = floorStep((afterFat - 4 * carbFloor) / 4, step);
+  const withFatFloorOnly = floorStep(afterFat / 4, step);
+  const proteinFloor = Math.min(
+    roundStep(input.proteinGrams, step),
+    roundStep(PROTEIN_G_PER_KG_MIN * input.weightKg, step),
+  );
+  return Math.max(0, withCarbFloor, Math.min(withFatFloorOnly, proteinFloor));
+}
+
+/** The protein every day of a planned week gets (g, a 5 g step): the
+ *  setting's grams, capped by `proteinCeilingGrams` on the week's SMALLEST
+ *  day, so protein is the same every day and no day breaks a floor.
+ *  `capped` says the setting didn't fit (`training.proteinCapped`). */
+export function weekProteinGrams(
+  input: MacroFloorInput & {
+    /** The protein the setting asks for (unrounded) — `proteinGrams`. */
+    proteinGrams: number;
+    /** The seven planned day calories. */
+    dayCalories: readonly number[];
+  },
+): { grams: number; capped: boolean } {
+  const wanted = roundStep(input.proteinGrams, MACRO_GRAM_STEP);
+  const ceiling = proteinCeilingGrams({
+    ...input,
+    dayKcal: Math.min(...input.dayCalories),
+  });
+  return wanted <= ceiling
+    ? { grams: wanted, capped: false }
+    : { grams: ceiling, capped: true };
+}
+
 export type DayMacroInput = {
   /** The day's planned calories. */
   dayKcal: number;
@@ -336,7 +414,7 @@ export type DayMacroInput = {
   /** The weekly mean day from `computeMacros` (its split, or the user's
    *  `macroSplit` override, applied to T): sets the held macro's level. */
   mean: { targetCalories: number; carbs: number; fat: number };
-  /** Fixed daily protein (unrounded) — from `proteinGrams`. */
+  /** Daily protein (unrounded) — `weekProteinGrams` for a planned week. */
   proteinGrams: number;
   weightKg: number;
   /** The goal driving the target (a cut allows the 15% fat floor). */
@@ -344,22 +422,33 @@ export type DayMacroInput = {
   dietType: PersonalInfo["dietType"];
 };
 
-/** Split a training day's calories into macros (A5/A6):
+/** Split a training day's calories into macros. Protein constant and carbs
+ *  carrying the day-type difference follow RP Diet Coach and Carbon; the fat
+ *  floor is RippedBody's 0.5 g/kg with the IOM's 20% lower bound (Helms
+ *  2014's 15% in a cut):
  *
- *  - Protein: the same grams every day.
- *  - Fat floor: max(0.5 g/kg, 20% of the MEAN kcal — 15% in a cut).
+ *  - Protein: the given grams, capped by this day's `proteinCeilingGrams`.
+ *    Pass `weekProteinGrams` and the cap never binds, so protein is the same
+ *    every day of the week.
+ *  - Fat floor: max(0.5 g/kg, 20% of the MEAN kcal — 15% in a cut). It
+ *    always holds; protein gives way first.
  *  - Default (carbs move): fat holds at the mean day's level (at least the
- *    floor) and carbs take the rest. Rest days keep ≥ 1 g/kg carbs and heavy
- *    days aim for ≥ 3 g/kg by trading fat down — never below its floor —
- *    when the day's budget allows.
+ *    floor) and carbs take the rest. Every day keeps ≥ 1 g/kg carbs and
+ *    heavy days aim for ≥ 3 g/kg, by trading fat down (never below its
+ *    floor). The minimum is the same for every non-heavy class, so at equal
+ *    calories carbs never decrease as the day gets harder. The 1 g/kg is
+ *    guaranteed unless 1.2 g/kg protein, the fat floor and 1 g/kg carbs
+ *    don't all fit the day — rule 2 of `proteinCeilingGrams` then keeps the
+ *    protein and carbs fall short (heavy, short, older users at their BMR
+ *    floor: ≥ 138 kg in a 20,000-profile fuzz).
  *  - Low-carb (fat moves): carbs hold at the mean day's level and fat takes
  *    the rest; if that would put fat under its floor, carbs give way.
  *  - Everything is in 5 g steps; the moving macro is derived last from the
  *    rounded others, so 4P + 4C + 9F is within one 5 g step of the moving
  *    macro (≤ 20 kcal for carbs, ≤ 45 kcal for fat) of `dayKcal`.
- *  - A day that can't hold protein + the fat floor (only reachable with an
- *    extreme g/kg on a small day): carbs 0, fat takes what's left; a day
- *    under the protein alone caps protein to the day. */
+ *  - A day smaller than the fat floor's own energy (unreachable from
+ *    `targetsForDate`, whose days are ≥ max(BMR, 1200)) has no room for
+ *    protein or carbs: fat takes the whole day. */
 export function partitionDayMacros(input: DayMacroInput): {
   protein: number;
   carbs: number;
@@ -367,35 +456,43 @@ export function partitionDayMacros(input: DayMacroInput): {
 } {
   const step = MACRO_GRAM_STEP;
   const K = input.dayKcal;
-  const P = roundStep(input.proteinGrams, step);
-  const fatFloor = Math.max(
-    0.5 * input.weightKg,
-    ((input.goal === "lose" ? 0.15 : 0.2) * input.mean.targetCalories) / 9,
-  );
-  const fatFloorStep = ceilStep(fatFloor, step);
-  const afterProtein = K - 4 * P;
-
-  const exhausted = () => {
-    if (afterProtein < 0) {
-      return { protein: floorStep(K / 4, step), carbs: 0, fat: 0 };
-    }
-    return { protein: P, carbs: 0, fat: floorStep(afterProtein / 9, step) };
+  const floors: MacroFloorInput = {
+    weightKg: input.weightKg,
+    meanKcal: input.mean.targetCalories,
+    goal: input.goal,
+    dietType: input.dietType,
   };
-  if (afterProtein < 9 * fatFloorStep) return exhausted();
+  const fatFloor = fatFloorGrams(floors);
+  const fatFloorStep = ceilStep(fatFloor, step);
+  const P = Math.min(
+    roundStep(input.proteinGrams, step),
+    proteinCeilingGrams({
+      ...floors,
+      dayKcal: K,
+      proteinGrams: input.proteinGrams,
+    }),
+  );
+  const afterProtein = K - 4 * P;
+  if (afterProtein < 9 * fatFloorStep) {
+    return { protein: P, carbs: 0, fat: floorStep(afterProtein / 9, step) };
+  }
 
   if (fatMovesForDiet(input.dietType)) {
     let C = roundStep(Math.max(0, input.mean.carbs), step);
     if ((afterProtein - 4 * C) / 9 < fatFloor) {
-      C = floorStep(Math.max(0, (afterProtein - 9 * fatFloorStep) / 4), step);
+      C = floorStep((afterProtein - 9 * fatFloorStep) / 4, step);
     }
     let F = roundStep((afterProtein - 4 * C) / 9, step);
     if (F < fatFloor) F += step;
     return { protein: P, carbs: C, fat: F };
   }
 
-  const carbMinPerKg =
-    input.dayClass === "rest" ? 1 : input.dayClass === "heavy" ? 3 : 0;
-  const carbMin = carbMinPerKg * input.weightKg;
+  const carbMin = ceilStep(
+    (input.dayClass === "heavy"
+      ? HEAVY_CARB_AIM_G_PER_KG
+      : CARB_FLOOR_G_PER_KG) * input.weightKg,
+    step,
+  );
   const held = Math.max(input.mean.fat, fatFloor);
   let F = Math.max(roundStep(held, step), fatFloorStep);
   if ((afterProtein - 9 * F) / 4 < carbMin) {
@@ -403,6 +500,6 @@ export function partitionDayMacros(input: DayMacroInput): {
     const room = (afterProtein - 4 * carbMin) / 9;
     F = Math.min(F, Math.max(fatFloorStep, floorStep(room, step)));
   }
-  const C = roundStep(Math.max(0, (afterProtein - 9 * F) / 4), step);
+  const C = roundStep((afterProtein - 9 * F) / 4, step);
   return { protein: P, carbs: C, fat: F };
 }

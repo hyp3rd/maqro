@@ -9,6 +9,7 @@ import {
   normalizeTrainingSchedule,
   partitionDayMacros,
   proteinGrams,
+  weekProteinGrams,
 } from "./training";
 import {
   type CalculatedValues,
@@ -55,6 +56,10 @@ export type TrainingDayTargets = {
   /** The protein basis actually used (lean mass falls back to bodyweight
    *  without a body-fat estimate). */
   proteinBasis: ProteinSetting["basis"];
+  /** The setting's protein didn't fit the week's smallest day alongside the
+   *  fat and carb floors, so every day's protein was lowered to what does
+   *  (`weekProteinGrams`). */
+  proteinCapped: boolean;
 };
 
 /** A day's resolved target: the engine output plus what produced it.
@@ -130,26 +135,39 @@ export function targetsForDate(
   const weekday = midnight.getDay();
   const classes = schedule.days.map(classifyTrainingDay);
   const dayClass = classes[weekday];
-  const dayKcal = distributeWeekCalories({
+  const weekKcal = distributeWeekCalories({
     meanKcal: values.targetCalories,
     classes,
     cycling: schedule.cycling,
     // The same per-day floor computeMacros applies, max(BMR, 1200).
     floorKcal: Math.max(values.bmr, MIN_DAILY_KCAL),
-  })[weekday];
+  });
+  const dayKcal = weekKcal[weekday];
   const protein = proteinGrams(
     normalizeProteinSetting(profile.proteinSetting),
     profile.weight,
     ctx.bodyFatPct,
   );
+  const floors = {
+    weightKg: profile.weight,
+    meanKcal: values.targetCalories,
+    goal: effective.goal,
+    dietType: profile.dietType,
+  };
+  // One protein figure for the whole week, sized to fit its smallest day.
+  const weekProtein = weekProteinGrams({
+    ...floors,
+    proteinGrams: protein.grams,
+    dayCalories: weekKcal,
+  });
   const macros = partitionDayMacros({
     dayKcal,
     dayClass,
     mean: values,
-    proteinGrams: protein.grams,
-    weightKg: profile.weight,
-    goal: effective.goal,
-    dietType: profile.dietType,
+    proteinGrams: weekProtein.grams,
+    weightKg: floors.weightKg,
+    goal: floors.goal,
+    dietType: floors.dietType,
   });
   return {
     ...base,
@@ -161,6 +179,7 @@ export function targetsForDate(
       cycling: schedule.cycling,
       meanCalories: values.targetCalories,
       proteinBasis: protein.basis,
+      proteinCapped: weekProtein.capped,
     },
   };
 }
