@@ -51,6 +51,26 @@ describe("ChartZoomDialog", () => {
     ).toBeTruthy();
   });
 
+  it("hides the expand button only for a fine pointer, never on touch", () => {
+    render(
+      <ChartZoomDialog title="Weight">
+        <Chart />
+      </ChartZoomDialog>,
+    );
+    const tokens = screen
+      .getByRole("button", { name: "Expand Weight" })
+      .className.split(/\s+/);
+    // Tailwind v4 wraps `group-hover` in `@media (hover: hover)`, which a
+    // touch tablet never matches. So any rule that hides the button must
+    // itself be limited to a fine pointer, or nothing would reveal it.
+    const hiding = tokens.filter((t) => /(^|:)opacity-0$/.test(t));
+    expect(hiding).not.toEqual([]);
+    for (const t of hiding) expect(t.split(":")).toContain("pointer-fine");
+    // ...and the matching reveal is scoped the same way.
+    expect(tokens).toContain("md:pointer-fine:group-hover/chart:opacity-100");
+    expect(tokens).toContain("focus-visible:opacity-100");
+  });
+
   it("opens the expanded view from its own button", () => {
     render(
       <ChartZoomDialog

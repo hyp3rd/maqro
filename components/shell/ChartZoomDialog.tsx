@@ -55,13 +55,17 @@ export function ChartZoomDialog({ children, title, description }: Props) {
           presentational, which would hide the chart's accessible summary
           and data-table disclosure from assistive tech (and nest one
           interactive control inside another). Touch users tap the chart
-          for its tooltip and this button to expand. */}
+          for its tooltip and this button to expand.
+          Only a fine pointer may hide it until hover: Tailwind v4 emits
+          `group-hover` inside `@media (hover: hover)`, so on a touch tablet
+          at md width a plain `md:opacity-0` would never be undone and the
+          only way into the fullscreen view would be invisible. */}
       <div className="group/chart relative">
         {children}
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="absolute right-0 top-0 inline-flex h-7 w-7 items-center justify-center rounded-md bg-background/80 text-muted-foreground backdrop-blur transition-opacity hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:opacity-0 md:group-hover/chart:opacity-100 coarse:h-11 coarse:w-11 coarse:-translate-y-2 coarse:translate-x-2"
+          className="absolute right-0 top-0 inline-flex h-7 w-7 items-center justify-center rounded-md bg-background/80 text-muted-foreground backdrop-blur transition-opacity hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:pointer-fine:opacity-0 md:pointer-fine:group-hover/chart:opacity-100 coarse:h-11 coarse:w-11 coarse:-translate-y-2 coarse:translate-x-2"
           aria-label={`Expand ${title}`}
         >
           <Maximize2
