@@ -176,11 +176,25 @@ describe("MiniLineChart axes", () => {
         .map((l) => /^Oct (\d+)$/.exec(l)?.[1])
         .filter((d): d is string => d !== undefined)
         .map(Number);
-      const gaps = new Set(days.slice(1).map((d, i) => d - (days[i] ?? 0)));
-      // One calendar step throughout: no tick dropped from the middle.
-      expect({ width: w, gaps: gaps.size <= 1 }).toEqual({
+      const gaps = [
+        ...new Set(days.slice(1).map((d, i) => d - (days[i] ?? 0))),
+      ];
+      const step = gaps[0] ?? 0;
+      const first = days[0] ?? 0;
+      const last = days[days.length - 1] ?? 0;
+      expect({
         width: w,
-        gaps: true,
+        // One calendar step throughout: no tick dropped from the middle...
+        oneStep: gaps.length === 1,
+        // ...nor from either end, where the edge clamp pulls a label
+        // towards its neighbour: one more step either way leaves October.
+        noneBefore: first - step < 1,
+        noneAfter: last + step > 31,
+      }).toEqual({
+        width: w,
+        oneStep: true,
+        noneBefore: true,
+        noneAfter: true,
       });
     }
   });

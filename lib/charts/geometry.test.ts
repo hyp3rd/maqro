@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  type DayTick,
   dayIndexFromIsoDate,
   dayTicks,
   formatDayIndex,
@@ -98,9 +99,11 @@ describe("niceTicks", () => {
 describe("dayTicks", () => {
   const oct = (d: number) =>
     dayIndexFromIsoDate(`2026-10-${String(d).padStart(2, "0")}`);
+  /** Accepts a step with at most `n` ticks. */
+  const atMost = (n: number) => (t: readonly DayTick[]) => t.length <= n;
 
   it("labels every day when there is room", () => {
-    const t = dayTicks(oct(1), oct(5), 10, "en-US");
+    const t = dayTicks(oct(1), oct(5), atMost(10), "en-US");
     expect(t.map((x) => x.label)).toEqual([
       "Oct 1",
       "Oct 2",
@@ -111,7 +114,7 @@ describe("dayTicks", () => {
   });
 
   it("spaces ticks evenly in time (fixed day step), not by data index", () => {
-    const t = dayTicks(oct(1), oct(10), 4, "en-US");
+    const t = dayTicks(oct(1), oct(10), atMost(4), "en-US");
     const gaps = t.slice(1).map((x, i) => x.day - (t[i]?.day ?? 0));
     expect(new Set(gaps).size).toBe(1);
     expect(t.length).toBeLessThanOrEqual(4);
@@ -119,7 +122,7 @@ describe("dayTicks", () => {
 
   it("falls back to Mondays for a month-long window", () => {
     // 2026-10-01 is a Thursday; Mondays are 5, 12, 19, 26.
-    const t = dayTicks(oct(1), oct(30), 5, "en-US");
+    const t = dayTicks(oct(1), oct(30), atMost(5), "en-US");
     expect(t.map((x) => x.label)).toEqual([
       "Oct 5",
       "Oct 12",
@@ -132,7 +135,7 @@ describe("dayTicks", () => {
     const t = dayTicks(
       dayIndexFromIsoDate("2026-01-10"),
       dayIndexFromIsoDate("2026-07-20"),
-      7,
+      atMost(7),
       "en-US",
     );
     expect(t.map((x) => x.label)).toEqual([
@@ -150,7 +153,7 @@ describe("dayTicks", () => {
     const t = dayTicks(
       dayIndexFromIsoDate("2025-08-15"),
       dayIndexFromIsoDate("2026-10-15"),
-      8,
+      atMost(8),
       "en-US",
     );
     const labels = t.map((x) => x.label);
@@ -163,21 +166,43 @@ describe("dayTicks", () => {
     expect(year?.day).toBe(dayIndexFromIsoDate("2026-01-01"));
   });
 
-  it("skips a step whose ticks would sit closer than minGapDays", () => {
-    // Four Mondays fit the count, but they are only 7 days apart.
-    const weekly = dayTicks(oct(1), oct(30), 4, "en-US");
+  it("takes the finest step the caller says fits", () => {
+    // Four Mondays fit a four-label budget...
+    const weekly = dayTicks(oct(1), oct(30), atMost(4), "en-US");
     expect(weekly.map((x) => x.label)).toEqual([
       "Oct 5",
       "Oct 12",
       "Oct 19",
       "Oct 26",
     ]);
-    const roomy = dayTicks(oct(1), oct(30), 4, "en-US", 8);
+    // ...but a caller whose labels need 8 days of room rejects them, and
+    // gets the next step whose every tick has that room.
+    const seen: string[][] = [];
+    const roomy = dayTicks(
+      oct(1),
+      oct(30),
+      (t) => {
+        seen.push(t.map((x) => x.label));
+        return (
+          t.length <= 4 &&
+          t.every((x, i) => i === 0 || x.day - (t[i - 1]?.day ?? 0) >= 8)
+        );
+      },
+      "en-US",
+    );
     expect(roomy.map((x) => x.label)).toEqual(["Oct 5", "Oct 19"]);
+    // The caller judges each step with the labels it would draw.
+    expect(seen).toContainEqual(["Oct 5", "Oct 12", "Oct 19", "Oct 26"]);
+  });
+
+  it("labels the first day alone when nothing fits", () => {
+    expect(dayTicks(oct(1), oct(30), () => false, "en-US")).toEqual([
+      { day: oct(1), label: "Oct 1" },
+    ]);
   });
 
   it("labels a single day", () => {
-    expect(dayTicks(oct(9), oct(9), 5, "en-US")).toEqual([
+    expect(dayTicks(oct(9), oct(9), atMost(5), "en-US")).toEqual([
       { day: oct(9), label: "Oct 9" },
     ]);
   });

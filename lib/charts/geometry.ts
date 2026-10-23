@@ -163,67 +163,70 @@ function daysFor(step: DayStep, first: number, last: number): number[] {
 
 /** Evenly spaced calendar ticks across `[first, last]` (day indices):
  *  every 1/2/3 days, Mondays (weekly / fortnightly), or month starts -
- *  whichever is the finest step that yields at most `maxTicks` labels, each
- *  at least `minGapDays` after the one before. Labels are locale-formatted
- *  ("Oct 23", or "Oct" for month steps, with the year on January ticks when
- *  the range spans more than one year).
+ *  whichever is the finest step whose ticks `fits` accepts. Labels are
+ *  locale-formatted ("Oct 23", or "Oct" for month steps, with the year on
+ *  January ticks when the range spans more than one year).
  *
- *  A count alone can't say whether labels fit: four weekly ticks over a
- *  30-day range sit 7 days apart however wide the axis is. A caller that
- *  knows its pixels per day passes the label width (plus gap) in days as
- *  `minGapDays`, so every chosen label has room and none is dropped. */
+ *  Whether labels fit is the caller's call, because only it knows where
+ *  each one lands: neither a count nor a spacing in days can see that an
+ *  edge label pulled inside the plot (so it doesn't clip) now crowds its
+ *  neighbour. A step `fits` rejects is never drawn with a label dropped,
+ *  so the labels shown always keep one even step. */
 export function dayTicks(
   first: number,
   last: number,
-  maxTicks: number,
+  fits: (ticks: readonly DayTick[]) => boolean,
   locale?: string,
-  minGapDays = 0,
 ): DayTick[] {
   const lo = Math.min(first, last);
   const hi = Math.max(first, last);
-  const cap = Math.max(1, Math.floor(maxTicks));
+  const dayFmt = dayFormat(locale);
+  // Month steps label "Oct", and across a year boundary the January tick
+  // names the new year instead ("Nov, Dec, 2026, Feb"). A two-digit year
+  // ("Oct 25") would read exactly like the day labels used everywhere
+  // else - the 25th of October - so it is never used.
+  const multiYear =
+    dateFromDayIndex(lo).getUTCFullYear() !==
+    dateFromDayIndex(hi).getUTCFullYear();
+  const monthFmt = new Intl.DateTimeFormat(locale, {
+    month: "short",
+    timeZone: "UTC",
+  });
+  const yearFmt = new Intl.DateTimeFormat(locale, {
+    year: "numeric",
+    timeZone: "UTC",
+  });
   for (const step of DAY_STEPS) {
     const days = daysFor(step, lo, hi);
-    if (days.length === 0 || days.length > cap) continue;
-    if (days.some((d, i) => i > 0 && d - (days[i - 1] ?? d) < minGapDays)) {
-      continue;
-    }
-    if (step.kind !== "month") {
-      return days.map((day) => ({ day, label: formatDayIndex(day, locale) }));
-    }
-    // Month steps label "Oct", and across a year boundary the January tick
-    // names the new year instead ("Nov, Dec, 2026, Feb"). A two-digit year
-    // ("Oct 25") would read exactly like the day labels used everywhere
-    // else - the 25th of October - so it is never used.
-    const multiYear =
-      dateFromDayIndex(lo).getUTCFullYear() !==
-      dateFromDayIndex(hi).getUTCFullYear();
-    const monthFmt = new Intl.DateTimeFormat(locale, {
-      month: "short",
-      timeZone: "UTC",
-    });
-    const yearFmt = new Intl.DateTimeFormat(locale, {
-      year: "numeric",
-      timeZone: "UTC",
-    });
-    return days.map((day) => {
+    if (days.length === 0) continue;
+    const ticks = days.map((day) => {
       const date = dateFromDayIndex(day);
-      const fmt = multiYear && date.getUTCMonth() === 0 ? yearFmt : monthFmt;
+      const fmt =
+        step.kind !== "month"
+          ? dayFmt
+          : multiYear && date.getUTCMonth() === 0
+            ? yearFmt
+            : monthFmt;
       return { day, label: fmt.format(date) };
     });
+    if (fits(ticks)) return ticks;
   }
-  // Nothing fits (a single tick allowed over a span with no Monday / month
-  // start in it): label the first day alone.
-  return [{ day: lo, label: formatDayIndex(lo, locale) }];
+  // Nothing fits (not even one tick of the coarsest step): label the first
+  // day alone.
+  return [{ day: lo, label: dayFmt.format(dateFromDayIndex(lo)) }];
 }
 
-/** "Oct 23" for a day index, in the given (or runtime) locale. */
-export function formatDayIndex(day: number, locale?: string): string {
+function dayFormat(locale?: string): Intl.DateTimeFormat {
   return new Intl.DateTimeFormat(locale, {
     month: "short",
     day: "numeric",
     timeZone: "UTC",
-  }).format(dateFromDayIndex(day));
+  });
+}
+
+/** "Oct 23" for a day index, in the given (or runtime) locale. */
+export function formatDayIndex(day: number, locale?: string): string {
+  return dayFormat(locale).format(dateFromDayIndex(day));
 }
 
 // ---------------------------------------------------------------------------

@@ -3,6 +3,7 @@
 import { useElementWidth } from "@/hooks/use-element-width";
 import { usePrinting } from "@/hooks/use-printing";
 import {
+  type DayTick,
   dayTicks,
   formatDayIndex,
   layoutBars,
@@ -243,48 +244,41 @@ export function MiniLineChart({
 
     // --- x labels ------------------------------------------------------
     type XLabel = { x: number; text: string };
+    // Places labels left to right, each centred on its x but clamped inside
+    // the SVG so an edge label never clips, and skips any that would crowd
+    // the one before it or pass the `xTicks` cap.
+    const cap = xTicks ?? Infinity;
+    const layoutLabels = (labels: readonly XLabel[]) => {
+      const placed: { px: number; text: string }[] = [];
+      let dropped = false;
+      let lastRight = -Infinity;
+      for (const c of labels) {
+        const w = monoWidth(c.text);
+        const px = Math.min(Math.max(xToPx(c.x), w / 2), W - w / 2);
+        if (px - w / 2 < lastRight + X_LABEL_GAP_PX || placed.length >= cap) {
+          dropped = true;
+          continue;
+        }
+        placed.push({ px, text: c.text });
+        lastRight = px + w / 2;
+      }
+      return { placed, dropped };
+    };
+    const toXLabels = (ticks: readonly DayTick[]): XLabel[] =>
+      ticks.map((t) => ({ x: t.day, text: t.label }));
+    // A day step fits only when none of its labels would be skipped (the
+    // edge clamp included), so the labels drawn keep one even step.
     const candidates: XLabel[] =
       xType === "day"
-        ? (() => {
-            // Ticks must sit at least one label (plus gap) apart, in days,
-            // or the collision pass below drops some and the step turns
-            // uneven. unitPx is the px width of one day here.
-            const ticksFor = (labelW: number) => {
-              const room = labelW + X_LABEL_GAP_PX;
-              return dayTicks(
-                xMin,
-                xMax,
-                Math.max(
-                  1,
-                  Math.min(Math.floor(innerW / room), xTicks ?? Infinity),
-                ),
-                undefined,
-                room / unitPx,
-              );
-            };
-            const assumedW = monoWidth(formatDayIndex(xMin));
-            let ticks = ticksFor(assumedW);
-            // The first day's label can be narrower than the ones picked
-            // ("Oct 1" vs "Oct 10"): refit once on the widest label actually
-            // chosen. Coarser steps never use wider labels (month and year
-            // ticks are shorter), so once is enough.
-            const widestW = Math.max(...ticks.map((t) => monoWidth(t.label)));
-            if (widestW > assumedW) ticks = ticksFor(widestW);
-            return ticks.map((t) => ({ x: t.day, text: t.label }));
-          })()
+        ? toXLabels(
+            dayTicks(
+              xMin,
+              xMax,
+              (ticks) => !layoutLabels(toXLabels(ticks)).dropped,
+            ),
+          )
         : points.map((p) => ({ x: p.x, text: p.label ?? fmtNum(p.x) }));
-    const cap = xTicks ?? Infinity;
-    const xLabels: { px: number; text: string }[] = [];
-    let lastRight = -Infinity;
-    for (const c of candidates) {
-      const w = monoWidth(c.text);
-      // Clamp inside the SVG so edge labels never clip.
-      const px = Math.min(Math.max(xToPx(c.x), w / 2), W - w / 2);
-      if (px - w / 2 < lastRight + X_LABEL_GAP_PX) continue;
-      if (xLabels.length >= cap) break;
-      xLabels.push({ px, text: c.text });
-      lastRight = px + w / 2;
-    }
+    const xLabels = layoutLabels(candidates).placed;
 
     // --- paths ---------------------------------------------------------
     const pts: Pt[] = points.map((p) => ({ x: xToPx(p.x), y: yToPx(p.y) }));
