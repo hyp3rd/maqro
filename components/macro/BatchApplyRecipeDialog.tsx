@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { WeekdayPicker } from "@/components/ui/weekday-picker";
 import {
   addDays,
   enumerateDateRange,
@@ -45,17 +46,6 @@ type Props = {
  *  needing the user to uncheck weekend boxes. They can flip them on
  *  with one click. */
 const WEEKDAY_SET: ReadonlySet<number> = new Set([1, 2, 3, 4, 5]);
-
-const DOW_LABELS = ["S", "M", "T", "W", "T", "F", "S"] as const;
-const DOW_FULL = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-] as const;
 
 export function BatchApplyRecipeDialog({
   open,
@@ -106,15 +96,6 @@ export function BatchApplyRecipeDialog({
     selectedDates.length > 0 &&
     selectedMealIds.size > 0 &&
     startDate <= endDate;
-
-  function toggleDow(dow: number) {
-    setAllowedDows((prev) => {
-      const next = new Set(prev);
-      if (next.has(dow)) next.delete(dow);
-      else next.add(dow);
-      return next;
-    });
-  }
 
   function toggleMealId(id: number) {
     setSelectedMealIds((prev) => {
@@ -225,30 +206,17 @@ export function BatchApplyRecipeDialog({
           </div>
 
           <div className="space-y-1.5">
-            <p className="text-xs font-medium text-muted-foreground">
+            <p
+              id="batch-days-label"
+              className="text-xs font-medium text-muted-foreground"
+            >
               Days of the week
             </p>
-            <div className="flex gap-1">
-              {DOW_LABELS.map((label, dow) => {
-                const active = allowedDows.has(dow);
-                return (
-                  <button
-                    key={dow}
-                    type="button"
-                    onClick={() => toggleDow(dow)}
-                    aria-pressed={active}
-                    aria-label={DOW_FULL[dow]}
-                    className={`h-9 flex-1 rounded-md border text-xs font-medium transition-colors ${
-                      active
-                        ? "border-foreground/40 bg-foreground text-background"
-                        : "border-border/60 bg-background text-muted-foreground hover:bg-accent/40"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
+            <WeekdayPicker
+              aria-labelledby="batch-days-label"
+              value={[...allowedDows]}
+              onValueChange={(days) => setAllowedDows(new Set(days))}
+            />
           </div>
 
           <div className="space-y-1.5">
