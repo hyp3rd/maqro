@@ -13,21 +13,21 @@ import * as React from "react";
 import { Maximize2 } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 
-/** Tap-to-expand wrapper for the SVG charts in ProgressView.
+/** Expand-to-fullscreen wrapper for the SVG charts in ProgressView.
  *
- *  Why this exists: the charts render at ~140 px tall on a 375 px
- *  viewport, which makes axis labels feel cramped. Real pinch-to-
- *  zoom on a custom SVG would mean a custom touch-handler stack
- *  (transform math, momentum, double-tap, edge-clamp) and even then
- *  is fiddly on a chart that small. Tap-to-fullscreen achieves the
- *  same intent — "let me see this bigger" — with a fraction of the
- *  complexity and reads more naturally on touch.
+ *  Why this exists: a 60-day series is dense in a ~340 px portrait
+ *  card even with true-size labels. Real pinch-to-zoom on an inline
+ *  SVG would mean a custom touch-handler stack (transform math,
+ *  momentum, double-tap, edge-clamp); expanding into a larger view
+ *  achieves the same intent — "let me see this bigger" — with a
+ *  fraction of the complexity.
  *
  *  Composition: the parent renders the small chart inside this
- *  component as `children`. The wrapper makes the area pressable
- *  and shows an Expand icon on hover. On click, the same `children`
- *  re-render inside the fullscreen Dialog — no separate chart
- *  instance, no data re-fetch, no risk of the two views drifting. */
+ *  component as `children`, with an Expand button in its top-right
+ *  corner (always shown on touch, on hover / focus with a mouse). On
+ *  click, the same `children` re-render inside the fullscreen view —
+ *  no separate chart instance, no data re-fetch, no risk of the two
+ *  views drifting. */
 
 type Props = {
   /** The inline (small) chart. Rendered as-is in the page; cloned
@@ -50,27 +50,26 @@ export function ChartZoomDialog({ children, title, description }: Props) {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        // The button wraps the chart and stretches to its bounds.
-        // `block w-full` because the chart's SVG is already
-        // `w-full h-auto`; we don't want to add any layout
-        // overhead. Group + hover surfaces the Expand affordance
-        // only when the pointer's there — chart stays clean by
-        // default. On touch (no hover), the affordance becomes a
-        // small static pill that's always visible (`group-active`).
-        className="group relative block w-full rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        aria-label={`Expand ${title}`}
-      >
+      {/* The expand control sits beside the chart, not around it: a
+          <button> may only hold phrasing content and makes its children
+          presentational, which would hide the chart's accessible summary
+          and data-table disclosure from assistive tech (and nest one
+          interactive control inside another). Touch users tap the chart
+          for its tooltip and this button to expand. */}
+      <div className="group/chart relative">
         {children}
-        <span
-          className="pointer-events-none absolute right-2 top-2 inline-flex items-center gap-1 rounded-md bg-background/80 px-1.5 py-1 text-[10px] font-medium text-muted-foreground opacity-100 backdrop-blur transition-opacity group-hover:opacity-100 md:opacity-0 md:group-hover:opacity-100"
-          aria-hidden
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="absolute right-0 top-0 inline-flex h-7 w-7 items-center justify-center rounded-md bg-background/80 text-muted-foreground backdrop-blur transition-opacity hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:opacity-0 md:group-hover/chart:opacity-100 coarse:h-11 coarse:w-11 coarse:-translate-y-2 coarse:translate-x-2"
+          aria-label={`Expand ${title}`}
         >
-          <Maximize2 className="h-3 w-3" />
-        </span>
-      </button>
+          <Maximize2
+            className="h-3.5 w-3.5"
+            aria-hidden
+          />
+        </button>
+      </div>
 
       {isCoarse ? (
         // Mounted only while open so its pan/zoom state starts fresh;
@@ -91,9 +90,9 @@ export function ChartZoomDialog({ children, title, description }: Props) {
           open={open}
           onOpenChange={setOpen}
         >
-          {/* Desktop: widen the modal so the chart breathes. The SVG
-              uses viewBox + `w-full h-auto`, so it scales to fill the
-              new container — no separate "large" variant needed. */}
+          {/* Desktop: widen the modal so the chart breathes. The chart
+              measures its container and redraws at the new width — no
+              separate "large" variant needed. */}
           <DialogContent className="max-w-[95vw] sm:max-w-3xl">
             <DialogHeader>
               <DialogTitle>{title}</DialogTitle>
