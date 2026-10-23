@@ -6,8 +6,15 @@ import {
   getProfile,
   getProfileRecord,
   isProfileMarkedAsDemo,
+  saveDemoProfile,
 } from "@/lib/db";
+import { clearDemoModeData, getDemoProfile } from "@/lib/demo-data";
 import { computeMacros } from "@/lib/macros";
+import {
+  __resetSyncStatusForTests,
+  setSynced,
+  setSyncing,
+} from "@/lib/sync-status";
 import en from "@/messages/en.json";
 import { useInsertionEffect } from "react";
 import "fake-indexeddb/auto";
@@ -170,6 +177,7 @@ beforeEach(async () => {
 afterEach(() => {
   cleanup();
   router.search = null;
+  __resetSyncStatusForTests();
   vi.useRealTimers();
   vi.unstubAllGlobals();
   window.history.replaceState({}, "", "/");
@@ -263,5 +271,32 @@ describe("?demo=1 first load", () => {
 
     expect(await screen.findByText("Welcome to Maqro")).toBeTruthy();
     expect(onboardingPosts()).toBeGreaterThan(0);
+  });
+});
+
+describe("signing in after exploring the sample data", () => {
+  it("keeps the wizard closed until the sign-in sync has pulled", async () => {
+    // The load after the sign-in redirect: the seeded dataset is still in
+    // IndexedDB and this device never finished onboarding.
+    await saveDemoProfile(getDemoProfile());
+    window.history.replaceState({}, "", "/app");
+    renderApp();
+    await findDemoSummary();
+
+    // SyncManager's sign-in chain: wipe the sample, then start the pull.
+    await act(async () => {
+      await clearDemoModeData();
+      setSyncing();
+    });
+    await waitFor(() => expect(screen.queryByText("Female")).toBeNull());
+    await passOnboardingGate();
+
+    // A returning account's profile may still land with this pull.
+    expect(screen.queryByText("Welcome to Maqro")).toBeNull();
+    expect(onboardingPosts()).toBe(0);
+
+    // The pull brought no profile: a new account, which is onboarded.
+    act(() => setSynced());
+    expect(await screen.findByText("Welcome to Maqro")).toBeTruthy();
   });
 });

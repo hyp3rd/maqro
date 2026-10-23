@@ -325,18 +325,19 @@ const MacroCalculator = () => {
   // Grace window so the wizard doesn't FLASH for a fraction of a
   // second on devices where IDB hydrates as default (empty cache,
   // signed-in user on a wiped device, hard refresh) BEFORE the
-  // initial sync pulls the real profile in. We open the gate when
-  // EITHER: (a) sync has touched the profile store (profileRev > 0),
-  // OR (b) the 1.5s safety timeout fired AND no initial sync is still
-  // in flight. The sync guard is what actually closes the flash: a
-  // returning user on a fresh device whose pull runs longer than the
-  // timeout used to see the wizard for a frame before the synced
-  // (non-default) profile arrived and shut it. Gating (b) on
-  // `syncStatus` holds the gate closed until the pull settles, after
-  // which (a) or (b) opens it. The OR is derived directly from state -
-  // the timeout only updates `gateTimeoutFired` inside its callback,
-  // never synchronously in an effect body (would violate the
-  // set-state-in-effect rule).
+  // initial sync pulls the real profile in. We open the gate when no
+  // sync is in flight AND EITHER: (a) something has written the profile
+  // store (profileRev > 0), OR (b) the 1.5s safety timeout fired. The
+  // sync guard is what actually closes the flash: a returning user on a
+  // fresh device whose pull runs longer than the timeout used to see the
+  // wizard for a frame before the synced (non-default) profile arrived
+  // and shut it. It holds for (a) too, because not every profile write
+  // is a pull: signing in after "Try with sample data" clears the
+  // sample profile (a data-bus bump that leaves the default on screen)
+  // right before the pull that may bring the account's real one. The
+  // condition is derived directly from state - the timeout only updates
+  // `gateTimeoutFired` inside its callback, never synchronously in an
+  // effect body (would violate the set-state-in-effect rule).
   const profileRev = useDataRev("profile");
   const syncStatus = useSyncStatus();
   const [gateTimeoutFired, setGateTimeoutFired] = useState(false);
@@ -345,7 +346,7 @@ const MacroCalculator = () => {
     return () => window.clearTimeout(t);
   }, []);
   const onboardingGateOpen =
-    profileRev > 0 || (gateTimeoutFired && syncStatus.state !== "syncing");
+    syncStatus.state !== "syncing" && (profileRev > 0 || gateTimeoutFired);
 
   // Mirror the synced home market into the food-search market resolver, so the
   // search defaults to the user's chosen market across devices (a per-device
