@@ -6,6 +6,7 @@ import {
   dietBreakNudge,
   effectiveGoal,
   inferAdaptiveTdeePerPhase,
+  newPhase,
   nextPhase,
   normalizePhase,
   phaseEndDate,
@@ -492,4 +493,14 @@ describe("phases without a valid window", () => {
     });
     expect(out.map((p) => p.phase.id)).toEqual(["cut"]);
   });
+
+  it.each(invalid.map((p) => [p.id, p] as const))(
+    "%s never places a new phase",
+    (_id, p) => {
+      expect(newPhase([p], "2026-06-10").startDate).toBe("2026-06-10");
+      // After the valid phase's end (2026-06-29), whatever the order.
+      expect(newPhase([valid, p], "2026-06-10").startDate).toBe("2026-06-29");
+      expect(newPhase([p, valid], "2026-06-10").startDate).toBe("2026-06-29");
+    },
+  );
 });

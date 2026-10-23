@@ -367,9 +367,10 @@ export function inferAdaptiveTdeePerPhase(opts: {
 }
 
 /** Mint a blank phase for the "Add phase" editor (starts after the last
- *  phase, or today). */
+ *  phase, or today). Phases without a valid window have no end to start
+ *  after and are skipped. */
 export function newPhase(phases: GoalPhase[], today: string): GoalPhase {
-  const sorted = sortPhases(phases);
+  const sorted = sortPhases(phases.filter(hasValidWindow));
   const last = sorted[sorted.length - 1];
   const start = last ? phaseEndDate(last) : today;
   return {
