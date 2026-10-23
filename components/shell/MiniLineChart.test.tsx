@@ -410,6 +410,40 @@ describe("MiniLineChart accessibility", () => {
       "print-hide",
     );
   });
+
+  it("names each chart's data-table disclosure after its chart", () => {
+    const { container } = render(
+      <>
+        <MiniLineChart
+          data={calories}
+          title="Weight"
+        />
+        <MiniLineChart
+          data={calories}
+          title="Calories per day"
+        />
+        <MiniLineChart data={calories} />
+      </>,
+    );
+    const summaries = [...container.querySelectorAll("details > summary")];
+    // The name comes from the content: the visible words first (so a
+    // speech-input user can say them), then the chart, read only by AT.
+    expect(summaries.map((s) => s.textContent)).toEqual([
+      "Show data table for Weight",
+      "Show data table for Calories per day",
+      // No title: nothing to name it after, so no made-up name either.
+      "Show data table",
+    ]);
+    for (const s of summaries) {
+      const visible = [...s.childNodes]
+        .filter((n) => n.nodeType === Node.TEXT_NODE)
+        .map((n) => n.textContent)
+        .join("");
+      expect(visible).toBe("Show data table");
+      const hidden = s.querySelector("span");
+      if (hidden) expect(hidden.className).toBe("sr-only");
+    }
+  });
 });
 
 describe("MiniLineChart tooltip", () => {

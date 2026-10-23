@@ -755,8 +755,12 @@ export function MiniLineChart({
       {/* Text alternative: every value, reachable by keyboard and screen
           reader. Off paper - the printed chart is the report's form. */}
       <details className="print-hide mt-1 text-xs">
+        {/* A page shows several charts, so each disclosure is named after
+            its chart. The visible words stay first in the name, so a
+            speech-input user can still say what they see (WCAG 2.5.3). */}
         <summary className="inline-flex min-h-8 cursor-pointer items-center rounded-sm text-muted-foreground hover:text-foreground coarse:min-h-11">
           Show data table
+          {title && <span className="sr-only"> for {title}</span>}
         </summary>
         <div className="mt-1 max-h-64 overflow-auto rounded-md border border-border/60">
           <table className="w-full text-left text-xs tabular-nums">
