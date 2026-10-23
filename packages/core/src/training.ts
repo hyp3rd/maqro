@@ -685,22 +685,32 @@ const FAT_ROUNDING_G = 0.5;
  *  mean day because of the floor (`training.fatFloorLifted`: the UI's info
  *  note). Never true for a default split: that isn't the user's choice.
  *
- *  - Carb-moving diet: the choice IS the week's fat level, so it is lifted
- *    when the split's mean-day fat is under the floor (beyond
- *    `computeMacros`' whole-gram rounding) and the plan holds the floor.
+ *  Both diet directions first need the same thing: the split's mean-day
+ *  fat (the user's choice, `mean.fat`) is under the fat floor, beyond
+ *  `computeMacros`' whole-gram rounding. A choice at or over the floor is
+ *  never lifted by it, whatever else the week does.
+ *
+ *  - Carb-moving diet: the choice IS the week's fat level, so the plan
+ *    holds the floor instead — lifted.
  *  - Fat-moving diet: fat is what remains beside the fixed protein and the
- *    split's carbs, so a low fat share alone says nothing (a 50/40/10
- *    split usually yields far more fat than 10%). It is lifted only when
- *    the floor lowered the week's carbs under the split's (the smallest
- *    planned day couldn't hold the fat floor), which raises every day's
- *    fat — the mean day's included — above what the choice yields. */
+ *    held carbs, so a choice under the floor is often already exceeded
+ *    because of the protein (a 50/40/10 split usually yields far more fat
+ *    than 10%), not the floor. It is lifted only when the floor also
+ *    lowered the week's carbs under the split's (the smallest planned day
+ *    couldn't hold the fat floor), which puts every day's fat — the mean
+ *    day's included — at or over the floor, so above the choice. A high-fat
+ *    choice whose carbs the floor lowered (a 3.4 g/kg protein setting
+ *    leaving the smallest day little room) is not flagged: its fat stays
+ *    under what the user chose. */
 export function fatFloorLiftsChoice(input: WeekMacroInput): boolean {
   if (!input.explicitFatChoice) return false;
-  if (fatMovesForDiet(input.dietType)) {
-    const { held, choice } = weekHeldLevels(input);
-    return held < choice;
+  const choiceUnderFloor =
+    input.mean.fat + FAT_ROUNDING_G < fatFloorGrams(macroFloors(input));
+  if (!choiceUnderFloor || !fatMovesForDiet(input.dietType)) {
+    return choiceUnderFloor;
   }
-  return input.mean.fat + FAT_ROUNDING_G < fatFloorGrams(macroFloors(input));
+  const { held, choice } = weekHeldLevels(input);
+  return held < choice;
 }
 
 /** Split a training day's calories into macros. Protein constant and carbs

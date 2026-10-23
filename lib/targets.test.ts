@@ -662,6 +662,40 @@ describe("targetsForDate — training days", () => {
     }
   });
 
+  it("low-carb with a high-fat split: never flagged, though the floor lowers carbs", () => {
+    // 20/30/50 at 2,200: 165 g carbs, 122 g fat. At 3.4 g/kg (272 g → 270)
+    // the 1,950 rest days can't hold 165 g carbs beside the 40 g fat floor,
+    // so the week's carbs drop to (1,950 − 1,080 − 360) / 4 = 127.5 → 125.
+    // Fat still sits under the 122 g the user chose (40 g to 100 g): the
+    // floor raised nothing above their choice, so there is nothing to say.
+    // Pronounced (1,800 rest days) is the same: carbs 90, fat 40 to 135.
+    const split = { protein: 20, carbs: 30, fat: 50 };
+    const cases = [
+      { cycling: "modest", carbs: 125, fat: [40, 100] },
+      { cycling: "pronounced", carbs: 90, fat: [40, 135] },
+    ] as const;
+    for (const c of cases) {
+      const days =
+        weekTargets(
+          mockupProfile({
+            dietType: "lowCarb",
+            macroSplit: split,
+            proteinSetting: { basis: "bodyweight", gPerKg: 3.4 },
+            training: schedule({ cycling: c.cycling }),
+          }),
+          "2026-10-19",
+          FREE,
+        )?.days ?? [];
+      expect(days).toHaveLength(7);
+      expect(Math.min(...days.map((d) => d.fat))).toBe(c.fat[0]);
+      expect(Math.max(...days.map((d) => d.fat))).toBe(c.fat[1]);
+      for (const d of days) {
+        expect([d.protein, d.carbs]).toEqual([270, c.carbs]);
+        expect(d.training?.fatFloorLifted).toBe(false);
+      }
+    }
+  });
+
   it("a Pro phase sets the mean; the safety floor narrows the spread", () => {
     // Maintain at 2,600; the cut (2,450 − 550 = 1,900) covers this week.
     const p = profile({

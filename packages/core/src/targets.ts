@@ -84,11 +84,13 @@ export type TrainingDayTargets = {
   floorsExceedMean: false | FloorsExceedMeanCause;
   /** The fat floor raised the plan's fat above what the user's explicit fat
    *  choice (a `lowFat` diet type or a custom macro split) yields for the
-   *  mean day — the UI's info note (`fatFloorLiftsChoice`). Carb-moving:
-   *  the choice is under max(15% of the mean kcal, 0.5 g/kg), so the week
-   *  holds the floor. Low-carb: the floor lowered the week's carbs under
-   *  the split's, raising fat on every day; a low fat share that the fixed
-   *  protein already lifted well above the floor is not flagged. */
+   *  mean day — the UI's info note (`fatFloorLiftsChoice`). Always needs
+   *  the choice's mean-day fat under the fat floor (max(15% of the mean
+   *  kcal, 0.5 g/kg)). Carb-moving: the week then holds the floor.
+   *  Low-carb: also the floor lowered the week's carbs under the split's,
+   *  raising fat on every day; a low fat share that the fixed protein
+   *  already lifted well above the floor, or a high-fat choice whose carbs
+   *  the floor lowered, is not flagged. */
   fatFloorLifted: boolean;
 };
 

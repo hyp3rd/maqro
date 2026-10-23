@@ -1041,6 +1041,19 @@ describe("fatFloorGrams / fatFloorLiftsChoice", () => {
         fatFloorLiftsChoice({ ...week(lowCarb, 24, 220), weekMinKcal: 1760 }),
       ).toBe(true);
     });
+    it("not lifted when the floor lowered the carbs of a high-fat choice", () => {
+      // A 20/30/50 split at 2,200 (122 g fat, 165 g carbs) at 3.4 g/kg
+      // (272 g → 270): the 1,950 smallest day takes the week's carbs to
+      // (1,950 − 1,080 − 360) / 4 = 127.5 → 125, yet the plan's fat stays
+      // under the 122 g chosen — the floor raised nothing above the choice.
+      expect(
+        fatFloorLiftsChoice({
+          ...week(lowCarb, 122, 165),
+          weekMinKcal: 1950,
+          proteinGrams: 272,
+        }),
+      ).toBe(false);
+    });
     it("never for a default low-carb split", () => {
       expect(
         fatFloorLiftsChoice({
