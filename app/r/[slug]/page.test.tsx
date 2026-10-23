@@ -26,12 +26,14 @@ const recipeRow = {
   ],
 };
 
+let currentRow: typeof recipeRow = recipeRow;
+
 vi.mock("@/lib/supabase/server", () => ({
   getSupabaseServer: async () => ({
     from: () => ({
       select: () => ({
         eq: () => ({
-          maybeSingle: async () => ({ data: recipeRow, error: null }),
+          maybeSingle: async () => ({ data: currentRow, error: null }),
         }),
       }),
     }),
@@ -42,7 +44,10 @@ vi.mock("@/lib/auth/effective-user", () => ({
 }));
 vi.mock("./RecipePageActions", () => ({ RecipePageActions: () => null }));
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  currentRow = recipeRow;
+});
 
 describe("/r/[slug] macros", () => {
   it("lists the full-recipe totals as label/value pairs", async () => {
@@ -68,5 +73,32 @@ describe("/r/[slug] macros", () => {
       Fat: "11.2 g",
     });
     expect(within(section).queryByRole("meter")).toBeNull();
+  });
+
+  it("groups four-digit calorie totals", async () => {
+    currentRow = {
+      ...recipeRow,
+      ingredients: [
+        {
+          foodName: "Granola",
+          macrosPer100g: { protein: 10, carbs: 64, fat: 18, calories: 471 },
+          portionGrams: 262,
+        },
+      ],
+    };
+    render(
+      await PublicRecipePage({
+        params: Promise.resolve({ slug: "abcdefghij" }),
+      }),
+    );
+    const section = screen
+      .getByRole("heading", { name: "Macros (full recipe)" })
+      .closest("section");
+    if (!section) throw new Error("macros section missing");
+    const calories = within(section).getByText("Calories").closest("dt");
+    expect(
+      calories?.parentElement?.querySelector(":scope > dd.font-mono")
+        ?.textContent,
+    ).toBe("1,234 kcal");
   });
 });

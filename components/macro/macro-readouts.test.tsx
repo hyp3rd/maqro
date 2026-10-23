@@ -118,6 +118,32 @@ describe("RecipeViewDialog macros (full recipe)", () => {
       Fat: "6.5 g",
     });
   });
+
+  it("groups four-digit calorie totals", () => {
+    // MacroStat's default calorie format groups thousands ("1,234 kcal"),
+    // matching DailyTotals; the old local cell printed "1234 kcal".
+    const recipe: Recipe = {
+      id: "r2",
+      name: "Granola batch",
+      ingredients: [
+        {
+          foodName: "Granola",
+          macrosPer100g: { protein: 10, carbs: 64, fat: 18, calories: 471 },
+          portionGrams: 262,
+        },
+      ],
+      createdAt: 0,
+      updatedAt: 0,
+    };
+    render(
+      <RecipeViewDialog
+        open
+        onOpenChange={() => {}}
+        recipe={recipe}
+      />,
+    );
+    expect(readouts()).toMatchObject({ Calories: "1,234 kcal" });
+  });
 });
 
 describe("MealDetail macro tiles", () => {
