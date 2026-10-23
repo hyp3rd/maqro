@@ -49,8 +49,10 @@ function fakeAuthClient(
   getSession: GetSessionResult = { data: { session: initial }, error: null },
 ) {
   let releaseGetUser: (result: GetUserResult) => void = () => {};
-  const getUserSettled = new Promise<GetUserResult>((resolve) => {
+  let failGetUser: (err: Error) => void = () => {};
+  const getUserSettled = new Promise<GetUserResult>((resolve, reject) => {
     releaseGetUser = resolve;
+    failGetUser = reject;
   });
   const state = {
     nextGetUser: null as GetUserResult | null,
@@ -76,6 +78,8 @@ function fakeAuthClient(
     client,
     getUser,
     releaseGetUser,
+    /** Make the first `getUser()` throw instead of returning an error. */
+    failGetUser,
     /** Answer every later `getUser()` (an `online` re-check) with `result`. */
     answerGetUserWith: (result: GetUserResult) => {
       state.nextGetUser = result;
@@ -89,6 +93,8 @@ const supabase = vi.hoisted(() => ({ client: null as unknown }));
 vi.mock("@/lib/supabase/client", () => ({
   getSupabaseBrowser: () => supabase.client,
 }));
+const reportClientError = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/error-reporter", () => ({ reportClientError }));
 
 const USER = { id: "u1" } as User;
 const SESSION = { user: USER } as Session;
@@ -118,6 +124,7 @@ const fetchMock =
 
 beforeEach(() => {
   window.localStorage.clear();
+  reportClientError.mockReset();
   fetchMock.mockReset();
   vi.stubGlobal("fetch", fetchMock);
 });
@@ -326,6 +333,36 @@ describe("useUser — an auth event supersedes a check still in flight", () => {
     expect(result.current.user).toBe(other);
     expect(result.current.isLoaded).toBe(true);
     expect(readLastKnownUserId()).toBe("u2");
+  });
+});
+
+describe("useUser — the identity check throws", () => {
+  it("settles signed out and loaded, reports the error, and keeps the record", async () => {
+    writeLastKnownUserId("u1");
+    const { result, failGetUser } = await startWith(SESSION);
+    const storageError = new DOMException("blocked", "SecurityError");
+    await act(async () => failGetUser(storageError));
+
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+    expect(result.current.user).toBeNull();
+    expect(result.current.localUserId).toBeNull();
+    expect(result.current.isOfflineUnverified).toBe(false);
+    expect(reportClientError).toHaveBeenCalledWith(
+      storageError,
+      expect.anything(),
+    );
+    // Nothing said the session is gone: the record is not the check's to drop.
+    expect(readLastKnownUserId()).toBe("u1");
+  });
+
+  it("is checked again when the network returns", async () => {
+    const { result, failGetUser, answerGetUserWith } = await startWith(SESSION);
+    await act(async () => failGetUser(new Error("storage failed")));
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+
+    answerGetUserWith({ data: { user: USER }, error: null });
+    await goOnline();
+    await waitFor(() => expect(result.current.user).toBe(USER));
   });
 });
 

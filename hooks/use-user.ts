@@ -5,6 +5,7 @@ import {
   readLastKnownUserId,
   writeLastKnownUserId,
 } from "@/lib/auth/last-known-user";
+import { reportClientError } from "@/lib/error-reporter";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { useEffect, useState } from "react";
 import {
@@ -128,13 +129,32 @@ export function useUser(): UserState {
 
     const verify = () => {
       const run = ++latestResolution;
-      void resolveUser(supabase).then(({ unverified: stale, ...next }) => {
-        if (cancelled || run !== latestResolution) return;
-        resolved = true;
-        unverified = stale;
-        apply(next);
-        setAuthResolved(true);
-      });
+      const isCurrent = () => !cancelled && run === latestResolution;
+      void resolveUser(supabase).then(
+        ({ unverified: stale, ...next }) => {
+          if (!isCurrent()) return;
+          resolved = true;
+          unverified = stale;
+          apply(next);
+          setAuthResolved(true);
+        },
+        (err: unknown) => {
+          // getUser()/getSession() threw instead of returning an error
+          // (e.g. the session storage itself failed). Report it, and
+          // settle on the safest state: no identity at all — nothing keyed
+          // to an account runs or shows. The last-known record is left
+          // alone, since nothing says the session is gone, and the
+          // identity is checked again when the network returns.
+          reportClientError(err, {
+            context: { source: "useUser.resolveUser" },
+          });
+          if (!isCurrent()) return;
+          resolved = true;
+          unverified = true;
+          setIdentity(SIGNED_OUT);
+          setAuthResolved(true);
+        },
+      );
     };
 
     verify();
