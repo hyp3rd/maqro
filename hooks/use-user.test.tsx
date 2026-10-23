@@ -444,6 +444,56 @@ describe("useUser — SIGNED_IN from storage is still checked with the server", 
     expect(readLastKnownUserId()).toBeNull();
   });
 
+  it("a SIGNED_IN before the first answer shows the session but does not record it", async () => {
+    const { result, releaseGetUser, emit } = await startWith(SESSION);
+    emit("SIGNED_IN", SESSION);
+    // Provisional: shown at once, but nothing the server confirmed yet, so
+    // the last-known record (the offline fallback) is not written from it.
+    expect(result.current.user).toBe(USER);
+    expect(readLastKnownUserId()).toBeNull();
+
+    await act(async () => releaseGetUser(bannedGetUser));
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+    expect(result.current.user).toBeNull();
+    expect(readLastKnownUserId()).toBeNull();
+  });
+
+  it("a repeated SIGNED_IN that discards the check of a new account checks it again", async () => {
+    const { result, releaseGetUser, emit, answerGetUserWith, getUser } =
+      await startWith(SESSION);
+    await act(async () =>
+      releaseGetUser({ data: { user: USER }, error: null }),
+    );
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+
+    // Signing in as u2 starts a check of u2 that has not answered yet …
+    const other = { id: "u2" } as User;
+    let answerFirstCheck: (result: GetUserResult) => void = () => {};
+    getUser.mockImplementationOnce(
+      () =>
+        new Promise<GetUserResult>((resolve) => {
+          answerFirstCheck = resolve;
+        }),
+    );
+    emit("SIGNED_IN", { user: other } as Session);
+    expect(getUser).toHaveBeenCalledTimes(2);
+
+    // … when u2's session is delivered again (tab focus). That discards the
+    // pending check, so u2 must be checked once more — here, refused.
+    answerGetUserWith(bannedGetUser);
+    emit("SIGNED_IN", { user: other } as Session);
+    await waitFor(() => expect(getUser).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(result.current.user).toBeNull());
+    expect(readLastKnownUserId()).toBeNull();
+
+    // The discarded check's late answer does not restore u2.
+    await act(async () =>
+      answerFirstCheck({ data: { user: other }, error: null }),
+    );
+    expect(result.current.user).toBeNull();
+    expect(readLastKnownUserId()).toBeNull();
+  });
+
   it("a verified session re-delivered on tab focus is not checked again", async () => {
     const { result, releaseGetUser, emit, getUser } = await startWith(SESSION);
     await act(async () =>
