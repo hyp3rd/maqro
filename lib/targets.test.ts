@@ -404,6 +404,7 @@ describe("targetsForDate — training days", () => {
       expect(d.training?.meanCalories).toBe(2200);
       expect(d.training?.cycling).toBe("modest");
       expect(d.training?.proteinBasis).toBe("bodyweight");
+      expect(d.training?.fatFloorLifted).toBe(false);
     }
     expect(week.days[2].training?.day).toEqual(MOCKUP_WEEK[3]);
   });
@@ -477,7 +478,49 @@ describe("targetsForDate — training days", () => {
     for (const d of week?.days ?? []) {
       expect(d.protein).toBe(160);
       expect(d.fat).toBe(50); // 20% of 2,200 = 49 g → 50
+      expect(d.training?.fatFloorLifted).toBe(false);
     }
+  });
+
+  describe("fat floor while training", () => {
+    it("lifts an explicit custom split under 15%, and says so", () => {
+      // Maintaining at 2,600 on a 10%-fat split (29 g): the hard floor is
+      // max(15% → 43.3 g, 0.5 g/kg → 40 g); the default 20% would be 57.8 g.
+      const p = profile({
+        training: schedule(),
+        macroSplit: { protein: 40, carbs: 50, fat: 10 },
+      });
+      const days = weekTargets(p, "2026-10-19", FREE)?.days ?? [];
+      expect(days).toHaveLength(7);
+      for (const d of days) {
+        expect(d.fat).toBe(45);
+        expect(d.training?.fatFloorLifted).toBe(true);
+      }
+    });
+
+    it("keeps an explicit 15% low-fat choice, and doesn't flag it", () => {
+      // 60 kg maintaining at 2,180 on lowFat (15% → 36.33 g, rounded to 36
+      // by computeMacros): the floor is the same 15%, so nothing is lifted.
+      const p = profile({
+        weight: 60,
+        manualTdee: 2180,
+        dietType: "lowFat",
+        training: schedule(),
+      });
+      const days = weekTargets(p, "2026-10-19", FREE)?.days ?? [];
+      expect(days).toHaveLength(7);
+      expect(days[0].training?.meanCalories).toBe(2180);
+      for (const d of days) {
+        expect(d.fat).toBe(40); // the 36.33 g floor's 5 g step
+        expect(d.training?.fatFloorLifted).toBe(false);
+      }
+      // Without the explicit choice the default 20% floor (48.4 g) applies.
+      const balanced =
+        weekTargets({ ...p, dietType: "balanced" }, "2026-10-19", FREE)?.days ??
+        [];
+      expect(balanced).toHaveLength(7);
+      for (const d of balanced) expect(d.fat).toBeGreaterThanOrEqual(50);
+    });
   });
 
   it("low-carb: carbs hold steady and fat moves", () => {
@@ -589,9 +632,12 @@ describe("targetsForDate — training days", () => {
                       const days = weekTargets(p, "2026-10-19", FREE)?.days;
                       if (!days) throw new Error("expected a week");
                       const mean = days[0].training?.meanCalories ?? 0;
+                      // 15% in a cut or for the explicit lowFat choice.
+                      const share =
+                        goal === "lose" || dietType === "lowFat" ? 0.15 : 0.2;
                       const fatFloor = Math.max(
                         0.5 * weight,
-                        ((goal === "lose" ? 0.15 : 0.2) * mean) / 9,
+                        (share * mean) / 9,
                       );
                       // BMI ≥ 30 (no body-fat estimate here) → g/kg on
                       // the BMI-25 weight for the height.

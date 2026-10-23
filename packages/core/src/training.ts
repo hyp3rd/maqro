@@ -1,3 +1,4 @@
+import { customSplitRatios } from "./macros";
 import type {
   CyclingPreset,
   PersonalInfo,
@@ -413,13 +414,65 @@ export type MacroFloorInput = {
   /** The goal driving the target (a cut allows the 15% fat floor). */
   goal: PersonalInfo["goal"];
   dietType: PersonalInfo["dietType"];
+  /** The user chose their fat level explicitly — the `lowFat` diet type or
+   *  a custom macro split (`explicitFatChoice`): it holds down to the 15%
+   *  hard floor. */
+  explicitFatChoice: boolean;
 };
 
-/** The fat floor (g, unrounded): max(0.5 g/kg, 20% of the MEAN kcal — 15%
- *  in a cut). Plans hold its 5 g step taken upward. */
-function fatFloorGrams(input: MacroFloorInput): number {
-  const share = input.goal === "lose" ? 0.15 : 0.2;
-  return Math.max(0.5 * input.weightKg, (share * input.meanKcal) / 9);
+/** Fat floor shares of the MEAN kcal: the default (the lower bound of the
+ *  IOM's 20–35% acceptable range) and the hard floor (Helms 2014's 15% in contest prep; RP never
+ *  goes below 15%), which a cut or an explicit low-fat choice may use. */
+export const FAT_FLOOR_SHARE = 0.2;
+export const FAT_HARD_FLOOR_SHARE = 0.15;
+/** Every fat floor is also at least this many g/kg bodyweight (RippedBody;
+ *  Iraki 2019). */
+export const FAT_FLOOR_G_PER_KG = 0.5;
+
+/** Whether the profile chose its fat level explicitly: the `lowFat` diet
+ *  type, or a custom macro split in effect (`customSplitRatios`). */
+export function explicitFatChoice(
+  profile: Pick<PersonalInfo, "dietType" | "macroSplit">,
+): boolean {
+  return (
+    profile.dietType === "lowFat" ||
+    customSplitRatios(profile.macroSplit) !== null
+  );
+}
+
+/** The fat floor (g, unrounded) while training (owner decision):
+ *  max(0.5 g/kg, 20% of the MEAN kcal), or the 15% hard floor in a cut or
+ *  for an explicit low-fat choice. Plans hold its 5 g step taken upward. */
+export function fatFloorGrams(input: MacroFloorInput): number {
+  const share =
+    input.goal === "lose" || input.explicitFatChoice
+      ? FAT_HARD_FLOOR_SHARE
+      : FAT_FLOOR_SHARE;
+  return Math.max(
+    FAT_FLOOR_G_PER_KG * input.weightKg,
+    (share * input.meanKcal) / 9,
+  );
+}
+
+/** `computeMacros` rounds fat to whole grams, so the user's chosen level is
+ *  only known to within this much. */
+const FAT_ROUNDING_G = 0.5;
+
+/** Whether the fat floor lifted the user's EXPLICIT fat choice — their
+ *  `lowFat` diet or custom split asked for less fat than the floor
+ *  (beyond `computeMacros`' whole-gram rounding), so the plan holds the
+ *  floor instead (`training.fatFloorLifted`: the UI's info note). Never
+ *  true for a default split: that isn't the user's choice. */
+export function fatFloorLiftsChoice(
+  input: MacroFloorInput & {
+    /** The mean day's fat (g) from the user's split (`computeMacros`). */
+    meanFat: number;
+  },
+): boolean {
+  return (
+    input.explicitFatChoice &&
+    input.meanFat + FAT_ROUNDING_G < fatFloorGrams(input)
+  );
 }
 
 /** The most protein (g, a 5 g step) a day of `dayKcal` can hold without
@@ -491,18 +544,21 @@ export type DayMacroInput = {
   /** The goal driving the target (a cut allows the 15% fat floor). */
   goal: PersonalInfo["goal"];
   dietType: PersonalInfo["dietType"];
+  /** See `MacroFloorInput.explicitFatChoice`. */
+  explicitFatChoice: boolean;
 };
 
 /** Split a training day's calories into macros. Protein constant and carbs
  *  carrying the day-type difference follow RP Diet Coach and Carbon; the fat
  *  floor is RippedBody's 0.5 g/kg with the IOM's 20% lower bound (Helms
- *  2014's 15% in a cut):
+ *  2014's 15% in a cut or for an explicit low-fat choice):
  *
  *  - Protein: the given grams, capped by this day's `proteinCeilingGrams`.
  *    Pass `weekProteinGrams` and the cap never binds, so protein is the same
  *    every day of the week.
- *  - Fat floor: max(0.5 g/kg, 20% of the MEAN kcal — 15% in a cut). It
- *    always holds; protein gives way first.
+ *  - Fat floor: `fatFloorGrams` — max(0.5 g/kg, 20% of the MEAN kcal; 15% in
+ *    a cut or when the user explicitly chose a low-fat diet type or a custom
+ *    split). It always holds; protein gives way first.
  *  - Default (carbs move): fat holds at the mean day's level (at least the
  *    floor) and carbs take the rest. Every day keeps ≥ 1 g/kg carbs and
  *    heavy days aim for ≥ 3 g/kg, by trading fat down (never below its
@@ -533,6 +589,7 @@ export function partitionDayMacros(input: DayMacroInput): {
     meanKcal: input.mean.targetCalories,
     goal: input.goal,
     dietType: input.dietType,
+    explicitFatChoice: input.explicitFatChoice,
   };
   const fatFloor = fatFloorGrams(floors);
   const fatFloorStep = ceilStep(fatFloor, step);

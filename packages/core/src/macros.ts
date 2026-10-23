@@ -3,12 +3,35 @@ import {
   type CalculatedValues,
   KCAL_PER_KG,
   type MacroBreakdown,
+  type MacroSplit,
   MIN_DAILY_KCAL,
   type Meal,
   type PersonalInfo,
   activityMultipliers,
   goalDirection,
 } from "./types";
+
+/** The ratios of a custom macro split, or `null` when there is none in
+ *  effect. The user provides percentages (any non-negative numbers); they are
+ *  re-normalized to ratios that sum to 1 so a slightly-off sum (e.g.
+ *  30/30/30) still yields valid targets. If everything is zero or
+ *  non-finite the split is treated as missing, and `computeMacros` falls
+ *  back to the goal-aware default. */
+export function customSplitRatios(
+  split: MacroSplit | null | undefined,
+): MacroSplit | null {
+  if (!split) return null;
+  const sum =
+    Math.max(split.protein, 0) +
+    Math.max(split.carbs, 0) +
+    Math.max(split.fat, 0);
+  if (!Number.isFinite(sum) || sum <= 0) return null;
+  return {
+    protein: Math.max(split.protein, 0) / sum,
+    carbs: Math.max(split.carbs, 0) / sum,
+    fat: Math.max(split.fat, 0) / sum,
+  };
+}
 
 /** Pure computation of BMR, TDEE, target calories, daily delta, and per-macro
  * gram targets from the user's profile. Uses Mifflin-St Jeor for BMR. The
@@ -59,24 +82,13 @@ export function computeMacros(
   let fatRatio: number;
   let carbRatio: number;
 
-  // Manual override wins. The user provides percentages (any non-negative
-  // numbers); we re-normalize to ratios that sum to 1 so a slightly-off
-  // sum (e.g. 30/30/30) still yields valid targets. If everything is zero
-  // or non-finite the override is treated as missing — fall back to the
+  // Manual override wins (see `customSplitRatios`); otherwise the
   // goal-aware default below.
-  const split = p.macroSplit ?? null;
-  const overrideSum = split
-    ? Math.max(split.protein, 0) +
-      Math.max(split.carbs, 0) +
-      Math.max(split.fat, 0)
-    : 0;
-  const useOverride =
-    split !== null && Number.isFinite(overrideSum) && overrideSum > 0;
-
-  if (useOverride && split) {
-    proteinRatio = Math.max(split.protein, 0) / overrideSum;
-    carbRatio = Math.max(split.carbs, 0) / overrideSum;
-    fatRatio = Math.max(split.fat, 0) / overrideSum;
+  const custom = customSplitRatios(p.macroSplit);
+  if (custom) {
+    proteinRatio = custom.protein;
+    carbRatio = custom.carbs;
+    fatRatio = custom.fat;
   } else {
     if (p.goal === "lose") {
       proteinRatio = 0.4;

@@ -6,6 +6,8 @@ import {
   type TrainingDayClass,
   classifyTrainingDay,
   distributeWeekCalories,
+  explicitFatChoice,
+  fatFloorLiftsChoice,
   normalizeProteinSetting,
   normalizeTrainingSchedule,
   partitionDayMacros,
@@ -66,6 +68,11 @@ export type TrainingDayTargets = {
    *  fat and carb floors, so every day's protein was lowered to what does
    *  (`weekProteinGrams`). */
   proteinCapped: boolean;
+  /** The fat floor lifted the user's explicit fat choice (a `lowFat` diet
+   *  type or a custom macro split asking for less than max(15% of the mean
+   *  kcal, 0.5 g/kg)), so fat is held at the floor — the UI's info note
+   *  (`fatFloorLiftsChoice`). */
+  fatFloorLifted: boolean;
 };
 
 /** A day's resolved target: the engine output plus what produced it.
@@ -163,6 +170,7 @@ export function targetsForDate(
     meanKcal: values.targetCalories,
     goal: effective.goal,
     dietType: profile.dietType,
+    explicitFatChoice: explicitFatChoice(profile),
   };
   // One protein figure for the whole week, sized to fit its smallest day.
   const weekProtein = weekProteinGrams({
@@ -179,6 +187,7 @@ export function targetsForDate(
     proteinKg: floors.proteinKg,
     goal: floors.goal,
     dietType: floors.dietType,
+    explicitFatChoice: floors.explicitFatChoice,
   });
   return {
     ...base,
@@ -191,6 +200,7 @@ export function targetsForDate(
       meanCalories: values.targetCalories,
       proteinBasis: protein.basis,
       proteinCapped: weekProtein.capped,
+      fatFloorLifted: fatFloorLiftsChoice({ ...floors, meanFat: values.fat }),
     },
   };
 }

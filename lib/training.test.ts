@@ -5,6 +5,9 @@ import {
   type TrainingDayClass,
   classifyTrainingDay,
   distributeWeekCalories,
+  explicitFatChoice,
+  fatFloorGrams,
+  fatFloorLiftsChoice,
   normalizeProteinSetting,
   normalizeTrainingSchedule,
   partitionDayMacros,
@@ -562,6 +565,7 @@ describe("partitionDayMacros", () => {
       proteinKg: over.weightKg ?? 80,
       goal: "lose",
       dietType: "balanced",
+      explicitFatChoice: false,
       ...over,
     };
   }
@@ -603,6 +607,21 @@ describe("partitionDayMacros", () => {
       }),
     );
     expect(m.fat).toBe(40);
+  });
+
+  it("an explicit low-fat choice holds down to the 15% hard floor", () => {
+    // 60 kg maintaining at 2,200 on a 15%-fat choice (37 g): the default
+    // 20% floor (48.9 g) would lift it; the hard floor (36.7 g) doesn't.
+    const over = {
+      goal: "maintain" as const,
+      weightKg: 60,
+      proteinGrams: 120,
+      mean: { targetCalories: 2200, carbs: 330, fat: 37 },
+    };
+    expect(
+      partitionDayMacros(input({ ...over, explicitFatChoice: true })).fat,
+    ).toBe(40); // 37 g, held on the 5 g grid at the floor's step
+    expect(partitionDayMacros(input(over)).fat).toBe(50);
   });
 
   it("the 0.5 g/kg fat floor scales with bodyweight", () => {
@@ -800,6 +819,97 @@ describe("partitionDayMacros", () => {
   });
 });
 
+describe("fatFloorGrams / fatFloorLiftsChoice", () => {
+  const base = {
+    weightKg: 80,
+    proteinKg: 80,
+    meanKcal: 2200,
+    goal: "maintain" as const,
+    dietType: "balanced" as const,
+    explicitFatChoice: false,
+  };
+  type Over = Partial<Omit<typeof base, "goal">> & {
+    goal?: "lose" | "maintain" | "gain";
+  };
+  const rows: [string, Over, number][] = [
+    ["default: 20% of the mean kcal", {}, (0.2 * 2200) / 9],
+    ["a cut: 15%, but at least 0.5 g/kg", { goal: "lose" }, 40],
+    [
+      "an explicit choice: 15%, but at least 0.5 g/kg",
+      { explicitFatChoice: true },
+      40,
+    ],
+    [
+      "an explicit choice at 60 kg: 15% of the mean kcal",
+      { explicitFatChoice: true, weightKg: 60 },
+      (0.15 * 2200) / 9,
+    ],
+    [
+      "an explicit choice while gaining: 15%",
+      { explicitFatChoice: true, goal: "gain", meanKcal: 3000, weightKg: 60 },
+      50,
+    ],
+    ["0.5 g/kg wins at 120 kg", { weightKg: 120 }, 60],
+  ];
+  for (const [name, over, grams] of rows) {
+    it(name, () => {
+      expect(fatFloorGrams({ ...base, ...over })).toBeCloseTo(grams, 9);
+    });
+  }
+
+  const lifts: [string, Over, number, boolean][] = [
+    ["a 10% custom split is lifted", { explicitFatChoice: true }, 24, true],
+    [
+      "a 15% choice is kept (the floor is 15% too)",
+      { explicitFatChoice: true, weightKg: 60 },
+      37,
+      false,
+    ],
+    [
+      "...even when computeMacros rounded it down (36.33 to 36)",
+      { explicitFatChoice: true, weightKg: 60, meanKcal: 2180 },
+      36,
+      false,
+    ],
+    [
+      "0.5 g/kg lifts a 45 kg user's 15% choice at 1,200 kcal",
+      { explicitFatChoice: true, weightKg: 45, meanKcal: 1200 },
+      20,
+      true,
+    ],
+    ["a default split is never reported", {}, 24, false],
+  ];
+  for (const [name, over, meanFat, lifted] of lifts) {
+    it(name, () => {
+      expect(fatFloorLiftsChoice({ ...base, ...over, meanFat })).toBe(lifted);
+    });
+  }
+});
+
+describe("explicitFatChoice", () => {
+  it("is the lowFat diet type or a custom split in effect", () => {
+    const split = { protein: 40, carbs: 50, fat: 10 };
+    expect(explicitFatChoice({ dietType: "lowFat" })).toBe(true);
+    expect(explicitFatChoice({ dietType: "balanced", macroSplit: split })).toBe(
+      true,
+    );
+    expect(explicitFatChoice({ dietType: "lowCarb", macroSplit: split })).toBe(
+      true,
+    );
+    expect(explicitFatChoice({ dietType: "balanced" })).toBe(false);
+    expect(explicitFatChoice({ dietType: "lowCarb", macroSplit: null })).toBe(
+      false,
+    );
+    // An all-zero split isn't in effect (computeMacros ignores it).
+    expect(
+      explicitFatChoice({
+        dietType: "balanced",
+        macroSplit: { protein: 0, carbs: 0, fat: 0 },
+      }),
+    ).toBe(false);
+  });
+});
+
 describe("proteinCeilingGrams / weekProteinGrams", () => {
   const floors = {
     weightKg: 120,
@@ -807,6 +917,7 @@ describe("proteinCeilingGrams / weekProteinGrams", () => {
     meanKcal: 2150,
     goal: "lose" as const,
     dietType: "balanced" as const,
+    explicitFatChoice: false,
   };
 
   it("leaves the fat and carb floors room on the day", () => {
