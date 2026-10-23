@@ -82,9 +82,13 @@ export function Meter({
   const hasTarget = Number.isFinite(target) && target > 0;
   const geometry = meterGeometry(now, target);
   const withUnit = (n: number) => (unit ? `${format(n)} ${unit}` : format(n));
+  // An overshoot that formats to zero ("0 g above target") is noise: skip
+  // it, as MacroStat skips its visible "+N".
+  const overshoot = hasTarget ? now - target : 0;
+  const spokenOver = overshoot > 0 && format(overshoot) !== format(0);
   const valueText = hasTarget
     ? `${withUnit(now)} of ${withUnit(target)}${
-        now > target ? `, ${withUnit(now - target)} above target` : ""
+        spokenOver ? `, ${withUnit(overshoot)} above target` : ""
       }`
     : `${withUnit(now)}, no target`;
   const classes = TONE[tone];

@@ -168,4 +168,38 @@ describe("Meter", () => {
         .getAttribute("aria-valuetext"),
     ).toBe("12.3 g of 20.0 g");
   });
+
+  it("does not speak an overshoot that formats to zero", () => {
+    // 160.6 vs 160.4 both round to 160: the screen shows no "+N", so the
+    // reading must not announce "0 g above target" either.
+    render(
+      <Meter
+        aria-label="Protein"
+        value={160.6}
+        target={160.4}
+        unit="g"
+      />,
+    );
+    expect(
+      screen
+        .getByRole("meter", { name: "Protein" })
+        .getAttribute("aria-valuetext"),
+    ).toBe("161 g of 160 g");
+  });
+
+  it("speaks the smallest overshoot the formatter can show", () => {
+    render(
+      <Meter
+        aria-label="Protein"
+        value={161.6}
+        target={160.4}
+        unit="g"
+      />,
+    );
+    expect(
+      screen
+        .getByRole("meter", { name: "Protein" })
+        .getAttribute("aria-valuetext"),
+    ).toBe("162 g of 160 g, 1 g above target");
+  });
 });
