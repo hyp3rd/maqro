@@ -666,6 +666,7 @@ const MacroCalculator = () => {
     todayTargets,
     dayTargets,
     targetForPhases,
+    targetCaloriesForDate,
   } = useTargets(personalInfo, today, selectedDate);
   const activeGoalPhase = todayTargets.phase;
   // Every AI request below calls this after a 2xx so the shared usage counter
@@ -2331,6 +2332,7 @@ const MacroCalculator = () => {
       {view === "progress" && (
         <ProgressView
           targetCalories={todayTargets.targetCalories}
+          targetCaloriesForDate={targetCaloriesForDate}
           formulaTdee={todayTargets.tdee}
           dailyDelta={todayTargets.dailyDelta}
           // The goal actually driving today's target (a phase's, when one

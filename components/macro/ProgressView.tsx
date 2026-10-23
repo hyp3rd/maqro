@@ -96,6 +96,11 @@ type Props = {
    * not where you stood then. A target-history store is the proper fix
    * for cuts/bulks; flagged as a follow-up. */
   targetCalories: number;
+  /** Any date's own calorie target (the shared `targetsForDate` resolver,
+   *  with the caller's tier decision). The weekly recap scores each logged
+   *  day against it, so a phase change or a planned training day inside the
+   *  window counts against that day's target, not today's. */
+  targetCaloriesForDate: (date: string) => number;
   /** Formula TDEE (before goal adjustment) - feeds the recalibration
    *  helper. Drawn from `calculatedValues.tdee` on the calling side. */
   formulaTdee: number;
@@ -188,6 +193,7 @@ function clockFromMinOfDay(min: number): string {
 
 export function ProgressView({
   targetCalories,
+  targetCaloriesForDate,
   formulaTdee,
   dailyDelta,
   goal,
@@ -272,8 +278,14 @@ export function ProgressView({
     [logs, today],
   );
   const recap = useMemo<WeeklyRecap>(
-    () => computeWeeklyRecap(logs ?? [], weights ?? [], targetCalories, today),
-    [logs, weights, targetCalories, today],
+    () =>
+      computeWeeklyRecap(
+        logs ?? [],
+        weights ?? [],
+        targetCaloriesForDate,
+        today,
+      ),
+    [logs, weights, targetCaloriesForDate, today],
   );
   // Trend derivations - both pure, both run on the same `weights`
   // array as the chart so the numbers stay consistent with what
@@ -950,7 +962,7 @@ function EngagementSection({
 
       {/* Days-logged + adherence - quick "did I show up this week"
           read. Adherence is the % of logged days where calories
-          landed within ±10% of the current target. */}
+          landed within ±10% of that day's own target. */}
       <div className="rounded-lg border border-border/60 bg-card px-5 py-4">
         <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
           Last 7 days

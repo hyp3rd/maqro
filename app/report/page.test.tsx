@@ -236,6 +236,20 @@ describe("/report local day", () => {
     expect(screen.getByText("100% within ±10%")).toBeTruthy();
   });
 
+  it("scores each recap day against that day's own target", async () => {
+    // The 10th predates the cut (2600), the 11th is in it (1900); each log
+    // hits its own day's target. Against today's 1900 alone, the 10th
+    // (+37%) would be off.
+    data.logs = [logged("2026-06-10", 2600), logged("2026-06-11", 1900)];
+    vi.setSystemTime(new Date(2026, 5, 11, 12, 0, 0));
+    await renderReport();
+    await settle();
+
+    expect(screen.getByText("Daily kcal vs target of 1900 kcal.")).toBeTruthy();
+    expect(screen.getByText("2 / 7")).toBeTruthy();
+    expect(screen.getByText("100% within ±10%")).toBeTruthy();
+  });
+
   it("a report left open past midnight rolls over to the new day", async () => {
     vi.setSystemTime(new Date(2026, 5, 10, 23, 59, 30));
     await renderReport();

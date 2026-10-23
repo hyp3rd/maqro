@@ -20,9 +20,10 @@ export type WeeklyRecap = {
    *  weigh-in). `null` when there are fewer than 2 weigh-ins in the
    *  window — one data point isn't a trend. */
   weightDeltaKg: number | null;
-  /** Days where total calories landed within ±10% of the user's
-   *  current calorie target. A rough adherence proxy — fine as a
-   *  first-pass engagement signal, not a clinical KPI. */
+  /** Days where total calories landed within ±10% of THAT day's own
+   *  calorie target (phases and planned training days vary it by date;
+   *  there is no weekly-sum adherence). A rough adherence proxy — fine as
+   *  a first-pass engagement signal, not a clinical KPI. */
   adherenceDays: number;
 };
 
@@ -63,11 +64,17 @@ const ADHERENCE_TOLERANCE = 0.1;
 
 /** Compute the 7-day recap. Pure function — testable without IDB,
  *  time-travel-safe via the `today` parameter. The window is
- *  inclusive on both ends: `[today − 6, today]` = 7 days. */
+ *  inclusive on both ends: `[today − 6, today]` = 7 days.
+ *
+ *  `targetCaloriesFor` resolves a logged day's own calorie target — pass a
+ *  `targetsForDate`-based resolver so every day is scored against the
+ *  target the app showed for it. It's only called for logged days in the
+ *  window; a day whose target is ≤ 0 (e.g. no profile yet) never counts
+ *  toward adherence. */
 export function computeWeeklyRecap(
   logs: DailyLog[],
   weights: WeightEntry[],
-  targetCalories: number,
+  targetCaloriesFor: (date: string) => number,
   today: string,
 ): WeeklyRecap {
   const windowStart = subtractDays(today, 6);
@@ -99,6 +106,7 @@ export function computeWeeklyRecap(
     totals.carbs += dayTotals.carbs;
     totals.fat += dayTotals.fat;
     totals.calories += dayTotals.calories;
+    const targetCalories = targetCaloriesFor(log.date);
     if (targetCalories > 0) {
       const diff = Math.abs(dayTotals.calories - targetCalories);
       if (diff <= targetCalories * ADHERENCE_TOLERANCE) {

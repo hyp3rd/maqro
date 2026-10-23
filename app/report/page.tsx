@@ -65,7 +65,14 @@ import {
 import { cmToInches, formatHeight, kgToDisplay, mlToFlOz } from "@/lib/units";
 import { APP_VERSION } from "@/lib/version";
 import { computeWeeklyRecap, type WeeklyRecap } from "@/lib/weekly-recap";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { ArrowLeft, CloudUpload, FileDown, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -290,13 +297,23 @@ function ReportBody({
     [profile, today, phasesEnabled],
   );
   const targetCalories = calc?.targetCalories ?? 0;
+  // Each recap day is scored against its OWN target (same resolver + tier),
+  // so a phase change or a planned training day in the window counts right.
+  const targetCaloriesFor = useCallback(
+    (date: string) =>
+      profile
+        ? targetsForDate(profile, date, { phasesEnabled }).targetCalories
+        : 0,
+    [profile, phasesEnabled],
+  );
   const streak = useMemo<StreakState>(
     () => computeStreak(logsWindow, today),
     [logsWindow, today],
   );
   const recap = useMemo<WeeklyRecap>(
-    () => computeWeeklyRecap(logsWindow, weightsWindow, targetCalories, today),
-    [logsWindow, weightsWindow, targetCalories, today],
+    () =>
+      computeWeeklyRecap(logsWindow, weightsWindow, targetCaloriesFor, today),
+    [logsWindow, weightsWindow, targetCaloriesFor, today],
   );
   // The goal actually driving the target (a phase's, when one covers today).
   const effectiveGoal = calc?.goal ?? "maintain";

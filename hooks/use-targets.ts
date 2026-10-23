@@ -18,6 +18,9 @@ export type AppTargets = {
   /** Today's calorie target for a hypothetical phase list, through the same
    *  resolver — the phase planner's "raises your target" guard. */
   targetForPhases: (phases: GoalPhase[]) => number;
+  /** Any date's own calorie target, through the same resolver and tier
+   *  decision — the weekly recap scores each day against it. */
+  targetCaloriesForDate: (date: string) => number;
 };
 
 /** The app's calorie/macro targets, all from `targetsForDate` with one tier
@@ -49,6 +52,17 @@ export function useTargets(
       }).targetCalories,
     [profile, today, phasesEnabled],
   );
+  const targetCaloriesForDate = useCallback(
+    (date: string) =>
+      targetsForDate(profile, date, { phasesEnabled }).targetCalories,
+    [profile, phasesEnabled],
+  );
 
-  return { phasesEnabled, todayTargets, dayTargets, targetForPhases };
+  return {
+    phasesEnabled,
+    todayTargets,
+    dayTargets,
+    targetForPhases,
+    targetCaloriesForDate,
+  };
 }
