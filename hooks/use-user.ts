@@ -30,7 +30,8 @@ export type UserState = {
   /** True while the auth server can't be reached, no usable session exists
    *  (e.g. the access token expired offline), and `localUserId` comes from
    *  the on-device last-known record (lib/auth/last-known-user.ts). The
-   *  identity is re-verified as soon as the network returns. */
+   *  identity is re-verified as soon as the network returns or the tab
+   *  becomes visible. */
   isOfflineUnverified: boolean;
   /** False before the auth client has resolved. */
   isLoaded: boolean;
@@ -130,8 +131,9 @@ const SERVER_ISSUED_EVENTS: ReadonlySet<AuthChangeEvent> = new Set([
 
 /** Subscribes to the Supabase auth session. Updates on sign-in, sign-out,
  * and token refresh, and re-checks an identity resolved from a network
- * failure when the browser comes back online. Falls back to `{ user: null,
- * isLoaded: true, isUnconfigured: true }` when env vars are missing. */
+ * failure when the browser comes back online or the tab becomes visible.
+ * Falls back to `{ user: null, isLoaded: true, isUnconfigured: true }` when
+ * env vars are missing. */
 export function useUser(): UserState {
   const supabase = getSupabaseBrowser();
   const isUnconfigured = supabase === null;
@@ -149,8 +151,8 @@ export function useUser(): UserState {
     // (a read of local storage) supplies a provisional user; afterwards the
     // server-backed resolution supersedes it.
     let resolved = false;
-    // Whether the current identity came from a network failure and so must
-    // be re-verified when the network returns.
+    // Whether the current identity came from a failure (no network, or a
+    // thrown check) and so must be re-verified once that could succeed.
     let unverified = false;
     // Whether a `verify()` is in flight whose answer would still apply.
     let checking = false;
@@ -189,7 +191,8 @@ export function useUser(): UserState {
           // settle on the safest state: no identity at all — nothing keyed
           // to an account runs or shows. The last-known record is left
           // alone, since nothing says the session is gone, and the
-          // identity is checked again when the network returns.
+          // identity is checked again when the network returns or the tab
+          // becomes visible.
           reportClientError(err, {
             context: { source: "useUser.resolveUser" },
           });
@@ -255,15 +258,22 @@ export function useUser(): UserState {
       },
     );
 
-    const onOnline = () => {
+    // Re-check an identity resolved from a failure once it could succeed.
+    // Each runs once per browser event, so it cannot loop.
+    const recheck = () => {
       if (unverified) verify();
     };
-    window.addEventListener("online", onOnline);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") recheck();
+    };
+    window.addEventListener("online", recheck);
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     return () => {
       cancelled = true;
       subscription.subscription.unsubscribe();
-      window.removeEventListener("online", onOnline);
+      window.removeEventListener("online", recheck);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [supabase]);
 

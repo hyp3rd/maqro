@@ -139,6 +139,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks(); // the `document.visibilityState` spy
 });
 
 /** Renders `useUser` against a fake client and waits for INITIAL_SESSION. */
@@ -172,6 +173,15 @@ function goOnline() {
     window.dispatchEvent(new Event("online"));
   });
 }
+
+function changeVisibility(state: DocumentVisibilityState) {
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue(state);
+  return act(async () => {
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+}
+
+const becomeVisible = () => changeVisibility("visible");
 
 describe("useUser", () => {
   it("offline: a network failure keeps the persisted session's user", async () => {
@@ -474,6 +484,39 @@ describe("useUser — the identity check throws", () => {
     answerGetUserWith({ data: { user: USER }, error: null });
     await goOnline();
     await waitFor(() => expect(result.current.user).toBe(USER));
+  });
+
+  it("is checked again when the tab becomes visible", async () => {
+    const { result, failGetUser, answerGetUserWith } = await startWith(SESSION);
+    await act(async () => failGetUser(new Error("storage failed")));
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+
+    answerGetUserWith({ data: { user: USER }, error: null });
+    await becomeVisible();
+    await waitFor(() => expect(result.current.user).toBe(USER));
+  });
+
+  it("a tab turning hidden does not check again", async () => {
+    const { result, failGetUser, answerGetUserWith, getUser } =
+      await startWith(SESSION);
+    await act(async () => failGetUser(new Error("storage failed")));
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+
+    answerGetUserWith({ data: { user: USER }, error: null });
+    await changeVisibility("hidden");
+    expect(getUser).toHaveBeenCalledTimes(1);
+    expect(result.current.user).toBeNull();
+  });
+
+  it("a verified identity is not checked again when the tab becomes visible", async () => {
+    const { result, releaseGetUser, getUser } = await startWith(SESSION);
+    await act(async () =>
+      releaseGetUser({ data: { user: USER }, error: null }),
+    );
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+
+    await becomeVisible();
+    expect(getUser).toHaveBeenCalledTimes(1);
   });
 });
 
