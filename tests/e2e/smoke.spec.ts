@@ -451,10 +451,21 @@ test.describe("maqro happy path", () => {
   test("fasting: stopping a running fast archives it to history", async ({
     page,
   }) => {
-    // `?demo=1` seeds a profile with a 16:8 fast already ~10h in. The profile
-    // matters twice over: the fasting card reads it straight from IDB and only
-    // renders once it's there (a fresh guest's default is never persisted), and
-    // the running fast gives us a Stop control to exercise record-on-stop.
+    // `?demo=1` seeds a profile on a 16:8 protocol whose running fast is
+    // derived from the seeded meals: it starts at the last food of the latest
+    // fully eaten day. The profile matters twice over: the fasting card reads
+    // it straight from IDB and only renders once it's there (a fresh guest's
+    // default is never persisted), and the running fast gives us a Stop control
+    // to exercise record-on-stop.
+    //
+    // That fast depends on the time of day (an open eating window around
+    // midday, a fresh 0-4h fast after dinner), so pin the browser's clock to
+    // 06:00 local today: the fast then runs from last night's ~19:30 dinner,
+    // ~10.5h in and still in the "fasting" phase. `setFixedTime` fixes
+    // `Date` only and keeps timers running, so the app's timeouts still fire.
+    const sixAm = new Date();
+    sixAm.setHours(6, 0, 0, 0);
+    await page.clock.setFixedTime(sixAm);
     await page.goto("/app?demo=1");
     await page.getByRole("button", { name: "Meal Plan" }).click();
 
@@ -468,9 +479,10 @@ test.describe("maqro happy path", () => {
       .getByRole("button", { name: "Stop fasting", exact: true })
       .click();
 
-    // The completed ~10h fast now shows in the archive on the Fasting page
+    // The completed ~10.5h overnight fast now shows in the archive on the
+    // Health page, which absorbed the old Fasting view
     // (record-on-stop → fastSessions store → useFastSessions → history card).
-    await page.getByRole("button", { name: "Fasting", exact: true }).click();
+    await page.getByRole("button", { name: "Health", exact: true }).click();
     const history = page
       .locator("section")
       .filter({ has: page.getByRole("heading", { name: "Fasting history" }) });
