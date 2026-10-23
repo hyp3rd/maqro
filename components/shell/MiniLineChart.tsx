@@ -14,7 +14,7 @@ import {
   xUnit,
 } from "@/lib/charts/geometry";
 import { cn } from "@/lib/utils";
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 export type LinePoint = {
   /** Numeric x value. With `xType="day"` this is a calendar-day index
@@ -127,6 +127,22 @@ export function MiniLineChart({
   const gradientId = useId();
   const [wrapRef, measured] = useElementWidth<HTMLDivElement>();
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  // A tapped tooltip stays up after the finger lifts (there's no hover on
+  // touch), so a tap anywhere outside the chart is what puts it away.
+  const tooltipShown = activeIndex !== null;
+  useEffect(() => {
+    if (!tooltipShown) return undefined;
+    function onPointerDown(e: PointerEvent) {
+      const svgEl = svgRef.current;
+      if (svgEl && e.target instanceof Node && svgEl.contains(e.target)) {
+        return;
+      }
+      setActiveIndex(null);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [tooltipShown]);
 
   // Print layout never reaches the ResizeObserver in time, so a chart last
   // measured on a phone would print at phone width, centred with empty
@@ -415,6 +431,7 @@ export function MiniLineChart({
       className="w-full text-foreground"
     >
       <svg
+        ref={svgRef}
         width="100%"
         height={printing ? undefined : H}
         viewBox={`0 0 ${W} ${H}`}

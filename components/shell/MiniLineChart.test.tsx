@@ -458,6 +458,36 @@ describe("MiniLineChart tooltip", () => {
       ),
     ).toBe(true);
   });
+
+  it("puts a tapped value away on a tap outside the chart", () => {
+    const { container } = render(
+      <div>
+        <MiniLineChart
+          data={calories}
+          yUnit=" kcal"
+          height={240}
+        />
+        <p>Elsewhere on the page</p>
+      </div>,
+    );
+    resizeAll(320);
+    svg(container).getBoundingClientRect = () =>
+      ({ left: 0, top: 0, width: 320, height: 240 }) as DOMRect;
+    const overlay = container.querySelector('[data-part="hit"]');
+    if (!overlay) throw new Error("no hit area");
+    const tooltipUp = () =>
+      texts(container).some((t) => t.includes("Oct 23 · 1,550 kcal"));
+
+    fireEvent.pointerDown(overlay, { clientX: 300, clientY: 100 });
+    fireEvent.pointerLeave(overlay, { pointerType: "touch" });
+    expect(tooltipUp()).toBe(true);
+    // Another tap on the chart moves it rather than closing it...
+    fireEvent.pointerDown(overlay, { clientX: 300, clientY: 120 });
+    expect(tooltipUp()).toBe(true);
+    // ...and a tap anywhere else puts it away.
+    fireEvent.pointerDown(screen.getByText("Elsewhere on the page"));
+    expect(tooltipUp()).toBe(false);
+  });
 });
 
 it("renders nothing for an empty series", () => {
