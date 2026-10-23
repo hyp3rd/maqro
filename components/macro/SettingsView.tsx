@@ -22,7 +22,10 @@ import { useSafeSignOut } from "@/hooks/use-safe-sign-out";
 import { useUser } from "@/hooks/use-user";
 import { isLikelyEmail } from "@/lib/account/backup-email";
 import { clientFetch } from "@/lib/auth/client-fetch";
-import { clearAccountRecords, signOutAndClearLocal } from "@/lib/auth/sign-out";
+import {
+  clearAllAccountRecords,
+  signOutAndClearLocal,
+} from "@/lib/auth/sign-out";
 import { clearAllStores } from "@/lib/db";
 import {
   buildExport,
@@ -696,9 +699,9 @@ export function ResetDeviceSection({ signedIn }: { signedIn: boolean }) {
         // Storage disabled - fine, the rest of the reset is still
         // useful.
       }
-      // The per-account records too, also when there is no session to
+      // Every account's records too, also when there is no session to
       // sign out (an expired one opened offline still has them).
-      clearAccountRecords();
+      clearAllAccountRecords();
 
       if (signedIn) {
         const supabase = getSupabaseBrowser();

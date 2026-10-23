@@ -74,4 +74,12 @@ describe("ResetDeviceSection", () => {
     expect(readLastKnownUserId()).toBeNull();
     expect(readCachedTier("u1")).toBeNull();
   });
+
+  it("forgets every account's cached tier, not just the current one", async () => {
+    writeCachedTier("u2", "plus");
+    writeLastKnownUserId("u1");
+    await resetDevice(true);
+    expect(readCachedTier("u1")).toBeNull();
+    expect(readCachedTier("u2")).toBeNull();
+  });
 });

@@ -1,15 +1,31 @@
-import { clearLastKnownUser } from "@/lib/auth/last-known-user";
-import { clearCachedTier } from "@/lib/billing/tier-cache";
+import {
+  clearLastKnownUser,
+  readLastKnownUserId,
+} from "@/lib/auth/last-known-user";
+import { clearCachedTier, forgetCachedTier } from "@/lib/billing/tier-cache";
 import { clearAllStores } from "@/lib/db";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-/** Forget the per-account records this device keeps outside IndexedDB —
- *  the last-known tier and the last-known user — so the next user on this
- *  device is never gated on, or shown as, the previous one. Used by every
- *  path that hands the device over: sign-out, forced sign-out, device
- *  reset. Never throws (both records degrade to "absent" on storage
- *  errors). */
+/** Forget the signed-out account's records kept outside IndexedDB — its
+ *  cached tier and the last-known user — so the next user on this device is
+ *  never shown as the previous one, and the signed-out account is not gated
+ *  on a tier the server no longer vouches for. The account is the one the
+ *  last-known record names (whose local data this device holds); other
+ *  accounts' cached tiers stay, since each applies only to its own user.
+ *  With no record, whose tier it is cannot be told, so every cached tier is
+ *  forgotten. Used by sign-out and forced sign-out. Never throws (both
+ *  records degrade to "absent" on storage errors). */
 export function clearAccountRecords(): void {
+  const userId = readLastKnownUserId();
+  if (userId === null) clearCachedTier();
+  else forgetCachedTier(userId);
+  clearLastKnownUser();
+}
+
+/** Forget every account's records kept outside IndexedDB (device reset: the
+ *  device is handed over, so nothing of any account may remain). Never
+ *  throws. */
+export function clearAllAccountRecords(): void {
   clearCachedTier();
   clearLastKnownUser();
 }

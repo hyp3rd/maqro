@@ -8,7 +8,11 @@ import {
 import { readCachedTier, writeCachedTier } from "@/lib/billing/tier-cache";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { signOutAndClearLocal } from "./sign-out";
+import {
+  clearAccountRecords,
+  clearAllAccountRecords,
+  signOutAndClearLocal,
+} from "./sign-out";
 
 vi.mock("@/lib/db", () => ({ clearAllStores: vi.fn(async () => {}) }));
 
@@ -17,8 +21,24 @@ beforeEach(() => {
 });
 
 describe("signOutAndClearLocal", () => {
+  it("forgets only the signed-out user's tier, keeping other accounts'", async () => {
+    writeCachedTier("u1", "pro");
+    writeCachedTier("u2", "plus");
+    writeLastKnownUserId("u2");
+    const supabase = {
+      auth: { signOut: vi.fn(async () => ({ error: null })) },
+    } as unknown as SupabaseClient;
+
+    await signOutAndClearLocal(supabase);
+
+    expect(readCachedTier("u2")).toBeNull();
+    expect(readCachedTier("u1")).toBe("pro");
+    expect(readLastKnownUserId()).toBeNull();
+  });
+
   it("forgets the last-known tier before the session is torn down", async () => {
     writeCachedTier("u1", "pro");
+    writeLastKnownUserId("u1");
     let cachedAtSignOut: string | null = "unset";
     const supabase = {
       auth: {
@@ -54,6 +74,28 @@ describe("signOutAndClearLocal", () => {
     await signOutAndClearLocal(supabase);
 
     expect(recordedAtSignOut).toBeNull();
+    expect(readLastKnownUserId()).toBeNull();
+  });
+});
+
+describe("clearAccountRecords", () => {
+  it("with no last-known user, whose tier it is is unknown: forgets every tier", () => {
+    writeCachedTier("u1", "pro");
+    writeCachedTier("u2", "plus");
+    clearAccountRecords();
+    expect(readCachedTier("u1")).toBeNull();
+    expect(readCachedTier("u2")).toBeNull();
+  });
+});
+
+describe("clearAllAccountRecords", () => {
+  it("forgets every account's tier and the last-known user (device reset)", () => {
+    writeCachedTier("u1", "pro");
+    writeCachedTier("u2", "plus");
+    writeLastKnownUserId("u2");
+    clearAllAccountRecords();
+    expect(readCachedTier("u1")).toBeNull();
+    expect(readCachedTier("u2")).toBeNull();
     expect(readLastKnownUserId()).toBeNull();
   });
 });
