@@ -312,6 +312,30 @@ describe("MiniLineChart accessibility", () => {
     expect(name).toContain("1,744 kcal");
   });
 
+  it("summarises only the daily targets inside the plotted range", () => {
+    render(
+      <MiniLineChart
+        data={calories}
+        title="Calories"
+        yUnit=" kcal"
+        xType="day"
+        targetSeries={[
+          // Before the data starts: not drawn, so not in the summary either.
+          { x: day(10), y: 2400 },
+          { x: day(17), y: 1800 },
+          { x: day(20), y: 1950 },
+          // After the data ends.
+          { x: day(30), y: 1500 },
+        ]}
+      />,
+    );
+    resizeAll(327);
+    const name = screen.getByRole("img").getAttribute("aria-label") ?? "";
+    expect(name).toContain("Daily targets from 1,800 kcal to 1,950 kcal.");
+    expect(name).not.toContain("2,400");
+    expect(name).not.toContain("1,500 kcal");
+  });
+
   it("offers the data as a table behind a keyboard-reachable disclosure", () => {
     const { container } = render(
       <MiniLineChart

@@ -285,6 +285,7 @@ export function MiniLineChart({
       areaPath,
       targetStepPath,
       stepFirstY: stepFirst?.y,
+      targetsInRange: inRange,
     };
   }, [
     points,
@@ -312,7 +313,10 @@ export function MiniLineChart({
   const ys = points.map((p) => p.y);
   const firstPoint = points[0];
   const lastPoint = points[points.length - 1];
-  const hasTargets = targetY !== undefined || targets.length > 0;
+  // Only the targets inside the plotted range, as the step line draws them:
+  // a series that runs past the data must not widen the summary's range.
+  const shownTargets = chart.targetsInRange;
+  const hasTargets = targetY !== undefined || shownTargets.length > 0;
   const summary = (() => {
     if (!firstPoint || !lastPoint) return "";
     const n = points.length;
@@ -323,8 +327,8 @@ export function MiniLineChart({
         : `${n} entries from ${labelFor(firstPoint)} to ${labelFor(lastPoint)}`;
     let s = `${title ? `${title}. ` : ""}${kind}, ${span}. Lowest ${withUnit(Math.min(...ys))}, highest ${withUnit(Math.max(...ys))}, latest ${withUnit(lastPoint.y)}.`;
     if (targetY !== undefined) s += ` Target ${withUnit(targetY)}.`;
-    if (targets.length > 0) {
-      const tys = targets.map((t) => t.y);
+    if (shownTargets.length > 0) {
+      const tys = shownTargets.map((t) => t.y);
       const lo = Math.min(...tys);
       const hi = Math.max(...tys);
       s +=
