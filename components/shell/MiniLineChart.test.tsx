@@ -86,6 +86,27 @@ describe("MiniLineChart sizing", () => {
     expect(svg(container).getAttribute("viewBox")).toBe("0 0 702 240");
   });
 
+  it("prints at the drawing width, scaled to the page, not the phone width", () => {
+    const { container } = render(
+      <MiniLineChart
+        data={calories}
+        height={240}
+      />,
+    );
+    resizeAll(327);
+    // No act(): the chart must already have re-rendered when the event
+    // returns, because the print dialog captures the page right after.
+    window.dispatchEvent(new Event("beforeprint"));
+    expect(svg(container).getAttribute("viewBox")).toBe("0 0 640 240");
+    // Height follows the viewBox, so the chart fills the printed column.
+    expect(svg(container).hasAttribute("height")).toBe(false);
+    act(() => {
+      window.dispatchEvent(new Event("afterprint"));
+    });
+    expect(svg(container).getAttribute("viewBox")).toBe("0 0 327 240");
+    expect(svg(container).getAttribute("height")).toBe("240");
+  });
+
   it("uses true-size (12px) text, not the old 10px", () => {
     const { container } = render(<MiniLineChart data={calories} />);
     resizeAll(327);

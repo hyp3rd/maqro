@@ -1,6 +1,7 @@
 "use client";
 
 import { useElementWidth } from "@/hooks/use-element-width";
+import { usePrinting } from "@/hooks/use-printing";
 import {
   dayTicks,
   formatDayIndex,
@@ -42,8 +43,8 @@ export type ChartMarker = {
 type Props = {
   data: LinePoint[];
   /** Drawing width used until the container has been measured (server
-   *  render, first frame, no ResizeObserver). After that the chart draws
-   *  at the container's real width. */
+   *  render, no ResizeObserver) and while printing. Otherwise the chart
+   *  draws at the container's real width. */
   width?: number;
   /** Height in CSS pixels. */
   height?: number;
@@ -127,7 +128,12 @@ export function MiniLineChart({
   const [wrapRef, measured] = useElementWidth<HTMLDivElement>();
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
 
-  const W = Math.max(120, measured ?? width);
+  // Print layout never reaches the ResizeObserver in time, so a chart last
+  // measured on a phone would print at phone width, centred with empty
+  // bands. While printing, draw at `width` and let the SVG scale to the
+  // printed column (height follows the viewBox; see the <svg> below).
+  const printing = usePrinting();
+  const W = Math.max(120, printing ? width : (measured ?? width));
   const H = Math.max(80, height);
   const unit = yUnit.trim();
   const isBar = variant === "bar";
@@ -410,7 +416,7 @@ export function MiniLineChart({
     >
       <svg
         width="100%"
-        height={H}
+        height={printing ? undefined : H}
         viewBox={`0 0 ${W} ${H}`}
         className="block overflow-visible"
         role="img"
