@@ -316,8 +316,8 @@ export type TrainingSchedule = {
 };
 
 /** Fixed daily protein, in grams per kg of bodyweight or of lean mass (the
- *  latter needs a body-fat estimate; without one it falls back to
- *  bodyweight). Only applies while a training schedule is enabled. */
+ *  latter needs a body-fat estimate; without one the 2.0 g/kg bodyweight
+ *  default applies). Only applies while a training schedule is enabled. */
 export type ProteinSetting = {
   basis: "bodyweight" | "leanMass";
   gPerKg: number;

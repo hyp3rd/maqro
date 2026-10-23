@@ -287,13 +287,22 @@ describe("proteinGrams", () => {
     expect(out.grams).toBeCloseTo(166.4, 9);
   });
 
-  it("lean-mass basis falls back to bodyweight without a usable estimate", () => {
+  it("lean mass without a usable estimate → the 2.0 g/kg bodyweight default", () => {
+    // Not the lean-mass 2.6 g/kg applied to bodyweight (208 g): a lean-mass
+    // figure is per kg of FFM and over-prescribes on total weight.
     for (const bf of [undefined, null, NaN, 2, 70]) {
       expect(proteinGrams({ basis: "leanMass", gPerKg: 2.6 }, 80, bf)).toEqual({
-        grams: 208,
+        grams: 160,
         basis: "bodyweight",
       });
     }
+  });
+
+  it("a bodyweight setting keeps its own g/kg", () => {
+    expect(proteinGrams({ basis: "bodyweight", gPerKg: 2.6 }, 80)).toEqual({
+      grams: 208,
+      basis: "bodyweight",
+    });
   });
 });
 

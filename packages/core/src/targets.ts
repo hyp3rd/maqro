@@ -39,7 +39,7 @@ import {
  *  Gating lives in callers (see goal-phases.ts): pass `phasesEnabled: true`
  *  only after the tier check (`FEATURES.canUseGoalPhases`). `bodyFatPct` is
  *  the latest body-fat estimate (%) if the caller has one — only a lean-mass
- *  protein basis reads it; absent → bodyweight basis. */
+ *  protein basis reads it; absent → the 2.0 g/kg bodyweight default. */
 export type TargetContext = {
   phasesEnabled: boolean;
   bodyFatPct?: number | null;
@@ -53,8 +53,10 @@ export type TrainingDayTargets = {
   cycling: CyclingPreset;
   /** The weekly mean daily target the day is planned around. */
   meanCalories: number;
-  /** The protein basis actually used (lean mass falls back to bodyweight
-   *  without a body-fat estimate). */
+  /** The protein basis actually used: a lean-mass setting without a
+   *  body-fat estimate falls back to the 2.0 g/kg bodyweight default, so
+   *  `bodyweight` here under a `leanMass` setting means "add a body-fat
+   *  estimate to use lean mass". */
   proteinBasis: ProteinSetting["basis"];
   /** The setting's protein didn't fit the week's smallest day alongside the
    *  fat and carb floors, so every day's protein was lowered to what does

@@ -310,15 +310,20 @@ export function distributeWeekCalories(input: WeekCaloriesInput): number[] {
 
 /** Daily protein grams for the setting: g/kg × bodyweight, or × lean mass
  *  (weight × (1 − body fat %)) when the basis is `leanMass` AND a plausible
- *  body-fat estimate (3–60 %) is supplied. Without one, lean mass falls back
- *  to bodyweight; `basis` reports which one was actually used. */
+ *  body-fat estimate (3–60 %) is supplied. A lean-mass setting without one
+ *  falls back to the 2.0 g/kg BODYWEIGHT default — not its own g/kg on
+ *  bodyweight, which is a per-kg-of-FFM figure and would over-prescribe
+ *  (owner decision). `basis` reports the one actually used, so the UI can
+ *  suggest adding a body-fat estimate. */
 export function proteinGrams(
   setting: ProteinSetting,
   weightKg: number,
   bodyFatPct?: number | null,
 ): { grams: number; basis: ProteinSetting["basis"] } {
+  if (setting.basis === "bodyweight") {
+    return { grams: setting.gPerKg * weightKg, basis: "bodyweight" };
+  }
   if (
-    setting.basis === "leanMass" &&
     typeof bodyFatPct === "number" &&
     Number.isFinite(bodyFatPct) &&
     bodyFatPct >= BODY_FAT_MIN_PCT &&
@@ -329,7 +334,10 @@ export function proteinGrams(
       basis: "leanMass",
     };
   }
-  return { grams: setting.gPerKg * weightKg, basis: "bodyweight" };
+  return {
+    grams: DEFAULT_PROTEIN_SETTING.gPerKg * weightKg,
+    basis: "bodyweight",
+  };
 }
 
 /** Diets where FAT absorbs the day-to-day difference and carbs hold (low-carb,

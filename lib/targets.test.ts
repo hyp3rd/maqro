@@ -460,9 +460,10 @@ describe("targetsForDate — training days", () => {
     const lean = targetsForDate(p, "2026-10-20", { ...FREE, bodyFatPct: 20 });
     expect(lean.protein).toBe(165); // 2.6 × 64 kg = 166.4 → 165
     expect(lean.training?.proteinBasis).toBe("leanMass");
-    // No estimate → bodyweight basis (2.6 × 80 = 208 → 210).
+    // No estimate → the 2.0 g/kg bodyweight default (2.0 × 80 = 160), not
+    // the lean-mass 2.6 g/kg on bodyweight (208).
     const noEstimate = targetsForDate(p, "2026-10-20", FREE);
-    expect(noEstimate.protein).toBe(210);
+    expect(noEstimate.protein).toBe(160);
     expect(noEstimate.training?.proteinBasis).toBe("bodyweight");
   });
 
