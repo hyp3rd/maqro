@@ -1,6 +1,7 @@
 import { CookieNotice } from "@/components/shell/CookieNotice";
 import { ThemeProvider } from "@/components/theme-provider";
 import { getAppUrl } from "@/lib/app-url";
+import { THEME_COLOR } from "@/lib/design/palette";
 import type { Metadata, Viewport } from "next";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
@@ -147,8 +148,8 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#0a0a0c" },
+    { media: "(prefers-color-scheme: light)", color: THEME_COLOR.light },
+    { media: "(prefers-color-scheme: dark)", color: THEME_COLOR.dark },
   ],
 };
 
