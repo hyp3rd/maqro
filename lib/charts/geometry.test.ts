@@ -272,6 +272,20 @@ describe("layoutBars", () => {
     expect(bars[0]?.width).toBe(24); // 60% of 60 = 36, capped at 24
   });
 
+  it("keeps the skipped days of an every-other-day log when given the day unit", () => {
+    const everyOtherDay = [
+      { x: 100, value: 1500 },
+      { x: 102, value: 1600 },
+      { x: 104, value: 1700 },
+    ];
+    // Inferred from the data, a slot spans two days and the gaps vanish.
+    expect(layoutBars(everyOtherDay, opts).slotWidth).toBe(100);
+    // With the axis unit, five day slots: the 101 and 103 slots stay empty.
+    const { slotWidth, bars } = layoutBars(everyOtherDay, { ...opts, unit: 1 });
+    expect(slotWidth).toBe(60);
+    expect(bars.map((b) => b.cx)).toEqual([70, 190, 310]);
+  });
+
   it("splits a bar at its target: solid to the target, calm overshoot above", () => {
     const { bars } = layoutBars(
       [

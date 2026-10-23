@@ -367,7 +367,12 @@ export function xUnit(xs: readonly number[]): number {
 
 /** Lay out one bar per point in `[left, left + width]`, from a baseline at
  *  `yToPx(0)` (clamped into the plot). Bars are 60% of their slot, capped
- *  at `maxBarWidth` and never thinner than 1px. */
+ *  at `maxBarWidth` and never thinner than 1px.
+ *
+ *  `unit` is the x distance one slot covers. Pass it when the axis has a
+ *  natural unit (1 for day indices); left out, it is inferred from the
+ *  smallest gap in the data, which can't tell "logged every other day"
+ *  from "a series in steps of two". */
 export function layoutBars(
   data: readonly BarInput[],
   opts: {
@@ -376,10 +381,11 @@ export function layoutBars(
     yToPx: (y: number) => number;
     baselinePx: number;
     maxBarWidth?: number;
+    unit?: number;
   },
 ): BarLayout {
   const xs = data.map((d) => d.x);
-  const unit = xUnit(xs);
+  const unit = opts.unit !== undefined && opts.unit > 0 ? opts.unit : xUnit(xs);
   const xMin = Math.min(...xs);
   const xMax = Math.max(...xs);
   const slots = data.length === 0 ? 1 : Math.round((xMax - xMin) / unit) + 1;

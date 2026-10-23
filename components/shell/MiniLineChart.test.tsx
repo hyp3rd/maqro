@@ -217,6 +217,36 @@ describe("MiniLineChart bars", () => {
     expect(texts(container)).toContain("0");
   });
 
+  it("leaves an empty slot for each unlogged day on a day axis", () => {
+    // Logged every other day: 19, 21, 23 -> five day slots, not three.
+    const { container } = render(
+      <MiniLineChart
+        data={[
+          { x: day(19), y: 1800 },
+          { x: day(21), y: 1900 },
+          { x: day(23), y: 2000 },
+        ]}
+        variant="bar"
+        xType="day"
+      />,
+    );
+    resizeAll(320);
+    const xs = [...container.querySelectorAll('[data-part="bar"]')].map(
+      (b) => Number(b.getAttribute("x")) + Number(b.getAttribute("width")) / 2,
+    );
+    const [a, b, c] = xs;
+    if (a === undefined || b === undefined || c === undefined)
+      throw new Error("expected three bars");
+    const hit = container.querySelector('[data-part="hit"]');
+    const left = Number(hit?.getAttribute("x"));
+    const plotW = Number(hit?.getAttribute("width"));
+    const slot = plotW / 5;
+    // Bars sit at the centres of slots 1, 3 and 5 of five.
+    expect(a - left).toBeCloseTo(slot / 2);
+    expect(b - left).toBeCloseTo(2.5 * slot);
+    expect(c - left).toBeCloseTo(4.5 * slot);
+  });
+
   it("shows overshoot calmly: same hue, lower intensity, neutral +N", () => {
     const { container } = render(
       <MiniLineChart

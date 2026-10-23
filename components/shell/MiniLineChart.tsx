@@ -189,7 +189,10 @@ export function MiniLineChart({
     const baseline = PAD.top + innerH;
 
     // --- x scale -------------------------------------------------------
-    const step = xUnit(xs);
+    // A day axis has a known unit: one calendar day. Inferring it from the
+    // data would make every slot two days wide for an every-other-day log,
+    // hiding the unlogged days the slots exist to show.
+    const step = xType === "day" ? 1 : xUnit(xs);
     const bars = isBar
       ? layoutBars(
           points.map((p) => ({ x: p.x, value: p.y, target: targetAt(p.x) })),
@@ -198,6 +201,7 @@ export function MiniLineChart({
             width: innerW,
             yToPx,
             baselinePx: yToPx(Math.max(scale.min, Math.min(0, scale.max))),
+            unit: step,
           },
         )
       : null;
