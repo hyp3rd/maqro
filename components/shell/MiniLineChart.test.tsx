@@ -164,6 +164,12 @@ describe("MiniLineChart axes", () => {
     y: 1500 + (i % 3) * 200,
   }));
 
+  /** 30 days from 2025-12-10: a month-long chart viewed in January. */
+  const newYear: LinePoint[] = Array.from({ length: 30 }, (_, i) => ({
+    x: dayIndexFromIsoDate("2025-12-10") + i,
+    y: 1500 + (i % 3) * 200,
+  }));
+
   it.each([
     // A narrow phone card: the week's first and last day, and its middle.
     ["week", 200, calories, ["Oct 17", "Oct 20", "Oct 23"]],
@@ -177,6 +183,8 @@ describe("MiniLineChart axes", () => {
     // Room for two labels only: both ends, not a lone Monday or two.
     ["fortnight", 200, fortnight, ["Oct 10", "Oct 23"]],
     ["fortnight", 260, fortnight, ["Oct 10", "Oct 23"]],
+    // Over New Year too: weeks long, its ends can't be misread.
+    ["month over New Year", 200, newYear, ["Dec 10", "Jan 8"]],
   ] as const)(
     "dates a %s at %ipx from its first to its last day, evenly, without overlap",
     (_name, width, data, expected) => {
@@ -190,7 +198,7 @@ describe("MiniLineChart axes", () => {
         );
         resizeAll(width);
         const labels = [...svg(container).querySelectorAll("text")].filter(
-          (t) => /^Oct \d+$/.test(t.textContent ?? ""),
+          (t) => /^[A-Z][a-z]{2} \d+$/.test(t.textContent ?? ""),
         );
         expect({ variant, dates: labels.map((t) => t.textContent) }).toEqual({
           variant,

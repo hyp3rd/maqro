@@ -245,7 +245,7 @@ describe("dayTicks", () => {
     expect(t.map((x) => x.label)).toEqual(["2026", "Jul"]);
   });
 
-  it("keeps the calendar ticks of a range that crosses a year, at any span", () => {
+  it("keeps the calendar ticks of a months-long range that crosses a year", () => {
     // 364 days: under a year, but across one. Its ends would read
     // "Oct 24 | Apr 24 | Oct 23" - neighbouring days, in the wrong order.
     const t = dayTicks(
@@ -255,15 +255,20 @@ describe("dayTicks", () => {
       "en-US",
     );
     expect(t.map((x) => x.label)).toEqual(["2026", "Jul"]);
-    // A fortnight over New Year keeps its two Mondays as well.
-    expect(
+  });
+
+  it("dates both ends of a few weeks over New Year", () => {
+    // Weeks long, the ends can only mean the turn of the year - and without
+    // them the axis would never show that it reaches January.
+    const span = (from: string, to: string) =>
       dayTicks(
-        dayIndexFromIsoDate("2025-12-25"),
-        dayIndexFromIsoDate("2026-01-07"),
+        dayIndexFromIsoDate(from),
+        dayIndexFromIsoDate(to),
         atMost(2),
         "en-US",
-      ).map((x) => x.label),
-    ).toEqual(["Dec 29", "Jan 5"]);
+      ).map((x) => x.label);
+    expect(span("2025-12-25", "2026-01-07")).toEqual(["Dec 25", "Jan 7"]);
+    expect(span("2025-12-10", "2026-01-08")).toEqual(["Dec 10", "Jan 8"]);
   });
 
   it("labels the first day alone when nothing fits", () => {

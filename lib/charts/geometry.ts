@@ -166,9 +166,10 @@ function daysFor(step: DayStep, first: number, last: number): number[] {
  *  whichever is the finest step whose ticks `fits` accepts. Labels are
  *  locale-formatted ("Oct 23", or "Oct" for month steps, with the year on
  *  January ticks when the range spans more than one year). When that
- *  leaves two labels or fewer on a range within one calendar year, the
- *  first and last days are labelled instead, evenly filled in between as
- *  far as they fit.
+ *  leaves two labels or fewer, the first and last days are labelled
+ *  instead, evenly filled in between as far as they fit - except across a
+ *  year boundary, unless the calendar step labels days (a range of a few
+ *  weeks, whose ends can't be misread without their year).
  *
  *  Whether labels fit is the caller's call, because only it knows where
  *  each one lands: neither a count nor a spacing in days can see that an
@@ -209,6 +210,8 @@ export function dayTicks(
   let calendar: DayTick[] = [
     dayTick(lo, multiYear ? datedFormat(locale) : dayFmt),
   ];
+  // The step the calendar ticks were drawn on; none when nothing fits.
+  let chosen: DayStep | undefined;
   for (const step of DAY_STEPS) {
     const days = daysFor(step, lo, hi);
     if (days.length === 0) continue;
@@ -224,19 +227,27 @@ export function dayTicks(
     });
     if (fits(ticks)) {
       calendar = ticks;
+      chosen = step;
       break;
     }
   }
   // A narrow axis fits only one or two calendar ticks, often at neither end
   // ("Oct 5" alone over Oct 1-10). There, label the first and last days
   // instead, with as many days between them as fit, on a step that divides
-  // the span so it lands on both ends. Only within one calendar year: across
-  // a year boundary, day labels drop the year the calendar ticks name
-  // ("Oct 24 | Apr 24 | Oct 23" over 2025-10-24 to 2026-10-23 reads as
-  // neighbouring days in the wrong order). A range longer than a year always
-  // crosses one, so it keeps its calendar ticks too.
+  // the span so it lands on both ends.
   const span = hi - lo;
-  if (calendar.length > 2 || span <= 0 || multiYear) return calendar;
+  if (calendar.length > 2 || span <= 0) return calendar;
+  // Day labels carry no year. Across a year boundary they only read right
+  // when the calendar itself settled on a day or week step: a range holding
+  // two such ticks at most spans under six weeks, so "Dec 25 | Jan 7" can
+  // only mean the turn of the year. On a month step (the only one left over
+  // a year or more) the ends could be misread ("Oct 24 | Apr 24 | Oct 23" over 2025-10-24 to
+  // 2026-10-23 reads as neighbouring days in the wrong order), while the
+  // calendar's January tick names the year; when nothing fits, the lone
+  // label names it. Either way, those year-aware ticks are kept.
+  if (multiYear && (chosen === undefined || chosen.kind === "month")) {
+    return calendar;
+  }
   for (let n = 1; n <= span; n++) {
     if (span % n !== 0) continue;
     const ticks: DayTick[] = [];
