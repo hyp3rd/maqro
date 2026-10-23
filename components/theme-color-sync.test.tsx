@@ -2,7 +2,13 @@
 import { THEME_COLOR } from "@/lib/design/palette";
 import { ThemeProvider, useTheme } from "next-themes";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { ThemeColorSync } from "./theme-color-sync";
 
 /** jsdom ships no matchMedia; next-themes reads `prefers-color-scheme`
@@ -66,6 +72,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   document.head.innerHTML = "";
+  // next-themes persists the choice; reset it so tests stay independent.
+  localStorage.clear();
   vi.unstubAllGlobals();
 });
 
@@ -99,5 +107,47 @@ describe("ThemeColorSync", () => {
     fireEvent.click(screen.getByRole("button", { name: "system" }));
     // System on a light OS resolves to light.
     expect(metaContents()).toEqual([THEME_COLOR.light, THEME_COLOR.light]);
+  });
+
+  it("re-applies the manual theme when navigation replaces the metas", async () => {
+    render(
+      <ThemeProvider
+        attribute="class"
+        defaultTheme="dark"
+        enableSystem
+      >
+        <ThemeColorSync />
+      </ThemeProvider>,
+    );
+    expect(metaContents()).toEqual([THEME_COLOR.dark, THEME_COLOR.dark]);
+
+    // A client navigation remounts the viewport metas with the server's
+    // OS-keyed colours (Next keys them on the request id).
+    for (const meta of document.querySelectorAll('meta[name="theme-color"]')) {
+      meta.remove();
+    }
+    installThemeColorMetas();
+
+    await waitFor(() => {
+      expect(metaContents()).toEqual([THEME_COLOR.dark, THEME_COLOR.dark]);
+    });
+  });
+
+  it("stops watching the head once unmounted", async () => {
+    const { unmount } = render(
+      <ThemeProvider
+        attribute="class"
+        defaultTheme="dark"
+        enableSystem
+      >
+        <ThemeColorSync />
+      </ThemeProvider>,
+    );
+    unmount();
+    document.head.innerHTML = "";
+    installThemeColorMetas();
+    // Flush any pending MutationObserver callback.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(metaContents()).toEqual([THEME_COLOR.light, THEME_COLOR.dark]);
   });
 });
