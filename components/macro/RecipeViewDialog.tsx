@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { MacroStat } from "@/components/ui/macro-stat";
 import { upsertShoppingListMeta } from "@/lib/db";
 import { useState } from "react";
 import {
@@ -240,25 +241,29 @@ function ViewBody({
           <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
             Macros ({isScaled ? `scaled ×${scale.toFixed(2)}` : "full recipe"})
           </p>
-          <dl className="grid grid-cols-4 gap-x-3 gap-y-1 font-mono text-sm tabular-nums">
-            <MacroCell
-              label="kcal"
-              value={Math.round(totals.calories)}
+          <dl className="grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-4">
+            <MacroStat
+              macro="calories"
+              value={totals.calories}
+              size="sm"
             />
-            <MacroCell
-              label="P"
-              value={`${totals.protein.toFixed(1)}g`}
-              cssVar="--macro-protein"
+            <MacroStat
+              macro="protein"
+              value={totals.protein}
+              format={oneDecimal}
+              size="sm"
             />
-            <MacroCell
-              label="C"
-              value={`${totals.carbs.toFixed(1)}g`}
-              cssVar="--macro-carbs"
+            <MacroStat
+              macro="carbs"
+              value={totals.carbs}
+              format={oneDecimal}
+              size="sm"
             />
-            <MacroCell
-              label="F"
-              value={`${totals.fat.toFixed(1)}g`}
-              cssVar="--macro-fat"
+            <MacroStat
+              macro="fat"
+              value={totals.fat}
+              format={oneDecimal}
+              size="sm"
             />
           </dl>
         </section>
@@ -395,6 +400,11 @@ function formatGrams(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
 }
 
+/** Macro totals read to one decimal, as before the MacroStat move. */
+function oneDecimal(n: number): string {
+  return n.toFixed(1);
+}
+
 /** Display the minute count in the badge as "Xh Ym" / "Xm" — same
  *  shape as the import-time formatter so a recipe imported from a
  *  URL looks identical to a manually-entered one. */
@@ -417,28 +427,4 @@ function prettifyHost(rawUrl: string): string {
   } catch {
     return rawUrl;
   }
-}
-
-function MacroCell({
-  label,
-  value,
-  cssVar,
-}: {
-  label: string;
-  value: string | number;
-  cssVar?: string;
-}) {
-  return (
-    <div className="flex flex-col">
-      <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-        {label}
-      </dt>
-      <dd
-        className="text-sm font-semibold"
-        style={cssVar ? { color: `hsl(var(${cssVar}))` } : undefined}
-      >
-        {value}
-      </dd>
-    </div>
-  );
 }
