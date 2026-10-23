@@ -6,7 +6,7 @@ import type {
   Meal,
   PersonalInfo,
 } from "@/components/macro/types";
-import { useTier } from "@/hooks/use-ai-usage";
+import { useRefreshAiUsage, useTier } from "@/hooks/use-ai-usage";
 import { effectiveAge } from "@/lib/age";
 import { AI_MAX_NAME_CHARS } from "@/lib/ai/request-limits";
 import { clampAiText } from "@/lib/ai/request-payload";
@@ -487,6 +487,7 @@ function AiAdvice({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [dontAsk, setDontAsk] = useState(false);
   const [capUpgradeOpen, setCapUpgradeOpen] = useState(false);
+  const refreshAiUsage = useRefreshAiUsage();
 
   const totals = meal.foods.reduce(
     (a, f) => ({
@@ -556,6 +557,8 @@ function AiAdvice({
         }
         return;
       }
+      // The server debited this call — bring the shared counter up to date.
+      refreshAiUsage();
       const { advice } = (await res.json()) as { advice: string };
       setState({ status: "done", advice });
     } catch {

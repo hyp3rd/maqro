@@ -52,6 +52,7 @@ import { OnboardingWizard } from "./components/onboarding/OnboardingWizard";
 import { AppShell } from "./components/shell/AppShell";
 import type { ViewKey } from "./components/shell/Sidebar";
 import { foodDatabase } from "./data/food-database";
+import { useRefreshAiUsage } from "./hooks/use-ai-usage";
 import { type DayTarget, useDailyLog } from "./hooks/use-daily-log";
 import { useFoodSearch } from "./hooks/use-food-search";
 import { useIsMobile } from "./hooks/use-mobile";
@@ -667,6 +668,9 @@ const MacroCalculator = () => {
     targetForPhases,
   } = useTargets(personalInfo, today, selectedDate);
   const activeGoalPhase = todayTargets.phase;
+  // Every AI request below calls this after a 2xx so the shared usage counter
+  // (Profile's AI usage + near-cap warning) reflects what was just spent.
+  const refreshAiUsage = useRefreshAiUsage();
   const goalPhaseNudge = goalPhasesEnabled
     ? dietBreakNudge(personalInfo.goalPhases, today)
     : null;
@@ -893,6 +897,8 @@ const MacroCalculator = () => {
           data.error ?? `Identification failed (HTTP ${aiRes.status})`,
         );
       }
+      // The server debited this call — bring the shared counter up to date.
+      refreshAiUsage();
       const result = (await aiRes.json()) as ResolvedMealPhoto;
       setMealPhotoResult(result);
     } catch (err) {
@@ -1831,6 +1837,8 @@ const MacroCalculator = () => {
       });
 
       if (ai.kind === "ok") {
+        // The server debited this call — bring the shared counter up to date.
+        refreshAiUsage();
         // Stamp pantrySource on each new food + net the delta against
         // whatever the old plan had drawn — same pattern as Apply
         // recipe, so editing or removing an auto-filled food restores
@@ -1956,6 +1964,8 @@ const MacroCalculator = () => {
         market: getMarket(),
       });
       if (ai.kind === "ok") {
+        // The server debited this call — bring the shared counter up to date.
+        refreshAiUsage();
         if (!(await applyDayPlan(forDay, baseMeals, ai.meals))) {
           setMealPlanMessage(STALE_PLAN_MESSAGE);
           setTimeout(() => setMealPlanMessage(""), 6000);
@@ -2053,6 +2063,8 @@ const MacroCalculator = () => {
         market: getMarket(),
       });
       if (ai.kind === "ok") {
+        // The server debited this call — bring the shared counter up to date.
+        refreshAiUsage();
         // The AI was told to return exactly one meal. Match by name
         // (case-insensitive) so a stray model quirk doesn't drop the
         // payload. If for some reason multiple meals came back, take

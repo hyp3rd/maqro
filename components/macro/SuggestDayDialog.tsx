@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useRefreshAiUsage } from "@/hooks/use-ai-usage";
 import {
   requestDaySuggestion,
   type SuggestDayResult,
@@ -88,6 +89,7 @@ export function SuggestDayDialog({
   const [state, setState] = useState<ViewState>({ status: "loading" });
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const autoRan = useRef(false);
+  const refreshAiUsage = useRefreshAiUsage();
 
   // The parent mounts this fresh per open, so `target`/`logged`/`meals` here
   // are the day's current values. Suggest once on mount; Shuffle re-runs it.
@@ -131,8 +133,10 @@ export function SuggestDayDialog({
         };
       }),
     });
+    // A successful suggestion was debited — bring the shared counter up to date.
+    if (result.kind === "ok") refreshAiUsage();
     setState(resultToState(result, recipes, meals));
-  }, [target, logged, meals]);
+  }, [target, logged, meals, refreshAiUsage]);
 
   // Guarded so the effect doesn't re-fire if `suggest`'s identity changes from
   // a parent re-render — it runs exactly once on mount.

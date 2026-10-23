@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useRefreshAiUsage } from "@/hooks/use-ai-usage";
 import { clientFetch } from "@/lib/auth/client-fetch";
 import {
   parseServingsCount,
@@ -126,6 +127,7 @@ function ImportRecipeBody({
     sourceUrl: string;
     source: ImportSource;
   } | null>(null);
+  const refreshAiUsage = useRefreshAiUsage();
 
   async function submit() {
     setError(null);
@@ -165,6 +167,10 @@ function ImportRecipeBody({
         setError(data.error ?? "Couldn't import that URL.");
         return;
       }
+      // Only the AI extraction path is debited (a JSON-LD import, or an AI
+      // attempt that fell back to it, costs nothing) — refresh the shared
+      // counter when the server says the AI produced this recipe.
+      if (data.source === "ai") refreshAiUsage();
       setParsed({
         recipe: data.recipe,
         sourceUrl: data.sourceUrl ?? url,

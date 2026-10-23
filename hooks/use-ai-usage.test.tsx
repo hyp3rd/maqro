@@ -6,11 +6,19 @@ import type { Tier } from "@/lib/billing/tiers";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { User } from "@supabase/supabase-js";
-import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import {
   AiUsageProvider,
   resolveTierState,
   useAiUsage,
+  useRefreshAiUsage,
   useTier,
 } from "./use-ai-usage";
 
@@ -28,7 +36,8 @@ vi.mock("@/hooks/use-user", () => ({
   }),
 }));
 
-const fetchMock = vi.fn<(input: string) => Promise<Response>>();
+const fetchMock =
+  vi.fn<(input: string, init?: RequestInit) => Promise<Response>>();
 
 function asUser(id: string): User {
   return { id } as User;
@@ -47,6 +56,31 @@ function usageResponse(tier: Tier): Response {
 }
 
 const offline = () => Promise.reject(new TypeError("Failed to fetch"));
+
+/** A free user's usage counter at `used` of 10. */
+function usedResponse(used: number): Response {
+  return new Response(
+    JSON.stringify({ used, cap: 10, tier: "free", isPremium: false }),
+    { status: 200, headers: { "content-type": "application/json" } },
+  );
+}
+
+/** A live-usage reader, like Profile's AI usage card. */
+function UsageReader() {
+  const { state } = useAiUsage();
+  return (
+    <p data-testid="usage">
+      {state.status === "ok" ? `used ${state.data.used}` : state.status}
+    </p>
+  );
+}
+
+/** The app shell: a tier reader that is always mounted, and a usage reader
+ *  that mounts only when its view opens. */
+function Shell({ profileOpen }: { profileOpen: boolean }) {
+  useTier();
+  return profileOpen ? <UsageReader /> : null;
+}
 
 function wrapper({ children }: { children: ReactNode }) {
   return <AiUsageProvider>{children}</AiUsageProvider>;
@@ -218,6 +252,62 @@ describe("AiUsageProvider / useTier", () => {
     await waitFor(() => expect(result.current.a.tier).toBe("pro"));
     expect(result.current.b).toEqual(result.current.a);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("a usage reader mounted later re-fetches and shows the newer count", async () => {
+    fetchMock
+      .mockResolvedValueOnce(usedResponse(2))
+      .mockResolvedValueOnce(usedResponse(5));
+    const { rerender } = render(
+      <AiUsageProvider>
+        <Shell profileOpen={false} />
+      </AiUsageProvider>,
+    );
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    // Let the app-load answer (2) settle before the user opens Profile.
+    await act(async () => {});
+
+    // AI calls happened elsewhere in the meantime; opening Profile must not
+    // show the app-load count.
+    rerender(
+      <AiUsageProvider>
+        <Shell profileOpen />
+      </AiUsageProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("usage").textContent).toBe("used 5"),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("readers mounting with the provider share its first fetch", async () => {
+    fetchMock.mockResolvedValue(usedResponse(3));
+    render(
+      <AiUsageProvider>
+        <Shell profileOpen />
+        <UsageReader />
+      </AiUsageProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getAllByTestId("usage")[0]?.textContent).toBe("used 3"),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("useRefreshAiUsage re-fetches on demand and never fetches by itself", async () => {
+    fetchMock
+      .mockResolvedValueOnce(usageResponse("free"))
+      .mockResolvedValueOnce(usageResponse("pro"));
+    const { result } = renderHook(
+      () => ({ tier: useTier(), refresh: useRefreshAiUsage() }),
+      { wrapper },
+    );
+    await waitFor(() => expect(result.current.tier.tier).toBe("free"));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    act(() => result.current.refresh());
+    await waitFor(() => expect(result.current.tier.tier).toBe("pro"));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("throws when used outside the provider", () => {

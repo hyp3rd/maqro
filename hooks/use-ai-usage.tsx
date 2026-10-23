@@ -13,6 +13,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -83,7 +84,12 @@ export function resolveTierState(
   }
 }
 
-type AiUsageContextValue = UseAiUsageResult & { tier: TierState };
+type AiUsageContextValue = UseAiUsageResult & {
+  tier: TierState;
+  /** `refresh()` unless a request is already pending or in flight — a reader
+   *  mounting then gets that request's (fresh) answer anyway. */
+  refreshIfIdle: () => void;
+};
 
 const AiUsageContext = createContext<AiUsageContextValue | null>(null);
 
@@ -95,9 +101,12 @@ const AiUsageContext = createContext<AiUsageContextValue | null>(null);
  *
  *  Auto-refresh:
  *    - On mount / when the signed-in user changes (initial fetch)
+ *    - When a live-usage reader (`useAiUsage`) mounts, e.g. opening Profile,
+ *      unless a request is already in flight (`refreshIfIdle`)
+ *    - After every successful AI call (`useRefreshAiUsage`), so the counter
+ *      and the 80% near-cap warning reflect the debit
  *    - Window focus (`visibilitychange` → if the tab becomes visible,
- *      re-fetch). Covers the common case where the user makes an AI call,
- *      switches back to Settings, and expects to see the bumped counter.
+ *      re-fetch), for usage spent on another device or tab
  *    - `refresh()` for explicit triggers. */
 export function AiUsageProvider({ children }: { children: ReactNode }) {
   const { user, isLoaded } = useUser();
@@ -114,8 +123,18 @@ export function AiUsageProvider({ children }: { children: ReactNode }) {
   // route through it so the data path stays single.
   const [tick, setTick] = useState(0);
 
+  // True from mount until the first request settles, and again whenever a
+  // request is in flight: a usage reader mounting meanwhile needn't trigger
+  // another fetch. It starts true because on first load the readers' mount
+  // effects run before this provider's. Read only from callbacks.
+  const requestPending = useRef(true);
+
   const refresh = useCallback(() => {
     setTick((t) => t + 1);
+  }, []);
+
+  const refreshIfIdle = useCallback(() => {
+    if (!requestPending.current) setTick((t) => t + 1);
   }, []);
 
   useEffect(() => {
@@ -124,8 +143,11 @@ export function AiUsageProvider({ children }: { children: ReactNode }) {
     // gate states are derived below, so there's nothing to set here.
     if (!isLoaded || !userId) return;
     let cancelled = false;
+    requestPending.current = true;
     const settle = (state: AiUsageState) => {
-      if (!cancelled) setSettled({ userId, state });
+      if (cancelled) return;
+      requestPending.current = false;
+      setSettled({ userId, state });
     };
     fetch("/api/billing/usage")
       .then(async (res) => {
@@ -198,11 +220,12 @@ export function AiUsageProvider({ children }: { children: ReactNode }) {
     () => ({
       state,
       refresh,
+      refreshIfIdle,
       tier: resolveTierState(state, () =>
         userId ? readCachedTier(userId) : null,
       ),
     }),
-    [state, refresh, userId],
+    [state, refresh, refreshIfIdle, userId],
   );
 
   return <AiUsageContext value={value}>{children}</AiUsageContext>;
@@ -219,10 +242,25 @@ function useAiUsageContext(hook: string): AiUsageContextValue {
 /** The caller's current-month AI usage from the shared provider. Returns
  *  `{ state, refresh }` so consumers can render the four states (loading /
  *  anon / ok / error) and trigger a manual re-fetch. Live data only — for
- *  feature gating use `useTier`, which also survives an offline fetch. */
+ *  feature gating use `useTier`, which also survives an offline fetch.
+ *
+ *  Mounting a reader re-fetches the shared state (unless a request is
+ *  already in flight), so the counter is current whenever it is shown —
+ *  e.g. opening Profile after spending AI calls elsewhere in the app. */
 export function useAiUsage(): UseAiUsageResult {
-  const { state, refresh } = useAiUsageContext("useAiUsage");
+  const { state, refresh, refreshIfIdle } = useAiUsageContext("useAiUsage");
+  useEffect(() => {
+    refreshIfIdle();
+  }, [refreshIfIdle]);
   return useMemo(() => ({ state, refresh }), [state, refresh]);
+}
+
+/** The shared `refresh()` for AI call sites: call it after an AI request
+ *  returns 2xx, so every usage reader (counter, near-cap warning) reflects
+ *  the call the server just debited. Unlike `useAiUsage`, this hook never
+ *  fetches by itself. */
+export function useRefreshAiUsage(): () => void {
+  return useAiUsageContext("useRefreshAiUsage").refresh;
 }
 
 /** The tier to gate client-side features on (see `TierState`). */
