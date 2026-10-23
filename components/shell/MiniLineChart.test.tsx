@@ -158,6 +158,64 @@ describe("MiniLineChart axes", () => {
     }
   });
 
+  /** Oct 10-23: a span (13 days) no 1/2/3-day step lands on twice. */
+  const fortnight: LinePoint[] = Array.from({ length: 14 }, (_, i) => ({
+    x: day(10 + i),
+    y: 1500 + (i % 3) * 200,
+  }));
+
+  it.each([
+    // A narrow phone card: the week's first and last day, and its middle.
+    ["week", 200, calories, ["Oct 17", "Oct 20", "Oct 23"]],
+    ["week", 320, calories, ["Oct 17", "Oct 19", "Oct 21", "Oct 23"]],
+    [
+      "week",
+      680,
+      calories,
+      ["Oct 17", "Oct 18", "Oct 19", "Oct 20", "Oct 21", "Oct 22", "Oct 23"],
+    ],
+    // Room for two labels only: both ends, not a lone Monday or two.
+    ["fortnight", 200, fortnight, ["Oct 10", "Oct 23"]],
+    ["fortnight", 260, fortnight, ["Oct 10", "Oct 23"]],
+  ] as const)(
+    "dates a %s at %ipx from its first to its last day, evenly, without overlap",
+    (_name, width, data, expected) => {
+      for (const variant of ["line", "bar"] as const) {
+        const { container, unmount } = render(
+          <MiniLineChart
+            data={[...data]}
+            xType="day"
+            variant={variant}
+          />,
+        );
+        resizeAll(width);
+        const labels = [...svg(container).querySelectorAll("text")].filter(
+          (t) => /^Oct \d+$/.test(t.textContent ?? ""),
+        );
+        expect({ variant, dates: labels.map((t) => t.textContent) }).toEqual({
+          variant,
+          dates: expected,
+        });
+        // Label boxes (12px mono: 0.6em per glyph) never touch, and stay
+        // inside the chart.
+        const boxes = labels.map((t) => {
+          const x = Number(t.getAttribute("x"));
+          const half = ((t.textContent ?? "").length * 7.2) / 2;
+          return { left: x - half, right: x + half };
+        });
+        for (let i = 1; i < boxes.length; i++) {
+          expect(boxes[i]?.left ?? 0).toBeGreaterThan(boxes[i - 1]?.right ?? 0);
+        }
+        expect(boxes[0]?.left ?? -1).toBeGreaterThanOrEqual(0);
+        expect(boxes[boxes.length - 1]?.right ?? Infinity).toBeLessThanOrEqual(
+          width,
+        );
+        unmount();
+        FakeResizeObserver.all = [];
+      }
+    },
+  );
+
   it("keeps the date labels evenly stepped at every width", () => {
     // Starts on a one-digit day ("Oct 1") but most labels have two digits.
     const month: LinePoint[] = Array.from({ length: 31 }, (_, i) => ({

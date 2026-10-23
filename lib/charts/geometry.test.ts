@@ -175,24 +175,74 @@ describe("dayTicks", () => {
       "Oct 19",
       "Oct 26",
     ]);
-    // ...but a caller whose labels need 8 days of room rejects them, and
-    // gets the next step whose every tick has that room.
+    // ...but a caller whose labels need 8 days of room rejects weekly
+    // ticks, and gets the next step whose every tick has that room.
+    const nov = (d: number) =>
+      dayIndexFromIsoDate(`2026-11-${String(d).padStart(2, "0")}`);
     const seen: string[][] = [];
     const roomy = dayTicks(
       oct(1),
-      oct(30),
+      nov(30),
       (t) => {
         seen.push(t.map((x) => x.label));
         return (
-          t.length <= 4 &&
+          t.length <= 10 &&
           t.every((x, i) => i === 0 || x.day - (t[i - 1]?.day ?? 0) >= 8)
         );
       },
       "en-US",
     );
-    expect(roomy.map((x) => x.label)).toEqual(["Oct 5", "Oct 19"]);
+    expect(roomy.map((x) => x.label)).toEqual([
+      "Oct 5",
+      "Oct 19",
+      "Nov 2",
+      "Nov 16",
+      "Nov 30",
+    ]);
     // The caller judges each step with the labels it would draw.
-    expect(seen).toContainEqual(["Oct 5", "Oct 12", "Oct 19", "Oct 26"]);
+    expect(seen).toContainEqual([
+      "Oct 5",
+      "Oct 12",
+      "Oct 19",
+      "Oct 26",
+      "Nov 2",
+      "Nov 9",
+      "Nov 16",
+      "Nov 23",
+      "Nov 30",
+    ]);
+  });
+
+  it("labels both ends of a narrow axis instead of a lone calendar tick", () => {
+    // Three labels fit, but no 1/2/3-day step does over Oct 1-10, and the
+    // only Monday is Oct 5: one label, at neither end.
+    expect(
+      dayTicks(oct(1), oct(10), atMost(3), "en-US").map((x) => x.label),
+    ).toEqual(["Oct 1", "Oct 10"]);
+    // Evenly filled in between as far as the room allows: steps that
+    // divide the 9-day span land on both ends.
+    expect(
+      dayTicks(oct(1), oct(10), atMost(4), "en-US").map((x) => x.label),
+    ).toEqual(["Oct 1", "Oct 4", "Oct 7", "Oct 10"]);
+    // Two Mondays (Oct 12, 19) fit, but say less than the range's ends.
+    expect(
+      dayTicks(oct(10), oct(23), atMost(2), "en-US").map((x) => x.label),
+    ).toEqual(["Oct 10", "Oct 23"]);
+    // A calendar step with three or more labels is kept.
+    expect(
+      dayTicks(oct(1), oct(30), atMost(5), "en-US").map((x) => x.label),
+    ).toEqual(["Oct 5", "Oct 12", "Oct 19", "Oct 26"]);
+  });
+
+  it("keeps a calendar tick over a year or more, where day labels repeat", () => {
+    // "Aug 15" ... "Oct 15" would not say which year.
+    const t = dayTicks(
+      dayIndexFromIsoDate("2025-08-15"),
+      dayIndexFromIsoDate("2026-10-15"),
+      atMost(2),
+      "en-US",
+    );
+    expect(t.map((x) => x.label)).toEqual(["2026", "Jul"]);
   });
 
   it("labels the first day alone when nothing fits", () => {

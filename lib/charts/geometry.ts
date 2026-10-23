@@ -165,7 +165,9 @@ function daysFor(step: DayStep, first: number, last: number): number[] {
  *  every 1/2/3 days, Mondays (weekly / fortnightly), or month starts -
  *  whichever is the finest step whose ticks `fits` accepts. Labels are
  *  locale-formatted ("Oct 23", or "Oct" for month steps, with the year on
- *  January ticks when the range spans more than one year).
+ *  January ticks when the range spans more than one year). When that
+ *  leaves two labels or fewer, the first and last days are labelled
+ *  instead, evenly filled in between as far as they fit.
  *
  *  Whether labels fit is the caller's call, because only it knows where
  *  each one lands: neither a count nor a spacing in days can see that an
@@ -196,6 +198,13 @@ export function dayTicks(
     year: "numeric",
     timeZone: "UTC",
   });
+  const dayTick = (day: number): DayTick => ({
+    day,
+    label: dayFmt.format(dateFromDayIndex(day)),
+  });
+  // Nothing fits (not even one tick of the coarsest step): label the first
+  // day alone.
+  let calendar: DayTick[] = [dayTick(lo)];
   for (const step of DAY_STEPS) {
     const days = daysFor(step, lo, hi);
     if (days.length === 0) continue;
@@ -209,11 +218,25 @@ export function dayTicks(
             : monthFmt;
       return { day, label: fmt.format(date) };
     });
+    if (fits(ticks)) {
+      calendar = ticks;
+      break;
+    }
+  }
+  // A narrow axis fits only one or two calendar ticks, often at neither end
+  // ("Oct 5" alone over Oct 1-10). There, label the first and last days
+  // instead, with as many days between them as fit, on a step that divides
+  // the span so it lands on both ends. Only within a year, where a day
+  // label ("Oct 23") can't name two different days.
+  const span = hi - lo;
+  if (calendar.length > 2 || span <= 0 || span >= 365) return calendar;
+  for (let n = 1; n <= span; n++) {
+    if (span % n !== 0) continue;
+    const ticks: DayTick[] = [];
+    for (let d = lo; d <= hi; d += n) ticks.push(dayTick(d));
     if (fits(ticks)) return ticks;
   }
-  // Nothing fits (not even one tick of the coarsest step): label the first
-  // day alone.
-  return [{ day: lo, label: dayFmt.format(dateFromDayIndex(lo)) }];
+  return calendar;
 }
 
 function dayFormat(locale?: string): Intl.DateTimeFormat {
