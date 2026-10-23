@@ -23,7 +23,7 @@ import {
   todayKey,
   upsertMealSchedule,
 } from "@/lib/db";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { toast } from "sonner";
 import { ServingsStepper } from "./ServingsStepper";
 import type { Meal, Recipe } from "./types";
@@ -55,6 +55,7 @@ export function BatchApplyRecipeDialog({
   editing,
 }: Props) {
   const today = todayKey();
+  const daysLabelId = useId();
   // Default range: today through six days out = a one-week meal plan. Most
   // "Sunday cook for the week" users want exactly this. When editing, the
   // existing schedule's range / days / slots / scale pre-fill instead.
@@ -207,13 +208,13 @@ export function BatchApplyRecipeDialog({
 
           <div className="space-y-1.5">
             <p
-              id="batch-days-label"
+              id={daysLabelId}
               className="text-xs font-medium text-muted-foreground"
             >
               Days of the week
             </p>
             <WeekdayPicker
-              aria-labelledby="batch-days-label"
+              aria-labelledby={daysLabelId}
               value={[...allowedDows]}
               onValueChange={(days) => setAllowedDows(new Set(days))}
             />
