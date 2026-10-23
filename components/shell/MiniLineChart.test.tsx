@@ -564,23 +564,26 @@ describe("MiniLineChart accessibility", () => {
       </>,
     );
     const summaries = [...container.querySelectorAll("details > summary")];
-    // The name comes from the content: the visible words first (so a
-    // speech-input user can say them), then the chart, read only by AT.
+    // An explicit name (aria-label wins over the content in the accessible
+    // name computation), so no word boundary hangs on whitespace that
+    // layout may collapse. It starts with the visible words, so a
+    // speech-input user can still say what they see (WCAG 2.5.3).
+    // (getByRole can't reach a <summary>: Testing Library's role table
+    // gives it no implicit role, as ARIA in HTML lists none.)
+    expect(screen.getByLabelText("Show data table for Weight")).toBe(
+      summaries[0],
+    );
+    expect(screen.getByLabelText("Show data table for Calories per day")).toBe(
+      summaries[1],
+    );
+    // No title: nothing to name it after, so it keeps its content's name.
+    expect(summaries[2]?.hasAttribute("aria-label")).toBe(false);
+    // The visible words are the same on every chart.
     expect(summaries.map((s) => s.textContent)).toEqual([
-      "Show data table for Weight",
-      "Show data table for Calories per day",
-      // No title: nothing to name it after, so no made-up name either.
+      "Show data table",
+      "Show data table",
       "Show data table",
     ]);
-    for (const s of summaries) {
-      const visible = [...s.childNodes]
-        .filter((n) => n.nodeType === Node.TEXT_NODE)
-        .map((n) => n.textContent)
-        .join("");
-      expect(visible).toBe("Show data table");
-      const hidden = s.querySelector("span");
-      if (hidden) expect(hidden.className).toBe("sr-only");
-    }
   });
 });
 

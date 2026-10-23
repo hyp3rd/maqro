@@ -103,6 +103,9 @@ const X_LABEL_GAP_PX = 14;
 
 const monoWidth = (s: string) => s.length * MONO_CHAR_PX;
 
+/** Visible text of the data-table disclosure, and the start of its name. */
+const TABLE_TOGGLE = "Show data table";
+
 /** Lightweight line / bar chart in pure SVG, drawn at the container's real
  *  pixel width (so labels are true-size on phones). No charting library:
  *  ticks, paths and bar layout come from lib/charts/geometry.ts.
@@ -750,11 +753,15 @@ export function MiniLineChart({
           reader. Off paper - the printed chart is the report's form. */}
       <details className="print-hide mt-1 text-xs">
         {/* A page shows several charts, so each disclosure is named after
-            its chart. The visible words stay first in the name, so a
+            its chart, explicitly: a name pieced together from the content
+            would hang its word break on whitespace that layout may
+            collapse. The visible words stay first in the name, so a
             speech-input user can still say what they see (WCAG 2.5.3). */}
-        <summary className="inline-flex min-h-8 cursor-pointer items-center rounded-sm text-muted-foreground hover:text-foreground coarse:min-h-11">
-          Show data table
-          {title && <span className="sr-only"> for {title}</span>}
+        <summary
+          aria-label={title ? `${TABLE_TOGGLE} for ${title}` : undefined}
+          className="inline-flex min-h-8 cursor-pointer items-center rounded-sm text-muted-foreground hover:text-foreground coarse:min-h-11"
+        >
+          {TABLE_TOGGLE}
         </summary>
         <div className="mt-1 max-h-64 overflow-auto rounded-md border border-border/60">
           <table className="w-full text-left text-xs tabular-nums">
