@@ -105,6 +105,10 @@
     --micro-vitamin-b12: 320 55% 55%;
 
     --radius: 0.75rem;
+
+    /* Geist carries both body and display; next/font only sets
+       --font-sans and --font-mono (app/layout.tsx). */
+    --font-display: var(--font-sans);
   }
 
   /* Screen-only so print always resolves the light tokens above, whatever
@@ -195,33 +199,13 @@
     text-size-adjust: 100%;
   }
   body {
-    /* Inter OpenType features we want app-wide:
-     *
-     *   rlig - required ligatures (default on, explicit anyway)
-     *   calt - contextual alternates (kerning-like adjustments)
-     *   cv11 - single-storey "a" (more modern, less storybook)
-     *   ss03 - alternate "G" (less fishhook, more geometric)
-     *   ss04 - alternate "0" (zero with dot, distinguishes from O
-     *           in mixed contexts like share slugs and capture IDs)
-     *
-     * These are all subtle - none of them change the texture of
-     * body text in a way the casual user would notice. They make
-     * the *display* of numbers and edge-case glyphs nicer without
-     * shifting the overall feel. */
-    font-feature-settings:
-      "rlig" 1,
-      "calt" 1,
-      "cv11" 1,
-      "ss03" 1,
-      "ss04" 1;
     /* Smoother momentum scrolling inside scroll containers on iOS. */
     -webkit-overflow-scrolling: touch;
   }
 
-  /* Display typeface for headings + heading-shaped content.
-   * `font-display` resolves to Manrope via the Tailwind config; the
-   * fallback chain in that config covers the FOUT window with a
-   * metric-similar system font so widths don't visibly shift.
+  /* Headings: Geist 600 with tight tracking (the Instrument title style).
+   * `font-display` aliases Geist (see --font-display above); utilities
+   * such as `font-medium` still override the weight per heading.
    *
    * `text-wrap: balance` keeps multi-line headings visually
    * symmetric - the polish that separates "good" from "considered".
@@ -229,12 +213,8 @@
   h1,
   h2,
   h3 {
-    font-family: var(--font-display), var(--font-sans), system-ui, sans-serif;
-    font-feature-settings:
-      "ss01" 1,
-      "ss03" 1,
-      "ss04" 1,
-      "calt" 1;
+    font-family: var(--font-display), system-ui, sans-serif;
+    font-weight: 600;
     letter-spacing: -0.02em;
     text-wrap: balance;
   }

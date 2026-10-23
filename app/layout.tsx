@@ -5,36 +5,26 @@ import { THEME_COLOR } from "@/lib/design/palette";
 import type { Metadata, Viewport } from "next";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
-import { Inter, JetBrains_Mono, Manrope } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
 import "./globals.css";
 
-/** Three-font system:
- *    - Inter (body)         - the workhorse: dense UI, forms, small text.
- *      Excellent at 11–14 px where most of the app lives.
- *    - Manrope (display)    - slightly more character at heading sizes.
- *      Closed apertures and a more confident "g" / "a" / "R" give h1/h2
- *      a different texture from body without clashing.
- *    - JetBrains Mono       - monospace for macro tables, version chips,
- *      slugs. Tabular by default.
+/** Two-family system (the "Instrument" direction):
+ *    - Geist       - UI, body and headings. `--font-display` aliases it in
+ *      app/globals.css, so `font-display` and the h1–h3 rule keep working.
+ *    - Geist Mono  - readouts, times, targets, macro tables, slugs.
+ *  Both are variable fonts, so every weight comes from one file each.
  *
  *  `display: "swap"` everywhere - render in fallback first, swap when
  *  ready. The brief FOUT is preferable to a blank-text FOIT for the
  *  perceived-speed budget. */
-const inter = Inter({
+const sans = Geist({
   subsets: ["latin"],
   variable: "--font-sans",
   display: "swap",
 });
 
-const manrope = Manrope({
-  subsets: ["latin"],
-  variable: "--font-display",
-  display: "swap",
-  weight: ["500", "600", "700", "800"],
-});
-
-const mono = JetBrains_Mono({
+const mono = Geist_Mono({
   subsets: ["latin"],
   variable: "--font-mono",
   display: "swap",
@@ -167,7 +157,7 @@ export default async function RootLayout({
   return (
     <html
       lang={locale}
-      className={`${inter.variable} ${manrope.variable} ${mono.variable}`}
+      className={`${sans.variable} ${mono.variable}`}
       suppressHydrationWarning
     >
       <body className="font-sans antialiased">
