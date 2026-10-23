@@ -62,7 +62,8 @@ const offlineGetUser: GetUserResult = {
   error: new AuthRetryableFetchError("Failed to fetch", 0),
 };
 
-const fetchMock = vi.fn<(input: string) => Promise<Response>>();
+const fetchMock =
+  vi.fn<(input: string, init?: RequestInit) => Promise<Response>>();
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -185,6 +186,9 @@ describe("offline start: cached Pro tier and phase target", () => {
     await waitFor(() => expect(result.current.phasesEnabled).toBe(true));
     expect(result.current.todayTargets.targetCalories).toBe(1900);
     expect(result.current.dayTargets.targetCalories).toBe(1900);
-    expect(fetchMock).toHaveBeenCalledWith("/api/billing/usage");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/billing/usage",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 });

@@ -16,6 +16,7 @@ import {
 } from "@testing-library/react";
 import {
   AiUsageProvider,
+  USAGE_FETCH_TIMEOUT_MS,
   resolveTierState,
   useAiUsage,
   useRefreshAiUsage,
@@ -63,6 +64,17 @@ function usedResponse(used: number): Response {
     JSON.stringify({ used, cap: 10, tier: "free", isPremium: false }),
     { status: 200, headers: { "content-type": "application/json" } },
   );
+}
+
+/** Degraded network ("lie-fi"): the request never answers, and only
+ *  rejects when its signal aborts — what a real fetch does. */
+function hang(_input: string, init?: RequestInit): Promise<Response> {
+  return new Promise<Response>((_resolve, reject) => {
+    const signal = init?.signal;
+    signal?.addEventListener("abort", () => reject(signal.reason), {
+      once: true,
+    });
+  });
 }
 
 /** A live-usage reader, like Profile's AI usage card. */
@@ -308,6 +320,63 @@ describe("AiUsageProvider / useTier", () => {
     act(() => result.current.refresh());
     await waitFor(() => expect(result.current.tier.tier).toBe("pro"));
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("a superseded request is aborted", async () => {
+    fetchMock
+      .mockImplementationOnce(hang)
+      .mockResolvedValueOnce(usedResponse(1));
+    const { result } = renderHook(() => useRefreshAiUsage(), { wrapper });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    act(() => result.current());
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+  });
+
+  describe("degraded network (fetch hangs instead of rejecting)", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("times out into the error path, where the cached tier applies", async () => {
+      writeCachedTier("u1", "pro");
+      fetchMock.mockImplementation(hang);
+      const { result } = renderHook(
+        () => ({ tier: useTier(), usage: useAiUsage() }),
+        { wrapper },
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(USAGE_FETCH_TIMEOUT_MS - 1);
+      });
+      // Still inside the budget: no answer yet, so no tier.
+      expect(result.current.usage.state.status).toBe("loading");
+      expect(result.current.tier).toEqual({ tier: null, resolved: false });
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(result.current.usage.state.status).toBe("error");
+      expect(result.current.tier).toEqual({ tier: "pro", resolved: true });
+      expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+    });
+
+    it("a response inside the budget is never cut off", async () => {
+      fetchMock.mockResolvedValue(usageResponse("pro"));
+      const { result } = renderHook(() => useAiUsage(), { wrapper });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.state.status).toBe("ok");
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(USAGE_FETCH_TIMEOUT_MS * 2);
+      });
+      expect(result.current.state.status).toBe("ok");
+    });
   });
 
   it("throws when used outside the provider", () => {

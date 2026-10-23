@@ -84,6 +84,15 @@ export function resolveTierState(
   }
 }
 
+/** How long the usage request may take before it counts as failed. On a
+ *  degraded network ("lie-fi") fetch can hang for minutes instead of
+ *  rejecting; without a bound the state would sit at "loading" (tier
+ *  `null`) and a Pro user would see their non-phase target the whole time.
+ *  Timing out lands on the "error" path, where the cached tier applies. The
+ *  endpoint is a single indexed read, so a healthy response is well inside
+ *  this budget even on a cold start. */
+export const USAGE_FETCH_TIMEOUT_MS = 8_000;
+
 type AiUsageContextValue = UseAiUsageResult & {
   tier: TierState;
   /** `refresh()` unless a request is already pending or in flight — a reader
@@ -107,7 +116,10 @@ const AiUsageContext = createContext<AiUsageContextValue | null>(null);
  *      and the 80% near-cap warning reflect the debit
  *    - Window focus (`visibilitychange` → if the tab becomes visible,
  *      re-fetch), for usage spent on another device or tab
- *    - `refresh()` for explicit triggers. */
+ *    - `refresh()` for explicit triggers.
+ *
+ *  Each request is bounded by `USAGE_FETCH_TIMEOUT_MS` and aborted when it is
+ *  superseded (a newer refresh, a user switch) or the provider unmounts. */
 export function AiUsageProvider({ children }: { children: ReactNode }) {
   const { user, isLoaded } = useUser();
   const userId = user?.id ?? null;
@@ -144,12 +156,27 @@ export function AiUsageProvider({ children }: { children: ReactNode }) {
     if (!isLoaded || !userId) return;
     let cancelled = false;
     requestPending.current = true;
+    // AbortController + timer rather than AbortSignal.timeout/any: `any` needs
+    // Safari 17.4, above Next's default browser floor (Safari 16.4), and the
+    // controller also cancels a superseded request on cleanup.
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () =>
+        controller.abort(
+          new DOMException(
+            `Usage request timed out after ${USAGE_FETCH_TIMEOUT_MS / 1000}s.`,
+            "TimeoutError",
+          ),
+        ),
+      USAGE_FETCH_TIMEOUT_MS,
+    );
     const settle = (state: AiUsageState) => {
       if (cancelled) return;
+      clearTimeout(timeout);
       requestPending.current = false;
       setSettled({ userId, state });
     };
-    fetch("/api/billing/usage")
+    fetch("/api/billing/usage", { signal: controller.signal })
       .then(async (res) => {
         if (cancelled) return;
         if (res.status === 401) {
@@ -174,7 +201,9 @@ export function AiUsageProvider({ children }: { children: ReactNode }) {
         writeCachedTier(userId, data.tier);
         settle({ status: "ok", data });
       })
-      .catch((err) => {
+      .catch((err: unknown) => {
+        // A superseded request is aborted on cleanup and settles as a no-op
+        // (`cancelled`); a timed-out one rejects with the TimeoutError above.
         settle({
           status: "error",
           message: err instanceof Error ? err.message : "Couldn't load usage.",
@@ -182,6 +211,8 @@ export function AiUsageProvider({ children }: { children: ReactNode }) {
       });
     return () => {
       cancelled = true;
+      clearTimeout(timeout);
+      controller.abort();
     };
   }, [tick, userId, isLoaded]);
 
