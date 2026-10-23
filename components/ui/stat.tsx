@@ -23,7 +23,9 @@ export type StatProps = {
 /** A label + figure readout. Renders a `<div>` holding only `<dt>`/`<dd>`
  *  elements, so place it inside a `<dl>`: assistive tech then announces each
  *  label with its value. Layout is a two-column grid: label and `detail` on
- *  the first row, the figure (and `children`) spanning below. */
+ *  the first row, the figure (and `children`) spanning below. The DOM keeps
+ *  reading order (label, figure, detail, children); only `detail` is placed
+ *  explicitly, so the figure leads what is spoken. */
 export function Stat({
   label,
   value,
@@ -44,11 +46,6 @@ export function Stat({
       <dt className="min-w-0 truncate text-label font-medium text-muted-foreground">
         {label}
       </dt>
-      {detail !== undefined && (
-        <dd className="font-mono text-xs tabular-nums text-muted-foreground">
-          {detail}
-        </dd>
-      )}
       <dd
         className={cn(
           "col-span-2 font-mono font-semibold tabular-nums leading-tight text-foreground",
@@ -67,6 +64,13 @@ export function Stat({
         )}
         {note !== undefined && <span className="text-xs"> {note}</span>}
       </dd>
+      {detail !== undefined && (
+        // After the figure in the DOM, so assistive tech reads "Protein,
+        // 85 g, / 160 g"; placed back on the label row by the grid.
+        <dd className="col-start-2 row-start-1 font-mono text-xs tabular-nums text-muted-foreground">
+          {detail}
+        </dd>
+      )}
       {children !== undefined && <dd className="col-span-2">{children}</dd>}
     </div>
   );

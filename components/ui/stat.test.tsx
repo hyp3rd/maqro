@@ -63,6 +63,31 @@ describe("Stat", () => {
       Array.from(group.children).every((c) => ["DT", "DD"].includes(c.tagName)),
     ).toBe(true);
   });
+  it("reads the figure before the detail, keeping the detail on the label row", () => {
+    render(
+      <dl data-testid="dl">
+        <Stat
+          label="Protein"
+          value="85"
+          unit="g"
+          detail="/ 160 g"
+        />
+      </dl>,
+    );
+    const dl = screen.getByTestId("dl");
+    // Reading order is DOM order: "Protein, 85 g, / 160 g", not the old
+    // "Protein, / 160 g, 85 g".
+    expect(within(dl).getByRole("term").textContent).toBe("Protein");
+    expect(
+      within(dl)
+        .getAllByRole("definition")
+        .map((dd) => dd.textContent),
+    ).toEqual(["85 g", "/ 160 g"]);
+    // The grid still draws the detail at the end of the label row.
+    const detail = within(dl).getByText("/ 160 g");
+    expect(detail.className).toContain("row-start-1");
+    expect(detail.className).toContain("col-start-2");
+  });
 });
 
 describe("MacroStat", () => {
@@ -77,7 +102,7 @@ describe("MacroStat", () => {
       </dl>,
     );
     const dl = screen.getByTestId("dl");
-    expect(pairs(dl)).toEqual([["Protein", ["/ 160 g", "85 g", ""]]]);
+    expect(pairs(dl)).toEqual([["Protein", ["85 g", "/ 160 g", ""]]]);
     expect(
       within(dl)
         .getByRole("meter", { name: "Protein" })
