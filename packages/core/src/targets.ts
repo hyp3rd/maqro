@@ -2,12 +2,14 @@ import { addDays } from "./date";
 import { effectiveGoal } from "./goal-phases";
 import { computeMacros } from "./macros";
 import {
+  type FloorsExceedMeanCause,
   type ProteinBasis,
   type TrainingDayClass,
   classifyTrainingDay,
   distributeWeekCalories,
   explicitFatChoice,
   fatFloorLiftsChoice,
+  floorsExceedMeanCause,
   minDayKcal,
   normalizeProteinSetting,
   normalizeTrainingSchedule,
@@ -68,14 +70,18 @@ export type TrainingDayTargets = {
    *  on bodyweight) and for `referenceWeight`; `proteinBasis` alone can't
    *  tell the fallback from a chosen bodyweight setting. */
   bodyFatWouldChangeProtein: boolean;
-  /** Even the weekly-average day can't hold the protein setting, the fat
-   *  floor and the 1 g/kg carb floor together (`minDayKcal`) — the UI can
-   *  gently suggest a smaller deficit. Every day then sits at the mean, and
-   *  the floors give way in `proteinCeilingGrams`' order: the fat floor
-   *  holds, then protein ≥ 1.2 g/kg, then carbs ≥ 1 g/kg, then the rest of
-   *  the protein. When false, every planned day holds all of them: cycling
-   *  narrows its spread rather than plan a day that can't. */
-  floorsExceedMean: boolean;
+  /** `false`, or why even the weekly-average day can't hold the protein
+   *  setting, the fat floor and the 1 g/kg carb floor together (its kcal is
+   *  under `minDayKcal`) — what the UI should gently suggest
+   *  (`FloorsExceedMeanCause`): `"protein"` when a setting above 2.0 g/kg
+   *  is what doesn't fit (suggest a lower setting), else `"calories"`
+   *  (suggest a smaller deficit). Truthy exactly when the floors exceed the
+   *  mean. Every day then sits at the mean, and the floors give way in
+   *  `proteinCeilingGrams`' order: the fat floor holds, then protein ≥
+   *  1.2 g/kg, then carbs ≥ 1 g/kg, then the rest of the protein. When
+   *  false, every planned day holds all of them: cycling narrows its spread
+   *  rather than plan a day that can't. */
+  floorsExceedMean: false | FloorsExceedMeanCause;
   /** The fat floor raised the plan's fat above what the user's explicit fat
    *  choice (a `lowFat` diet type or a custom macro split) yields for the
    *  mean day — the UI's info note (`fatFloorLiftsChoice`). Carb-moving:
@@ -159,14 +165,13 @@ export function targetsForDate(
   const weekday = midnight.getDay();
   const classes = schedule.days.map(classifyTrainingDay);
   const dayClass = classes[weekday];
-  const protein = proteinGrams(
-    normalizeProteinSetting(profile.proteinSetting),
-    {
-      weightKg: profile.weight,
-      heightCm: profile.height,
-      bodyFatPct: ctx.bodyFatPct,
-    },
-  );
+  const setting = normalizeProteinSetting(profile.proteinSetting);
+  const body = {
+    weightKg: profile.weight,
+    heightCm: profile.height,
+    bodyFatPct: ctx.bodyFatPct,
+  };
+  const protein = proteinGrams(setting, body);
   const floors = {
     // Bodyweight, or the BMI > 30 protein weight without a body-fat
     // estimate: every per-kg floor follows the protein's weight.
@@ -212,7 +217,9 @@ export function targetsForDate(
       meanCalories: values.targetCalories,
       proteinBasis: protein.basis,
       bodyFatWouldChangeProtein: protein.bodyFatWouldChangeProtein,
-      floorsExceedMean: values.targetCalories < minDay,
+      floorsExceedMean:
+        values.targetCalories < minDay &&
+        floorsExceedMeanCause({ ...floors, setting, body }),
       fatFloorLifted: fatFloorLiftsChoice(week),
     },
   };

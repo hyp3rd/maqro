@@ -560,6 +560,40 @@ export function minDayKcal(
   );
 }
 
+/** Why even the weekly-average day can't hold the protein setting and the
+ *  macro floors (`training.floorsExceedMean`), so the UI can suggest the
+ *  change that helps:
+ *
+ *  - `protein`: the setting asks for more protein than the 2.0 g/kg default
+ *    would on the same basis and weight, and the mean day fits at 2.0 — a
+ *    high setting, typically with the mean at the BMR floor where a smaller
+ *    deficit can't add calories. Suggest a lower protein setting.
+ *  - `calories`: anything else (the mean doesn't fit even at 2.0, or the
+ *    setting is already at or under it). Suggest a smaller deficit. */
+export type FloorsExceedMeanCause = "protein" | "calories";
+
+/** The `FloorsExceedMeanCause` for a week whose mean is under `minDayKcal`.
+ *  `setting` and `body` are what `proteinGrams` read; the 2.0 g/kg
+ *  comparison keeps the setting's basis, so a lean-mass fallback (already
+ *  capped at 2.0 g/kg) is `calories`. The floors' kg is the same either
+ *  way: it depends on the body, not on the g/kg. */
+export function floorsExceedMeanCause(
+  input: MacroFloorInput & { setting: ProteinSetting; body: ProteinBody },
+): FloorsExceedMeanCause {
+  const asked = proteinGrams(input.setting, input.body);
+  const atDefault = proteinGrams(
+    {
+      ...input.setting,
+      gPerKg: Math.min(input.setting.gPerKg, DEFAULT_PROTEIN_SETTING.gPerKg),
+    },
+    input.body,
+  );
+  return atDefault.grams < asked.grams &&
+    input.meanKcal >= minDayKcal({ ...input, proteinGrams: atDefault.grams })
+    ? "protein"
+    : "calories";
+}
+
 /** What a training week's macro levels depend on: everything a day's split
  *  reads except the day's own calories. */
 export type WeekMacroInput = {

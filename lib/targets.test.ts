@@ -798,7 +798,8 @@ describe("targetsForDate — training days", () => {
     expect(days).toHaveLength(7);
     for (const d of days) {
       expect(d.training?.proteinBasis).toBe("referenceWeight");
-      expect(d.training?.floorsExceedMean).toBeTruthy();
+      // At 2.0 g/kg (112.5 g) the mean would fit: a protein cause.
+      expect(d.training?.floorsExceedMean).toBe("protein");
       expect(d.targetCalories).toBe(1212);
       expect([d.protein, d.carbs, d.fat]).toEqual([175, 60, 30]);
       expect(d.protein).toBeGreaterThanOrEqual(1.2 * 56.25);
@@ -826,9 +827,11 @@ describe("targetsForDate — training days", () => {
     for (const d of days) {
       expect(d.targetCalories).toBe(2155);
       // 3.4 g/kg (408 g) doesn't fit beside 60 g fat + 120 g carbs even on
-      // the mean day: protein gives way, and the UI is told.
+      // the mean day: protein gives way, and the UI is told that the
+      // setting is the cause — at its BMR floor a smaller deficit can't
+      // add calories, while 2.0 g/kg fits.
       expect(d.protein).toBe(280);
-      expect(d.training?.floorsExceedMean).toBe(true);
+      expect(d.training?.floorsExceedMean).toBe("protein");
       expect(d.fat).toBeGreaterThanOrEqual(60);
       expect(d.carbs).toBeGreaterThanOrEqual(120);
     }
@@ -840,6 +843,64 @@ describe("targetsForDate — training days", () => {
     );
     expect(byDefault.protein).toBe(240);
     expect(byDefault.training?.floorsExceedMean).toBe(false);
+  });
+
+  it("floors over the mean even at 2.0 g/kg: a calories cause", () => {
+    // 160 cm / 90 kg / 60 y sedentary woman (body fat 40%, so bodyweight
+    // basis) cutting at her 1,439 kcal BMR floor: 2.0 g/kg (180 g) + 45 g
+    // fat + 90 g carbs = 1,485 kcal don't fit, so a lower protein setting
+    // wouldn't help on its own.
+    const ctx = { ...FREE, bodyFatPct: 40 };
+    const p = profile({
+      gender: "female",
+      age: 60,
+      weight: 90,
+      height: 160,
+      activityLevel: "sedentary",
+      goal: "lose",
+      weeklyRateKg: 0.9,
+      manualTdee: null,
+      training: schedule(),
+    });
+    for (const proteinSetting of [
+      undefined,
+      { basis: "bodyweight" as const, gPerKg: 3.4 },
+    ]) {
+      const days =
+        weekTargets({ ...p, proteinSetting }, "2026-10-19", ctx)?.days ?? [];
+      expect(days).toHaveLength(7);
+      for (const d of days) {
+        expect(d.targetCalories).toBe(1439);
+        expect(d.training?.floorsExceedMean).toBe("calories");
+        // (1,439 − 405 − 360) / 4 = 168.5 → 165 g protein.
+        expect([d.protein, d.carbs, d.fat]).toEqual([165, 95, 45]);
+      }
+    }
+  });
+
+  it("floorsExceedMean flips exactly below minDayKcal", () => {
+    // 80 kg / 180 cm maintaining, 3.4 g/kg (272 g → 270): 4·270 + 9·45
+    // (max(0.5 g/kg, 20% of ~1,805 kcal) = 40.1 → 45) + 4·80 = 1,805 kcal.
+    const at = (manualTdee: number) =>
+      targetsForDate(
+        profile({
+          manualTdee,
+          training: schedule({ cycling: "off" }),
+          proteinSetting: { basis: "bodyweight", gPerKg: 3.4 },
+        }),
+        "2026-10-20",
+        FREE,
+      );
+    // A mean of exactly minDayKcal holds every floor and the full setting.
+    const fits = at(1805);
+    expect(fits.targetCalories).toBe(1805);
+    expect(fits.training?.floorsExceedMean).toBe(false);
+    expect([fits.protein, fits.carbs, fits.fat]).toEqual([270, 80, 45]);
+    // One kcal less and protein gives way; 2.0 g/kg would fit.
+    const short = at(1804);
+    expect(short.targetCalories).toBe(1804);
+    expect(short.training?.floorsExceedMean).toBe("protein");
+    expect([short.protein, short.carbs, short.fat]).toEqual([265, 85, 45]);
   });
 
   describe("floors hold across a grid of profiles and settings", () => {
@@ -903,7 +964,10 @@ describe("targetsForDate — training days", () => {
                         // Protein only gives way when even the mean day
                         // can't fit the floors — and then every day is it.
                         const tight = d.training?.floorsExceedMean;
-                        if (d.protein < wanted) expect(tight).toBe(true);
+                        if (d.protein < wanted) expect(tight).toBeTruthy();
+                        // At or under 2.0 g/kg a lower setting can't help.
+                        if (tight && gPerKg <= 2)
+                          expect(tight).toBe("calories");
                         if (tight) expect(d.targetCalories).toBe(mean);
                         else expect(d.protein).toBe(wanted);
                         // Within half a step of the moving macro.

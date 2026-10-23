@@ -9,6 +9,7 @@ import {
   explicitFatChoice,
   fatFloorGrams,
   fatFloorLiftsChoice,
+  floorsExceedMeanCause,
   normalizeProteinSetting,
   normalizeTrainingSchedule,
   partitionDayMacros,
@@ -1072,6 +1073,90 @@ describe("explicitFatChoice", () => {
         macroSplit: { protein: 0, carbs: 0, fat: 0 },
       }),
     ).toBe(false);
+  });
+});
+
+describe("floorsExceedMeanCause", () => {
+  /** 120 kg / 180 cm with a body-fat estimate (bodyweight basis), on a cut:
+   *  at 2.0 g/kg the floors need 4·240 + 9·60 + 4·120 = 1,980 kcal. */
+  const heavy = {
+    floorKg: 120,
+    goal: "lose" as const,
+    dietType: "balanced" as const,
+    explicitFatChoice: false,
+    body: { weightKg: 120, heightCm: 180, bodyFatPct: 32 },
+  };
+  type Row = [
+    string,
+    number,
+    Parameters<typeof floorsExceedMeanCause>[0]["setting"],
+    string,
+  ];
+  const rows: Row[] = [
+    [
+      "3.4 g/kg, fits at 2.0 → protein",
+      2155,
+      { basis: "bodyweight", gPerKg: 3.4 },
+      "protein",
+    ],
+    [
+      "3.4 g/kg, exactly fits at 2.0 → protein",
+      1980,
+      { basis: "bodyweight", gPerKg: 3.4 },
+      "protein",
+    ],
+    [
+      "3.4 g/kg, not even at 2.0 → calories",
+      1979,
+      { basis: "bodyweight", gPerKg: 3.4 },
+      "calories",
+    ],
+    [
+      "the 2.0 default itself → calories",
+      1979,
+      { basis: "bodyweight", gPerKg: 2 },
+      "calories",
+    ],
+    [
+      "a setting under 2.0 → calories",
+      1700,
+      { basis: "bodyweight", gPerKg: 1.6 },
+      "calories",
+    ],
+  ];
+  for (const [name, meanKcal, setting, cause] of rows) {
+    it(name, () => {
+      expect(floorsExceedMeanCause({ ...heavy, meanKcal, setting })).toBe(
+        cause,
+      );
+    });
+  }
+
+  it("lean mass keeps its basis: 2.6 → 2.0 g/kg of lean mass", () => {
+    // 80 kg at 20% body fat: 2.0 × 64 = 128 g → 4·130 + 9·40 + 4·80 = 1,200.
+    const lean = {
+      floorKg: 80,
+      goal: "lose" as const,
+      dietType: "balanced" as const,
+      explicitFatChoice: false,
+      setting: { basis: "leanMass" as const, gPerKg: 2.6 },
+    };
+    const body = { weightKg: 80, heightCm: 180, bodyFatPct: 20 };
+    expect(floorsExceedMeanCause({ ...lean, body, meanKcal: 1200 })).toBe(
+      "protein",
+    );
+    expect(floorsExceedMeanCause({ ...lean, body, meanKcal: 1199 })).toBe(
+      "calories",
+    );
+    // Without an estimate the fallback is already 2.0 g/kg bodyweight: a
+    // lower setting can't help.
+    expect(
+      floorsExceedMeanCause({
+        ...lean,
+        body: { weightKg: 80, heightCm: 180 },
+        meanKcal: 1500,
+      }),
+    ).toBe("calories");
   });
 });
 
