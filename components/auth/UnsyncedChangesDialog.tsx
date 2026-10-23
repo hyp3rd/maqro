@@ -62,7 +62,7 @@ export function UnsyncedChangesDialog({
               onConfirm();
             }}
             disabled={busy}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            className="bg-destructive-strong text-destructive-foreground hover:bg-destructive-strong/90"
           >
             {t("signOut.confirm")}
           </AlertDialogAction>
