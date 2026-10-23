@@ -25,6 +25,28 @@ export function roundTo(n: number, decimals: ReadoutDecimals): number {
   return Number.isFinite(scaled) ? Math.round(scaled) / factor : n;
 }
 
+/** Formatters by precision and locale. Building an `Intl.NumberFormat` is
+ *  the costly step and every readout figure goes through here on each
+ *  render, so each (locale, precision) pair is built once and reused. The
+ *  key is the single-digit precision followed by the locale, so it is
+ *  unambiguous; there are at most three keys per app locale. */
+const formatters = new Map<string, Intl.NumberFormat>();
+
+function formatterFor(
+  locale: string,
+  decimals: ReadoutDecimals,
+): Intl.NumberFormat {
+  const key = `${decimals}${locale}`;
+  const cached = formatters.get(key);
+  if (cached) return cached;
+  const formatter = new Intl.NumberFormat(locale, {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+  formatters.set(key, formatter);
+  return formatter;
+}
+
 /** `n` rounded to exactly `decimals` fraction digits, with the locale's
  *  grouping and decimal mark: `formatNumber(12345.6, "en")` is "12,346",
  *  `formatNumber(12345.6, "it")` is "12.346". A value that is not a finite
@@ -35,8 +57,5 @@ export function formatNumber(
   decimals: ReadoutDecimals = 0,
 ): string {
   if (!Number.isFinite(n)) return NO_FIGURE;
-  return new Intl.NumberFormat(locale, {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  }).format(roundTo(n, decimals));
+  return formatterFor(locale, decimals).format(roundTo(n, decimals));
 }

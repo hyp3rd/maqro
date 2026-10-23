@@ -1,5 +1,9 @@
-import { describe, expect, expectTypeOf, it } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { formatNumber, NO_FIGURE, roundTo } from "./number";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("roundTo", () => {
   it("rounds half up at the given precision", () => {
@@ -73,5 +77,22 @@ describe("formatNumber", () => {
     expectTypeOf(formatNumber)
       .parameter(2)
       .toEqualTypeOf<0 | 1 | 2 | undefined>();
+  });
+
+  it("builds one formatter per locale and precision, not one per call", () => {
+    // en-GB and en-AU are used by no other test, so their formatters are
+    // not cached yet when the spy starts counting.
+    const construct = vi.spyOn(Intl, "NumberFormat");
+    expect(formatNumber(1234.567, "en-GB", 2)).toBe("1,234.57");
+    expect(formatNumber(0.5, "en-GB", 2)).toBe("0.50");
+    expect(formatNumber(98765.4321, "en-GB", 2)).toBe("98,765.43");
+    expect(construct).toHaveBeenCalledTimes(1);
+    // A different precision or locale is a formatter of its own.
+    expect(formatNumber(1234.567, "en-GB", 1)).toBe("1,234.6");
+    expect(formatNumber(1234.567, "en-GB", 1)).toBe("1,234.6");
+    expect(construct).toHaveBeenCalledTimes(2);
+    expect(formatNumber(1234.567, "en-AU", 2)).toBe("1,234.57");
+    expect(formatNumber(1234.567, "en-AU", 2)).toBe("1,234.57");
+    expect(construct).toHaveBeenCalledTimes(3);
   });
 });
