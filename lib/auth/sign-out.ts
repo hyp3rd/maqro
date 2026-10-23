@@ -11,13 +11,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  *  never shown as the previous one, and the signed-out account is not gated
  *  on a tier the server no longer vouches for. The account is `userId` when
  *  the caller knows it (the signed-in user signing out, or the account a
- *  forced sign-out is scoped to), else the one the last-known record names
- *  (whose local data this device holds) — a record that can be stale, so it
- *  is only the fallback. Other accounts' cached tiers stay, since each
- *  applies only to its own user. With neither, whose tier it is cannot be
- *  told, so every cached tier is forgotten. Used by sign-out and forced
- *  sign-out. Never throws (both records degrade to "absent" on storage
- *  errors). */
+ *  forced sign-out or a sync's auth failure is scoped to), else the one the
+ *  last-known record names (whose local data this device holds) — a record
+ *  that can be stale, so it is only the fallback. Other accounts' cached
+ *  tiers stay, since each applies only to its own user. With neither, whose
+ *  tier it is cannot be told, so every cached tier is forgotten. Used by
+ *  sign-out, forced sign-out and a sync's auth failure. Never throws (both
+ *  records degrade to "absent" on storage errors). */
 export function clearAccountRecords(userId?: string): void {
   const account = userId ?? readLastKnownUserId();
   if (account === null) clearCachedTier();
