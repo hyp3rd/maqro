@@ -2,9 +2,9 @@
  * @vitest-environment jsdom
  */
 import { intlWrapper } from "@/lib/i18n/intl-test-wrapper";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { Meter, meterGeometry, meterReading } from "./meter";
+import { Meter, meterGeometry, meterReading, type MeterProps } from "./meter";
 
 afterEach(() => cleanup());
 
@@ -194,7 +194,7 @@ describe("Meter", () => {
     ).toBe("12.3 g of 20.0 g");
   });
 
-  const reading = (value: number, target: number, decimals?: number) => {
+  const reading = (value: number, target: number, decimals?: 0 | 1 | 2) => {
     render(
       <Meter
         aria-label="Protein"
@@ -248,6 +248,15 @@ describe("Meter", () => {
 });
 
 describe("meterReading", () => {
+  it("accepts only the readout precisions", () => {
+    // A precision outside what Intl.NumberFormat accepts would throw a
+    // RangeError while the readout renders.
+    expectTypeOf(meterReading).parameter(2).toEqualTypeOf<0 | 1 | 2>();
+    expectTypeOf<MeterProps["decimals"]>().toEqualTypeOf<
+      0 | 1 | 2 | undefined
+    >();
+  });
+
   it("rounds value and target before comparing them", () => {
     expect(meterReading(161.6, 160.4, 0)).toEqual({
       value: 162,

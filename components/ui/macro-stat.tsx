@@ -1,4 +1,4 @@
-import { formatNumber } from "@/lib/i18n/number";
+import { formatNumber, type ReadoutDecimals } from "@/lib/i18n/number";
 import { cn } from "@/lib/utils";
 import * as React from "react";
 import { useLocale } from "next-intl";
@@ -40,10 +40,10 @@ export type MacroStatProps = {
   /** Formats the value, target and overshoot. Default: grouped for the app
    *  locale, at `decimals`. */
   format?: (n: number) => string;
-  /** Precision of the figures (default 0). Over/under and the "+N" are
-   *  worked out on value and target rounded to it, so they match the
-   *  figures shown. Set it to match a custom `format`. */
-  decimals?: number;
+  /** Precision of the figures: 0 (default), 1 or 2. Over/under and the
+   *  "+N" are worked out on value and target rounded to it, so they match
+   *  the figures shown. Set it to match a custom `format`. */
+  decimals?: ReadoutDecimals;
   size?: StatProps["size"];
   className?: string;
   /** Replaces the formatted figure (e.g. an animated ticker); `value` still

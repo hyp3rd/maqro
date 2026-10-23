@@ -1,4 +1,4 @@
-import { formatNumber, roundTo } from "@/lib/i18n/number";
+import { formatNumber, roundTo, type ReadoutDecimals } from "@/lib/i18n/number";
 import { cn } from "@/lib/utils";
 import * as React from "react";
 import { useLocale } from "next-intl";
@@ -63,7 +63,7 @@ export type MeterReading = {
 export function meterReading(
   value: number,
   target: number | undefined,
-  decimals: number,
+  decimals: ReadoutDecimals,
 ): MeterReading {
   const shown = roundTo(
     Number.isFinite(value) && value > 0 ? value : 0,
@@ -90,10 +90,10 @@ export type MeterProps = {
   /** Formats figures in the spoken reading. Default: grouped for the app
    *  locale, at `decimals`. */
   format?: (n: number) => string;
-  /** Precision of the figures (default 0): value and target are rounded to
-   *  it before they are compared, drawn or formatted. Set it to match a
-   *  custom `format`. */
-  decimals?: number;
+  /** Precision of the figures: 0 (default), 1 or 2. Value and target are
+   *  rounded to it before they are compared, drawn or formatted. Set it to
+   *  match a custom `format`. */
+  decimals?: ReadoutDecimals;
   className?: string;
 } & (
   | { "aria-label": string; "aria-labelledby"?: never }

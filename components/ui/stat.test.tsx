@@ -2,9 +2,9 @@
  * @vitest-environment jsdom
  */
 import { intlWrapper } from "@/lib/i18n/intl-test-wrapper";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, it } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
-import { MacroStat } from "./macro-stat";
+import { MacroStat, type MacroStatProps } from "./macro-stat";
 import { Stat } from "./stat";
 
 afterEach(() => cleanup());
@@ -276,6 +276,25 @@ describe("MacroStat", () => {
         .getByRole("meter", { name: "Carbs" })
         .getAttribute("aria-valuetext"),
     ).toBe("12.346 g of 10.000 g, 2346 g above target");
+  });
+
+  it("shows a placeholder, not NaN, for a value that is not a number", () => {
+    render(
+      <dl data-testid="dl">
+        <MacroStat
+          macro="protein"
+          value={Number.NaN}
+        />
+      </dl>,
+      { wrapper: intlWrapper() },
+    );
+    expect(pairs(screen.getByTestId("dl"))).toEqual([["Protein", ["— g"]]]);
+  });
+
+  it("accepts only the readout precisions", () => {
+    expectTypeOf<MacroStatProps["decimals"]>().toEqualTypeOf<
+      0 | 1 | 2 | undefined
+    >();
   });
 
   it("lets a caller replace the figure (e.g. an animated ticker)", () => {
