@@ -117,8 +117,8 @@ export function useUser(): UserState {
     // Whether the current identity came from a network failure and so must
     // be re-verified when the network returns.
     let unverified = false;
-    // Only the latest resolution may apply (an `online` re-check can overlap
-    // the initial one).
+    // Only the latest resolution may apply: an `online` re-check can overlap
+    // the initial one, and an auth event supersedes any still in flight.
     let latestResolution = 0;
 
     const apply = (next: Identity) => {
@@ -151,9 +151,16 @@ export function useUser(): UserState {
         }
         // Any other event reflects a session change auth-js just made
         // (sign-in, refresh, sign-out — including a refresh the server
-        // rejected once the network returned).
+        // rejected once the network returned, or another tab signing out).
+        // It is newer than any `verify()` still in flight, whose answer
+        // must then never apply (it would restore the identity this event
+        // replaced), so it takes the next generation and is itself the
+        // resolution.
+        latestResolution++;
+        resolved = true;
         unverified = false;
         apply({ user: session?.user ?? null, offlineUserId: null });
+        setAuthResolved(true);
       },
     );
 

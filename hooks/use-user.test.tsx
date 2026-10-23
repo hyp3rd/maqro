@@ -297,6 +297,38 @@ describe("useUser — offline open after the access token expired", () => {
   });
 });
 
+describe("useUser — an auth event supersedes a check still in flight", () => {
+  it("another tab's sign-out is not undone by the late answer", async () => {
+    writeLastKnownUserId("u1");
+    const { result, releaseGetUser, emit } = await startWith(SESSION);
+    emit("SIGNED_OUT", null);
+    expect(result.current.user).toBeNull();
+    expect(result.current.isLoaded).toBe(true);
+    expect(readLastKnownUserId()).toBeNull();
+
+    // The server answered before the sign-out; that answer is stale now.
+    await act(async () =>
+      releaseGetUser({ data: { user: USER }, error: null }),
+    );
+    expect(result.current.user).toBeNull();
+    expect(result.current.localUserId).toBeNull();
+    expect(readLastKnownUserId()).toBeNull();
+  });
+
+  it("a sign-in as another account is not undone by the late answer", async () => {
+    const { result, releaseGetUser, emit } = await startWith(SESSION);
+    const other = { id: "u2" } as User;
+    emit("SIGNED_IN", { user: other } as Session);
+
+    await act(async () =>
+      releaseGetUser({ data: { user: USER }, error: null }),
+    );
+    expect(result.current.user).toBe(other);
+    expect(result.current.isLoaded).toBe(true);
+    expect(readLastKnownUserId()).toBe("u2");
+  });
+});
+
 describe("useUser — account switch", () => {
   it("signing in as another account replaces the record", async () => {
     const { result, releaseGetUser, emit } = await startWith(SESSION);
