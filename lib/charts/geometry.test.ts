@@ -145,6 +145,24 @@ describe("dayTicks", () => {
     ]);
   });
 
+  it("never labels a month so it reads as a day across a year boundary", () => {
+    // Weekly weigh-ins sliced to the last 60 entries span more than a year.
+    const t = dayTicks(
+      dayIndexFromIsoDate("2025-08-15"),
+      dayIndexFromIsoDate("2026-10-15"),
+      8,
+      "en-US",
+    );
+    const labels = t.map((x) => x.label);
+    // "Oct 25" would be read as the 25th of October.
+    for (const l of labels) expect(l).not.toMatch(/^[A-Z][a-z]{2} \d{1,2}$/);
+    // Every other month, counted from January.
+    expect(labels).toEqual(["Sep", "Nov", "2026", "Mar", "May", "Jul", "Sep"]);
+    // ...and the year tick sits on January 1st.
+    const year = t.find((x) => x.label === "2026");
+    expect(year?.day).toBe(dayIndexFromIsoDate("2026-01-01"));
+  });
+
   it("labels a single day", () => {
     expect(dayTicks(oct(9), oct(9), 5, "en-US")).toEqual([
       { day: oct(9), label: "Oct 9" },

@@ -164,7 +164,8 @@ function daysFor(step: DayStep, first: number, last: number): number[] {
 /** Evenly spaced calendar ticks across `[first, last]` (day indices):
  *  every 1/2/3 days, Mondays (weekly / fortnightly), or month starts -
  *  whichever is the finest step that yields at most `maxTicks` labels.
- *  Labels are locale-formatted ("Oct 23", or "Oct" for month steps). */
+ *  Labels are locale-formatted ("Oct 23", or "Oct" for month steps, with
+ *  the year on January ticks when the range spans more than one year). */
 export function dayTicks(
   first: number,
   last: number,
@@ -177,23 +178,29 @@ export function dayTicks(
   for (const step of DAY_STEPS) {
     const days = daysFor(step, lo, hi);
     if (days.length === 0 || days.length > cap) continue;
+    if (step.kind !== "month") {
+      return days.map((day) => ({ day, label: formatDayIndex(day, locale) }));
+    }
+    // Month steps label "Oct", and across a year boundary the January tick
+    // names the new year instead ("Nov, Dec, 2026, Feb"). A two-digit year
+    // ("Oct 25") would read exactly like the day labels used everywhere
+    // else - the 25th of October - so it is never used.
     const multiYear =
       dateFromDayIndex(lo).getUTCFullYear() !==
       dateFromDayIndex(hi).getUTCFullYear();
-    const fmt = new Intl.DateTimeFormat(
-      locale,
-      step.kind === "month"
-        ? {
-            month: "short",
-            ...(multiYear ? { year: "2-digit" as const } : {}),
-            timeZone: "UTC",
-          }
-        : { month: "short", day: "numeric", timeZone: "UTC" },
-    );
-    return days.map((day) => ({
-      day,
-      label: fmt.format(dateFromDayIndex(day)),
-    }));
+    const monthFmt = new Intl.DateTimeFormat(locale, {
+      month: "short",
+      timeZone: "UTC",
+    });
+    const yearFmt = new Intl.DateTimeFormat(locale, {
+      year: "numeric",
+      timeZone: "UTC",
+    });
+    return days.map((day) => {
+      const date = dateFromDayIndex(day);
+      const fmt = multiYear && date.getUTCMonth() === 0 ? yearFmt : monthFmt;
+      return { day, label: fmt.format(date) };
+    });
   }
   // Nothing fits (a single tick allowed over a span with no Monday / month
   // start in it): label the first day alone.
