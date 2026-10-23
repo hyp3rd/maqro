@@ -837,8 +837,11 @@ describe("targetsForDate — training days", () => {
       // At 2.0 g/kg (112.5 g) the mean would fit: a protein cause.
       expect(d.training?.floorsExceedMean).toBe("protein");
       expect(d.targetCalories).toBe(1212);
+      // The 1.2 g/kg protein minimum (70 g) can't bind here: with every
+      // per-kg floor on the same 56.25 kg, the fat and carb floors leave it
+      // far more room. Taking the floors on bodyweight (81 kg) instead would
+      // give [115, 85, 45], so this pins the protein weight.
       expect([d.protein, d.carbs, d.fat]).toEqual([175, 60, 30]);
-      expect(d.protein).toBeGreaterThanOrEqual(1.2 * 56.25);
     }
   });
 
