@@ -70,13 +70,27 @@ function inputNumber(n: number): number | "" {
   return Number.isFinite(n) ? n : "";
 }
 
-/** What the editor's draft still needs before it has a valid window. */
-function windowProblem(startOk: boolean, weeksOk: boolean): string {
-  if (!startOk && !weeksOk) {
-    return "Pick a start date and enter how many weeks it runs (1–52) to save this phase.";
-  }
-  if (!startOk) return "Pick a start date to save this phase.";
-  return "Enter how many weeks it runs (1–52) to save this phase.";
+/** What the editor's draft still needs before it can be saved: a valid
+ *  window, and — for a kind that uses one — a readable weekly rate. */
+function draftProblem({
+  startOk,
+  weeksOk,
+  rateOk,
+}: {
+  startOk: boolean;
+  weeksOk: boolean;
+  rateOk: boolean;
+}): string {
+  const missing = [
+    startOk ? null : "a start date",
+    weeksOk ? null : "how many weeks it runs",
+    rateOk ? null : "a weekly rate",
+  ].filter((part): part is string => part !== null);
+  const list =
+    missing.length > 1
+      ? `${missing.slice(0, -1).join(", ")} and ${missing.at(-1)}`
+      : (missing[0] ?? "");
+  return `Enter ${list} to save this phase.`;
 }
 
 function fmtDate(d: string): string {
@@ -401,11 +415,15 @@ function PhaseEditor({
   const capKg = weightKg * 0.01;
   const unitLabel = units === "imperial" ? "lb" : "kg";
   // Only a phase with a valid window is saved (a phase without one is
-  // ignored by every target computation); each field says if it's the
-  // reason, so an unreadable phase from the list can actually be fixed.
+  // ignored by every target computation), and only with a readable rate
+  // when its kind uses one (an unreadable rate would make every target it
+  // drives NaN; an out-of-range one is clamped on save). Each field says
+  // if it's the reason, so an unreadable phase from the list can actually
+  // be fixed.
   const startOk = isValidPhaseStart(draft.startDate);
   const weeksOk = isValidPhaseDuration(draft.durationWeeks);
-  const canSave = phaseHasValidWindow(draft);
+  const rateOk = !showRate || Number.isFinite(draft.weeklyRateKg);
+  const canSave = phaseHasValidWindow(draft) && rateOk;
   const problemId = useId();
 
   return (
@@ -483,15 +501,23 @@ function PhaseEditor({
               max={kgToDisplay(capKg, units)}
               step={0.05}
               value={inputNumber(kgToDisplay(draft.weeklyRateKg, units))}
+              // A cleared field is NaN: no saving until it is filled in.
               onChange={(e) => {
                 const v = Number.parseFloat(e.target.value);
-                if (Number.isFinite(v))
-                  setDraft({
-                    ...draft,
-                    weeklyRateKg: Math.min(displayToKg(v, units), capKg),
-                  });
+                setDraft({
+                  ...draft,
+                  weeklyRateKg: Number.isFinite(v)
+                    ? Math.min(displayToKg(v, units), capKg)
+                    : Number.NaN,
+                });
               }}
-              className={cn(INPUT_CLASS, "font-mono tabular-nums")}
+              aria-invalid={rateOk ? undefined : true}
+              aria-describedby={rateOk ? undefined : problemId}
+              className={cn(
+                INPUT_CLASS,
+                "font-mono tabular-nums",
+                !rateOk && "border-destructive",
+              )}
             />
           </label>
         )}
@@ -511,7 +537,7 @@ function PhaseEditor({
               aria-hidden="true"
               className="mt-px h-3.5 w-3.5 shrink-0 text-destructive"
             />
-            {windowProblem(startOk, weeksOk)}
+            {draftProblem({ startOk, weeksOk, rateOk })}
           </>
         )}
       </p>

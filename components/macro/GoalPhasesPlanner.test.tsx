@@ -182,6 +182,7 @@ describe("GoalPhasesPlanner — editing a phase without a valid window", () => {
       onChange,
       start: screen.getByLabelText("Starts") as HTMLInputElement,
       weeks: screen.getByLabelText("Weeks") as HTMLInputElement,
+      rate: screen.queryByLabelText(/^Rate/) as HTMLInputElement | null,
       save: screen.getByRole("button", { name: "Save phase" }),
     };
   }
@@ -190,7 +191,7 @@ describe("GoalPhasesPlanner — editing a phase without a valid window", () => {
     const consoleError = vi
       .spyOn(console, "error")
       .mockImplementation(() => {});
-    const { start, weeks, save } = await editPhase(unreadable);
+    const { start, weeks, rate, save } = await editPhase(unreadable);
 
     // React warns when it is handed NaN for an input's value.
     expect(
@@ -201,31 +202,44 @@ describe("GoalPhasesPlanner — editing a phase without a valid window", () => {
     consoleError.mockRestore();
     expect(weeks.value).toBe("");
     expect(start.value).toBe("");
-    expect((screen.getByLabelText(/^Rate/) as HTMLInputElement).value).toBe("");
+    expect(rate?.value).toBe("");
 
     expect(start.getAttribute("aria-invalid")).toBe("true");
     expect(weeks.getAttribute("aria-invalid")).toBe("true");
+    expect(rate?.getAttribute("aria-invalid")).toBe("true");
     const messageId = start.getAttribute("aria-describedby");
     expect(messageId).toBeTruthy();
     expect(weeks.getAttribute("aria-describedby")).toBe(messageId);
+    expect(rate?.getAttribute("aria-describedby")).toBe(messageId);
     const message = document.getElementById(messageId ?? "");
+    // Announced as it changes, without moving focus.
+    expect(message?.getAttribute("aria-live")).toBe("polite");
     expect(message?.textContent).toMatch(/start date/i);
     expect(message?.textContent).toMatch(/weeks/i);
+    expect(message?.textContent).toMatch(/weekly rate/i);
 
     expect(save).toHaveProperty("disabled", true);
   });
 
-  it("saves once the window is valid", async () => {
-    const { start, weeks, save, onChange } = await editPhase(unreadable);
+  it("saves once the window and the rate are valid", async () => {
+    const { start, weeks, rate, save, onChange } = await editPhase(unreadable);
     fireEvent.change(start, { target: { value: "2026-07-01" } });
     expect(save).toHaveProperty("disabled", true);
     expect(weeks.getAttribute("aria-invalid")).toBe("true");
     expect(start.hasAttribute("aria-invalid")).toBe(false);
 
     fireEvent.change(weeks, { target: { value: "6" } });
-    expect(save).toHaveProperty("disabled", false);
     expect(weeks.hasAttribute("aria-invalid")).toBe(false);
-    expect(screen.queryByText(/start date|how many weeks/i)).toBeNull();
+    // A lean bulk with an unreadable rate would compute NaN targets.
+    expect(save).toHaveProperty("disabled", true);
+    expect(rate?.getAttribute("aria-invalid")).toBe("true");
+
+    fireEvent.change(rate as HTMLInputElement, { target: { value: "0.3" } });
+    expect(save).toHaveProperty("disabled", false);
+    expect(rate?.hasAttribute("aria-invalid")).toBe(false);
+    expect(
+      screen.queryByText(/start date|how many weeks|weekly rate/i),
+    ).toBeNull();
 
     fireEvent.click(save);
     expect(onChange).toHaveBeenCalledTimes(1);
@@ -234,7 +248,23 @@ describe("GoalPhasesPlanner — editing a phase without a valid window", () => {
       id: "ph_unreadable",
       startDate: "2026-07-01",
       durationWeeks: 6,
+      weeklyRateKg: 0.3,
     });
+  });
+
+  it("an unreadable rate doesn't block a kind that has no rate", async () => {
+    const { start, weeks, save, onChange } = await editPhase({
+      ...unreadable,
+      kind: "maintenance",
+    });
+    expect(screen.queryByLabelText(/^Rate/)).toBeNull();
+    fireEvent.change(start, { target: { value: "2026-07-01" } });
+    fireEvent.change(weeks, { target: { value: "6" } });
+    expect(save).toHaveProperty("disabled", false);
+
+    fireEvent.click(save);
+    const [saved] = onChange.mock.calls[0]?.[0] as GoalPhase[];
+    expect(saved?.weeklyRateKg).toBe(0);
   });
 
   it("a valid phase opens without a message and can be saved", async () => {
@@ -258,5 +288,23 @@ describe("GoalPhasesPlanner — editing a phase without a valid window", () => {
     fireEvent.change(start, { target: { value: "" } });
     expect(save).toHaveProperty("disabled", true);
     expect(start.getAttribute("aria-invalid")).toBe("true");
+
+    fireEvent.change(start, { target: { value: "2026-06-01" } });
+    expect(save).toHaveProperty("disabled", false);
+  });
+
+  it("clearing the rate of a valid phase blocks saving until it is filled in", async () => {
+    const { rate, save } = await editPhase(valid);
+    const field = rate as HTMLInputElement;
+    expect(field.value).toBe("0.4");
+
+    fireEvent.change(field, { target: { value: "" } });
+    expect(field.value).toBe("");
+    expect(save).toHaveProperty("disabled", true);
+    expect(field.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getByText(/weekly rate/i)).toBeTruthy();
+
+    fireEvent.change(field, { target: { value: "0.5" } });
+    expect(save).toHaveProperty("disabled", false);
   });
 });
