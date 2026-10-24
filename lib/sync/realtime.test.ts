@@ -403,6 +403,12 @@ describe("startRealtimeSubscription — payload dispatch", () => {
         date: "2026-10-22",
       },
     });
+    // Nor may one that doesn't name its owner: the date alone is shared.
+    ch.onCallback({
+      eventType: "DELETE",
+      new: {},
+      old: { date: "2026-10-22" },
+    });
     await Promise.resolve();
     await Promise.resolve();
     expect(vi.mocked(db.applyServerDeletion)).not.toHaveBeenCalled();
