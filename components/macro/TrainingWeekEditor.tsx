@@ -709,41 +709,62 @@ function ProteinCard({
               {formatNumber(PROTEIN_G_PER_KG_MIN, locale, 1)} to{" "}
               {formatNumber(max, locale, 1)} g/kg.
             </span>{" "}
-            {proteinGrams < requestedGrams
-              ? `Protein is planned at ${kcal(proteinGrams)} g a day for now, under the ${kcal(requestedGrams)} g your setting asks for, so the fat and carb minimums fit.`
-              : sameEveryDay
-                ? "Every day plans the same protein, carbs and fat."
-                : fatMoves
-                  ? `Fat moves with each day's calories; carbs stay near ${kcal(heldGrams)} g and protein stays the same.`
-                  : `Carbs move with each day's calories; fat stays near ${kcal(heldGrams)} g and protein stays the same.`}
+            {macroLine({
+              proteinHeld: proteinGrams < requestedGrams,
+              sameEveryDay,
+              fatMoves,
+              fatFloorLifted,
+              held: kcal(heldGrams),
+              protein: kcal(proteinGrams),
+              requested: kcal(requestedGrams),
+            })}
           </p>
-          {fatFloorLifted && (
-            <Callout tone="info">
-              {fatMoves ? (
-                <>
-                  Carbs stay at{" "}
-                  <span className="font-mono tabular-nums">
-                    {kcal(heldGrams)}
-                  </span>{" "}
-                  g a day while you train, a little under your chosen split, so
-                  fat sits a little higher each day to keep a healthy minimum.
-                </>
-              ) : (
-                <>
-                  Fat stays at{" "}
-                  <span className="font-mono tabular-nums">
-                    {kcal(heldGrams)}
-                  </span>{" "}
-                  g a day while you train, a little above your chosen split, to
-                  keep a healthy minimum.
-                </>
-              )}
-            </Callout>
-          )}
         </CardBody>
       </section>
     </Card>
   );
+}
+
+/** What the week does with the macros, for the protein card's line: which
+ *  macro moves with each day's calories and which is held, or why none
+ *  moves. When the fat floor lifted the user's explicit fat choice
+ *  (`fatFloorLifted`), that is said in the same line, next to the held
+ *  macro's figure, rather than as a separate note repeating it. */
+function macroLine({
+  proteinHeld,
+  sameEveryDay,
+  fatMoves,
+  fatFloorLifted,
+  held,
+  protein,
+  requested,
+}: {
+  proteinHeld: boolean;
+  sameEveryDay: boolean;
+  fatMoves: boolean;
+  fatFloorLifted: boolean;
+  /** The formatted grams of the macro held all week. */
+  held: string;
+  protein: string;
+  requested: string;
+}): string {
+  if (!proteinHeld && !sameEveryDay) {
+    if (fatMoves) {
+      return fatFloorLifted
+        ? `Fat moves with each day's calories; carbs stay at ${held} g, a little under your chosen split so fat keeps a healthy minimum, and protein stays the same.`
+        : `Fat moves with each day's calories; carbs stay near ${held} g and protein stays the same.`;
+    }
+    return fatFloorLifted
+      ? `Carbs move with each day's calories; fat stays at ${held} g, a little above your chosen split to keep a healthy minimum, and protein stays the same.`
+      : `Carbs move with each day's calories; fat stays near ${held} g and protein stays the same.`;
+  }
+  const line = proteinHeld
+    ? `Protein is planned at ${protein} g a day for now, under the ${requested} g your setting asks for, so the fat and carb minimums fit.`
+    : "Every day plans the same protein, carbs and fat.";
+  if (!fatFloorLifted) return line;
+  return fatMoves
+    ? `${line} Carbs stay at ${held} g a day, a little under your chosen split, so fat keeps a healthy minimum.`
+    : `${line} Fat stays at ${held} g a day, a little above your chosen split, to keep a healthy minimum.`;
 }
 
 /** The line under the cycling control: what the choice does to this week,

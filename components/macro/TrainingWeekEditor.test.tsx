@@ -667,18 +667,25 @@ describe("TrainingWeekEditor: notes from the engine's flags", () => {
   };
   const proteinCard = () => screen.getByRole("region", { name: /Protein:/ });
 
-  it("a lifted fat choice on a carb-moving diet names the week's fat", () => {
+  /** The protein card's line under the stepper: the range, then what the
+   *  week does with the macros (and, folded in, a lifted fat floor). */
+  const macroLine = () =>
+    within(proteinCard()).getByText(/protein stays the same|Every day plans/);
+
+  it("a lifted fat choice on a carb-moving diet names the week's fat in the fat line", () => {
     const week = plan(lowFatSplit);
     expect(week?.days[5]?.training?.fatFloorLifted).toBe(true);
     const fats = [...new Set(week?.days.map((d) => d.fat))];
     expect(fats).toHaveLength(1); // carbs move; fat is held
     renderEditor({ initial: lowFatSplit });
-    const note = within(proteinCard()).getByText(
-      /a little above your chosen split/,
+    expect(macroLine().textContent).toBe(
+      `1.2 to 3.4 g/kg. Carbs move with each day's calories; fat stays at ${fats[0]} g, a little above your chosen split to keep a healthy minimum, and protein stays the same.`,
     );
-    expect(note.textContent).toBe(
-      `Fat stays at ${fats[0]} g a day while you train, a little above your chosen split, to keep a healthy minimum.`,
+    // One line, not a second note repeating the fat figure.
+    expect(within(proteinCard()).getAllByText(/healthy minimum/)).toHaveLength(
+      1,
     );
+    expect(within(proteinCard()).queryByText(/stays near/)).toBeNull();
   });
 
   it("a lifted fat choice on a low-carb diet names the held carbs, never one fat figure", () => {
@@ -690,25 +697,48 @@ describe("TrainingWeekEditor: notes from the engine's flags", () => {
     const carbs = [...new Set(week?.days.map((d) => d.carbs))];
     expect(carbs).toHaveLength(1);
     renderEditor({ initial: lowCarb });
-    const note = within(proteinCard()).getByText(
-      /a little under your chosen split/,
+    expect(macroLine().textContent).toBe(
+      `1.2 to 3.4 g/kg. Fat moves with each day's calories; carbs stay at ${carbs[0]} g, a little under your chosen split so fat keeps a healthy minimum, and protein stays the same.`,
     );
-    expect(note.textContent).toBe(
-      `Carbs stay at ${carbs[0]} g a day while you train, a little under your chosen split, so fat sits a little higher each day to keep a healthy minimum.`,
+    expect(within(proteinCard()).getAllByText(/healthy minimum/)).toHaveLength(
+      1,
     );
     expect(screen.queryByText(/Fat stays at/)).toBeNull();
   });
 
+  it("a lifted fat choice on days that can't vary is folded into the same line", () => {
+    const flat: PersonalInfo = {
+      ...lowFatSplit,
+      training: { ...lowFatSplit.training, cycling: "off" } as TrainingSchedule,
+    };
+    const week = plan(flat);
+    expect(week?.days[5]?.training?.fatFloorLifted).toBe(true);
+    renderEditor({ initial: flat });
+    expect(macroLine().textContent).toBe(
+      `1.2 to 3.4 g/kg. Every day plans the same protein, carbs and fat. Fat stays at ${week?.days[5]?.fat} g a day, a little above your chosen split, to keep a healthy minimum.`,
+    );
+  });
+
   it("the protein card names the macro the week holds", () => {
-    const { unmount } = renderEditor({ initial: lowFatSplit });
-    expect(
-      within(proteinCard()).getByText(/carbs move with each day's calories/i),
-    ).toBeTruthy();
-    unmount();
-    renderEditor({ initial: { ...lowFatSplit, dietType: "lowCarb" } });
+    const { unmount } = renderEditor({
+      initial: { ...profile, training: { ...SCHEDULE, cycling: "pronounced" } },
+    });
     expect(
       within(proteinCard()).getByText(
-        /Fat moves with each day's calories; carbs stay near 200 g/,
+        /^Carbs move with each day's calories; fat stays near \d+ g and protein stays the same\.$/,
+      ),
+    ).toBeTruthy();
+    unmount();
+    renderEditor({
+      initial: {
+        ...profile,
+        dietType: "lowCarb",
+        training: { ...SCHEDULE, cycling: "pronounced" },
+      },
+    });
+    expect(
+      within(proteinCard()).getByText(
+        /^Fat moves with each day's calories; carbs stay near \d+ g and protein stays the same\.$/,
       ),
     ).toBeTruthy();
   });
