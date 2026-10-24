@@ -5,8 +5,13 @@ the pure logic lives.
 
 Single-page client app. View state lives in
 [`macro-calculator.tsx`](../macro-calculator.tsx) (the root component, named
-before the macro-calculator → maqro rebrand) and is wired into a
-sidebar-driven `AppShell`. Persistence is layered:
+before the macro-calculator → maqro rebrand) and is wired into the
+`AppShell`. Every destination (`?view=` key, labels, icon, sidebar group,
+mobile tab bar / More sheet / You hub placement) is declared once in the nav
+registry, [`components/shell/nav.ts`](../components/shell/nav.ts), which the
+sidebar, the mobile tab bar, the command palette, the topbar and the
+`?view=` parser all read; no `?view=` opens the day view ("Today").
+Persistence is layered:
 
 1. **IndexedDB (always)** - [`lib/db.ts`](../lib/db.ts) is the source of
    truth on each device. Stores: `profile`, `dailyLogs`,
@@ -111,7 +116,9 @@ app/
     push/{subscribe,unsubscribe,vapid-key,events}/route.ts  # Web Push subscription + SW engagement callback
     cron/{daily-reminder,weekly-recap,trial-ending,retention,status-probe}/route.ts  # Vercel cron handlers
 components/
-  shell/                            # AppShell, Sidebar, Topbar, MobileBottomNav,
+  shell/                            # nav.ts (the nav registry), AppShell, Sidebar,
+                                    #   Topbar, MobileBottomNav (tab bar + centre
+                                    #   quick add) + MoreSheet, CommandPalette,
                                     #   SyncManager, SyncModeController (auto-save /
                                     #   always-sync push + local-first reminder),
                                     #   SyncStatusPill + SyncModeIndicator + the

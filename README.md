@@ -19,7 +19,13 @@ ships with privacy-respecting operational logging.
 
 ## What it does
 
-- **Calculator** - Mifflin–St Jeor BMR, TDEE from activity, target
+- **Today first** - the app opens on the day view. On a phone the tab
+  bar's centre **+** logs now: it switches to today and opens the guided
+  launcher at the meal for the time of day (search, barcode, photo,
+  voice, recipe or template). Foods, recipes, templates, shopping,
+  pantry, health and settings sit behind **More**; the calculator is
+  **Targets**, in the **You** hub.
+- **Calculator (Targets)** - Mifflin–St Jeor BMR, TDEE from activity, target
   calories from a signed weekly weight-change rate (1 kg ≈ 7700 kcal,
   clamped at ±1%/week of bodyweight and floored at `max(BMR, 1200)`).
   Manual TDEE override for calibrating against real-world outcomes.
