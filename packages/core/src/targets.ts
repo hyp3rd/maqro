@@ -134,6 +134,16 @@ function localMidnight(date: string): Date | undefined {
   return dt;
 }
 
+/** Whether `targetsForDate` reads `ctx.bodyFatPct` for this profile: only
+ *  an enabled training schedule's protein does. Without one the targets are
+ *  identical with or without an estimate, so a caller that has to fetch it
+ *  (the crons' measurement read) can skip the read and pass `null`. */
+export function targetsUseBodyFat(
+  profile: Pick<PersonalInfo, "training">,
+): boolean {
+  return normalizeTrainingSchedule(profile.training)?.enabled === true;
+}
+
 /** Resolve the calorie/macro target for `date` (local `YYYY-MM-DD`). */
 export function targetsForDate(
   profile: PersonalInfo,
@@ -161,6 +171,7 @@ export function targetsForDate(
 
   // No enabled schedule (absent, disabled or malformed) → exactly the above.
   // A non-date key has no weekday to plan, so it keeps the weekly mean.
+  // (`targetsUseBodyFat` is the same test.)
   const schedule = normalizeTrainingSchedule(profile.training);
   if (!schedule?.enabled || !midnight) return base;
 

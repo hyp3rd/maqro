@@ -59,7 +59,7 @@ vi.mock("@maqro/core/targets", async () => {
     "@maqro/core/targets",
   );
   mockTargetsForDate.mockImplementation(actual.targetsForDate);
-  return { targetsForDate: mockTargetsForDate };
+  return { ...actual, targetsForDate: mockTargetsForDate };
 });
 vi.mock("@supabase/supabase-js", () => ({
   createClient: vi.fn(() => ({
@@ -91,6 +91,21 @@ vi.mock("@supabase/supabase-js", () => ({
 }));
 
 const TODAY = "2026-06-10";
+
+/** An enabled training week: the targets then read the body-fat estimate. */
+const TRAINING = {
+  enabled: true,
+  cycling: "modest",
+  days: [
+    { type: "rest" },
+    { type: "upper", intensity: "moderate" },
+    { type: "rest" },
+    { type: "lower", intensity: "hard" },
+    { type: "rest" },
+    { type: "fullBody", intensity: "moderate" },
+    { type: "endurance", intensity: "moderate", durationMin: 90 },
+  ],
+};
 
 function profile(tdeeOverride: number | null) {
   return {
@@ -151,7 +166,7 @@ async function callRoute(): Promise<Record<string, unknown>> {
 
 describe("GET /api/cron/auto-adapt-tdee — current TDEE", () => {
   it("compares against the resolver's TDEE for today (Pro phases on)", async () => {
-    const payload = profile(null);
+    const payload = { ...profile(null), training: TRAINING };
     profileRows.push({ user_id: "u1", payload });
     mockLoadBodyFat.mockResolvedValue({ ok: true, bodyFatPct: 17.2 });
     await callRoute();
@@ -170,8 +185,28 @@ describe("GET /api/cron/auto-adapt-tdee — current TDEE", () => {
     expect(mockDecideAutoAdapt.mock.calls[0]?.[0].currentTdee).toBe(2600);
   });
 
+  it("makes no measurement read while training is off (nothing it could change)", async () => {
+    const payload = profile(null);
+    profileRows.push({ user_id: "u1", payload });
+    mockLoadBodyFat.mockResolvedValue({
+      ok: false,
+      error: { message: "db down" },
+    });
+    const body = await callRoute();
+    expect(mockLoadBodyFat).not.toHaveBeenCalled();
+    expect(mockTargetsForDate).toHaveBeenCalledWith(payload, TODAY, {
+      phasesEnabled: true,
+      bodyFatPct: null,
+    });
+    expect(mockDecideAutoAdapt).toHaveBeenCalledTimes(1);
+    expect(body).toMatchObject({ errors: 0 });
+  });
+
   it("skips the user as an error when the measurements can't be read", async () => {
-    profileRows.push({ user_id: "u1", payload: profile(null) });
+    profileRows.push({
+      user_id: "u1",
+      payload: { ...profile(null), training: TRAINING },
+    });
     mockLoadBodyFat.mockResolvedValue({
       ok: false,
       error: { message: "db down" },

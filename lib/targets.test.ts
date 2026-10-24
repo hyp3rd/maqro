@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { effectiveGoal } from "@maqro/core/goal-phases";
 import { computeMacros } from "@maqro/core/macros";
-import { targetsForDate, weekTargets } from "@maqro/core/targets";
+import {
+  targetsForDate,
+  targetsUseBodyFat,
+  weekTargets,
+} from "@maqro/core/targets";
 import type {
   GoalPhase,
   MacroSplit,
@@ -391,6 +395,8 @@ describe("targetsForDate — without enabled training, byte for byte today's", (
                       training,
                       proteinSetting,
                     } as PersonalInfo;
+                    // So a caller may skip reading the estimate here.
+                    expect(targetsUseBodyFat(withTraining)).toBe(false);
                     expect(
                       targetsForDate(withTraining, date, {
                         ...ctx,
@@ -423,6 +429,18 @@ function mockupProfile(over: Partial<PersonalInfo> = {}): PersonalInfo {
 const MOCKUP_DATES = weekOf("2026-10-19");
 
 describe("targetsForDate — training days", () => {
+  it("an enabled schedule is what reads the body-fat estimate", () => {
+    const lean = mockupProfile({
+      proteinSetting: { basis: "leanMass", gPerKg: 2.6 },
+    });
+    expect(targetsUseBodyFat(lean)).toBe(true);
+    expect(
+      targetsForDate(lean, "2026-10-21", { ...FREE, bodyFatPct: 15 }).protein,
+    ).not.toBe(
+      targetsForDate(lean, "2026-10-21", { ...FREE, bodyFatPct: null }).protein,
+    );
+  });
+
   it("the mockup week: planned days around an unchanged 2,200 average", () => {
     const week = weekTargets(mockupProfile(), "2026-10-21", FREE);
     if (!week) throw new Error("expected a week");

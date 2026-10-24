@@ -287,6 +287,20 @@ describe("GET /api/cron/weekly-recap — body fat", () => {
     weeklyRateKg: 0,
     manualTdee: 2600,
     units: "metric",
+    // An enabled week: the targets then read the body-fat estimate.
+    training: {
+      enabled: true,
+      cycling: "modest",
+      days: [
+        { type: "rest" },
+        { type: "upper", intensity: "moderate" },
+        { type: "rest" },
+        { type: "lower", intensity: "hard" },
+        { type: "rest" },
+        { type: "fullBody", intensity: "moderate" },
+        { type: "endurance", intensity: "moderate", durationMin: 90 },
+      ],
+    },
   };
 
   beforeEach(() => {
@@ -322,6 +336,23 @@ describe("GET /api/cron/weekly-recap — body fat", () => {
     expect(await res.json()).toEqual({ sent: 0, skipped: 0, errors: 1 });
     expect(mockSendEmail).not.toHaveBeenCalled();
     expect(mockComputeWeeklyRecap).not.toHaveBeenCalled();
+  });
+
+  it("makes no measurement read while training is off (nothing it could change)", async () => {
+    const { targetsForDate } = await import("@maqro/core/targets");
+    const resolver = vi.mocked(targetsForDate);
+    profileRow.value = { payload: { ...PROFILE, training: undefined } };
+    mockLoadBodyFat.mockResolvedValue({
+      ok: false,
+      error: { message: "db down" },
+    });
+    const res = await callRoute();
+    expect(mockLoadBodyFat).not.toHaveBeenCalled();
+    expect(await res.json()).toMatchObject({ errors: 0 });
+    expect(mockComputeWeeklyRecap).toHaveBeenCalled();
+    for (const [, , ctx] of resolver.mock.calls) {
+      expect(ctx).toEqual({ phasesEnabled: false, bodyFatPct: null });
+    }
   });
 
   it("makes no measurement read for a user without a profile", async () => {

@@ -13,7 +13,7 @@ import { getSupabaseSecretConfig } from "@/lib/supabase/env";
 import { personalInfoFromPayload } from "@/lib/sync/mappers";
 import { computeWeeklyRecap } from "@/lib/weekly-recap";
 import { NextResponse } from "next/server";
-import { targetsForDate } from "@maqro/core/targets";
+import { targetsForDate, targetsUseBodyFat } from "@maqro/core/targets";
 import { createClient } from "@supabase/supabase-js";
 
 /** Vercel cron handler — Monday-morning "your week in macros"
@@ -108,8 +108,10 @@ export async function GET(req: Request): Promise<NextResponse> {
     // The same body-fat estimate the app derives, so a training day's
     // target matches what the user sees. A failed read skips this user
     // rather than score the week against a target the app wouldn't show.
+    // Only an enabled training schedule reads it: otherwise there is no
+    // read (and no failure) that could change the targets.
     let bodyFatPct: number | null = null;
-    if (personalInfo) {
+    if (personalInfo && targetsUseBodyFat(personalInfo)) {
       const bodyFat = await loadLatestBodyFatPct(admin, userId, personalInfo);
       if (!bodyFat.ok) {
         console.error(

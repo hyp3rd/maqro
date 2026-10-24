@@ -11,7 +11,7 @@ import { emailsById, listAllAuthUsers } from "@/lib/supabase/admin-users";
 import { getSupabaseSecretConfig } from "@/lib/supabase/env";
 import { decideAutoAdapt, inferAdaptiveTdee } from "@/lib/trends";
 import { NextResponse } from "next/server";
-import { targetsForDate } from "@maqro/core/targets";
+import { targetsForDate, targetsUseBodyFat } from "@maqro/core/targets";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 /** Notification opt-in flags read for the auto-adapt dispatch. */
@@ -214,15 +214,21 @@ export async function GET(req: Request): Promise<NextResponse> {
       // The same body-fat estimate the app derives, so the resolver below
       // sees exactly the inputs it sees in-app. A failed read is an error
       // for this user (retried on the next run), never a silent "none".
-      const bodyFat = await loadLatestBodyFatPct(admin, userId, profile);
-      if (!bodyFat.ok) {
-        console.error(
-          "[cron/auto-adapt-tdee] body measurements read failed:",
-          userId,
-          bodyFat.error,
-        );
-        errors++;
-        continue;
+      // Only an enabled training schedule reads it: otherwise there is no
+      // read (and no failure) that could change the target.
+      let bodyFatPct: number | null = null;
+      if (targetsUseBodyFat(profile)) {
+        const bodyFat = await loadLatestBodyFatPct(admin, userId, profile);
+        if (!bodyFat.ok) {
+          console.error(
+            "[cron/auto-adapt-tdee] body measurements read failed:",
+            userId,
+            bodyFat.error,
+          );
+          errors++;
+          continue;
+        }
+        bodyFatPct = bodyFat.bodyFatPct;
       }
 
       // Today's target through the shared resolver — the same one the app,
@@ -230,7 +236,7 @@ export async function GET(req: Request): Promise<NextResponse> {
       // Pro too, but the phase gate is checked on its own terms).
       const target = targetsForDate(profile, today, {
         phasesEnabled: FEATURES.canUseGoalPhases(tier),
-        bodyFatPct: bodyFat.bodyFatPct,
+        bodyFatPct,
       });
 
       // If the active goal phase carries its own (manually-pinned) TDEE
