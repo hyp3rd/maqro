@@ -478,7 +478,7 @@ function DayRow({
           the weekdays line up. */}
       <span
         className={cn(
-          "-ml-2 w-16 shrink-0 rounded-lg border px-2 py-1",
+          "-ml-2 w-14 shrink-0 rounded-lg border px-2 py-1",
           isToday ? "border-brand/40 bg-brand/10" : "border-transparent",
         )}
       >
