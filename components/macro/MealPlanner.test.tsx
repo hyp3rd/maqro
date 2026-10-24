@@ -351,6 +351,31 @@ describe("MealPlanner as Instrument Today", () => {
     expect(within(rail).getByText("Next to log")).toBeTruthy();
   });
 
+  it("shows each meal's P/C/F split however narrow its list is", () => {
+    render(<MealPlanner {...plannerProps()} />, { wrapper: intlWrapper() });
+    const rail = screen.getByRole("list", { name: "Meals" });
+    // The meal list is the size container; the split follows its width,
+    // not the viewport's.
+    expect(rail.className).toContain("@container");
+    // The rail's own items (each meal card lists its foods too).
+    const [breakfast, , dinner] = [...rail.children] as [
+      HTMLElement,
+      HTMLElement,
+      HTMLElement,
+    ];
+    // Narrow: on its own line under the meal's header.
+    const narrow = breakfast.querySelector("[data-part=meal-split-narrow]");
+    expect(narrow?.textContent).toBe("P20 · C40 · F10");
+    expect(narrow?.className).toContain("@min-[30rem]:hidden");
+    // Wide: beside the kcal in the header.
+    const wide = breakfast.querySelector("[data-part=meal-split]");
+    expect(wide?.textContent?.trim()).toBe("· P20 · C40 · F10");
+    expect(wide?.className).toContain("@min-[30rem]:inline");
+    expect(wide?.className).not.toContain("sm:inline");
+    // An empty meal has no split to show.
+    expect(dinner.querySelector("[data-part=meal-split-narrow]")).toBeNull();
+  });
+
   it("keeps one-tap water and fasting ahead of the meal list", () => {
     renderPlanner();
     const meals = screen.getByRole("list", { name: "Meals" });

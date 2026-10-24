@@ -220,11 +220,15 @@ const MealItem: React.FC<MealItemProps> = ({
               {aiVerbProgressive}…
             </span>
           ) : (
-            // Phone width keeps the header on one row: kcal only (each food
-            // row below shows its own P/C/F); the split joins from sm up.
+            // A narrow meal list keeps the header on one row: kcal only, the
+            // P/C/F split on its own line below. From 30rem of list (the
+            // `@container` MealPlanner puts on the rail) it joins the kcal.
             <span className="font-mono text-xs tabular-nums text-muted-foreground">
               {totalCalories} kcal
-              <span className="hidden sm:inline">
+              <span
+                data-part="meal-split"
+                className="hidden @min-[30rem]:inline"
+              >
                 {" "}
                 · P{totalProtein} · C{totalCarbs} · F{totalFat}
               </span>
@@ -309,6 +313,16 @@ const MealItem: React.FC<MealItemProps> = ({
           </DropdownMenu>
         </div>
       </div>
+
+      {/* The meal's P/C/F split where the header has no room for it. */}
+      {meal.foods.length > 0 && !regeneratingThisMeal && (
+        <p
+          data-part="meal-split-narrow"
+          className="-mt-1 mb-2 font-mono text-xs tabular-nums text-muted-foreground @min-[30rem]:hidden"
+        >
+          P{totalProtein} · C{totalCarbs} · F{totalFat}
+        </p>
+      )}
 
       {issues.length > 0 && (
         <div className="mb-3 space-y-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2">
