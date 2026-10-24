@@ -257,8 +257,12 @@ vi.mock("./components/macro/SupplementsSection", () => ({
 vi.mock("./components/macro/TemplatesView", () => ({
   TemplatesView: ui.stub("TemplatesView"),
 }));
+// Two instances render side by side (the URL-driven one, reason
+// "settings", and the AI-cap one), so each records under its reason:
+// `UpgradeDialog:settings`, `UpgradeDialog:ai-cap`.
 vi.mock("./components/macro/UpgradeDialog", () => ({
-  UpgradeDialog: ui.stub("UpgradeDialog"),
+  UpgradeDialog: (p: Record<string, unknown>) =>
+    ui.stub(`UpgradeDialog:${String(p.reason)}`)(p),
 }));
 vi.mock("./components/macro/VoiceLogSheet", () => ({
   VoiceLogSheet: ui.stub("VoiceLogSheet"),
@@ -605,7 +609,11 @@ describe("macro-calculator: Today-first landing", () => {
     nav.search = "upgrade=pro";
     render(<MacroCalculator />);
     expect(rendered().today).toBe(true);
-    expect(prop("UpgradeDialog", "open")).toBe(false);
+    // The URL-driven dialog, open on the plan the link names — not the
+    // AI-cap one, which stays closed.
+    expect(prop("UpgradeDialog:settings", "open")).toBe(true);
+    expect(prop("UpgradeDialog:settings", "defaultPlan")).toBe("pro");
+    expect(prop("UpgradeDialog:ai-cap", "open")).toBe(false);
   });
 
   it("finishing onboarding lands on Today even from another view", async () => {
