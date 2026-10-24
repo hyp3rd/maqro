@@ -726,6 +726,7 @@ const MacroCalculator = () => {
     targetForPhases,
     targetCaloriesForDate,
     planWeek,
+    selectedWeek,
     previewDayTargets,
   } = useTargets(personalInfo, today, selectedDate);
   const activeGoalPhase = todayTargets.phase;
@@ -2277,6 +2278,7 @@ const MacroCalculator = () => {
       {view === "plan" && (
         <MealPlanner
           calculatedValues={dayTargets}
+          week={selectedWeek}
           sessionRow={
             <DaySessionRow
               targets={dayTargets}

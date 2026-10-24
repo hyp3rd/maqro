@@ -151,8 +151,11 @@ components/
                                     #   add-food), SheetAction (shared sheet primitives),
                                     #   TrainingWeekEditor (Profile → Training week:
                                     #   TrainingDayDialog + TrainingWeekChart),
-                                    #   DayTypeSheet (day view: change one day's
-                                    #   session, previewed through useTargets)
+                                    #   DayTypeSheet (Today's day-type chip: change one
+                                    #   day's session, previewed through useTargets)
+  today/                            # Instrument Today day view: TodayGauge (ring gauge),
+                                    #   MacroReadout, DayTimeline (24-h track), WeekStrip,
+                                    #   DayTypeChip, MealRail, TodayHeader
   icons/                            # In-tree SVGs (e.g. GoogleLogo for OAuth button)
   marketing/                        # StructuredData (JSON-LD for landing SEO)
   ui/                               # shadcn primitives
@@ -162,7 +165,7 @@ hooks/
   use-profile.ts                    # IDB-hydrated profile state
   use-daily-log.ts                  # IDB-hydrated day log state
   use-targets.ts                    # Day / today / selected-week / planned-week targets via core
-                                    #   targetsForDate (one tier + body-fat context)
+                                    #   targetsForDate (one tier + body-fat + override context)
   use-latest-body-fat.ts            # Body-fat % the targets read (core latestBodyFatPct over IDB)
   use-day-overrides.ts              # Per-date training-session overrides (IDB, synced) the targets read
   use-food-search.ts                # Debounced merged search

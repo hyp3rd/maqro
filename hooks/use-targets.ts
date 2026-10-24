@@ -35,6 +35,13 @@ export type AppTargets = {
    *  body-fat context but no per-date overrides — the training-week editor
    *  and its live preview edit the template, not one week's exceptions. */
   planWeek: (profile: PersonalInfo) => WeekTargets | null;
+  /** The Monday-to-Sunday week containing the displayed day, each day its
+   *  own `targetsForDate` result with the stored per-date overrides (a
+   *  cycled training week plans every day differently) — the Today week
+   *  strip. `null` while the date key is not a calendar date (before
+   *  hydration). Same context as `dayTargets`, so the strip's day and the
+   *  day view always agree. */
+  selectedWeek: WeekTargets | null;
   /** `date`'s targets if its session were `day` (`null` = back to plan, the
    *  template day), with every other stored override and the same context —
    *  the day-type sheet's live preview. */
@@ -110,6 +117,7 @@ export function useTargets(
     targetForPhases,
     targetCaloriesForDate,
     planWeek,
+    selectedWeek,
     previewDayTargets,
   };
 }

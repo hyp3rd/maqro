@@ -253,6 +253,7 @@ vi.mock("./components/macro/VoiceLogSheet", () => ({
 }));
 
 const { default: MacroCalculator } = await import("./macro-calculator");
+const { formatDayLabel } = await import("./components/shell/DateNavigator");
 const { DaySessionRow } = await import("./components/macro/DayTypeSheet");
 type DaySessionProps = ComponentProps<typeof DaySessionRow>;
 

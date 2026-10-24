@@ -258,6 +258,20 @@ describe("useTargets — body fat", () => {
     );
   });
 
+  it("selectedWeek reads the same estimate as the day view and planWeek", () => {
+    bodyFat.pct = 20;
+    const { result } = renderHook(() => useTargets(TRAINING, TODAY, TODAY));
+    expect(result.current.selectedWeek).toEqual(
+      weekTargets(TRAINING, TODAY, ctx(20)),
+    );
+    expect(result.current.selectedWeek).toEqual(
+      result.current.planWeek(TRAINING),
+    );
+    expect(
+      result.current.selectedWeek?.days.find((d) => d.date === TODAY),
+    ).toEqual(result.current.dayTargets);
+  });
+
   describe("per-date session overrides", () => {
     // TODAY (Wed 2026-06-10) is planned as a hard lower-body day.
     const REST_TODAY = { date: TODAY, day: { type: "rest" }, recordedAt: 1 };
@@ -309,6 +323,25 @@ describe("useTargets — body fat", () => {
       expect(result.current.previewDayTargets(TODAY, null)).toEqual(
         targetsForDate(TRAINING, TODAY, ctx(null)),
       );
+    });
+
+    it("selectedWeek carries the override on its day only, matching the day view", () => {
+      stored.overrides = [REST_TODAY];
+      const { result } = renderHook(() => useTargets(TRAINING, TODAY, TODAY));
+      const week = result.current.selectedWeek;
+      expect(week).toEqual(weekTargets(TRAINING, TODAY, withOverride));
+      expect(week?.days.find((d) => d.date === TODAY)).toEqual(
+        result.current.dayTargets,
+      );
+      // Only the overridden day moves; the template week (planWeek) keeps
+      // every other day's target.
+      const template = result.current.planWeek(TRAINING);
+      week?.days.forEach((d, i) => {
+        const planned = template?.days[i]?.targetCalories;
+        if (d.date === TODAY)
+          expect(d.targetCalories).toBeLessThan(planned ?? 0);
+        else expect(d.targetCalories).toBe(planned);
+      });
     });
   });
 });
