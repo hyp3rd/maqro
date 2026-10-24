@@ -85,6 +85,7 @@ const DailyTotals: React.FC<DailyTotalsProps> = ({
   const targetCalories = Math.round(calculatedValues.targetCalories);
   const consumedCalories = Math.round(totalMacros.calories);
   const isToday = selectedDate === today;
+  const when = relativeDay(selectedDate, today);
   const goalReached = targetCalories > 0 && consumedCalories >= targetCalories;
   useGoalReachedCelebration(goalReached, isToday, today);
   const breakdownKeys = (
@@ -110,12 +111,13 @@ const DailyTotals: React.FC<DailyTotalsProps> = ({
           <TodayGauge
             eaten={totalMacros}
             targets={calculatedValues}
-            when={relativeDay(selectedDate, today)}
+            when={when}
             className="w-[10.5rem] sm:w-44"
           />
           <MacroReadout
             eaten={totalMacros}
             targets={calculatedValues}
+            when={when}
             className="w-full grid-cols-2 gap-x-4 @min-[22rem]:w-auto @min-[22rem]:min-w-0 @min-[22rem]:flex-1 @min-[22rem]:grid-cols-1"
           />
         </div>

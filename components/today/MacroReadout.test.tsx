@@ -52,6 +52,32 @@ describe("MacroReadout", () => {
     );
   });
 
+  it("calls a future day's energy row what it is: planned, not eaten", () => {
+    render(
+      <MacroReadout
+        eaten={{ calories: 1240, protein: 85, carbs: 140, fat: 38 }}
+        targets={TARGETS}
+        when="future"
+      />,
+      { wrapper: intlWrapper() },
+    );
+    expect(rows()[0]).toBe("Planned1,240 / 2,500 kcal");
+    // Today and past days ate it.
+    cleanup();
+    for (const when of ["today", "past"] as const) {
+      render(
+        <MacroReadout
+          eaten={{ calories: 1240, protein: 85, carbs: 140, fat: 38 }}
+          targets={TARGETS}
+          when={when}
+        />,
+        { wrapper: intlWrapper() },
+      );
+      expect(rows()[0]).toBe("Eaten1,240 / 2,500 kcal");
+      cleanup();
+    }
+  });
+
   it("formats every figure for the app locale", () => {
     render(
       <MacroReadout

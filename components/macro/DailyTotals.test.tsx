@@ -164,6 +164,9 @@ describe("DailyTotals remaining-kcal line", () => {
       { wrapper: intlWrapper() },
     );
     expect(screen.getByRole("status").textContent).toBe("600 kcal to plan");
+    // Its readout says the same: what is logged ahead is planned.
+    expect(screen.getByText("Planned")).toBeTruthy();
+    expect(screen.queryByText("Eaten")).toBeNull();
   });
 });
 
