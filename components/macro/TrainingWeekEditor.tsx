@@ -8,12 +8,14 @@ import { Switch } from "@/components/ui/switch";
 import { haptic } from "@/lib/haptics";
 import { formatNumber } from "@/lib/i18n/number";
 import { cn } from "@/lib/utils";
-import { type ReactNode, useId, useState } from "react";
+import { useId, useState } from "react";
 import { ChevronRight, Minus, Plus, ShieldCheck } from "lucide-react";
 import { useLocale } from "next-intl";
-import type { WeekTargets } from "@maqro/core/targets";
+import type { DateTargets, WeekTargets } from "@maqro/core/targets";
 import {
   CYCLING_PRESETS,
+  CYCLING_WEIGHTS,
+  DAY_KCAL_STEP,
   PROTEIN_G_PER_KG_MAX,
   PROTEIN_G_PER_KG_MIN,
   fatMovesForDiet,
@@ -67,6 +69,50 @@ type Props = {
 
 /** `weekTargets` lists Monday → Sunday; `getDay()` puts Sunday first. */
 const weekIndex = (weekday: number) => (weekday + 6) % 7;
+
+/** What the cycling choice does to this week, so the line under the
+ *  control always matches the chart above it:
+ *  - `moves`: days vary around the average;
+ *  - `off`: cycling is off;
+ *  - `floors`: the engine's `floorsExceedMean` (every day at the average,
+ *    by its cause);
+ *  - `sameDays`: cycling is on but every day weighs the same (all rest,
+ *    all one class…), so there is nothing to move between them;
+ *  - `atFloor` / `atMinimums`: cycling is on but no day can go under the
+ *    average: it already sits at the safety floor, max(BMR, 1200), or at
+ *    the smallest day that holds the protein, fat and carb minimums. */
+type WeekSpread =
+  | { kind: "moves" | "off" | "sameDays" | "atFloor" | "atMinimums" }
+  | { kind: "floors"; cause: "protein" | "calories" };
+
+function weekSpread(
+  cycling: CyclingPreset,
+  days: readonly DateTargets[],
+  current: DateTargets | undefined,
+  floor: number,
+): WeekSpread {
+  const training = current?.training;
+  if (training?.floorsExceedMean) {
+    return { kind: "floors", cause: training.floorsExceedMean };
+  }
+  if (cycling === "off") return { kind: "off" };
+  const flat = days.every(
+    (d) => d.targetCalories === (d.training?.meanCalories ?? d.targetCalories),
+  );
+  if (!flat) return { kind: "moves" };
+  const weights = new Set(
+    days.map((d) =>
+      d.training ? CYCLING_WEIGHTS[cycling][d.training.dayClass] : null,
+    ),
+  );
+  if (weights.size === 1) return { kind: "sameDays" };
+  const mean = training?.meanCalories ?? current?.targetCalories ?? 0;
+  // Days move in DAY_KCAL_STEP steps: an average less than one step above
+  // the safety floor leaves no day room to go under it.
+  return mean - floor < DAY_KCAL_STEP
+    ? { kind: "atFloor" }
+    : { kind: "atMinimums" };
+}
 
 /** The training-week editor (FREE): an enable switch, the Monday-first
  *  template with each day's planned calories, the cycling preset with the
@@ -207,6 +253,7 @@ function EnabledEditor({
   const floor = Math.max(current?.bmr ?? 0, MIN_DAILY_KCAL);
   const fatMoves = fatMovesForDiet(profile.dietType);
   const setting = normalizeProteinSetting(profile.proteinSetting);
+  const spread = weekSpread(schedule.cycling, week.days, current, floor);
 
   const chartDays = MONDAY_FIRST.map((weekday) => {
     const target = week.days[weekIndex(weekday)];
@@ -262,11 +309,12 @@ function EnabledEditor({
                   label: CYCLING_LABEL[c],
                 }))}
               />
-              <p className="text-label text-muted-foreground">
-                {schedule.cycling === "off"
-                  ? "Every day stays at your weekly average."
-                  : "Calories move between days; your weekly average stays the same."}
-              </p>
+              <div aria-live="polite">
+                <SpreadLine
+                  spread={spread}
+                  goal={current?.goal ?? profile.goal}
+                />
+              </div>
             </div>
             <p className="flex items-start gap-2 text-label text-muted-foreground">
               <ShieldCheck
@@ -322,6 +370,7 @@ function EnabledEditor({
         proteinGrams={current?.protein ?? 0}
         heldGrams={fatMoves ? (current?.carbs ?? 0) : (current?.fat ?? 0)}
         fatMoves={fatMoves}
+        fatFloorLifted={training?.fatFloorLifted === true}
         kcal={kcal}
         onChange={(next) => {
           haptic("select");
@@ -331,15 +380,10 @@ function EnabledEditor({
         }}
       />
 
-      {training && (
-        <TrainingNotes
+      {training?.bodyFatWouldChangeProtein && (
+        <BodyFatNote
           setting={setting}
           proteinBasis={training.proteinBasis}
-          bodyFatWouldChangeProtein={training.bodyFatWouldChangeProtein}
-          fatFloorLifted={training.fatFloorLifted}
-          floorsExceedMean={training.floorsExceedMean}
-          fatGrams={current?.fat ?? 0}
-          goal={current?.goal ?? profile.goal}
           onOpenMeasurements={onOpenMeasurements}
         />
       )}
@@ -424,13 +468,19 @@ function ProteinCard({
   proteinGrams,
   heldGrams,
   fatMoves,
+  fatFloorLifted,
   kcal,
   onChange,
 }: {
   setting: ProteinSetting;
   proteinGrams: number;
+  /** The macro held for the whole week: carbs when fat moves with each
+   *  day's calories (`fatMovesForDiet`), else fat. */
   heldGrams: number;
   fatMoves: boolean;
+  /** `DateTargets.training.fatFloorLifted`: the fat floor changed the
+   *  user's explicit fat choice. */
+  fatFloorLifted: boolean;
   kcal: (n: number) => string;
   onChange: (next: ProteinSetting) => void;
 }) {
@@ -451,10 +501,8 @@ function ProteinCard({
             className="text-sm font-semibold text-foreground"
           >
             Protein:{" "}
-            <span className="font-mono tabular-nums">
-              {kcal(proteinGrams)} g
-            </span>{" "}
-            every day
+            <span className="font-mono tabular-nums">{kcal(proteinGrams)}</span>{" "}
+            g every day
           </h3>
           <div className="space-y-2">
             <p
@@ -520,93 +568,107 @@ function ProteinCard({
           </div>
           <p className="text-label text-muted-foreground">
             {formatNumber(PROTEIN_G_PER_KG_MIN, locale, 1)} to{" "}
-            {formatNumber(max, locale, 1)} g/kg. {fatMoves ? "Fat" : "Carbs"}{" "}
-            move with each day&apos;s calories; {fatMoves ? "carbs" : "fat"}{" "}
-            stays near {kcal(heldGrams)} g and protein stays the same.
+            {formatNumber(max, locale, 1)} g/kg.{" "}
+            {fatMoves
+              ? `Fat moves with each day's calories; carbs stay near ${kcal(heldGrams)} g and protein stays the same.`
+              : `Carbs move with each day's calories; fat stays near ${kcal(heldGrams)} g and protein stays the same.`}
           </p>
+          {fatFloorLifted && (
+            <Callout tone="info">
+              {fatMoves ? (
+                <>
+                  Carbs stay at{" "}
+                  <span className="font-mono tabular-nums">
+                    {kcal(heldGrams)}
+                  </span>{" "}
+                  g a day while you train, a little under your chosen split, so
+                  fat sits a little higher each day to keep a healthy minimum.
+                </>
+              ) : (
+                <>
+                  Fat stays at{" "}
+                  <span className="font-mono tabular-nums">
+                    {kcal(heldGrams)}
+                  </span>{" "}
+                  g a day while you train, a little above your chosen split, to
+                  keep a healthy minimum.
+                </>
+              )}
+            </Callout>
+          )}
         </CardBody>
       </section>
     </Card>
   );
 }
 
-function TrainingNotes({
+/** The line under the cycling control: what the choice does to this week,
+ *  or, when the days can't vary, why (calm, one sentence or two). */
+function SpreadLine({
+  spread,
+  goal,
+}: {
+  spread: WeekSpread;
+  goal: PersonalInfo["goal"];
+}) {
+  if (spread.kind === "moves" || spread.kind === "off") {
+    return (
+      <p className="text-label text-muted-foreground">
+        {spread.kind === "off"
+          ? "Every day stays at your weekly average."
+          : "Calories move between days; your weekly average stays the same."}
+      </p>
+    );
+  }
+  let copy: string;
+  switch (spread.kind) {
+    case "floors":
+      copy =
+        spread.cause === "protein"
+          ? "Your protein setting leaves little room for the other minimums at this calorie level, so every day stays at the average. A lower g/kg setting would let the days vary."
+          : `Your calorie target leaves little room for the protein, fat and carb minimums together, so every day stays at the average.${goal === "lose" ? " A smaller deficit would give each day more room." : ""}`;
+      break;
+    case "sameDays":
+      copy =
+        "Every day of your week plans the same way, so each stays at your weekly average. Days with different sessions would vary.";
+      break;
+    case "atFloor":
+      copy =
+        "Your average is already at your safety floor, so every day stays at the average for now.";
+      break;
+    case "atMinimums":
+      copy =
+        "Your average is already at the smallest day that fits your protein, fat and carb minimums, so every day stays at the average for now.";
+      break;
+  }
+  return <Callout className="text-label leading-5">{copy}</Callout>;
+}
+
+/** A body-fat estimate would change protein: why, and where it comes from. */
+function BodyFatNote({
   setting,
   proteinBasis,
-  bodyFatWouldChangeProtein,
-  fatFloorLifted,
-  floorsExceedMean,
-  fatGrams,
-  goal,
   onOpenMeasurements,
 }: {
   setting: ProteinSetting;
   proteinBasis: "bodyweight" | "leanMass" | "referenceWeight";
-  bodyFatWouldChangeProtein: boolean;
-  fatFloorLifted: boolean;
-  floorsExceedMean: false | "protein" | "calories";
-  fatGrams: number;
-  goal: PersonalInfo["goal"];
   onOpenMeasurements: () => void;
 }) {
-  const locale = useLocale();
-  const notes: ReactNode[] = [];
-  if (bodyFatWouldChangeProtein) {
-    notes.push(
-      <Callout
-        key="body-fat"
-        tone="info"
+  const copy =
+    setting.basis === "leanMass"
+      ? `Lean mass needs a body-fat estimate. Until there is one, protein uses up to 2.0 g/kg of ${proteinBasis === "referenceWeight" ? "a reference weight for your height" : "your bodyweight"}.`
+      : "Protein is set from a reference weight for your height. A body-fat estimate would make it more precise.";
+  return (
+    <Callout tone="info">
+      <p>{copy}</p>
+      <Button
+        type="button"
+        variant="link"
+        className="h-auto min-h-touch-7 px-0 text-brand-text"
+        onClick={onOpenMeasurements}
       >
-        <p>
-          {setting.basis === "leanMass" && proteinBasis !== "leanMass"
-            ? "Lean mass needs a body-fat estimate. Until there is one, protein uses up to 2.0 g/kg of your bodyweight."
-            : "Protein is set from a reference weight for your height. A body-fat estimate would make it more precise."}
-        </p>
-        <Button
-          type="button"
-          variant="link"
-          className="h-auto min-h-touch-7 px-0 text-brand-text"
-          onClick={onOpenMeasurements}
-        >
-          Add measurements in My measurements
-        </Button>
-      </Callout>,
-    );
-  }
-  if (fatFloorLifted) {
-    notes.push(
-      <Callout
-        key="fat"
-        tone="info"
-      >
-        Fat stays at{" "}
-        <span className="font-mono tabular-nums">
-          {formatNumber(fatGrams, locale)} g
-        </span>{" "}
-        a day while you train: a little above your chosen split, to keep a
-        healthy minimum.
-      </Callout>,
-    );
-  }
-  if (floorsExceedMean === "protein") {
-    notes.push(
-      <Callout key="floors">
-        Your protein setting leaves little room for the other minimums at this
-        calorie level, so every day stays at the average. A lower g/kg setting
-        would let the days vary.
-      </Callout>,
-    );
-  } else if (floorsExceedMean === "calories") {
-    notes.push(
-      <Callout key="floors">
-        Your calorie target leaves little room for the protein, fat and carb
-        minimums together, so every day stays at the average.
-        {goal === "lose"
-          ? " A smaller deficit would give each day more room."
-          : ""}
-      </Callout>,
-    );
-  }
-  if (notes.length === 0) return null;
-  return <div className="space-y-3">{notes}</div>;
+        Open My measurements
+      </Button>
+    </Callout>
+  );
 }

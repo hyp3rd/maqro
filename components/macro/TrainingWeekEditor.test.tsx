@@ -4,11 +4,7 @@
 import { intlWrapper } from "@/lib/i18n/intl-test-wrapper";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  type TrainingDayTargets,
-  type WeekTargets,
-  weekTargets,
-} from "@maqro/core/targets";
+import { type WeekTargets, weekTargets } from "@maqro/core/targets";
 import {
   defaultTrainingSchedule,
   withTrainingDay,
@@ -410,19 +406,6 @@ describe("TrainingWeekEditor: protein", () => {
 });
 
 describe("TrainingWeekEditor: notes from the engine's flags", () => {
-  /** The real week, with today's training flags overridden. */
-  const flagged =
-    (flags: Partial<TrainingDayTargets>) =>
-    (p: PersonalInfo): WeekTargets | null => {
-      const week = plan(p);
-      if (!week) return null;
-      return {
-        ...week,
-        days: week.days.map((d) =>
-          d.training ? { ...d, training: { ...d.training, ...flags } } : d,
-        ),
-      };
-    };
   const profile = { ...BASE, training: SCHEDULE };
 
   it("no flags, no notes", () => {
@@ -442,14 +425,29 @@ describe("TrainingWeekEditor: notes from the engine's flags", () => {
       onOpenMeasurements,
     });
     expect(
-      screen.getByText(/Lean mass needs a body-fat estimate/),
+      screen.getByText(
+        "Lean mass needs a body-fat estimate. Until there is one, protein uses up to 2.0 g/kg of your bodyweight.",
+      ),
     ).toBeTruthy();
     fireEvent.click(
-      screen.getByRole("button", {
-        name: "Add measurements in My measurements",
-      }),
+      screen.getByRole("button", { name: "Open My measurements" }),
     );
     expect(onOpenMeasurements).toHaveBeenCalledTimes(1);
+  });
+
+  it("lean mass above BMI 30 without an estimate names the reference weight", () => {
+    renderEditor({
+      initial: {
+        ...profile,
+        weight: 115,
+        proteinSetting: { basis: "leanMass", gPerKg: 2.6 },
+      },
+    });
+    expect(
+      screen.getByText(
+        "Lean mass needs a body-fat estimate. Until there is one, protein uses up to 2.0 g/kg of a reference weight for your height.",
+      ),
+    ).toBeTruthy();
   });
 
   it("the BMI reference weight suggests a body-fat estimate too", () => {
@@ -458,29 +456,161 @@ describe("TrainingWeekEditor: notes from the engine's flags", () => {
     expect(screen.getByText(/reference weight for your height/)).toBeTruthy();
   });
 
-  it("a fat floor that lifted an explicit choice is an info note with the grams", () => {
-    renderEditor({
-      initial: profile,
-      planWeek: flagged({ fatFloorLifted: true }),
-    });
-    const fat = plan(profile)?.days[5]?.fat ?? 0;
-    const note = screen.getByText(/a little above your chosen split/);
-    expect(note.textContent).toContain(`${fat} g`);
+  /** A custom split with a 10% fat share, under the fat floor. */
+  const lowFatSplit: PersonalInfo = {
+    ...profile,
+    macroSplit: { protein: 40, carbs: 50, fat: 10 },
+    training: { ...SCHEDULE, cycling: "pronounced" },
+  };
+  const proteinCard = () => screen.getByRole("region", { name: /Protein:/ });
+
+  it("a lifted fat choice on a carb-moving diet names the week's fat", () => {
+    const week = plan(lowFatSplit);
+    expect(week?.days[5]?.training?.fatFloorLifted).toBe(true);
+    const fats = [...new Set(week?.days.map((d) => d.fat))];
+    expect(fats).toHaveLength(1); // carbs move; fat is held
+    renderEditor({ initial: lowFatSplit });
+    const note = within(proteinCard()).getByText(
+      /a little above your chosen split/,
+    );
+    expect(note.textContent).toBe(
+      `Fat stays at ${fats[0]} g a day while you train, a little above your chosen split, to keep a healthy minimum.`,
+    );
   });
 
-  it("floors over the mean are worded by their cause", () => {
-    const { unmount } = renderEditor({
-      initial: profile,
-      planWeek: flagged({ floorsExceedMean: "protein" }),
-    });
-    expect(screen.getByText(/A lower g\/kg setting/)).toBeTruthy();
+  it("a lifted fat choice on a low-carb diet names the held carbs, never one fat figure", () => {
+    const lowCarb: PersonalInfo = { ...lowFatSplit, dietType: "lowCarb" };
+    const week = plan(lowCarb);
+    expect(week?.days[5]?.training?.fatFloorLifted).toBe(true);
+    // Fat moves with each day's calories here; carbs are held.
+    expect(new Set(week?.days.map((d) => d.fat)).size).toBeGreaterThan(1);
+    const carbs = [...new Set(week?.days.map((d) => d.carbs))];
+    expect(carbs).toHaveLength(1);
+    renderEditor({ initial: lowCarb });
+    const note = within(proteinCard()).getByText(
+      /a little under your chosen split/,
+    );
+    expect(note.textContent).toBe(
+      `Carbs stay at ${carbs[0]} g a day while you train, a little under your chosen split, so fat sits a little higher each day to keep a healthy minimum.`,
+    );
+    expect(screen.queryByText(/Fat stays at/)).toBeNull();
+  });
+
+  it("the protein card names the macro the week holds", () => {
+    const { unmount } = renderEditor({ initial: lowFatSplit });
+    expect(
+      within(proteinCard()).getByText(/carbs move with each day's calories/i),
+    ).toBeTruthy();
     unmount();
+    renderEditor({ initial: { ...lowFatSplit, dietType: "lowCarb" } });
+    expect(
+      within(proteinCard()).getByText(
+        /Fat moves with each day's calories; carbs stay near 200 g/,
+      ),
+    ).toBeTruthy();
+  });
+});
+
+describe("TrainingWeekEditor: when the days can't vary", () => {
+  /** The calorie card: the chart, the cycling control and its line. */
+  const caloriesCard = () => {
+    const card = screen
+      .getByRole("radiogroup", { name: "Day-to-day difference" })
+      .closest("section");
+    if (!card) throw new Error("expected the calorie card");
+    return card;
+  };
+  const MOVES =
+    "Calories move between days; your weekly average stays the same.";
+
+  it("an average at the safety floor says so under the control", () => {
+    // A 1 kg/week cut from 2,600 is clamped to the 1,780 BMR floor.
+    const atFloor: PersonalInfo = {
+      ...BASE,
+      weeklyRateKg: 1.0,
+      training: SCHEDULE,
+    };
+    const week = plan(atFloor);
+    expect(new Set(week?.days.map((d) => d.targetCalories))).toEqual(
+      new Set([week?.days[0]?.bmr]),
+    );
+    renderEditor({ initial: atFloor });
+    const line =
+      "Your average is already at your safety floor, so every day stays at the average for now.";
+    expect(within(caloriesCard()).getByText(line)).toBeTruthy();
+    expect(screen.queryByText(MOVES)).toBeNull();
+    // A bigger spread can't change that, and the line keeps saying why.
+    fireEvent.click(screen.getByRole("radio", { name: "Pronounced" }));
+    expect(within(caloriesCard()).getByText(line)).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: "Off" }));
+    expect(
+      within(caloriesCard()).getByText(
+        "Every day stays at your weekly average.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("a protein setting the average can't hold is explained at the control", () => {
+    const heavy: PersonalInfo = {
+      ...BASE,
+      weight: 100,
+      height: 190,
+      weeklyRateKg: 1.0,
+      proteinSetting: { basis: "bodyweight", gPerKg: 3.4 },
+      training: SCHEDULE,
+    };
+    expect(plan(heavy)?.days[5]?.training?.floorsExceedMean).toBe("protein");
+    renderEditor({ initial: heavy });
+    expect(
+      within(caloriesCard()).getByText(
+        /^Your protein setting leaves little room .* A lower g\/kg setting would let the days vary\.$/,
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(MOVES)).toBeNull();
+  });
+
+  it("a calorie target the minimums don't fit is explained at the control", () => {
     renderEditor({
-      initial: profile,
-      planWeek: flagged({ floorsExceedMean: "calories" }),
+      initial: { ...BASE, training: SCHEDULE },
+      planWeek: (p) => {
+        const week = plan(p);
+        if (!week) return null;
+        return {
+          ...week,
+          days: week.days.map((d) =>
+            d.training
+              ? {
+                  ...d,
+                  targetCalories: d.training.meanCalories,
+                  training: { ...d.training, floorsExceedMean: "calories" },
+                }
+              : d,
+          ),
+        };
+      },
     });
-    expect(screen.getByText(/A smaller deficit/)).toBeTruthy();
+    expect(
+      within(caloriesCard()).getByText(
+        /^Your calorie target leaves little room .* A smaller deficit would give each day more room\.$/,
+      ),
+    ).toBeTruthy();
     expect(screen.queryByText(/A lower g\/kg setting/)).toBeNull();
+    expect(screen.queryByText(MOVES)).toBeNull();
+  });
+
+  it("a week of one kind of day says there is nothing to move", () => {
+    const rest = { type: "rest" } as const;
+    const allRest: TrainingSchedule = {
+      ...SCHEDULE,
+      days: [rest, rest, rest, rest, rest, rest, rest],
+    };
+    renderEditor({ initial: { ...BASE, training: allRest } });
+    expect(
+      within(caloriesCard()).getByText(
+        /^Every day of your week plans the same way/,
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(MOVES)).toBeNull();
   });
 });
 
