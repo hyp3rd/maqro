@@ -254,3 +254,29 @@ describe("UserMenu while offline-unverified", () => {
     expect(onSelectView).toHaveBeenCalledWith("settings");
   });
 });
+
+describe("UserMenu in the desktop sidebar footer (signed in)", () => {
+  it("offers Settings from the registry, and keeps the phone-only extras out", async () => {
+    const { UserMenu } = await import("./UserMenu");
+    const onSelectView = vi.fn();
+    // The sidebar footer: not compact, wired to the view switch.
+    renderWithIntl(<UserMenu onSelectView={onSelectView} />);
+    fireEvent.keyDown(
+      await screen.findByRole("button", { name: /a@example\.com/i }),
+      { key: "Enter" },
+    );
+    const settings = await screen.findByRole("menuitem", { name: "Settings" });
+    // Notifications and the theme have their own topbar controls on desktop.
+    expect(
+      screen.queryByRole("menuitem", { name: /notifications/i }),
+    ).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: /theme/i })).toBeNull();
+    // Settings leads the actions, ahead of the homepage link and Sign out.
+    const names = screen
+      .getAllByRole("menuitem")
+      .map((item) => item.textContent?.trim());
+    expect(names).toEqual(["Settings", "Visit homepage", "Sign out"]);
+    fireEvent.click(settings);
+    expect(onSelectView).toHaveBeenCalledWith("settings");
+  });
+});
