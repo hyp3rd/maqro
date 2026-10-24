@@ -15,15 +15,23 @@ const NODE = {
   // Food on the plan, not logged as eaten: a dashed ring, between the
   // filled "logged" and the faint hollow "open".
   planned: "border-[1.5px] border-dashed border-foreground/70 bg-background",
-  now: "bg-signal ring-4 ring-signal/20",
   open: "border-2 border-foreground/30 bg-background",
+} as const;
+
+/** Today's next slot to log, lit in the signal colour: filled when it is
+ *  empty, a dashed signal ring when food is planned there. */
+const NEXT = {
+  planned:
+    "border-[1.5px] border-dashed border-signal bg-background ring-4 ring-signal/20",
+  open: "bg-signal ring-4 ring-signal/20",
 } as const;
 
 /** The Today meal list on a rail that echoes the timing track: a filled
  *  node per logged meal (with the time its first food was logged), a
  *  dashed node for a planned one (food with no logged time — an AI
- *  auto-fill, a template; no time either), a highlighted node for today's
- *  next slot to log, hollow nodes for the rest. The time column is there
+ *  auto-fill, a template; no time either), hollow nodes for empty slots,
+ *  and today's next slot to log — the first after the last LOGGED meal,
+ *  empty or planned — highlighted. The time column is there
  *  only when some meal has a time, so an
  *  untimed day gives its width back to the cards. The meal cards
  *  themselves are the caller's (`renderMeal`), so every existing card
@@ -51,7 +59,11 @@ export function MealRail({
       className={cn("list-none", className)}
     >
       {meals.map((meal, i) => {
-        const entry = entries[i] ?? { node: "open", lineStrong: false };
+        const entry = entries[i] ?? {
+          node: "open",
+          next: false,
+          lineStrong: false,
+        };
         const start = starts[i] ?? null;
         const last = i === meals.length - 1;
         return (
@@ -97,16 +109,17 @@ export function MealRail({
               )}
               <span
                 data-node={entry.node}
+                data-next={entry.next || undefined}
                 className={cn(
                   "absolute left-1/2 top-5 h-2.5 w-2.5 -translate-x-1/2 rounded-full",
-                  NODE[entry.node],
+                  entry.next && entry.node !== "logged"
+                    ? NEXT[entry.node]
+                    : NODE[entry.node],
                 )}
               />
             </span>
             <div className="min-w-0">
-              {entry.node === "now" && (
-                <span className="sr-only">Next to log</span>
-              )}
+              {entry.next && <span className="sr-only">Next to log</span>}
               {entry.node === "planned" && (
                 <span className="sr-only">Planned, not logged yet</span>
               )}
