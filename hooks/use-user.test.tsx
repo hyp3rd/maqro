@@ -548,8 +548,14 @@ describe("useUser — SIGNED_IN from storage is still checked with the server", 
   });
 
   it("a refused session that can't be checked offline stays hidden", async () => {
-    const { result, releaseGetUser, emit, answerGetUserWith, getUser } =
-      await startWith(SESSION);
+    const {
+      result,
+      releaseGetUser,
+      emit,
+      answerGetUserWith,
+      holdGetUser,
+      getUser,
+    } = await startWith(SESSION);
     await act(async () => releaseGetUser(bannedGetUser));
     await waitFor(() => expect(result.current.isLoaded).toBe(true));
 
@@ -567,6 +573,87 @@ describe("useUser — SIGNED_IN from storage is still checked with the server", 
     await goOnline();
     expect(getUser).toHaveBeenCalledTimes(3);
     expect(result.current.user).toBeNull();
+
+    // That re-check asked about the hidden session, so its refusal holds:
+    // the next tab focus re-delivers the session, and it stays hidden
+    // while it is checked again.
+    const answer = holdGetUser();
+    emit("SIGNED_IN", SESSION);
+    expect(getUser).toHaveBeenCalledTimes(4);
+    expect(result.current.user).toBeNull();
+    expect(result.current.localUserId).toBeNull();
+    await answer(bannedGetUser);
+    expect(result.current.user).toBeNull();
+    expect(readLastKnownUserId()).toBeNull();
+  });
+
+  it("the re-check of a hidden refused session asks about that session, not about whoever signs in next", async () => {
+    const {
+      result,
+      releaseGetUser,
+      emit,
+      answerGetUserWith,
+      holdGetUser,
+      getUser,
+    } = await startWith(SESSION);
+    await act(async () => releaseGetUser(bannedGetUser));
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+    answerGetUserWith(offlineGetUser);
+    emit("SIGNED_IN", SESSION);
+    await waitFor(() => expect(getUser).toHaveBeenCalledTimes(2));
+    await act(async () => {});
+    expect(result.current.user).toBeNull();
+
+    // Back online, the hidden u1 session is checked again; meanwhile
+    // another tab signs in as u2. That is another session than the one
+    // being checked, so it is checked on its own …
+    const refusal = holdGetUser();
+    await goOnline();
+    expect(getUser).toHaveBeenCalledTimes(3);
+    const other = { id: "u2" } as User;
+    const acceptance = holdGetUser();
+    emit("SIGNED_IN", { user: other } as Session);
+    expect(getUser).toHaveBeenCalledTimes(4);
+
+    // … and u1's refusal neither hides nor forgets u2.
+    await refusal(bannedGetUser);
+    expect(result.current.user).toBe(other);
+    await acceptance({ data: { user: other }, error: null });
+    expect(result.current.user).toBe(other);
+    expect(readLastKnownUserId()).toBe("u2");
+  });
+
+  it("a refusal stays on record when the re-ask that refuses doesn't know whose session it asked about", async () => {
+    const {
+      result,
+      releaseGetUser,
+      emit,
+      holdGetUser,
+      answerGetUserWith,
+      getUser,
+    } = await startWith(SESSION);
+    await act(async () => releaseGetUser(bannedGetUser));
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+
+    // The re-check of the refused session is answered about another
+    // account, so it is asked again about whatever auth-js holds — and
+    // that session is refused too.
+    const other = { id: "u2" } as User;
+    const firstAnswer = holdGetUser();
+    emit("SIGNED_IN", SESSION);
+    answerGetUserWith(bannedGetUser);
+    await firstAnswer({ data: { user: other }, error: null });
+    await waitFor(() => expect(getUser).toHaveBeenCalledTimes(3));
+    await act(async () => {});
+    expect(result.current.user).toBeNull();
+
+    // Nothing has accepted u1's session since it was refused.
+    const answer = holdGetUser();
+    emit("SIGNED_IN", SESSION);
+    expect(result.current.user).toBeNull();
+    expect(result.current.localUserId).toBeNull();
+    await answer(bannedGetUser);
+    expect(readLastKnownUserId()).toBeNull();
   });
 
   it("a SIGNED_IN before the first answer shows the session but does not record it", async () => {

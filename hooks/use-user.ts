@@ -228,7 +228,13 @@ export function useUser(): UserState {
           inFlight = null;
           resolved = true;
           unverified = stale;
-          if (!stale) refusedUserId = next.user === null ? check.subject : null;
+          // A refusal by a check that didn't know whose session it asked
+          // about (the mismatch re-ask) names no one, so the refusal on
+          // record stands: only an accepted session or a sign-out ends it.
+          if (!stale) {
+            refusedUserId =
+              next.user === null ? (check.subject ?? refusedUserId) : null;
+          }
           syncLastKnownUser(next, !stale);
           if (stale && next.user !== null) showUnverified(next.user);
           else show(next, !stale);
@@ -327,10 +333,12 @@ export function useUser(): UserState {
     // in flight (the tab's focus and auth-js's SIGNED_IN arrive together)
     // that check answers instead; should it fail again, it is repeated
     // once, so the event that may have restored the network isn't lost.
+    // It asks about the identity the hook holds: the one it shows, or the
+    // refused session it keeps hidden — so a refusal stays bound to it.
     const recheck = () => {
       if (!unverified) return;
       if (inFlight !== null) inFlight.retry = true;
-      else verify(shownUserId);
+      else verify(shownUserId ?? refusedUserId);
     };
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") recheck();
