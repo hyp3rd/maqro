@@ -211,6 +211,19 @@ describe("targetsForDate", () => {
       phaseId: null,
     },
     {
+      // Fed to computeMacros, a NaN rate made every target NaN.
+      name: "a cut whose weekly rate isn't a finite number is ignored",
+      profile: profile({
+        goalPhases: [cut({ weeklyRateKg: Number.NaN, tdeeOverride: 2450 })],
+      }),
+      date: "2026-06-10",
+      ctx: PRO,
+      kcal: 2600,
+      tdee: 2600,
+      goal: "maintain",
+      phaseId: null,
+    },
+    {
       name: "a legacy phase with a blank start date is ignored",
       profile: profile({
         goalPhases: [cut({ startDate: "", tdeeOverride: 2450 })],

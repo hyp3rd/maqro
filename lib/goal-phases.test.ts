@@ -15,6 +15,7 @@ import {
   phaseGoal,
   phaseHasRate,
   phaseHasValidWindow,
+  phaseIsUsable,
   phaseProgress,
   phasesInWindow,
   presetCut,
@@ -523,6 +524,75 @@ describe("phases without a valid window", () => {
       // After the valid phase's end (2026-06-29), whatever the order.
       expect(newPhase([valid, p], "2026-06-10").startDate).toBe("2026-06-29");
       expect(newPhase([p, valid], "2026-06-10").startDate).toBe("2026-06-29");
+    },
+  );
+});
+
+describe("rate-based phases without a readable weekly rate", () => {
+  // A cut or lean bulk synced by an older client (or edited in the raw
+  // payload) can carry a rate that isn't a finite number. Fed to
+  // computeMacros it would make every target it drives NaN, so the phase is
+  // unusable exactly like one without a valid window.
+  const unreadable: GoalPhase[] = [
+    phase({ id: "nan-cut", weeklyRateKg: Number.NaN }),
+    phase({ id: "inf-bulk", kind: "leanBulk", weeklyRateKg: Infinity }),
+    phase({ id: "string-cut", weeklyRateKg: "0.4" as unknown as number }),
+    phase({ id: "null-cut", weeklyRateKg: null as unknown as number }),
+  ];
+  const valid = phase({ id: "cut", startDate: "2026-06-01", durationWeeks: 4 });
+
+  it("is what phaseIsUsable reports (the planner flags it)", () => {
+    expect(unreadable.filter(phaseIsUsable)).toEqual([]);
+    expect(phaseIsUsable(valid)).toBe(true);
+    // Its window itself is fine: the rate is what makes it unusable.
+    for (const p of unreadable) expect(phaseHasValidWindow(p)).toBe(true);
+  });
+
+  it("a kind without a rate is usable whatever its stored rate", () => {
+    for (const kind of ["maintenance", "dietBreak"] as const) {
+      expect(phaseIsUsable(phase({ id: kind, kind, weeklyRateKg: NaN }))).toBe(
+        true,
+      );
+    }
+  });
+
+  it("phaseIsUsable needs a valid window too", () => {
+    expect(phaseIsUsable(phase({ id: "blank", startDate: "" }))).toBe(false);
+  });
+
+  it.each(unreadable.map((p) => [p.id, p] as const))(
+    "%s is never active, next, in a window, or nudged",
+    (_id, p) => {
+      expect(activePhase([p], "2026-06-10")).toBeNull();
+      expect(nextPhase([p], "1999-01-01")).toBeNull();
+      expect(phasesInWindow([p], "1999-01-01", "2999-01-01")).toEqual([]);
+      expect(dietBreakNudge([p], "2026-06-28")).toBeNull();
+      const goal = effectiveGoal(
+        profile({ goal: "lose", weeklyRateKg: 0.3, goalPhases: [p] }),
+        "2026-06-10",
+        { phasesEnabled: true },
+      );
+      expect(goal).toEqual({ goal: "lose", weeklyRateKg: 0.3, phase: null });
+    },
+  );
+
+  it("never shadows a usable phase, and is left out of the per-phase TDEE read", () => {
+    const later = phase({ id: "later", startDate: "2026-06-05" });
+    const shadow = { ...later, id: "shadow", weeklyRateKg: Number.NaN };
+    expect(activePhase([valid, shadow], "2026-06-10")?.id).toBe("cut");
+    const out = inferAdaptiveTdeePerPhase({
+      weights: [],
+      intake: [],
+      phases: [...unreadable, valid],
+      today: "2026-06-10",
+    });
+    expect(out.map((p) => p.phase.id)).toEqual(["cut"]);
+  });
+
+  it.each(unreadable.map((p) => [p.id, p] as const))(
+    "%s never places a new phase",
+    (_id, p) => {
+      expect(newPhase([p], "2026-06-10").startDate).toBe("2026-06-10");
     },
   );
 });

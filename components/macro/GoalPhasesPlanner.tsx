@@ -14,6 +14,7 @@ import {
   PHASE_LABELS,
   phaseHasRate,
   phaseHasValidWindow,
+  phaseIsUsable,
   presetCut,
   presetCutThenBreak,
   presetLeanBulk,
@@ -140,8 +141,8 @@ export function GoalPhasesPlanner({
   const { tier, resolved: tierResolved } = useTier();
   const isPro = tier !== null && FEATURES.canUseGoalPhases(tier);
   const [editing, setEditing] = useState<GoalPhase | null>(null);
-  // Prefix for the ids of the "dates can't be read" notes (phase ids are
-  // opaque synced strings, not safe as element ids).
+  // Prefix for the ids of the unusable phases' "can't be read" notes (phase
+  // ids are opaque synced strings, not safe as element ids).
   const noteIdBase = useId();
   // A pending change held back for confirmation because it would raise today's
   // target while a cut is active (see `applyMaybeWarn`). `null` = no warning.
@@ -257,11 +258,13 @@ export function GoalPhasesPlanner({
             <ul className="space-y-1.5">
               {list.map((phase, index) => {
                 const isActive = active?.id === phase.id;
-                // A phase without a valid window (e.g. a datetime start from
-                // an older client) is ignored by every schedule computation:
-                // say so, and point its Edit/Remove buttons at why.
+                // An unusable phase — no valid window (e.g. a datetime start
+                // from an older client) or an unreadable weekly rate — is
+                // ignored by every schedule computation: say so, and point
+                // its Edit/Remove buttons at why.
                 const hasDates = phaseHasValidWindow(phase);
-                const noteId = hasDates
+                const usable = phaseIsUsable(phase);
+                const noteId = usable
                   ? undefined
                   : `${noteIdBase}-no-dates-${index}`;
                 return (
@@ -271,7 +274,7 @@ export function GoalPhasesPlanner({
                       "flex items-center gap-2 rounded-lg border px-3 py-2",
                       isActive
                         ? "border-brand/50 bg-brand/5"
-                        : hasDates
+                        : usable
                           ? "border-border/60"
                           : "border-amber-500/40",
                     )}
@@ -285,7 +288,7 @@ export function GoalPhasesPlanner({
                           </span>
                         )}
                       </span>
-                      {hasDates ? (
+                      {usable ? (
                         <span className="block font-mono text-[11px] tabular-nums text-muted-foreground">
                           {fmtDate(phase.startDate)} →{" "}
                           {fmtDate(phaseEndDate(phase))} · {phase.durationWeeks}{" "}
@@ -301,8 +304,11 @@ export function GoalPhasesPlanner({
                             className="mt-px h-3 w-3 shrink-0"
                           />
                           <span id={noteId}>
-                            Its dates can&apos;t be read, so it isn&apos;t used
-                            for your targets. Edit or remove it.
+                            {hasDates
+                              ? "Its weekly rate can't be read"
+                              : "Its dates can't be read"}
+                            , so it isn&apos;t used for your targets. Edit or
+                            remove it.
                           </span>
                         </span>
                       )}
