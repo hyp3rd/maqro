@@ -341,7 +341,25 @@ describe("TrainingWeekEditor: editing a day", () => {
     fireEvent.click(row("Wednesday"));
     const dialog = await screen.findByRole("dialog", { name: "Wednesday" });
     fireEvent.click(within(dialog).getByRole("radio", { name: "Rest" }));
-    expect(within(dialog).queryByLabelText("Start time")).toBeNull();
+    // The session block stays (disabled), so the sheet keeps its height.
+    const start = within(dialog).getByLabelText("Start time");
+    expect(start.matches(":disabled")).toBe(true);
+    expect(
+      within(dialog).getByLabelText("Duration (min)").matches(":disabled"),
+    ).toBe(true);
+    for (const name of ["Light", "Moderate", "Hard"]) {
+      expect(
+        within(dialog).getByRole("radio", { name }).matches(":disabled"),
+      ).toBe(true);
+    }
+    expect(
+      within(dialog).getByText("A rest day has no session details."),
+    ).toBeTruthy();
+    // Back to a session, the fields are live again with the draft kept.
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Lower body" }));
+    expect(start.matches(":disabled")).toBe(false);
+    expect((start as HTMLInputElement).value).toBe("18:00");
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Rest" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(onTraining).not.toHaveBeenCalled();
 
