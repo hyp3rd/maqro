@@ -155,34 +155,6 @@ export function TrainingWeekEditor({
     onTrainingChange(withTrainingEnabled(profile.training, on));
   };
 
-  const enableRow = (
-    <div className="flex items-center justify-between gap-4">
-      <div className="min-w-0">
-        <label
-          htmlFor={`${id}-enabled`}
-          className="block text-sm font-medium text-foreground"
-        >
-          Plan targets by training day
-        </label>
-        {!enabled && (
-          <p
-            id={`${id}-enabled-hint`}
-            className="mt-0.5 text-label text-muted-foreground"
-          >
-            Your goal sets the weekly average; training moves calories between
-            days, never on top. Free on every plan.
-          </p>
-        )}
-      </div>
-      <Switch
-        id={`${id}-enabled`}
-        aria-describedby={enabled ? undefined : `${id}-enabled-hint`}
-        checked={enabled}
-        onCheckedChange={toggle}
-      />
-    </div>
-  );
-
   return (
     <div className="max-w-2xl space-y-4">
       {/* The breadcrumb above names the page; the heading keeps the outline
@@ -190,14 +162,41 @@ export function TrainingWeekEditor({
       <h2 className="sr-only">Training week</h2>
 
       {/* On, the switch is a compact header row so the week stays above the
-          fold; off, its card explains what turning it on does. */}
-      {enabled ? (
-        <div className="px-1">{enableRow}</div>
-      ) : (
-        <Card>
-          <CardBody>{enableRow}</CardBody>
-        </Card>
-      )}
+          fold; off, its card explains what turning it on does. One wrapper
+          either way, restyled rather than replaced, so the Switch is never
+          remounted and keeps keyboard focus when toggled. */}
+      <Card className={cn(enabled && "border-transparent bg-transparent")}>
+        <CardBody
+          className={cn(
+            "flex items-center justify-between gap-4",
+            enabled && "px-1 py-0 sm:px-1",
+          )}
+        >
+          <div className="min-w-0">
+            <label
+              htmlFor={`${id}-enabled`}
+              className="block text-sm font-medium text-foreground"
+            >
+              Plan targets by training day
+            </label>
+            {!enabled && (
+              <p
+                id={`${id}-enabled-hint`}
+                className="mt-0.5 text-label text-muted-foreground"
+              >
+                Your goal sets the weekly average; training moves calories
+                between days, never on top. Free on every plan.
+              </p>
+            )}
+          </div>
+          <Switch
+            id={`${id}-enabled`}
+            aria-describedby={enabled ? undefined : `${id}-enabled-hint`}
+            checked={enabled}
+            onCheckedChange={toggle}
+          />
+        </CardBody>
+      </Card>
 
       {enabled && schedule && week && (
         <EnabledEditor

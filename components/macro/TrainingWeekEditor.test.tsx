@@ -160,6 +160,22 @@ describe("TrainingWeekEditor: enable / disable", () => {
     fireEvent.click(switchControl());
     expect(onTraining).toHaveBeenLastCalledWith(SCHEDULE);
   });
+
+  it("keeps keyboard focus on the switch in both directions", () => {
+    renderEditor({ initial: { ...BASE, training: SCHEDULE } });
+    const control = switchControl();
+    control.focus();
+    // Off: the row becomes the explaining card around the same switch.
+    fireEvent.click(control);
+    expect(control.getAttribute("aria-checked")).toBe("false");
+    expect(control.isConnected).toBe(true);
+    expect(document.activeElement).toBe(control);
+    // On again: the compact row, still the same, focused switch.
+    fireEvent.click(control);
+    expect(control.getAttribute("aria-checked")).toBe("true");
+    expect(control.isConnected).toBe(true);
+    expect(document.activeElement).toBe(control);
+  });
 });
 
 describe("TrainingWeekEditor: the week", () => {
