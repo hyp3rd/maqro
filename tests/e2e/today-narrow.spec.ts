@@ -133,6 +133,44 @@ test("at 320 px every readout cell reads label, figure, then a small line", asyn
   expect(cells.map((c) => c.small !== null)).toEqual([true, true, true, true]);
 });
 
+test.describe("on a touch screen", () => {
+  test.use({ hasTouch: true, isMobile: true });
+
+  test("the date is a 44 px target without growing the date line", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/app");
+    expect(
+      await page.evaluate(() => matchMedia("(pointer: coarse)").matches),
+    ).toBe(true);
+    const date = page.getByRole("button", { name: /, choose a day$/ });
+    await expect(date).toBeVisible();
+    const box = await date.boundingBox();
+    if (!box) throw new Error("date button not laid out");
+    // The line keeps its 18 px; the hit-slop takes no layout space.
+    expect(Math.round(box.height)).toBe(18);
+    const slop = await date.evaluate((el) => {
+      const before = getComputedStyle(el, "::before");
+      return { position: before.position, height: before.height };
+    });
+    expect(slop).toEqual({ position: "absolute", height: "44px" });
+    // A tap 12 px above or below the text still lands on the date.
+    const x = box.x + box.width / 2;
+    for (const y of [box.y - 12, box.y + box.height + 12]) {
+      expect(
+        await page.evaluate(
+          ([px, py]) => {
+            const hit = document.elementFromPoint(px ?? 0, py ?? 0);
+            return hit?.closest("button")?.textContent ?? null;
+          },
+          [x, y],
+        ),
+      ).toContain("choose a day");
+    }
+  });
+});
+
 test("at 390 px the readout sits beside the gauge with whole labels", async ({
   page,
 }) => {

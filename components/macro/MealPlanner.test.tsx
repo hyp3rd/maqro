@@ -426,10 +426,11 @@ describe("MealPlanner as Instrument Today", () => {
     expect(
       screen.getAllByRole("button", { name: /^(Back to today|Today)$/ }),
     ).toHaveLength(1);
-    // On the date line beside the date (its own 44 px row on a touch
-    // screen), so a long session chip never pushes it onto a row of its own.
+    // On the date line beside the date, so a long session chip never
+    // pushes it onto a row of its own; touch-sized by the same hit-slop.
     const back = screen.getByRole("button", { name: "Back to today" });
     expect(back.closest('[data-part="date-line"]')).not.toBeNull();
+    expect(back.className).toContain("coarse:before:-inset-y-[13px]");
     fireEvent.click(back);
     expect(props.onSelectDate).toHaveBeenCalledWith(TODAY);
     expect(document.activeElement).toBe(heading);
@@ -471,12 +472,16 @@ describe("MealPlanner as Instrument Today", () => {
       const face = button.querySelector('[data-part="date-trigger-face"]');
       expect(face?.className).toContain("group-focus-visible:ring-2");
       expect(button.className).toContain("group");
-      // 44 px on a touch screen, reserved above the date (never over the
-      // heading below it): the button fills the line, its text at the foot.
+      // The line stays one 18 px row on every pointer; on a touch screen
+      // the button's hit area (an absolute ::before) reaches 44 px —
+      // 13 px past each side of the line — without taking layout space.
+      // The measured target is asserted in e2e/today-narrow.spec.ts.
       const line = button.closest('[data-part="date-line"]');
-      expect(line?.className).toContain("coarse:h-11");
-      expect(line?.className).toContain("items-end");
-      expect(button.className).toContain("h-full");
+      expect(line?.className).toContain("h-[1.125rem]");
+      expect(line?.className).not.toMatch(/coarse:h-/);
+      expect(button.className).toContain("relative");
+      expect(button.className).toContain("coarse:before:absolute");
+      expect(button.className).toContain("coarse:before:-inset-y-[13px]");
       expect(line?.contains(screen.getByRole("heading", { level: 1 }))).toBe(
         false,
       );

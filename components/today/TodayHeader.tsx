@@ -28,11 +28,14 @@ function headerFormats(locale: string) {
 
 type HeaderFormats = ReturnType<typeof headerFormats>;
 
-/** A quiet text button on the date line: as tall as the line (44 px on a
- *  touch screen) with its text at the foot. Focus is drawn on the face
- *  (the text), not on the taller target. */
+/** A quiet text button on the date line, as tall as the line. On a touch
+ *  screen an invisible hit-slop (`::before`) reaches 44 px, 13 px above
+ *  and below the 18 px line, so the target grows without moving the
+ *  layout: into the shell's top padding and over the heading's leading
+ *  (the heading isn't a control). Focus is drawn on the face (the text),
+ *  not on the larger target. */
 const LINE_BUTTON =
-  "group flex h-full items-end text-label outline-none hover:text-foreground";
+  "group relative flex h-full items-end text-label outline-none before:content-[''] hover:text-foreground coarse:before:absolute coarse:before:-inset-x-1 coarse:before:-inset-y-[13px]";
 const LINE_BUTTON_FACE =
   "inline-flex items-center rounded-sm ring-offset-background group-focus-visible:ring-2 group-focus-visible:ring-ring group-focus-visible:ring-offset-2";
 
@@ -109,12 +112,12 @@ export function TodayHeader({
         <div className="min-w-0">
           {/* The date line: the date (the picker's trigger) and, on any other
             day, the way back to today. Reserved even before the date
-            arrives, so it never shifts the screen; on a touch screen it is
-            44 px tall with both at its foot, right above the title, so the
-            targets grow upward and never over the heading. */}
+            arrives, so it never shifts the screen. One 18 px line on every
+            pointer; on a touch screen its buttons' hit-slop reaches 44 px
+            without taking layout space. */}
           <div
             data-part="date-line"
-            className="flex h-[1.125rem] items-end gap-4 coarse:h-11"
+            className="flex h-[1.125rem] items-end gap-4"
           >
             <div className="relative flex h-full min-w-0 items-end">
               {fullDate !== null &&
@@ -128,7 +131,10 @@ export function TodayHeader({
                     value={date}
                     onChange={selectFromField}
                     onBlur={() => setTypingDate(false)}
-                    className="h-[1.125rem] rounded-sm border border-input bg-background px-1 text-label text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:h-9"
+                    // On a touch screen it rises from the line's foot into
+                    // the shell's 16 px top padding (32 px tall), as the
+                    // buttons' hit-slop does, without moving the layout.
+                    className="h-[1.125rem] rounded-sm border border-input bg-background px-1 text-label text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:h-8"
                   />
                 ) : (
                   <>
@@ -195,7 +201,7 @@ export function TodayHeader({
             {known ? dayTitle(date, today, formats) : "Today"}
           </h1>
         </div>
-        {/* Level with the title, beside the taller date line. */}
+        {/* Level with the title, at the foot of the row. */}
         {actions !== undefined && (
           <div className="flex shrink-0 items-center gap-2">{actions}</div>
         )}
