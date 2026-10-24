@@ -214,28 +214,34 @@ export function UserMenu({
             )}
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
-          {onSelectView && <SettingsMenuItem onSelectView={onSelectView} />}
-          {/* Mobile-only: notifications + theme, relocated from the topbar.
-            The bell's unread count also surfaces on the avatar badge
-            above; opening the drawer (openDrawer) clears it. */}
-          {mobileExtras && (
+          {/* The in-app group: Settings, plus (on phones) the notifications
+            and theme relocated from the topbar. The bell's unread count also
+            surfaces on the avatar badge above; opening the drawer
+            (openDrawer) clears it. The separator closes the group on desktop
+            too, so Settings never reads as part of the outbound links. */}
+          {onSelectView && (
             <>
-              <DropdownMenuItem
-                onSelect={drawer.openDrawer}
-                className="gap-2"
-              >
-                <Bell className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="flex-1">Notifications</span>
-                {drawer.unreadCount > 0 && (
-                  <Badge
-                    variant="destructive"
-                    className="h-4 min-w-4 justify-center px-1 py-0 text-[10px] leading-none"
+              <SettingsMenuItem onSelectView={onSelectView} />
+              {mobileExtras && (
+                <>
+                  <DropdownMenuItem
+                    onSelect={drawer.openDrawer}
+                    className="gap-2"
                   >
-                    {drawer.unreadCount > 9 ? "9+" : drawer.unreadCount}
-                  </Badge>
-                )}
-              </DropdownMenuItem>
-              <ThemeMenuItem />
+                    <Bell className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="flex-1">Notifications</span>
+                    {drawer.unreadCount > 0 && (
+                      <Badge
+                        variant="destructive"
+                        className="h-4 min-w-4 justify-center px-1 py-0 text-[10px] leading-none"
+                      >
+                        {drawer.unreadCount > 9 ? "9+" : drawer.unreadCount}
+                      </Badge>
+                    )}
+                  </DropdownMenuItem>
+                  <ThemeMenuItem />
+                </>
+              )}
               <DropdownMenuSeparator />
             </>
           )}

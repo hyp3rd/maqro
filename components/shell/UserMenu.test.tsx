@@ -271,11 +271,24 @@ describe("UserMenu in the desktop sidebar footer (signed in)", () => {
       screen.queryByRole("menuitem", { name: /notifications/i }),
     ).toBeNull();
     expect(screen.queryByRole("menuitem", { name: /theme/i })).toBeNull();
-    // Settings leads the actions, ahead of the homepage link and Sign out.
-    const names = screen
-      .getAllByRole("menuitem")
-      .map((item) => item.textContent?.trim());
-    expect(names).toEqual(["Settings", "Visit homepage", "Sign out"]);
+    // Settings leads the actions in a group of its own (as on the phone,
+    // where it shares it with Notifications and Theme), apart from the
+    // outbound homepage link and from Sign out. "|" is a separator.
+    const sequence = Array.from(
+      screen
+        .getByRole("menu")
+        .querySelectorAll('[role="menuitem"], [role="separator"]'),
+    ).map((el) =>
+      el.getAttribute("role") === "separator" ? "|" : el.textContent?.trim(),
+    );
+    expect(sequence).toEqual([
+      "|",
+      "Settings",
+      "|",
+      "Visit homepage",
+      "|",
+      "Sign out",
+    ]);
     fireEvent.click(settings);
     expect(onSelectView).toHaveBeenCalledWith("settings");
   });
