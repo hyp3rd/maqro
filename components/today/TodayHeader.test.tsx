@@ -1,8 +1,8 @@
 /**
  * @vitest-environment jsdom
  */
-import { countDateFormats } from "@/lib/i18n/date-format-counter";
 import { intlWrapper } from "@/lib/i18n/intl-test-wrapper";
+import { countDateFormats } from "@/tests/utils/date-format-counter";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { TodayHeader } from "./TodayHeader";

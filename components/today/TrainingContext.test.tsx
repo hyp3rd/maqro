@@ -1,8 +1,8 @@
 /**
  * @vitest-environment jsdom
  */
-import { countDateFormats } from "@/lib/i18n/date-format-counter";
 import { intlWrapper } from "@/lib/i18n/intl-test-wrapper";
+import { countDateFormats } from "@/tests/utils/date-format-counter";
 import { afterEach, describe, expect, it } from "vitest";
 import { targetsForDate } from "@maqro/core/targets";
 import type { PersonalInfo } from "@maqro/core/types";
