@@ -6,6 +6,8 @@ import {
   dietBreakNudge,
   effectiveGoal,
   inferAdaptiveTdeePerPhase,
+  isValidPhaseDuration,
+  isValidPhaseStart,
   newPhase,
   nextPhase,
   normalizePhase,
@@ -453,6 +455,20 @@ describe("phases without a valid window", () => {
   it("is what phaseHasValidWindow reports (the planner flags it)", () => {
     expect(invalid.filter(phaseHasValidWindow)).toEqual([]);
     expect(phaseHasValidWindow(valid)).toBe(true);
+  });
+
+  it("is a valid start and a valid duration (the planner's editor checks each)", () => {
+    for (const p of [...invalid, valid]) {
+      expect(phaseHasValidWindow(p)).toBe(
+        isValidPhaseStart(p.startDate) && isValidPhaseDuration(p.durationWeeks),
+      );
+    }
+    expect(isValidPhaseStart("2026-06-01T08:00:00")).toBe(false);
+    expect(isValidPhaseStart("2026-02-30")).toBe(false);
+    expect(isValidPhaseStart("2026-06-01")).toBe(true);
+    expect(isValidPhaseDuration(Number.NaN)).toBe(false);
+    expect(isValidPhaseDuration(0)).toBe(false);
+    expect(isValidPhaseDuration(4)).toBe(true);
   });
 
   it.each(invalid.map((p) => [p.id, p] as const))(

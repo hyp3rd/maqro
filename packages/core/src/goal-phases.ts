@@ -50,12 +50,25 @@ const DATE_KEY = /^(\d{4})-(\d{2})-(\d{2})$/;
  *  cannot be trusted for them: `"2026-06-01T08:00:00"` sorts before later
  *  dates while its end computes as `"NaN-NaN-NaN"`, which sorts after every
  *  date, so it would cover every day from its start on. Every schedule query
- *  below skips such phases; the planner UI uses this to flag them. */
+ *  below skips such phases; the planner UI uses this to flag them, and its
+ *  editor saves only a phase that has one. */
 export function phaseHasValidWindow(phase: GoalPhase): boolean {
-  if (!Number.isFinite(phase.durationWeeks) || phase.durationWeeks <= 0) {
-    return false;
-  }
-  const match = DATE_KEY.exec(phase.startDate);
+  return (
+    isValidPhaseDuration(phase.durationWeeks) &&
+    isValidPhaseStart(phase.startDate)
+  );
+}
+
+/** The duration half of `phaseHasValidWindow`: a positive, finite number of
+ *  weeks. */
+export function isValidPhaseDuration(weeks: number): boolean {
+  return Number.isFinite(weeks) && weeks > 0;
+}
+
+/** The start half of `phaseHasValidWindow`: an actual local `YYYY-MM-DD`
+ *  day. */
+export function isValidPhaseStart(startDate: string): boolean {
+  const match = DATE_KEY.exec(startDate);
   if (match === null) return false;
   const [y, m, d] = [Number(match[1]), Number(match[2]), Number(match[3])];
   const date = new Date(y, m - 1, d);
