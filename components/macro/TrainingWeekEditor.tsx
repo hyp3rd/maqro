@@ -80,7 +80,8 @@ const weekIndex = (weekday: number) => (weekday + 6) % 7;
  *  - `moves`: days vary around the average;
  *  - `off`: cycling is off;
  *  - `floors`: the engine's `floorsExceedMean` (every day at the average,
- *    by its cause);
+ *    by its cause), and whether protein gave way under the setting
+ *    (`protein < training.requestedProtein`);
  *  - `sameDays`: cycling is on but every day weighs the same (all rest,
  *    all one class…), so there is nothing to move between them;
  *  - `atFloor` / `atMinimums`: cycling is on but no day can go under the
@@ -88,7 +89,7 @@ const weekIndex = (weekday: number) => (weekday + 6) % 7;
  *    the smallest day that holds the protein, fat and carb minimums. */
 type WeekSpread =
   | { kind: "moves" | "off" | "sameDays" | "atFloor" | "atMinimums" }
-  | { kind: "floors"; cause: "protein" | "calories" };
+  | { kind: "floors"; cause: "protein" | "calories"; proteinHeld: boolean };
 
 function weekSpread(
   cycling: CyclingPreset,
@@ -98,7 +99,11 @@ function weekSpread(
 ): WeekSpread {
   const training = current?.training;
   if (training?.floorsExceedMean) {
-    return { kind: "floors", cause: training.floorsExceedMean };
+    return {
+      kind: "floors",
+      cause: training.floorsExceedMean,
+      proteinHeld: (current?.protein ?? 0) < training.requestedProtein,
+    };
   }
   if (cycling === "off") return { kind: "off" };
   const flat = days.every(
@@ -373,6 +378,8 @@ function EnabledEditor({
       <ProteinCard
         setting={setting}
         proteinGrams={current?.protein ?? 0}
+        requestedGrams={training?.requestedProtein ?? current?.protein ?? 0}
+        sameEveryDay={spread.kind !== "moves"}
         heldGrams={fatMoves ? (current?.carbs ?? 0) : (current?.fat ?? 0)}
         fatMoves={fatMoves}
         fatFloorLifted={training?.fatFloorLifted === true}
@@ -471,6 +478,8 @@ function DayRow({
 function ProteinCard({
   setting,
   proteinGrams,
+  requestedGrams,
+  sameEveryDay,
   heldGrams,
   fatMoves,
   fatFloorLifted,
@@ -478,7 +487,14 @@ function ProteinCard({
   onChange,
 }: {
   setting: ProteinSetting;
+  /** The planned daily protein (today's day; the same all week). */
   proteinGrams: number;
+  /** What the setting asks for (`training.requestedProtein`): above
+   *  `proteinGrams` only when the floors made protein give way. */
+  requestedGrams: number;
+  /** Every day plans the same calories (cycling off, or the days can't
+   *  vary), so no macro moves between them. */
+  sameEveryDay: boolean;
   /** The macro held for the whole week: carbs when fat moves with each
    *  day's calories (`fatMovesForDiet`), else fat. */
   heldGrams: number;
@@ -583,9 +599,13 @@ function ProteinCard({
           <p className="text-label text-muted-foreground">
             {formatNumber(PROTEIN_G_PER_KG_MIN, locale, 1)} to{" "}
             {formatNumber(max, locale, 1)} g/kg.{" "}
-            {fatMoves
-              ? `Fat moves with each day's calories; carbs stay near ${kcal(heldGrams)} g and protein stays the same.`
-              : `Carbs move with each day's calories; fat stays near ${kcal(heldGrams)} g and protein stays the same.`}
+            {proteinGrams < requestedGrams
+              ? `Protein is planned at ${kcal(proteinGrams)} g a day for now, under the ${kcal(requestedGrams)} g your setting asks for, so the fat and carb minimums fit.`
+              : sameEveryDay
+                ? "Every day plans the same protein, carbs and fat."
+                : fatMoves
+                  ? `Fat moves with each day's calories; carbs stay near ${kcal(heldGrams)} g and protein stays the same.`
+                  : `Carbs move with each day's calories; fat stays near ${kcal(heldGrams)} g and protein stays the same.`}
           </p>
           {fatFloorLifted && (
             <Callout tone="info">
@@ -636,12 +656,16 @@ function SpreadLine({
   }
   let copy: string;
   switch (spread.kind) {
-    case "floors":
+    case "floors": {
+      const held = spread.proteinHeld
+        ? " and protein is held under your setting for now"
+        : "";
       copy =
         spread.cause === "protein"
-          ? "Your protein setting leaves little room for the other minimums at this calorie level, so every day stays at the average. A lower g/kg setting would let the days vary."
-          : `Your calorie target leaves little room for the protein, fat and carb minimums together, so every day stays at the average.${goal === "lose" ? " A smaller deficit would give each day more room." : ""}`;
+          ? `Your protein setting leaves little room for the other minimums at this calorie level, so every day stays at the average${held}. A lower g/kg setting would let the days vary.`
+          : `Your calorie target leaves little room for the protein, fat and carb minimums together, so every day stays at the average${held}.${goal === "lose" ? " A smaller deficit would give each day more room." : ""}`;
       break;
+    }
     case "sameDays":
       copy =
         "Every day of your week plans the same way, so each stays at your weekly average. Days with different sessions would vary.";

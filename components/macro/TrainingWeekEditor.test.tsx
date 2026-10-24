@@ -540,6 +540,7 @@ describe("TrainingWeekEditor: when the days can't vary", () => {
   };
   const MOVES =
     "Calories move between days; your weekly average stays the same.";
+  const proteinCard = () => screen.getByRole("region", { name: /Protein:/ });
 
   it("an average at the safety floor says so under the control", () => {
     // A 1 kg/week cut from 2,600 is clamped to the 1,780 BMR floor.
@@ -577,14 +578,71 @@ describe("TrainingWeekEditor: when the days can't vary", () => {
       proteinSetting: { basis: "bodyweight", gPerKg: 3.4 },
       training: SCHEDULE,
     };
-    expect(plan(heavy)?.days[5]?.training?.floorsExceedMean).toBe("protein");
+    const today = plan(heavy)?.days[5];
+    expect(today?.training?.floorsExceedMean).toBe("protein");
+    // Protein gives way first: planned under what 3.4 g/kg asks for.
+    const planned = today?.protein ?? 0;
+    const asked = today?.training?.requestedProtein ?? 0;
+    expect(planned).toBeLessThan(asked);
     renderEditor({ initial: heavy });
     expect(
       within(caloriesCard()).getByText(
-        /^Your protein setting leaves little room .* A lower g\/kg setting would let the days vary\.$/,
+        "Your protein setting leaves little room for the other minimums at this calorie level, so every day stays at the average and protein is held under your setting for now. A lower g/kg setting would let the days vary.",
       ),
     ).toBeTruthy();
     expect(screen.queryByText(MOVES)).toBeNull();
+    // The protein card explains its heading against the stepper.
+    const card = proteinCard();
+    expect(
+      within(card).getByRole("heading", {
+        name: `Protein: ${fmt(planned)} g every day`,
+      }),
+    ).toBeTruthy();
+    expect(within(card).getByText("3.4 g/kg")).toBeTruthy();
+    expect(
+      within(card).getByText(
+        `Protein is planned at ${fmt(planned)} g a day for now, under the ${fmt(asked)} g your setting asks for, so the fat and carb minimums fit.`,
+        { exact: false },
+      ),
+    ).toBeTruthy();
+    expect(within(card).queryByText(/protein stays the same/)).toBeNull();
+    expect(within(card).queryByText(/move with each day/)).toBeNull();
+  });
+
+  it("a calorie target the minimums don't fit says protein is held under the setting", () => {
+    // 160 cm / 90 kg / 60 y sedentary woman with a 40% body-fat estimate,
+    // cutting at her BMR floor: even 2.0 g/kg doesn't fit (engine output).
+    const ctx = { phasesEnabled: false, bodyFatPct: 40 };
+    const cutting: PersonalInfo = {
+      ...BASE,
+      gender: "female",
+      age: 60,
+      weight: 90,
+      height: 160,
+      activityLevel: "sedentary",
+      weeklyRateKg: 0.9,
+      manualTdee: null,
+      proteinSetting: { basis: "bodyweight", gPerKg: 3.4 },
+      training: SCHEDULE,
+    };
+    const planWeek = (p: PersonalInfo) => weekTargets(p, TODAY, ctx);
+    const today = planWeek(cutting)?.days[5];
+    expect(today?.training?.floorsExceedMean).toBe("calories");
+    const planned = today?.protein ?? 0;
+    const asked = today?.training?.requestedProtein ?? 0;
+    expect([planned, asked]).toEqual([165, 305]);
+    renderEditor({ initial: cutting, planWeek });
+    expect(
+      within(caloriesCard()).getByText(
+        "Your calorie target leaves little room for the protein, fat and carb minimums together, so every day stays at the average and protein is held under your setting for now. A smaller deficit would give each day more room.",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(proteinCard()).getByText(
+        "Protein is planned at 165 g a day for now, under the 305 g your setting asks for, so the fat and carb minimums fit.",
+        { exact: false },
+      ),
+    ).toBeTruthy();
   });
 
   it("a calorie target the minimums don't fit is explained at the control", () => {
@@ -613,7 +671,15 @@ describe("TrainingWeekEditor: when the days can't vary", () => {
       ),
     ).toBeTruthy();
     expect(screen.queryByText(/A lower g\/kg setting/)).toBeNull();
+    expect(screen.queryByText(/held under your setting/)).toBeNull();
     expect(screen.queryByText(MOVES)).toBeNull();
+    // Every day is the same, so nothing "moves" in the protein card.
+    expect(
+      within(proteinCard()).getByText(
+        "Every day plans the same protein, carbs and fat.",
+        { exact: false },
+      ),
+    ).toBeTruthy();
   });
 
   it("a week of one kind of day says there is nothing to move", () => {
