@@ -157,13 +157,14 @@ describe("getDemoProfile training week", () => {
 
   it("plans a week that moves calories between days around the same average", () => {
     const p = getDemoProfile(NOW);
-    // Two weeks on: the seeded birthdate falls on TODAY, and the age clock
-    // would move the average by a few kcal mid-week.
-    const week = weekTargets(p, "2026-06-03", { phasesEnabled: false });
+    // The seeded week itself: the birthday is never in it, so the age
+    // clock doesn't step the average mid-week.
+    const week = weekTargets(p, TODAY, { phasesEnabled: false });
     expect(week).not.toBeNull();
     const days = week?.days ?? [];
     const kcal = days.map((d) => d.targetCalories);
     expect(new Set(kcal).size).toBeGreaterThan(1);
+    expect(new Set(days.map((d) => d.training?.meanCalories)).size).toBe(1);
     const mean = days[0]?.training?.meanCalories ?? 0;
     // The seven planned days sum to the weekly average × 7 (within the
     // 50 kcal rounding grid's half-step).

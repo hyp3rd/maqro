@@ -34,9 +34,12 @@ import { notifyDataChanged } from "./sync/data-bus";
 
 /** Anchored profile values for the sample dataset. */
 export function getDemoProfile(now: number = Date.now()): PersonalInfo {
-  // Birthdate ~32 years back so the derived age matches the legacy `age: 32`
-  // fallback and showcases the self-updating age on the Profile page.
+  // Birthdate ~32½ years back so the derived age matches the legacy `age: 32`
+  // fallback and showcases the self-updating age on the Profile page. Half a
+  // year off the seed day, so the birthday never falls in the seeded week:
+  // the age clock would step the training week's average mid-week.
   const dob = new Date(now);
+  dob.setMonth(dob.getMonth() - 6);
   const pad = (n: number) => String(n).padStart(2, "0");
   const birthDate = `${dob.getFullYear() - 32}-${pad(dob.getMonth() + 1)}-${pad(dob.getDate())}`;
   return {
