@@ -263,7 +263,7 @@ describe("DayTimeline", () => {
     );
     expect(
       screen.getByRole("img", {
-        name: "Day timeline: Breakfast at 07:30, 520 kcal. Lunch at 12:45, 720 kcal. Workout, Lower · heavy day, 18:00 to 19:15. Now 15:10.",
+        name: "Day timeline: Breakfast at 07:30, 520 kcal. Lunch at 12:45, 720 kcal. Workout, Lower body · heavy day, 18:00 to 19:15. Now 15:10.",
       }),
     ).toBeTruthy();
   });

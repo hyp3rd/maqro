@@ -12,6 +12,11 @@ import {
 import { useDayOverrides } from "@/hooks/use-day-overrides";
 import { haptic } from "@/lib/haptics";
 import { formatNumber } from "@/lib/i18n/number";
+import {
+  WEEKDAY_NAME,
+  dayTypeLabel,
+  sessionLabel,
+} from "@/lib/training-labels";
 import { type RefObject, useId, useState } from "react";
 import { useLocale } from "next-intl";
 import type { DateTargets } from "@maqro/core/targets";
@@ -23,12 +28,6 @@ import {
   sessionDraftInvalid,
   toSessionDraft,
 } from "./TrainingSessionFields";
-import {
-  DAY_CLASS_LABEL,
-  TRAINING_TYPE_LABEL,
-  WEEKDAY_NAME,
-  sessionDetails,
-} from "./training-labels";
 
 /** What the sheet needs from the app's targets (`useTargets`). */
 type DaySessionProps = {
@@ -41,15 +40,6 @@ type DaySessionProps = {
    *  through the same resolver and context (`previewDayTargets`). */
   previewDayTargets: (date: string, day: TrainingDay | null) => DateTargets;
 };
-
-/** "Lower body · Hard · 18:00 · 60 min", or "Rest day". */
-export function sessionLabel(day: TrainingDay): string {
-  if (day.type === "rest") return "Rest day";
-  const details = sessionDetails(day);
-  return details === "No details yet"
-    ? TRAINING_TYPE_LABEL[day.type]
-    : `${TRAINING_TYPE_LABEL[day.type]} · ${details}`;
-}
 
 /** Sessions are equal when every field is (a rest day carries no other). */
 function sameSession(a: TrainingDay, b: TrainingDay): boolean {
@@ -204,7 +194,7 @@ export function DayTypeSheet({
             )}
           </p>
           <p className="mt-1 text-label text-muted-foreground">
-            {preview.training ? DAY_CLASS_LABEL[preview.training.dayClass] : ""}
+            {preview.training ? dayTypeLabel(preview.training) : ""}
             {" · "}
             {kcal(preview.protein)} g protein · {kcal(preview.carbs)} g carbs ·{" "}
             {kcal(preview.fat)} g fat

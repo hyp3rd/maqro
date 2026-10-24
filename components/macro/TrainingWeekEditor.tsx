@@ -7,6 +7,13 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Switch } from "@/components/ui/switch";
 import { haptic } from "@/lib/haptics";
 import { formatNumber } from "@/lib/i18n/number";
+import {
+  MONDAY_FIRST,
+  TRAINING_TYPE_LABEL,
+  WEEKDAY_NAME,
+  WEEKDAY_SHORT,
+  sessionDetails,
+} from "@/lib/training-labels";
 import { cn } from "@/lib/utils";
 import { useId, useState } from "react";
 import { ChevronRight, Minus, Plus, ShieldCheck } from "lucide-react";
@@ -39,13 +46,6 @@ import {
 } from "@maqro/core/types";
 import { TrainingDayDialog } from "./TrainingDayDialog";
 import { TrainingWeekChart } from "./TrainingWeekChart";
-import {
-  MONDAY_FIRST,
-  TRAINING_TYPE_LABEL,
-  WEEKDAY_NAME,
-  WEEKDAY_SHORT,
-  sessionDetails,
-} from "./training-labels";
 
 const CYCLING_LABEL: Record<CyclingPreset, string> = {
   off: "Off",

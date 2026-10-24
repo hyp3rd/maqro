@@ -4,6 +4,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { formatNumber } from "@/lib/i18n/number";
+import {
+  TRAINING_INTENSITY_LABEL,
+  TRAINING_TYPE_LABEL,
+} from "@/lib/training-labels";
 import { cn } from "@/lib/utils";
 import { useId } from "react";
 import { useLocale } from "next-intl";
@@ -13,10 +17,6 @@ import type {
   TrainingIntensity,
   TrainingType,
 } from "@maqro/core/types";
-import {
-  TRAINING_INTENSITY_LABEL,
-  TRAINING_TYPE_LABEL,
-} from "./training-labels";
 
 /** Longest session the engine accepts (`parseTrainingDay`). */
 const MAX_DURATION_MIN = 24 * 60;

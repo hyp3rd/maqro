@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { formatNumber } from "@/lib/i18n/number";
+import { WEEKDAY_NAME, dayTypeLabel } from "@/lib/training-labels";
 import { useState } from "react";
 import { useLocale } from "next-intl";
 import { classifyTrainingDay } from "@maqro/core/training";
@@ -21,7 +22,6 @@ import {
   sessionDraftInvalid,
   toSessionDraft,
 } from "./TrainingSessionFields";
-import { DAY_CLASS_LABEL, WEEKDAY_NAME } from "./training-labels";
 
 type Props = {
   /** `getDay()` of the day being edited (0 = Sunday). */
@@ -61,7 +61,7 @@ export function TrainingDayDialog({
         <DialogHeader className="space-y-1 text-left">
           <DialogTitle>{name}</DialogTitle>
           <DialogDescription aria-live="polite">
-            {DAY_CLASS_LABEL[classifyTrainingDay(next)]}
+            {dayTypeLabel({ day: next, dayClass: classifyTrainingDay(next) })}
             {kcal !== null && (
               <>
                 {" · "}

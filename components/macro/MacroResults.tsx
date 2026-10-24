@@ -2,6 +2,7 @@
 
 import { NumberTicker } from "@/components/shell/NumberTicker";
 import { formatNumber } from "@/lib/i18n/number";
+import { dayTypeLabel } from "@/lib/training-labels";
 import { kgToDisplay, type UnitSystem } from "@/lib/units";
 import { cn } from "@/lib/utils";
 import * as React from "react";
@@ -9,7 +10,6 @@ import { useLocale } from "next-intl";
 import type { TrainingDayTargets } from "@maqro/core/targets";
 import { CalculatedValues, TotalMacros } from "../../components/macro/types";
 import { InfoExplainer } from "./InfoExplainer";
-import { DAY_CLASS_LABEL } from "./training-labels";
 
 interface MacroResultsProps {
   /** Today's targets. With a training schedule on (`training` present),
@@ -247,7 +247,7 @@ const MacroResults: React.FC<MacroResultsProps> = ({
             className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-t border-border/60 px-5 py-3 text-label"
           >
             <span className="font-medium text-foreground">
-              {DAY_CLASS_LABEL[training.dayClass]}
+              {dayTypeLabel(training)}
             </span>
             <span className="text-muted-foreground">
               <span className="font-mono tabular-nums text-foreground">

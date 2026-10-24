@@ -262,7 +262,7 @@ describe("TrainingWeekEditor: editing a day", () => {
       training: withTrainingDay(SCHEDULE, 2, edited),
     });
     expect(
-      within(dialog).getByText("Heavy training day", { exact: false }),
+      within(dialog).getByText("HIIT · heavy day", { exact: false }),
     ).toBeTruthy();
     expect(dialog.textContent).toContain(
       `${fmt(preview?.days[1]?.targetCalories ?? 0)} kcal planned`,
@@ -365,7 +365,7 @@ describe("TrainingWeekEditor: editing a day", () => {
       ).toBe("false");
     }
     expect(
-      within(dialog).getByText("Heavy training day", { exact: false }),
+      within(dialog).getByText("Lower body · heavy day", { exact: false }),
     ).toBeTruthy();
     await act(async () => {
       fireEvent.click(

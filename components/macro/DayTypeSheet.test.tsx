@@ -165,7 +165,7 @@ describe("Today's session chip", () => {
     renderRow(app().targetsFor(WED));
     expect(
       screen.getByRole("button", {
-        name: "Lower, heavy day, 18:00, 75 min. Change today’s session",
+        name: "Lower body, heavy day, 18:00, 75\u00a0min. Change today’s session",
       }),
     ).toBeTruthy();
   });
