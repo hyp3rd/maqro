@@ -125,7 +125,7 @@ describe("DaySessionRow", () => {
 
   it("names the shown day's planned session with a Change control", () => {
     renderRow(app().targetsFor(WED));
-    const row = screen.getByRole("region", { name: "Today’s session" });
+    const row = screen.getByRole("group", { name: "Today’s session" });
     expect(row.textContent).toContain(
       "Session: Lower body · Hard · 18:00 · 75\u00a0min",
     );
@@ -137,7 +137,7 @@ describe("DaySessionRow", () => {
   it("names another day by its weekday", () => {
     renderRow(app().targetsFor(THU));
     expect(
-      screen.getByRole("button", { name: "Change thursday’s session" }),
+      screen.getByRole("button", { name: "Change Thursday’s session" }),
     ).toBeTruthy();
     expect(screen.getByText("Rest day")).toBeTruthy();
   });

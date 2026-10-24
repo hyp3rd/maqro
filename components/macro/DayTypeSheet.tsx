@@ -90,7 +90,9 @@ export function DaySessionRow({
   const whose = dayPossessive(targets.date, today);
 
   return (
-    <section
+    // A group, not a `<section>`: a one-line row isn't worth a landmark.
+    <div
+      role="group"
       aria-label={`${whose} session`}
       className="flex items-center gap-3 rounded-lg border border-border/60 bg-card px-3 py-2 sm:px-5"
     >
@@ -119,7 +121,7 @@ export function DaySessionRow({
         variant="ghost"
         size="sm"
         className="shrink-0 text-brand-text"
-        aria-label={`Change ${whose.toLowerCase()} session`}
+        aria-label={`Change ${targets.date === today ? "today’s" : whose} session`}
         aria-haspopup="dialog"
         onClick={() => {
           haptic("tap");
@@ -137,7 +139,7 @@ export function DaySessionRow({
           returnFocusTo={changeRef}
         />
       )}
-    </section>
+    </div>
   );
 }
 
