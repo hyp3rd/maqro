@@ -569,20 +569,23 @@ function ProteinCard({
   const max = PROTEIN_G_PER_KG_MAX[setting.basis];
   const atMin = setting.gPerKg <= PROTEIN_G_PER_KG_MIN;
   const atMax = setting.gPerKg >= max;
+  // The field's text while it is being typed in (`null` = show the
+  // setting), so a half-typed value never jumps around.
+  const [typed, setTyped] = useState<string | null>(null);
   const step = (dir: 1 | -1) => {
     // At a bound the button stays focusable (`aria-disabled`, not
     // `disabled`, which would drop keyboard focus to <body>) and does
     // nothing.
     if (dir === 1 ? atMax : atMin) return;
+    // A step replaces any half-typed value: where tapping a button doesn't
+    // blur the field (Safari), a later blur must not commit stale text.
+    setTyped(null);
     onChange({
       ...setting,
       gPerKg: Math.round((setting.gPerKg + dir * PROTEIN_STEP) * 10) / 10,
     });
   };
   const shown = formatNumber(setting.gPerKg, locale, 1);
-  // The field's text while it is being typed in (`null` = show the
-  // setting), so a half-typed value never jumps around.
-  const [typed, setTyped] = useState<string | null>(null);
   const commitTyped = () => {
     if (typed === null) return;
     setTyped(null);

@@ -589,6 +589,31 @@ describe("TrainingWeekEditor: protein", () => {
     expect(onProtein).toHaveBeenCalledTimes(calls);
   });
 
+  it("a step replaces a half-typed value, even when the field keeps focus", () => {
+    const onProtein = vi.fn();
+    renderEditor({
+      initial: withSetting({ basis: "bodyweight", gPerKg: 2.0 }),
+      onProtein,
+    });
+    const field = screen.getByRole<HTMLInputElement>("textbox", {
+      name: "Grams per kg",
+    });
+    // Safari can leave the field focused when a button is tapped: the
+    // click arrives without a blur first.
+    fireEvent.focus(field);
+    fireEvent.change(field, { target: { value: "3.0" } });
+    fireEvent.click(screen.getByRole("button", { name: "More protein" }));
+    expect(onProtein).toHaveBeenLastCalledWith({
+      basis: "bodyweight",
+      gPerKg: 2.1,
+    });
+    expect(field.value).toBe("2.1");
+    // Leaving the field later doesn't bring the stale text back.
+    fireEvent.blur(field);
+    expect(onProtein).toHaveBeenCalledTimes(1);
+    expect(field.value).toBe("2.1");
+  });
+
   it("steps g/kg by 0.1 and shows the resulting grams", () => {
     const onProtein = vi.fn();
     renderEditor({
