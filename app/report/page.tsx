@@ -1369,8 +1369,13 @@ function BodySection({
     <ReportSection title="Body composition">
       <p className="mb-2 text-[11px] text-muted-foreground">
         {inWindow
-          ? `Latest measurements (${shortDateLabel(latest.date)})`
-          : `No measurements in this window. Latest reading (${shortDateLabel(latest.date)}), which your targets use.`}
+          ? "Latest measurements"
+          : "No measurements in this window. Latest reading"}{" "}
+        {/* The date wraps whole, never "(Oct" | "12)". */}
+        <span className="whitespace-nowrap">
+          ({shortDateLabel(latest.date)})
+        </span>
+        {inWindow ? "" : ", which your targets use."}
       </p>
       <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
         <Stat
