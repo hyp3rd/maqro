@@ -235,6 +235,48 @@ describe("TrainingWeekEditor: the week", () => {
     ).toBeTruthy();
   });
 
+  // A small frame whose safety floor is the 1,200 kcal minimum (BMR ≈ 1,158).
+  const small: PersonalInfo = {
+    ...profile,
+    gender: "female",
+    weight: 50,
+    height: 155,
+  };
+
+  it("names the direction the average's balance takes, not the goal's ask", () => {
+    // A cut from an 1,100 kcal maintenance is lifted to the 1,200 floor:
+    // the week plans a small surplus, as the Calculator says.
+    const lifted = { ...small, manualTdee: 1100 };
+    expect(plan(lifted)?.days[5]?.dailyDelta).toBe(100);
+    renderEditor({ initial: lifted });
+    expect(
+      screen.getByRole("heading", {
+        name: /daily average · Gain 0\.1 kg\/week$/,
+      }),
+    ).toBeTruthy();
+  });
+
+  it("a balance that rounds to no change reads as maintenance", () => {
+    // From 1,250 the floor leaves a 50 kcal deficit: 0.05 kg/week.
+    const nearZero = { ...small, manualTdee: 1250 };
+    expect(plan(nearZero)?.days[5]?.dailyDelta).toBe(-50);
+    renderEditor({ initial: nearZero });
+    expect(
+      screen.getByRole("heading", { name: /daily average · Maintain weight$/ }),
+    ).toBeTruthy();
+  });
+
+  it("words the rate to one decimal, as the rate field shows it", () => {
+    // 0.25 kg/week reads 0.3, like Profile's rate field and the
+    // Calculator's projection (both `kgToDisplay`).
+    renderEditor({ initial: { ...profile, weeklyRateKg: 0.25 } });
+    expect(
+      screen.getByRole("heading", {
+        name: /daily average · Lose 0\.3 kg\/week$/,
+      }),
+    ).toBeTruthy();
+  });
+
   it("marks today like Today's week strip: a brand-outlined day tile", () => {
     renderEditor({ initial: profile });
     const tile = (day: string) =>

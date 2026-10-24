@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Switch } from "@/components/ui/switch";
 import { haptic } from "@/lib/haptics";
-import { formatNumber, roundTo } from "@/lib/i18n/number";
+import { formatNumber } from "@/lib/i18n/number";
 import {
   MONDAY_FIRST,
   TRAINING_TYPE_LABEL,
@@ -84,23 +84,20 @@ type Props = {
   onOpenMeasurements: () => void;
 };
 
-/** "Lose 0.4 kg/week", "Gain 0.25 lb/week" or "Maintain weight": the goal
- *  the weekly average serves, at the rate its own balance gives
- *  (`dailyDelta`: after any safety cap, as the Calculator projects it), in
- *  the profile's units. One decimal unless the rate needs two (0.25). */
-function goalFragment(
-  goal: PersonalInfo["goal"],
+/** "Lose 0.4 kg/week", "Gain 0.1 lb/week" or "Maintain weight": what the
+ *  weekly average's own balance does (`dailyDelta`, after any safety cap:
+ *  the balance the Calculator projects), not what the goal asks for. A cut
+ *  lifted to the safety floor can plan no change, or a small surplus. One
+ *  decimal in the profile's units, as the rate is shown elsewhere
+ *  (`kgToDisplay`); a rate that rounds to nothing reads as maintenance. */
+function rateFragment(
   dailyDelta: number,
   units: PersonalInfo["units"],
   locale: string,
 ): string {
-  if (goal === "maintain") return "Maintain weight";
-  const rate = roundTo(
-    kgToDisplay((Math.abs(dailyDelta) * 7) / KCAL_PER_KG, units),
-    2,
-  );
-  const decimals = Math.round(rate * 100) % 10 === 0 ? 1 : 2;
-  return `${goal === "lose" ? "Lose" : "Gain"} ${formatNumber(rate, locale, decimals)} ${units === "imperial" ? "lb" : "kg"}/week`;
+  const rate = kgToDisplay((Math.abs(dailyDelta) * 7) / KCAL_PER_KG, units);
+  if (rate === 0) return "Maintain weight";
+  return `${dailyDelta < 0 ? "Lose" : "Gain"} ${formatNumber(rate, locale, 1)} ${units === "imperial" ? "lb" : "kg"}/week`;
 }
 
 /** `weekTargets` lists Monday → Sunday; `getDay()` puts Sunday first. */
@@ -338,8 +335,7 @@ function EnabledEditor({
               <span className="text-sm font-normal text-muted-foreground">
                 kcal daily average{" · "}
                 <span className="font-medium text-foreground">
-                  {goalFragment(
-                    current?.goal ?? profile.goal,
+                  {rateFragment(
                     current?.dailyDelta ?? 0,
                     profile.units,
                     locale,
