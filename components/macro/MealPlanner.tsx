@@ -55,13 +55,11 @@ import {
 import { WaterCounter } from "./WaterCounter";
 
 interface MealPlannerProps {
-  /** The DISPLAYED day's targets (not necessarily today's), with its
-   *  planned training day when a schedule is on. */
-  calculatedValues: DateTargets;
-  /** The displayed day's Monday-to-Sunday week of day targets
-   *  (`useTargets().selectedWeek`) for the week strip; `null` before the
-   *  date is known. */
-  week: WeekTargets | null;
+  /** The DISPLAYED day's targets (not necessarily today's). */
+  calculatedValues: CalculatedValues;
+  /** The shown day's training session row (`DaySessionRow`), rendered at
+   *  the top of the day; it renders nothing while training is off. */
+  sessionRow?: React.ReactNode;
   totalMacros: {
     protein: number;
     carbs: number;
@@ -214,7 +212,7 @@ function LiveDayTimeline(
 
 const MealPlanner: React.FC<MealPlannerProps> = ({
   calculatedValues,
-  week,
+  sessionRow,
   totalMacros,
   macroBreakdown,
   meals,
@@ -388,76 +386,12 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
   }
 
   return (
-    // Instrument Today. One DOM order (reading order = phone order):
-    // the instrument, the day's extras (phase banner, water, fasting), then
-    // logging. Phone (390 × 844 first): the instrument — header, week strip,
-    // gauge + readout, 24-hour track — sits above the fold and one-tap water
-    // follows it, ahead of the meal list. In one column the instrument
-    // keeps an instrument's width (36rem) rather than stretching its
-    // readout across a tablet. Wider, the grid places the groups.
-    // The breakpoints assume the expanded 240 px sidebar plus the shell's
-    // padding (18rem), so each tier has room for its columns whatever the
-    // sidebar's state (a container query here would also contain the
-    // fixed-position DragOverlay):
-    //  - 66rem (≥ 48rem of content): the instrument and the extras side by
-    //    side, logging below at full width;
-    //  - 84rem (≥ 66rem of content): two columns, the instrument and the
-    //    extras on the left, logging on the right with a 40rem floor so the
-    //    add form and the meal tables keep their full width. `auto 1fr` rows
-    //    keep the left column packed while the log column grows.
-    <div className="grid grid-cols-1 gap-6 min-[66rem]:grid-cols-[24rem_minmax(0,1fr)] min-[84rem]:grid-cols-[24rem_minmax(40rem,1fr)] min-[84rem]:grid-rows-[auto_1fr]">
-      <section
-        aria-labelledby={titleId}
-        className="min-w-0 max-w-xl space-y-4 min-[66rem]:col-[1] min-[66rem]:row-[1] min-[66rem]:self-start"
-      >
-        <TodayHeader
-          date={selectedDate}
-          today={today}
-          training={calculatedValues.training}
-          titleId={titleId}
-          onSelectDate={onSelectDate}
-        />
-        {week && (
-          <WeekStrip
-            days={week.days}
-            eatenByDate={eatenByDate}
-            today={today}
-            selectedDate={selectedDate}
-            onSelect={onSelectDate}
-          />
-        )}
-        <DailyTotals
-          calculatedValues={calculatedValues}
-          totalMacros={totalMacros}
-          breakdown={macroBreakdown}
-          selectedDate={selectedDate}
-          today={today}
-        />
-        <LiveDayTimeline
-          meals={meals}
-          date={selectedDate}
-          today={today}
-          training={calculatedValues.training}
-        />
-      </section>
-
-      <div className="min-w-0 space-y-4 sm:space-y-6 min-[66rem]:col-[2] min-[66rem]:row-[1] min-[66rem]:self-start min-[84rem]:col-[1] min-[84rem]:row-[2]">
-        {/* Active goal phase (Pro) driving today's target. "Now" surface —
-            only on today, like the fasting card. */}
-        {selectedDate === today && goalPhase && (
-          <section className="overflow-hidden rounded-lg border border-brand/30 bg-card">
-            <div className="px-3 py-3 sm:px-5 sm:py-4">
-              <ActivePhaseBanner
-                phase={goalPhase}
-                today={today}
-                units={units}
-                nudge={goalPhaseNudge}
-              />
-            </div>
-          </section>
-        )}
-
-        <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
+    <div className="space-y-4 sm:space-y-6">
+      {sessionRow}
+      {/* Active goal phase (Pro) driving today's target. "Now" surface — only
+          on today, like the fasting card. */}
+      {selectedDate === today && goalPhase && (
+        <section className="overflow-hidden rounded-lg border border-brand/30 bg-card">
           <div className="px-3 py-3 sm:px-5 sm:py-4">
             <WaterCounter
               date={selectedDate}

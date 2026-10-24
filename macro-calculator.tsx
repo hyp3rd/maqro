@@ -13,6 +13,7 @@ import { ApplyTemplateDialog } from "./components/macro/ApplyTemplateDialog";
 import { BodySummaryStrip } from "./components/macro/BodySummaryStrip";
 import { CameraSheet } from "./components/macro/CameraSheet";
 import { CustomFoodForm } from "./components/macro/CustomFoodForm";
+import { DaySessionRow } from "./components/macro/DayTypeSheet";
 import { FastingView } from "./components/macro/FastingView";
 import { FoodSearchSheet } from "./components/macro/FoodSearchSheet";
 import { GoalPhasesPlanner } from "./components/macro/GoalPhasesPlanner";
@@ -725,7 +726,7 @@ const MacroCalculator = () => {
     targetForPhases,
     targetCaloriesForDate,
     planWeek,
-    selectedWeek,
+    previewDayTargets,
   } = useTargets(personalInfo, today, selectedDate);
   const activeGoalPhase = todayTargets.phase;
   // Every AI request below calls this after a 2xx so the shared usage counter
@@ -2276,7 +2277,13 @@ const MacroCalculator = () => {
       {view === "plan" && (
         <MealPlanner
           calculatedValues={dayTargets}
-          week={selectedWeek}
+          sessionRow={
+            <DaySessionRow
+              targets={dayTargets}
+              today={today}
+              previewDayTargets={previewDayTargets}
+            />
+          }
           totalMacros={totalMacros}
           macroBreakdown={macroBreakdown}
           meals={meals}

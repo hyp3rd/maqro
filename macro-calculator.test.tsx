@@ -3,7 +3,7 @@
  */
 import type { AiPlanRequest, AiPlanResult } from "@/lib/ai-plan";
 import { computeSlotBudget } from "@/lib/recipe-ranking";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactElement, ReactNode } from "react";
 import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -253,7 +253,8 @@ vi.mock("./components/macro/VoiceLogSheet", () => ({
 }));
 
 const { default: MacroCalculator } = await import("./macro-calculator");
-const { formatDayLabel } = await import("./components/shell/DateNavigator");
+const { DaySessionRow } = await import("./components/macro/DayTypeSheet");
+type DaySessionProps = ComponentProps<typeof DaySessionRow>;
 
 /** A prop the stubbed `component` last rendered with. */
 function prop<T>(component: string, name: string): T {
@@ -369,6 +370,20 @@ describe("macro-calculator: the day view gets the selected date's targets", () =
     }
     // Each successful (debited) AI call refreshes the shared usage counter.
     expect(refreshAiUsage).toHaveBeenCalledTimes(3);
+  });
+
+  it("the session row gets the selected day's targets and the preview resolver", async () => {
+    await renderOnPastDay();
+
+    const row = prop<ReactElement<DaySessionProps>>(
+      "MealPlanner",
+      "sessionRow",
+    );
+    expect(row.type).toBe(DaySessionRow);
+    expect(row.props.targets).toEqual(pastTargets);
+    expect(row.props.today).toBe(TODAY);
+    // Back to plan for the shown day: the same resolver and tier context.
+    expect(row.props.previewDayTargets(PAST_DAY, null)).toEqual(pastTargets);
   });
 
   it("an AI call that is not debited does not refresh usage", async () => {
