@@ -161,10 +161,10 @@ describe("TrainingWeekEditor: enable / disable", () => {
     expect(onTraining).toHaveBeenCalledWith({ ...SCHEDULE, enabled: false });
     expect(screen.queryByRole("button", { name: /^Edit / })).toBeNull();
     // Off, the card says what turning it back on restores: the week and
-    // the single days changed on their own (their overrides apply again).
+    // any single days changed (their overrides apply again).
     const describedBy = switchControl().getAttribute("aria-describedby");
     expect(document.getElementById(describedBy ?? "")?.textContent).toContain(
-      "Turn it back on and your week returns as you left it, with any days you changed on their own.",
+      "Turn it back on and your week returns as you left it, including any single days you changed.",
     );
     fireEvent.click(switchControl());
     expect(onTraining).toHaveBeenLastCalledWith(SCHEDULE);

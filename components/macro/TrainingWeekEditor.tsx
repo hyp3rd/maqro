@@ -222,8 +222,8 @@ export function TrainingWeekEditor({
                 {schedule && (
                   <>
                     {" "}
-                    Turn it back on and your week returns as you left it, with
-                    any days you changed on their own.
+                    Turn it back on and your week returns as you left it,
+                    including any single days you changed.
                   </>
                 )}
               </p>
