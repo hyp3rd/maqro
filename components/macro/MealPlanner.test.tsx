@@ -211,12 +211,21 @@ function renderPlanner(
 }
 
 /** The gauge's centre (dnd-kit adds its own live region to the page). */
-const gaugeStatus = () =>
-  within(screen.getByRole("region", { name: "Energy and macros" })).getByRole(
-    "status",
-  );
+const gaugeStatus = () => {
+  const centre = screen
+    .getAllByRole("status")
+    .find((s) => /kcal|target/.test(s.textContent ?? ""));
+  if (!centre) throw new Error("no gauge centre");
+  return centre;
+};
 
 describe("MealPlanner as Instrument Today", () => {
+  it("is one region, named by the day, with no region nested inside", () => {
+    renderPlanner();
+    const today = screen.getByRole("region", { name: "Today" });
+    expect(within(today).queryAllByRole("region")).toHaveLength(0);
+  });
+
   it("leads with the day's header and its planned session", () => {
     renderPlanner();
     expect(

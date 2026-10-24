@@ -93,7 +93,9 @@ const DailyTotals: React.FC<DailyTotalsProps> = ({
   ).filter((k) => typeof breakdown?.[k] === "number");
 
   return (
-    <section aria-label="Energy and macros">
+    // A plain block: the Today section around it is the landmark, and a
+    // region inside a region only adds noise to the landmark list.
+    <div data-part="energy">
       {/* Side by side from 22rem of panel (a 390 px phone and up). In a
           narrower panel the readout beside the gauge would squeeze its
           labels to an ellipsis, so the gauge centres above it: a 2 × 2
@@ -155,7 +157,7 @@ const DailyTotals: React.FC<DailyTotalsProps> = ({
           />
         </div>
       </div>
-    </section>
+    </div>
   );
 };
 
