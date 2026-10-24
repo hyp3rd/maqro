@@ -23,8 +23,6 @@ import type { PersonalInfo } from "./types";
 vi.mock("@/hooks/use-user", () => ({
   useUser: () => ({
     user: { id: "u1" } as User,
-    localUserId: "u1",
-    isOfflineUnverified: false,
     isLoaded: true,
     isUnconfigured: false,
   }),

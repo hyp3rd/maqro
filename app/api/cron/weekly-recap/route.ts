@@ -21,9 +21,10 @@ import { createClient } from "@supabase/supabase-js";
  *
  *  Pulls last 7 days of logs + weights for each opted-in user,
  *  computes the recap with the SAME `computeWeeklyRecap` helper the
- *  Progress view uses, against the SAME target the app shows (the shared
- *  `targetsForDate` resolver, with the user's tier re-checked here so an
- *  active Pro goal phase counts exactly as in-app), and sends. "Today" is
+ *  Progress view uses, scoring each day against the SAME target the app
+ *  shows for it (the shared `targetsForDate` resolver, with the user's tier
+ *  re-checked here so an active Pro goal phase counts exactly as in-app),
+ *  and sends. "Today" is
  *  the user's local date when they've stored a timezone, else UTC.
  *
  *  Auth + admin-client pattern matches the daily-reminder route. */
@@ -103,9 +104,13 @@ export async function GET(req: Request): Promise<NextResponse> {
     const phasesEnabled = personalInfo
       ? FEATURES.canUseGoalPhases(await loadUserTier(admin, userId))
       : false;
-    const targetCalories = personalInfo
-      ? targetsForDate(personalInfo, today, { phasesEnabled }).targetCalories
-      : 0;
+    // Each logged day is scored against its OWN target (a phase change or a
+    // planned training day inside the window); the email shows today's.
+    const targetCaloriesFor = (date: string) =>
+      personalInfo
+        ? targetsForDate(personalInfo, date, { phasesEnabled }).targetCalories
+        : 0;
+    const targetCalories = targetCaloriesFor(today);
 
     // Last 7 days of logs + weights. The helper takes the full
     // arrays and filters internally; passing pre-filtered is just
@@ -138,7 +143,7 @@ export async function GET(req: Request): Promise<NextResponse> {
       serverUpdatedAt: row.updated_at as string,
     }));
 
-    const recap = computeWeeklyRecap(logs, weights, targetCalories, today);
+    const recap = computeWeeklyRecap(logs, weights, targetCaloriesFor, today);
 
     // Don't waste an inbox slot when the user logged nothing all
     // week — empty digests are annoying. Skip silently; they'll

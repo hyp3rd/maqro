@@ -89,4 +89,13 @@ describe("useTargets", () => {
     expect(result.current.targetForPhases([])).toBe(2600);
     expect(result.current.targetForPhases(PROFILE.goalPhases ?? [])).toBe(1900);
   });
+
+  it("targetCaloriesForDate resolves any day's own target (the recap)", () => {
+    const { result } = renderHook(() => useTargets(PROFILE, TODAY, TODAY));
+    expect(result.current.targetCaloriesForDate(TODAY)).toBe(1900);
+    expect(result.current.targetCaloriesForDate(BEFORE_CUT)).toBe(2600);
+    tierState.tier = "free";
+    const free = renderHook(() => useTargets(PROFILE, TODAY, TODAY));
+    expect(free.result.current.targetCaloriesForDate(TODAY)).toBe(2600);
+  });
 });

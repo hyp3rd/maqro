@@ -89,8 +89,6 @@ vi.mock("next/navigation", () => ({
 vi.mock("@/hooks/use-user", () => ({
   useUser: () => ({
     user: { id: "u1" } as User,
-    localUserId: "u1",
-    isOfflineUnverified: false,
     isLoaded: true,
     isUnconfigured: false,
   }),
@@ -235,6 +233,20 @@ describe("/report local day", () => {
     expect(screen.getByText("Daily kcal vs target of 1900 kcal.")).toBeTruthy();
     // Today's log is inside the 7-day recap, scored against today's target.
     expect(screen.getByText("1 / 7")).toBeTruthy();
+    expect(screen.getByText("100% within ±10%")).toBeTruthy();
+  });
+
+  it("scores each recap day against that day's own target", async () => {
+    // The 10th predates the cut (2600), the 11th is in it (1900); each log
+    // hits its own day's target. Against today's 1900 alone, the 10th
+    // (+37%) would be off.
+    data.logs = [logged("2026-06-10", 2600), logged("2026-06-11", 1900)];
+    vi.setSystemTime(new Date(2026, 5, 11, 12, 0, 0));
+    await renderReport();
+    await settle();
+
+    expect(screen.getByText("Daily kcal vs target of 1900 kcal.")).toBeTruthy();
+    expect(screen.getByText("2 / 7")).toBeTruthy();
     expect(screen.getByText("100% within ±10%")).toBeTruthy();
   });
 

@@ -28,7 +28,7 @@ const {
     (
       logs: unknown,
       weights: unknown,
-      targetCalories: number,
+      targetCaloriesFor: (date: string) => number,
       today: string,
     ) => { daysLogged: number }
   >(() => ({ daysLogged: 3 })),
@@ -152,10 +152,11 @@ describe("GET /api/cron/weekly-recap", () => {
   });
 });
 
-/** The recap's adherence target must be the SAME number the app shows:
- *  phase-aware through `targetsForDate`, with the tier re-checked here, for
- *  the user's local "today". Linear goal: maintain at 2600; a cut (−550/day,
- *  own maintenance 2450 → 1900) starts on 2026-06-15. */
+/** The recap's adherence targets must be the SAME numbers the app shows:
+ *  each logged day scored against its own `targetsForDate` target, with the
+ *  tier re-checked here, in a window ending on the user's local "today".
+ *  Linear goal: maintain at 2600; a cut (−550/day, own maintenance 2450 →
+ *  1900) starts on 2026-06-15. */
 describe("GET /api/cron/weekly-recap — target", () => {
   const PROFILE = {
     gender: "male",
@@ -191,10 +192,16 @@ describe("GET /api/cron/weekly-recap — target", () => {
     profileRow.value = { payload: PROFILE };
   });
 
-  function lastRecapCall(): [number, string] {
+  function lastRecapArgs() {
     const call = mockComputeWeeklyRecap.mock.calls.at(-1);
     if (!call) throw new Error("computeWeeklyRecap was not called");
-    return [call[2], call[3]];
+    return call;
+  }
+  /** The last recap's per-day target resolver read on its today, and that
+   *  today. */
+  function lastRecapCall(): [number, string] {
+    const [, , targetFor, today] = lastRecapArgs();
+    return [targetFor(today), today];
   }
 
   it("a Pro user's active phase drives the target, on their local today", async () => {
@@ -210,6 +217,11 @@ describe("GET /api/cron/weekly-recap — target", () => {
       userId(TARGET_INDEX),
     );
     expect(lastRecapCall()).toEqual([1900, "2026-06-15"]);
+    // Every day in the window resolves its own target: the days before the
+    // cut started keep the linear 2600.
+    const [, , targetFor] = lastRecapArgs();
+    expect(targetFor("2026-06-14")).toBe(2600);
+    expect(targetFor("2026-06-09")).toBe(2600);
     // Window: the 7 days ending the local today.
     expect(gteCalls).toContainEqual(["daily_logs", "date", "2026-06-09"]);
   });

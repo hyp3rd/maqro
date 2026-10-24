@@ -270,6 +270,60 @@ export type GoalPhase = {
   notes?: string;
 };
 
+/** What a weekday's session is. `rest` = no session. Classified into a
+ *  `TrainingDayClass` (see [training.ts](./training.ts) `classifyTrainingDay`),
+ *  which is what moves the day's calories. */
+export type TrainingType =
+  "rest" | "upper" | "lower" | "fullBody" | "endurance" | "hiit" | "sport";
+
+/** How hard a session is. Absent = not specified (the type's default). */
+export type TrainingIntensity = "light" | "moderate" | "hard";
+
+/** One weekday in the training template. `time` is the planned local start
+ *  (`HH:MM`, 24 h) and `durationMin` the planned length; both optional, and
+ *  only `durationMin` affects the target today (a long endurance session,
+ *  or a long `light` one — see `classifyTrainingDay`). */
+export type TrainingDay = {
+  type: TrainingType;
+  intensity?: TrainingIntensity;
+  time?: string;
+  durationMin?: number;
+};
+
+/** The seven template days, indexed by JS `Date.getDay()` (0 = Sunday). */
+export type TrainingWeek = [
+  TrainingDay,
+  TrainingDay,
+  TrainingDay,
+  TrainingDay,
+  TrainingDay,
+  TrainingDay,
+  TrainingDay,
+];
+
+/** How far calories move between training and rest days around the weekly
+ *  average: `off` keeps every day at the average; `modest` (default) and
+ *  `pronounced` (opt-in) are the weight presets in training.ts. */
+export type CyclingPreset = "off" | "modest" | "pronounced";
+
+/** The user-declared weekly training template. Planned per-day targets only:
+ *  the weekly average is fixed by the goal, never raised by training, and
+ *  nothing shifts reactively. */
+export type TrainingSchedule = {
+  enabled: boolean;
+  days: TrainingWeek;
+  cycling: CyclingPreset;
+};
+
+/** Fixed daily protein, in grams per kg of bodyweight or of lean mass (the
+ *  latter needs a body-fat estimate; without one, min(2.0, its g/kg) on
+ *  bodyweight applies — see `proteinGrams`). Only applies while a training
+ *  schedule is enabled. */
+export type ProteinSetting = {
+  basis: "bodyweight" | "leanMass";
+  gPerKg: number;
+};
+
 export type PersonalInfo = {
   /** Optional display name shown in the sidebar instead of the email
    * prefix. Pure UX nicety - has no effect on calculations or AI. */
@@ -358,6 +412,17 @@ export type PersonalInfo = {
    * when absent / not Pro / no phase active, the linear `goal` above is the
    * target. Rides the profile blob — no migration, like `fasting`. */
   goalPhases?: GoalPhase[];
+  /** Optional weekly training template (FREE). When enabled, each weekday's
+   * session type moves that day's calories around the unchanged weekly
+   * average and protein switches to the fixed `proteinSetting` — see
+   * [training.ts](./training.ts) and `targetsForDate`. Absent / disabled =
+   * today's targets exactly. Not validated on write (jsonb): read only through
+   * `normalizeTrainingSchedule`. Rides the profile blob — no migration. */
+  training?: TrainingSchedule;
+  /** Optional fixed-protein setting used while `training` is enabled
+   * (default 2.0 g/kg bodyweight). Read only through
+   * `normalizeProteinSetting`. Rides the profile blob — no migration. */
+  proteinSetting?: ProteinSetting;
   /** Display preference for weight + height: metric (kg / cm) or
    *  imperial (lb / ft+in). Storage stays in kg / cm regardless;
    *  this only governs how values are presented and entered. See

@@ -65,7 +65,6 @@ import { requestAiMealPlan } from "./lib/ai-plan";
 import type { CoherenceIssue } from "./lib/ai/plan-coherence";
 import { toAiCustomFoods } from "./lib/ai/request-payload";
 import { clientFetch } from "./lib/auth/client-fetch";
-import { OFFLINE_UNVERIFIED_HINT } from "./lib/auth/offline-unverified-copy";
 import {
   replaceDayIfUnchanged,
   replaceMealIfUnchanged,
@@ -84,8 +83,7 @@ import {
   type MealTemplate,
   type PantryItem,
 } from "./lib/db";
-import { isDemoSeedRequest } from "./lib/demo-data";
-import { dietBreakNudge, effectiveGoal } from "./lib/goal-phases";
+import { dietBreakNudge } from "./lib/goal-phases";
 import { haptic } from "./lib/haptics";
 import { waterGoalMl } from "./lib/hydration";
 import { addFoodBasis, scaleFoodToItem } from "./lib/log-food";
@@ -704,6 +702,7 @@ const MacroCalculator = () => {
     todayTargets,
     dayTargets,
     targetForPhases,
+    targetCaloriesForDate,
   } = useTargets(personalInfo, today, selectedDate);
   const activeGoalPhase = todayTargets.phase;
   // Every AI request below calls this after a 2xx so the shared usage counter
@@ -2369,6 +2368,7 @@ const MacroCalculator = () => {
       {view === "progress" && (
         <ProgressView
           targetCalories={todayTargets.targetCalories}
+          targetCaloriesForDate={targetCaloriesForDate}
           formulaTdee={todayTargets.tdee}
           dailyDelta={todayTargets.dailyDelta}
           // The goal actually driving today's target (a phase's, when one
