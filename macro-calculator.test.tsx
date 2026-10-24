@@ -679,9 +679,10 @@ describe("macro-calculator: the day view's heading names the day it shows", () =
 });
 
 describe("macro-calculator: quick add (the tab bar's centre [+])", () => {
-  const quickAdd = async () => {
+  /** Taps the [+] (the tab bar hands over the button it rendered). */
+  const quickAdd = async (plus = document.createElement("button")) => {
     await act(async () => {
-      prop<() => void>("AppShell", "onQuickAdd")();
+      prop<(trigger: HTMLElement) => void>("AppShell", "onQuickAdd")(plus);
     });
   };
   const launcher = () => ({
@@ -809,6 +810,16 @@ describe("macro-calculator: quick add (the tab bar's centre [+])", () => {
       prop<() => void>("FoodSearchSheet", "onBack")();
     });
     expect(launcher()).toEqual({ open: true, mealId: 2, dayLabel: "Today" });
+  });
+
+  it("the launcher returns focus to the [+] that opened it", async () => {
+    render(<MacroCalculator />);
+    const plus = document.createElement("button");
+    await quickAdd(plus);
+    expect(
+      prop<RefObject<HTMLElement | null>>("LogMealSheet", "returnFocusTo")
+        .current,
+    ).toBe(plus);
   });
 
   it("dismissing the launcher ends the quick add", async () => {

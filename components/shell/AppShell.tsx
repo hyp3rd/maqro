@@ -25,8 +25,9 @@ type Props = {
    *  Topbar). */
   title?: string;
   onSelect: (key: ViewKey) => void;
-  /** The mobile tab bar's centre [+] (see MobileBottomNav). */
-  onQuickAdd: () => void;
+  /** The mobile tab bar's centre [+], with the button itself (see
+   *  MobileBottomNav). */
+  onQuickAdd: (trigger: HTMLElement) => void;
   children: React.ReactNode;
 };
 

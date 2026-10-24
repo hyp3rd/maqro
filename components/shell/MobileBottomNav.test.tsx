@@ -83,8 +83,11 @@ describe("MobileBottomNav", () => {
 
   it("the centre button asks for a quick add with a tap haptic", () => {
     const { bar, onQuickAdd, onSelect } = renderNav("settings");
-    fireEvent.click(within(bar).getByRole("button", { name: "Quick add" }));
-    expect(onQuickAdd).toHaveBeenCalledTimes(1);
+    const plus = within(bar).getByRole("button", { name: "Quick add" });
+    fireEvent.click(plus);
+    // Hands over itself: the launcher's focus-return target (iOS Safari
+    // doesn't focus a tapped button, so focus can't be read back later).
+    expect(onQuickAdd.mock.calls).toEqual([[plus]]);
     expect(onSelect).not.toHaveBeenCalled();
     expect(haptic).toHaveBeenCalledWith("tap");
   });

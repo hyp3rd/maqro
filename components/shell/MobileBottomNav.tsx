@@ -12,8 +12,9 @@ type Props = {
   current: ViewKey;
   onSelect: (key: ViewKey) => void;
   /** The centre [+]: log something now. The parent switches to Today on
-   *  today's date first, then opens the guided launcher. */
-  onQuickAdd: () => void;
+   *  today's date first, then opens the guided launcher, returning focus to
+   *  `trigger` (this button) when it closes. */
+  onQuickAdd: (trigger: HTMLElement) => void;
 };
 
 /** Mobile-only tab bar ("Instrument"): the slots come from the nav registry
@@ -46,9 +47,9 @@ export function MobileBottomNav({ current, onSelect, onQuickAdd }: Props) {
               <button
                 type="button"
                 aria-label="Quick add"
-                onClick={() => {
+                onClick={(event) => {
                   haptic("tap");
-                  onQuickAdd();
+                  onQuickAdd(event.currentTarget);
                 }}
                 className={cn(
                   // `brand-strong`, not `brand`: the token contract's fill
