@@ -36,6 +36,10 @@ const MIN_SCALE = 100; // kcal: a flat week still has a readable scale
 /** Draw the floor line only while it sits within this many "largest
  *  shifts" below the average; further down it would flatten every bar. */
 const FLOOR_RANGE = 2;
+/** The floor line also needs this many px under the average line: closer,
+ *  the two gutter labels would overlap (the floor sentence under the chart
+ *  still gives the figure). */
+const MIN_LINE_GAP = 16;
 
 /** Signed, grouped kcal difference: "+300", "−250", "0". */
 function signed(n: number, locale: string): string {
@@ -45,7 +49,8 @@ function signed(n: number, locale: string): string {
 
 /** The diverging "calorie shift" chart: each planned day as a bar above or
  *  below the weekly average (training days in the brand hue, rest days
- *  neutral), with the safety floor as a dashed line when it is in range.
+ *  neutral), with the safety floor as a dashed line when it is in range
+ *  and far enough under the average to read as its own line.
  *  The bars above and below visibly balance: calories move between days,
  *  never on top.
  *
@@ -59,12 +64,14 @@ export function TrainingWeekChart({ days, mean, floor, className }: Props) {
   const deltas = days.map((d) => d.kcal - mean);
   const largest = Math.max(MIN_SCALE, ...deltas.map((d) => Math.abs(d)));
   const floorGap = mean - floor;
-  const showFloor = floorGap > 0 && floorGap <= FLOOR_RANGE * largest;
-  const below = showFloor ? Math.max(largest, floorGap) : largest;
+  const floorInRange = floorGap > 0 && floorGap <= FLOOR_RANGE * largest;
+  const below = floorInRange ? Math.max(largest, floorGap) : largest;
   const plotH = HEIGHT - TOP - BOTTOM;
   const perKcal = plotH / (largest + below);
   const avgY = TOP + largest * perKcal;
   const floorY = avgY + floorGap * perKcal;
+  // Hiding a too-close floor never rescales: it sits within `largest`.
+  const showFloor = floorInRange && floorY - avgY >= MIN_LINE_GAP;
 
   const plotW = Math.max(0, (width ?? 0) - LABEL_GUTTER);
   const col = plotW / Math.max(1, days.length);
