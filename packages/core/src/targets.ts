@@ -3,6 +3,7 @@ import { effectiveGoal } from "./goal-phases";
 import { computeMacros } from "./macros";
 import {
   type FloorsExceedMeanCause,
+  MACRO_GRAM_STEP,
   type ProteinBasis,
   type TrainingDayClass,
   classifyTrainingDay,
@@ -82,6 +83,12 @@ export type TrainingDayTargets = {
    *  false, every planned day holds all of them: cycling narrows its spread
    *  rather than plan a day that can't. */
   floorsExceedMean: false | FloorsExceedMeanCause;
+  /** The daily protein (g) the setting asks for, on the same 5 g grid as
+   *  the planned `protein`. The two are equal unless the floors made
+   *  protein give way (`floorsExceedMean`), so a planned `protein` under
+   *  it is the UI's cue to say protein is held below the setting for now
+   *  and by how much. */
+  requestedProtein: number;
   /** The fat floor raised the plan's fat above what the user's explicit fat
    *  choice (a `lowFat` diet type or a custom macro split) yields for the
    *  mean day — the UI's info note (`fatFloorLiftsChoice`). Always needs
@@ -233,6 +240,8 @@ export function targetsForDate(
       floorsExceedMean:
         values.targetCalories < minDay &&
         floorsExceedMeanCause({ ...floors, setting, body }),
+      requestedProtein:
+        Math.round(protein.grams / MACRO_GRAM_STEP) * MACRO_GRAM_STEP,
       fatFloorLifted: fatFloorLiftsChoice(week),
     },
   };

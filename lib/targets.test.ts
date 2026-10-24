@@ -915,6 +915,8 @@ describe("targetsForDate — training days", () => {
       // far more room. Taking the floors on bodyweight (81 kg) instead would
       // give [115, 85, 45], so this pins the protein weight.
       expect([d.protein, d.carbs, d.fat]).toEqual([175, 60, 30]);
+      // 3.4 g/kg × 56.25 kg = 191.25 → 190 g asked; 175 planned.
+      expect(d.training?.requestedProtein).toBe(190);
     }
   });
 
@@ -943,6 +945,7 @@ describe("targetsForDate — training days", () => {
       // setting is the cause — at its BMR floor a smaller deficit can't
       // add calories, while 2.0 g/kg fits.
       expect(d.protein).toBe(280);
+      expect(d.training?.requestedProtein).toBe(410);
       expect(d.training?.floorsExceedMean).toBe("protein");
       expect(d.fat).toBeGreaterThanOrEqual(60);
       expect(d.carbs).toBeGreaterThanOrEqual(120);
@@ -954,6 +957,7 @@ describe("targetsForDate — training days", () => {
       ctx,
     );
     expect(byDefault.protein).toBe(240);
+    expect(byDefault.training?.requestedProtein).toBe(240);
     expect(byDefault.training?.floorsExceedMean).toBe(false);
   });
 
@@ -986,6 +990,8 @@ describe("targetsForDate — training days", () => {
         expect(d.training?.floorsExceedMean).toBe("calories");
         // (1,439 − 405 − 360) / 4 = 168.5 → 165 g protein.
         expect([d.protein, d.carbs, d.fat]).toEqual([165, 95, 45]);
+        // 2.0 g/kg asks 180 g, 3.4 g/kg 306 g → 305: both held at 165.
+        expect(d.training?.requestedProtein).toBe(proteinSetting ? 305 : 180);
       }
     }
   });
@@ -1077,6 +1083,9 @@ describe("targetsForDate — training days", () => {
                         // can't fit the floors — and then every day is it.
                         const tight = d.training?.floorsExceedMean;
                         if (d.protein < wanted) expect(tight).toBeTruthy();
+                        // The UI's figure for what the setting asks.
+                        expect(d.training?.requestedProtein).toBe(wanted);
+                        expect(d.protein).toBeLessThanOrEqual(wanted);
                         // At or under 2.0 g/kg a lower setting can't help.
                         if (tight && gPerKg <= 2)
                           expect(tight).toBe("calories");
