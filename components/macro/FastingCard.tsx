@@ -101,7 +101,10 @@ export function FastingCard({
   // Disabled / first-run: a compact prompt rather than the full timer.
   if (!fasting?.enabled) {
     return (
-      <div className="flex items-center justify-between gap-3">
+      <div
+        ref={onScreenRef}
+        className="flex items-center justify-between gap-3"
+      >
         <h2 className="flex items-center gap-1.5 text-sm font-semibold tracking-tight">
           <Hourglass className="h-4 w-4 text-brand" />
           Fasting

@@ -315,6 +315,7 @@ beforeEach(() => {
   dayMeals.byDate = {};
   dayMeals.loaded = null;
   dayMeals.last = null;
+  overridesRead.pending = null;
   writes.setMeals.mockReset();
   writes.recipes = [];
   for (const key of Object.keys(ui.props)) delete ui.props[key];
