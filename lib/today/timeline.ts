@@ -103,11 +103,14 @@ export type MealTick = {
   lane: 0 | 1 | null;
 };
 
-/** Track minutes one label character takes on a phone-width track (a 12px
- *  mono glyph is ~7px of a ~358px day), and the clear gap kept between
- *  two labels. A "720" label is then about 1.5 h. */
-const MIN_PER_LABEL_CHAR = 29;
-const LABEL_PAD_MIN = 12;
+/** Track minutes one label character takes on the narrowest track the day
+ *  view lays out: a 12px mono glyph (~7.2px) of a 288px day (a 320px
+ *  viewport less its 16px gutters, 0.2px a minute). A wider track only
+ *  leaves more room. A "720" label is then about 1.8 h. */
+const MIN_PER_LABEL_CHAR = 36;
+/** The clear gap kept between two labels in a lane: one character, so
+ *  two figures never read as one ("1,821 437"). */
+const LABEL_PAD_MIN = MIN_PER_LABEL_CHAR;
 
 /** Characters in a kcal label at most: its digits plus a grouping mark
  *  per thousand (the locale may print fewer, never more). */
@@ -116,9 +119,21 @@ function labelChars(kcal: number): number {
   return digits + Math.floor((digits - 1) / 3);
 }
 
-/** Minutes two centred labels need between their ticks not to touch. */
-function labelGap(charsA: number, charsB: number): number {
-  return ((charsA + charsB) / 2) * MIN_PER_LABEL_CHAR + LABEL_PAD_MIN;
+/** The track minutes a label covers, placed as `labelAnchor` places it:
+ *  centred on its tick, or running inwards from a tick near an end. */
+function labelExtent(
+  minutes: number,
+  chars: number,
+): { from: number; to: number } {
+  const width = chars * MIN_PER_LABEL_CHAR;
+  switch (labelAnchor(minutes)) {
+    case "start":
+      return { from: minutes, to: minutes + width };
+    case "end":
+      return { from: minutes - width, to: minutes };
+    case "middle":
+      return { from: minutes - width / 2, to: minutes + width / 2 };
+  }
 }
 
 export function mealTicks(meals: readonly Meal[], date: string): MealTick[] {
@@ -126,29 +141,22 @@ export function mealTicks(meals: readonly Meal[], date: string): MealTick[] {
     .map((meal) => ({ meal, minutes: mealStartMinute(meal, date) }))
     .filter((t): t is { meal: Meal; minutes: number } => t.minutes !== null)
     .sort((a, b) => a.minutes - b.minutes);
-  // The last label placed in each lane: its tick and its width.
-  const lastInLane: [
-    { minutes: number; chars: number } | null,
-    { minutes: number; chars: number } | null,
-  ] = [null, null];
-  const fits = (lane: 0 | 1, minutes: number, chars: number) => {
-    const last = lastInLane[lane];
-    return (
-      last === null || minutes - last.minutes >= labelGap(last.chars, chars)
-    );
+  // Where the last label placed in each lane ends. Ticks come in time
+  // order and every label covers its own tick, so a later label can only
+  // collide with the previous one's right end.
+  const laneEnd: [number | null, number | null] = [null, null];
+  const fits = (lane: 0 | 1, from: number) => {
+    const end = laneEnd[lane];
+    return end === null || from - end >= LABEL_PAD_MIN;
   };
   return timed.map(({ meal, minutes }) => {
     const kcal = Math.round(meal.foods.reduce((sum, f) => sum + f.calories, 0));
-    const chars = labelChars(kcal);
+    const extent = labelExtent(minutes, labelChars(kcal));
     // Lane 0 when it has room, else lane 1 when that has room; with both
     // taken (three meals close together) the label is left off rather
     // than printed over another.
-    const lane = fits(0, minutes, chars)
-      ? 0
-      : fits(1, minutes, chars)
-        ? 1
-        : null;
-    if (lane !== null) lastInLane[lane] = { minutes, chars };
+    const lane = fits(0, extent.from) ? 0 : fits(1, extent.from) ? 1 : null;
+    if (lane !== null) laneEnd[lane] = extent.to;
     return { mealId: meal.id, name: meal.name, minutes, kcal, lane };
   });
 }

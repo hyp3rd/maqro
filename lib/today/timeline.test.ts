@@ -154,7 +154,7 @@ describe("mealTicks", () => {
       { id: 1, name: "Breakfast", foods: [food(1340, at(12, 0))] },
       { id: 2, name: "Lunch", foods: [food(1340, at(12, 40))] },
       { id: 3, name: "Dinner", foods: [food(1340, at(13, 20))] },
-      { id: 4, name: "Snacks", foods: [food(1340, at(15, 0))] },
+      { id: 4, name: "Snacks", foods: [food(1340, at(16, 0))] },
     ];
     expect(mealTicks(crowded, DAY).map((t) => [t.name, t.lane])).toEqual([
       ["Breakfast", 0],
@@ -162,13 +162,34 @@ describe("mealTicks", () => {
       ["Dinner", null],
       ["Snacks", 0],
     ]);
-    // 100 minutes clears two 3-digit labels but not two 5-character ones.
+    // 150 minutes clears two 3-digit labels but not two 5-character ones.
     const apart = (kcal: number): Meal[] => [
       { id: 1, name: "Breakfast", foods: [food(kcal, at(8, 0))] },
-      { id: 2, name: "Lunch", foods: [food(kcal, at(9, 40))] },
+      { id: 2, name: "Lunch", foods: [food(kcal, at(10, 30))] },
     ];
     expect(mealTicks(apart(720), DAY).map((t) => t.lane)).toEqual([0, 0]);
     expect(mealTicks(apart(1340), DAY).map((t) => t.lane)).toEqual([0, 1]);
+  });
+
+  it("keeps a character's gap between two labels in one lane", () => {
+    // 2 h 13 min apart, "1,821" then "437": on a 320px phone's track the
+    // two would sit ~3px apart and read as one figure ("1,821 437").
+    const near: Meal[] = [
+      { id: 1, name: "Lunch", foods: [food(1821, at(12, 0))] },
+      { id: 2, name: "Snacks", foods: [food(437, at(14, 13))] },
+    ];
+    expect(mealTicks(near, DAY).map((t) => t.lane)).toEqual([0, 1]);
+  });
+
+  it("measures a label at a track end from the end it is anchored to", () => {
+    // The late label is anchored to the track's right end, so it reaches
+    // further left than a centred one would: it lands on Dinner's label.
+    const late: Meal[] = [
+      { id: 1, name: "Dinner", foods: [food(720, at(20, 0))] },
+      { id: 2, name: "Snacks", foods: [food(1050, at(23, 15))] },
+    ];
+    expect(labelAnchor(23 * 60 + 15)).toBe("end");
+    expect(mealTicks(late, DAY).map((t) => t.lane)).toEqual([0, 1]);
   });
 });
 
