@@ -79,6 +79,25 @@ describe("ProfileView: Training week", () => {
     expect(onTrainingChange).toHaveBeenCalledWith(defaultTrainingSchedule());
   });
 
+  it("opens straight on the training week when asked to (the Calculator's link)", () => {
+    render(
+      <ProfileView
+        personalInfo={{ ...PROFILE, training: defaultTrainingSchedule() }}
+        onPersonalInfoChange={() => {}}
+        today={TODAY}
+        initialSub="training"
+        planWeek={(p) => weekTargets(p, TODAY, { phasesEnabled: false })}
+        onTrainingChange={() => {}}
+        onProteinSettingChange={() => {}}
+      />,
+      { wrapper: intlWrapper() },
+    );
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Training week" }),
+    ).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: /^Edit / })).toHaveLength(7);
+  });
+
   it("the tile counts the planned sessions while the week is on", () => {
     renderProfile({ ...PROFILE, training: defaultTrainingSchedule() });
     expect(

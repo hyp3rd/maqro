@@ -1,6 +1,7 @@
 "use client";
 
 import { NumberTicker } from "@/components/shell/NumberTicker";
+import { Button } from "@/components/ui/button";
 import { formatNumber } from "@/lib/i18n/number";
 import { dayTypeLabel } from "@/lib/training-labels";
 import { kgToDisplay, type UnitSystem } from "@/lib/units";
@@ -23,6 +24,9 @@ interface MacroResultsProps {
    *  on this; the headline numbers themselves stay in kcal (a
    *  universal unit). */
   units: UnitSystem;
+  /** Opens the training week (Profile → Training week) from the planned-day
+   *  row; without it the row has no link. */
+  onEditWeek?: () => void;
 }
 
 type MacroKey = "protein" | "carbs" | "fat";
@@ -190,6 +194,7 @@ const MacroResults: React.FC<MacroResultsProps> = ({
   calculatedValues,
   totalMacros,
   units,
+  onEditWeek,
 }) => {
   const locale = useLocale();
   const training = calculatedValues.training;
@@ -246,8 +251,20 @@ const MacroResults: React.FC<MacroResultsProps> = ({
             data-testid="planned-day"
             className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-t border-border/60 px-5 py-3 text-label"
           >
-            <span className="font-medium text-foreground">
-              {dayTypeLabel(training)}
+            <span className="flex flex-wrap items-baseline gap-x-2">
+              <span className="font-medium text-foreground">
+                {dayTypeLabel(training)}
+              </span>
+              {onEditWeek && (
+                <Button
+                  type="button"
+                  variant="link"
+                  className="h-auto min-h-touch-7 px-0 text-label text-brand-text"
+                  onClick={onEditWeek}
+                >
+                  Edit week
+                </Button>
+              )}
             </span>
             <span className="text-muted-foreground">
               <span className="font-mono tabular-nums text-foreground">

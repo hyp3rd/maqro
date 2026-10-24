@@ -2,10 +2,10 @@
  * @vitest-environment jsdom
  */
 import { intlWrapper } from "@/lib/i18n/intl-test-wrapper";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { targetsForDate } from "@maqro/core/targets";
 import type { PersonalInfo } from "@maqro/core/types";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import MacroResults from "./MacroResults";
 
 afterEach(cleanup);
@@ -50,13 +50,18 @@ const TUESDAY = "2026-10-20";
 
 const TOTALS = { protein: 0, carbs: 0, fat: 0, calories: 0 };
 
-function renderResults(profile: PersonalInfo, date: string) {
+function renderResults(
+  profile: PersonalInfo,
+  date: string,
+  onEditWeek?: () => void,
+) {
   const values = targetsForDate(profile, date, { phasesEnabled: false });
   render(
     <MacroResults
       calculatedValues={values}
       totalMacros={TOTALS}
       units="metric"
+      onEditWeek={onEditWeek}
     />,
     { wrapper: intlWrapper() },
   );
@@ -107,5 +112,22 @@ describe("MacroResults with a training schedule", () => {
     expect(restDay).not.toBe(weekly);
     expect(screen.getByText(`${weekly} kg/wk`, { exact: false })).toBeTruthy();
     expect(screen.getByText("Average deficit")).toBeTruthy();
+  });
+});
+
+describe("MacroResults: the planned-day row", () => {
+  it("links to the training week from the planned day", () => {
+    const onEditWeek = vi.fn();
+    renderResults(TRAINING, SATURDAY, onEditWeek);
+    const summary = screen.getByTestId("planned-day");
+    const link = screen.getByRole("button", { name: "Edit week" });
+    expect(summary.contains(link)).toBe(true);
+    fireEvent.click(link);
+    expect(onEditWeek).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows no link where there is nowhere to go", () => {
+    renderResults(TRAINING, SATURDAY);
+    expect(screen.queryByRole("button", { name: "Edit week" })).toBeNull();
   });
 });

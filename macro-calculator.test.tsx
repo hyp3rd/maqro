@@ -902,6 +902,27 @@ describe("macro-calculator: training week wiring", () => {
   });
 });
 
+describe("macro-calculator: the Calculator's Edit week link", () => {
+  it("opens the training week; the next visit to the profile opens its hub", () => {
+    nav.search = "view=calculator";
+    render(<MacroCalculator />);
+    expect("ProfileView" in ui.props).toBe(false);
+    act(() => {
+      prop<() => void>("MacroResults", "onEditWeek")();
+    });
+    expect(prop("ProfileView", "initialSub")).toBe("training");
+
+    // Leaving and coming back through the nav lands on the hub again.
+    act(() => {
+      prop<(k: string) => void>("AppShell", "onSelect")("calculator");
+    });
+    act(() => {
+      prop<(k: string) => void>("AppShell", "onSelect")("profile");
+    });
+    expect(prop("ProfileView", "initialSub")).toBe("home");
+  });
+});
+
 /** Progress compares AVERAGED intake with a target: with a training week on
  *  that is the weekly average, not today's planned day (which sits above or
  *  below it). Without one, exactly today's target as before. */
