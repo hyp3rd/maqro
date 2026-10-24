@@ -3,7 +3,13 @@
  */
 import { intlWrapper } from "@/lib/i18n/intl-test-wrapper";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { WeekStrip } from "./WeekStrip";
 
 afterEach(() => cleanup());
@@ -39,6 +45,13 @@ function renderStrip(selectedDate = "2026-10-21", onSelect = vi.fn()) {
 }
 
 describe("WeekStrip", () => {
+  it("is a labelled group of days, not a navigation landmark", () => {
+    renderStrip();
+    expect(screen.queryByRole("navigation")).toBeNull();
+    const week = screen.getByRole("group", { name: "Week" });
+    expect(within(week).getAllByRole("button")).toHaveLength(7);
+  });
+
   it("names each day with its own target and intake", () => {
     renderStrip();
     const names = screen

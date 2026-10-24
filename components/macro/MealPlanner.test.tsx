@@ -241,7 +241,7 @@ describe("MealPlanner as Instrument Today", () => {
 
   it("strips the week with each day's own target and selects a tapped day", () => {
     const props = renderPlanner();
-    const week = screen.getByRole("navigation", { name: "Week" });
+    const week = screen.getByRole("group", { name: "Week" });
     const days = within(week).getAllByRole("button");
     expect(days).toHaveLength(7);
     // Tuesday is a rest day in the cycled week: its own (lower) target.
@@ -259,7 +259,7 @@ describe("MealPlanner as Instrument Today", () => {
   it("puts the loaded day's live total on its strip bar", async () => {
     const props = renderPlanner();
     const wed = props.week?.days[2]?.targetCalories ?? 0;
-    const week = screen.getByRole("navigation", { name: "Week" });
+    const week = screen.getByRole("group", { name: "Week" });
     // Settle the (empty) IndexedDB week read: the live total still shows.
     await waitFor(() =>
       expect(
@@ -274,7 +274,7 @@ describe("MealPlanner as Instrument Today", () => {
     // Mid date change: `totalMacros` is still the previous day's.
     const props = renderPlanner({ dayHydrated: false });
     const wed = props.week?.days[2]?.targetCalories ?? 0;
-    const week = screen.getByRole("navigation", { name: "Week" });
+    const week = screen.getByRole("group", { name: "Week" });
     await waitFor(() =>
       expect(
         within(week).getByRole("button", {
@@ -334,7 +334,7 @@ describe("MealPlanner as Instrument Today", () => {
       week: null,
     });
     expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Today");
-    expect(screen.queryByRole("navigation", { name: "Week" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "Week" })).toBeNull();
   });
 
   it("offers a way back to today from another day", () => {

@@ -81,7 +81,10 @@ export function WeekStrip({
   const strip = weekStripDays(days, eatenByDate, today, selectedDate);
 
   return (
-    <nav
+    // A labelled group, not a <nav>: it picks a day within the view, and the
+    // landmark list stays the app's own navigation.
+    <div
+      role="group"
       aria-label="Week"
       className={className}
     >
@@ -189,6 +192,6 @@ export function WeekStrip({
           );
         })}
       </ul>
-    </nav>
+    </div>
   );
 }
