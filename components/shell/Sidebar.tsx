@@ -3,61 +3,13 @@
 import { useIsAdmin } from "@/hooks/use-user-role";
 import { cn } from "@/lib/utils";
 import * as React from "react";
-import {
-  Apple,
-  Calculator,
-  ChefHat,
-  ChevronLeft,
-  ChevronRight,
-  HeartPulse,
-  LayoutGrid,
-  LineChart,
-  Package,
-  Settings,
-  Shield,
-  ShoppingCart,
-  UserCircle,
-  Utensils,
-} from "lucide-react";
+import { ChevronLeft, ChevronRight, Shield } from "lucide-react";
 import { motion } from "motion/react";
 import Link from "next/link";
 import { LogoMark } from "./LogoMark";
 import { LogoWordmark } from "./LogoWordmark";
 import { UserMenu } from "./UserMenu";
-
-export type ViewKey =
-  | "calculator"
-  | "profile"
-  | "plan"
-  | "progress"
-  | "health"
-  | "foods"
-  | "recipes"
-  | "templates"
-  | "shopping"
-  | "pantry"
-  | "settings";
-
-type NavItem = {
-  key: ViewKey;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  badge?: string;
-};
-
-const NAV: NavItem[] = [
-  { key: "calculator", label: "Calculator", icon: Calculator },
-  { key: "profile", label: "Profile", icon: UserCircle },
-  { key: "plan", label: "Meal Plan", icon: Utensils },
-  { key: "progress", label: "Progress", icon: LineChart },
-  { key: "health", label: "Health", icon: HeartPulse },
-  { key: "foods", label: "My Foods", icon: Apple },
-  { key: "recipes", label: "Recipes", icon: ChefHat },
-  { key: "templates", label: "Templates", icon: LayoutGrid },
-  { key: "shopping", label: "Shopping", icon: ShoppingCart },
-  { key: "pantry", label: "Pantry", icon: Package },
-  { key: "settings", label: "Settings", icon: Settings },
-];
+import { NAV, SIDEBAR_GROUPS, type ViewKey } from "./nav";
 
 const COLLAPSED_KEY = "maqro:sidebar-collapsed";
 
@@ -216,50 +168,50 @@ export function Sidebar({ current, onSelect }: Props) {
         </div>
       )}
 
-      <nav className="flex-1 space-y-0.5 overflow-y-auto p-2">
-        {NAV.map((item) => {
-          const Icon = item.icon;
-          const isActive = item.key === current;
-          const isDisabled = !!item.badge;
+      {/* Grouped from the nav registry (./nav.ts). Each section is a
+          labelled list; collapsed, the labels give way to a hairline so the
+          grouping still reads in the 56 px rail. */}
+      <nav className="flex-1 space-y-3 overflow-y-auto p-2">
+        {SIDEBAR_GROUPS.map((group, i) => {
+          const headingId = `sidebar-group-${group.id}`;
           return (
-            <button
-              key={item.key}
-              type="button"
-              onClick={() => !isDisabled && onSelect(item.key)}
-              disabled={isDisabled}
-              // `title` provides the tooltip when collapsed - native
-              // browser tooltip is fine here, no Radix needed for a
-              // power-user shortcut affordance.
-              title={collapsed ? item.label : undefined}
+            <div
+              key={group.id}
+              role={group.label ? "group" : undefined}
+              aria-labelledby={group.label ? headingId : undefined}
               className={cn(
-                "relative flex w-full items-center gap-2.5 rounded-md py-1.5 text-sm font-medium transition-colors",
-                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-                collapsed ? "justify-center px-1.5" : "px-2.5",
-                isDisabled
-                  ? "cursor-not-allowed text-muted-foreground/60"
-                  : isActive
-                    ? "text-brand"
-                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                i > 0 && collapsed && "border-t border-border/60 pt-3",
               )}
-              aria-current={isActive ? "page" : undefined}
             >
-              {isActive && !isDisabled && (
-                <motion.span
-                  layoutId="sidebar-active"
-                  className="absolute inset-0 rounded-md bg-brand/10"
-                  transition={{ type: "spring", stiffness: 380, damping: 30 }}
-                />
+              {group.label && !collapsed && (
+                <p
+                  id={headingId}
+                  className="px-2.5 pb-1 text-xs font-medium text-faint-foreground"
+                >
+                  {group.label}
+                </p>
               )}
-              <Icon className="relative h-4 w-4 shrink-0" />
-              {!collapsed && (
-                <span className="relative flex-1 text-left">{item.label}</span>
-              )}
-              {!collapsed && item.badge && (
-                <span className="relative rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/80">
-                  {item.badge}
+              {group.label && collapsed && (
+                <span
+                  id={headingId}
+                  className="sr-only"
+                >
+                  {group.label}
                 </span>
               )}
-            </button>
+              <ul className="space-y-0.5">
+                {group.items.map((key) => (
+                  <li key={key}>
+                    <SidebarItem
+                      viewKey={key}
+                      active={key === current}
+                      collapsed={collapsed}
+                      onSelect={onSelect}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </div>
           );
         })}
       </nav>
@@ -298,5 +250,49 @@ export function Sidebar({ current, onSelect }: Props) {
         </div>
       )}
     </aside>
+  );
+}
+
+function SidebarItem({
+  viewKey,
+  active,
+  collapsed,
+  onSelect,
+}: {
+  viewKey: ViewKey;
+  active: boolean;
+  collapsed: boolean;
+  onSelect: (key: ViewKey) => void;
+}) {
+  const { label, icon: Icon } = NAV[viewKey];
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(viewKey)}
+      // `title` provides the tooltip when collapsed - native browser
+      // tooltip is fine here, no Radix needed for a power-user shortcut
+      // affordance. Collapsed, the label is the accessible name too.
+      title={collapsed ? label : undefined}
+      aria-label={collapsed ? label : undefined}
+      aria-current={active ? "page" : undefined}
+      className={cn(
+        "relative flex w-full items-center gap-2.5 rounded-md py-1.5 text-sm font-medium transition-colors",
+        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        collapsed ? "justify-center px-1.5" : "px-2.5",
+        active
+          ? "text-brand-text"
+          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+      )}
+    >
+      {active && (
+        <motion.span
+          layoutId="sidebar-active"
+          className="absolute inset-0 rounded-md bg-brand/10"
+          transition={{ type: "spring", stiffness: 380, damping: 30 }}
+        />
+      )}
+      <Icon className="relative h-4 w-4 shrink-0" />
+      {!collapsed && <span className="relative flex-1 text-left">{label}</span>}
+    </button>
   );
 }

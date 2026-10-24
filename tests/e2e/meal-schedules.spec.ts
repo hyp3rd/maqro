@@ -130,7 +130,10 @@ test.describe("meal schedules", () => {
     // Reload so the planner re-reads schedules from IDB on a clean mount
     // (the live data-bus bump also works, but a reload is deterministic).
     await page.reload();
-    await page.getByRole("button", { name: "Meal Plan" }).click();
+    await page
+      .getByRole("complementary", { name: "Primary navigation" })
+      .getByRole("button", { name: "Today", exact: true })
+      .click();
 
     // Only Breakfast is scheduled, so the offer is unique page-wide.
     const offer = page.getByRole("button", {

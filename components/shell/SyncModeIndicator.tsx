@@ -4,7 +4,7 @@ import { useUser } from "@/hooks/use-user";
 import { requestSettingsScroll } from "@/lib/settings-anchor";
 import { useSyncMode } from "@/lib/sync-mode";
 import { HardDrive, RefreshCw, Timer } from "lucide-react";
-import type { ViewKey } from "./Sidebar";
+import type { ViewKey } from "./nav";
 
 const META = {
   "local-first": {

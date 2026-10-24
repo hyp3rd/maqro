@@ -31,7 +31,7 @@ import {
   Trash2,
   Utensils,
 } from "lucide-react";
-import type { ViewKey } from "../shell/Sidebar";
+import type { ViewKey } from "../shell/nav";
 import { Button } from "../ui/button";
 
 /** Static accent classes per phase (Tailwind needs literal class names). */

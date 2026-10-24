@@ -6,7 +6,7 @@ import React, { useState } from "react";
 import { ArrowLeft, CreditCard, FolderOpen, HeartPulse } from "lucide-react";
 import type { PersonalInfo } from "../../components/macro/types";
 import { ageFromBirthDate } from "../../lib/age";
-import type { ViewKey } from "../shell/Sidebar";
+import { NAV, type ViewKey, YOU_HUB } from "../shell/nav";
 import { Input } from "../ui/input";
 import {
   Select,
@@ -36,8 +36,9 @@ interface ProfileViewProps {
    *  the birthdate and to cap the picker at today. Empty during SSR / first
    *  paint; the client fills it in immediately after hydrate. */
   today: string;
-  /** Switch the main app view — used by the measurement archive's shortcut to
-   *  the Progress view, where measurements are actually logged. */
+  /** Switch the main app view — used by the You hub's view tiles (Targets
+   *  opens the calculator) and the measurement archive's shortcut to the
+   *  Progress view, where measurements are actually logged. */
   onSelectView?: (key: ViewKey) => void;
 }
 
@@ -142,6 +143,7 @@ export function ProfileView({
       onPersonalInfoChange={onPersonalInfoChange}
       today={today}
       onOpen={setSub}
+      onSelectView={onSelectView}
     />
   );
 }
@@ -151,11 +153,13 @@ function ProfileHome({
   onPersonalInfoChange,
   today,
   onOpen,
+  onSelectView,
 }: {
   personalInfo: PersonalInfo;
   onPersonalInfoChange: (name: string, value: string | number | null) => void;
   today: string;
   onOpen: (sub: Exclude<Sub, "home">) => void;
+  onSelectView?: (key: ViewKey) => void;
 }) {
   // Derive the displayed age from `birthDate` against *today* (passed in, so
   // the render stays pure — no clock read here). `today` is a local
@@ -284,6 +288,18 @@ function ProfileHome({
       </Section>
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        {/* The You hub's views, from the nav registry (Targets → the
+            calculator). */}
+        {onSelectView &&
+          YOU_HUB.map(({ key, hint }) => (
+            <ProfileTile
+              key={key}
+              icon={NAV[key].icon}
+              title={NAV[key].label}
+              hint={hint}
+              onClick={() => onSelectView(key)}
+            />
+          ))}
         <ProfileTile
           icon={HeartPulse}
           title="My measurements"

@@ -1,4 +1,14 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
+
+/** Open the day view ("Today") from the desktop sidebar. Scoped to the
+ *  sidebar: the topbar heading and the date navigator's snap-back button
+ *  are named "Today" too. */
+async function openToday(page: Page): Promise<void> {
+  await page
+    .getByRole("complementary", { name: "Primary navigation" })
+    .getByRole("button", { name: "Today", exact: true })
+    .click();
+}
 
 /** End-to-end smoke for the post-revamp UI. Catches the integration
  * failures the unit tests can't see: SSR/CSR mismatches, hook-order
@@ -20,15 +30,18 @@ test.describe("maqro happy path", () => {
     });
   });
 
-  test("renders the calculator with daily targets", async ({ page }) => {
+  test("lands on Today; Targets renders the daily targets", async ({
+    page,
+  }) => {
     await page.goto("/app");
-    // Sidebar shows the section names as buttons; topbar shows the title.
+    // Today-first: the day view is the landing view.
     await expect(
-      page.getByRole("button", { name: "Calculator" }),
+      page.getByRole("heading", { level: 1, name: "Today" }),
     ).toBeVisible();
-    await expect(page.getByRole("button", { name: "Meal Plan" })).toBeVisible();
+    // Sidebar shows the section names as buttons; topbar shows the title.
+    await page.getByRole("button", { name: "Targets", exact: true }).click();
     await expect(
-      page.getByRole("heading", { name: "Calculator" }),
+      page.getByRole("heading", { level: 1, name: "Targets" }),
     ).toBeVisible();
     // The Daily Targets panel renders with BMR / TDEE / Target.
     await expect(page.getByText("Daily Targets")).toBeVisible();
@@ -40,7 +53,7 @@ test.describe("maqro happy path", () => {
   test("Profile holds the body inputs; the Calculator shows a linking summary strip", async ({
     page,
   }) => {
-    await page.goto("/app");
+    await page.goto("/app?view=calculator");
 
     // The Calculator shows a compact body-summary strip (gender · age ·
     // weight · height) in place of the Body inputs, which moved to Profile.
@@ -61,7 +74,7 @@ test.describe("maqro happy path", () => {
     await weightInput.fill("90");
     await page.waitForTimeout(700);
 
-    await page.getByRole("button", { name: "Calculator", exact: true }).click();
+    await page.getByRole("button", { name: "Targets", exact: true }).click();
     await expect(
       page.getByRole("button", { name: /Edit on Profile/ }),
     ).toContainText("90.0 kg");
@@ -111,7 +124,7 @@ test.describe("maqro happy path", () => {
   test("food search shows the Built-in source badge", async ({ page }) => {
     await page.goto("/app");
     // Navigate via sidebar.
-    await page.getByRole("button", { name: "Meal Plan" }).click();
+    await openToday(page);
     await page.getByPlaceholder(/Search for a food/i).fill("chicken");
     await expect(page.getByText(/Built-in/).first()).toBeVisible({
       timeout: 5_000,
@@ -120,7 +133,7 @@ test.describe("maqro happy path", () => {
 
   test("Auto-fill populates meals from macro targets", async ({ page }) => {
     await page.goto("/app");
-    await page.getByRole("button", { name: "Meal Plan" }).click();
+    await openToday(page);
     // The Generate button was renamed Auto-fill. Click whichever is visible.
     await page
       .getByRole("button", { name: /Auto-fill/i })
@@ -139,7 +152,7 @@ test.describe("maqro happy path", () => {
     page,
   }) => {
     await page.goto("/app");
-    await page.getByRole("button", { name: "Meal Plan" }).click();
+    await openToday(page);
 
     // Empty slot → the single "Add food" affordance steps into the per-meal
     // hub; the hub's own "Add food" button opens the full-screen manual search.
@@ -167,27 +180,32 @@ test.describe("maqro happy path", () => {
     page,
   }) => {
     await page.goto("/app");
-    await page.getByRole("button", { name: "Meal Plan" }).click();
+    await openToday(page);
 
-    // Start on today.
-    await expect(page.getByText("Today", { exact: true })).toBeVisible();
+    // Start on today. The date label (not the "Today" heading or nav).
+    const dateLabel = page.locator("label", { hasText: /^(Today|Yesterday)/ });
+    await expect(dateLabel).toHaveText("Today");
 
     // Click "Previous day" to go to yesterday.
     await page.getByRole("button", { name: "Previous day" }).click();
     await expect(page.getByText("Yesterday", { exact: true })).toBeVisible();
-    // The "Today" snap-back button appears when off today.
-    await expect(page.getByRole("button", { name: "Today" })).toBeVisible();
+    // The "Today" snap-back button appears when off today (in the day view,
+    // not the sidebar's "Today").
+    const snapBack = page
+      .getByRole("main")
+      .getByRole("button", { name: "Today", exact: true });
+    await expect(snapBack).toBeVisible();
 
     // Snap back to today.
-    await page.getByRole("button", { name: "Today" }).click();
-    await expect(page.getByText("Today", { exact: true })).toBeVisible();
+    await snapBack.click();
+    await expect(dateLabel).toHaveText("Today");
   });
 
   test("meal templates round-trip: save then apply on an empty meal", async ({
     page,
   }) => {
     await page.goto("/app");
-    await page.getByRole("button", { name: "Meal Plan" }).click();
+    await openToday(page);
 
     // Auto-fill the day so Breakfast has foods to save.
     await page
@@ -216,7 +234,7 @@ test.describe("maqro happy path", () => {
     // Reload, navigate to a clean day (yesterday), then apply the template
     // to that day's Breakfast.
     await page.reload();
-    await page.getByRole("button", { name: "Meal Plan" }).click();
+    await openToday(page);
     await page.getByRole("button", { name: "Previous day" }).click();
 
     await page.getByRole("button", { name: "Breakfast actions" }).click();
@@ -279,7 +297,7 @@ test.describe("maqro happy path", () => {
     page,
   }) => {
     await page.goto("/app");
-    await page.getByRole("button", { name: "Meal Plan" }).click();
+    await openToday(page);
     // Default state is empty → prompt should be visible.
     await expect(page.getByText(/No meals logged for this day/)).toBeVisible();
   });
@@ -293,7 +311,7 @@ test.describe("maqro happy path", () => {
     await weightInput.fill("");
     await weightInput.fill("83");
 
-    await page.getByRole("button", { name: "Meal Plan" }).click();
+    await openToday(page);
     await page
       .getByRole("button", { name: /Auto-fill/i })
       .first()
@@ -313,7 +331,7 @@ test.describe("maqro happy path", () => {
     await page.getByRole("button", { name: "Profile", exact: true }).click();
     await expect(page.getByLabel("Weight (kg)")).toHaveValue("83");
 
-    await page.getByRole("button", { name: "Meal Plan" }).click();
+    await openToday(page);
     await expect(
       page
         .locator("body")
@@ -467,7 +485,7 @@ test.describe("maqro happy path", () => {
     sixAm.setHours(6, 0, 0, 0);
     await page.clock.setFixedTime(sixAm);
     await page.goto("/app?demo=1");
-    await page.getByRole("button", { name: "Meal Plan" }).click();
+    await openToday(page);
 
     // Wait out the demo seed + IDB hydrate before the card's Stop appears.
     const stop = page.getByRole("button", { name: "Stop fasting now" });
@@ -482,7 +500,9 @@ test.describe("maqro happy path", () => {
     // The completed ~10.5h overnight fast now shows in the archive on the
     // Health page, which absorbed the old Fasting view
     // (record-on-stop → fastSessions store → useFastSessions → history card).
-    await page.getByRole("button", { name: "Health", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Health & fasting", exact: true })
+      .click();
     const history = page
       .locator("section")
       .filter({ has: page.getByRole("heading", { name: "Fasting history" }) });

@@ -50,7 +50,7 @@ import {
 } from "./components/macro/types";
 import { OnboardingWizard } from "./components/onboarding/OnboardingWizard";
 import { AppShell } from "./components/shell/AppShell";
-import type { ViewKey } from "./components/shell/Sidebar";
+import { type ViewKey, viewFromParam } from "./components/shell/nav";
 import { foodDatabase } from "./data/food-database";
 import { useRefreshAiUsage } from "./hooks/use-ai-usage";
 import { type DayTarget, useDailyLog } from "./hooks/use-daily-log";
@@ -243,34 +243,6 @@ function markOnboardingDone(): void {
  *  wizard on first load: a returning user whose profile is non-default
  *  has clearly used the app before, so we don't onboard them again
  *  even if the device-local flag is missing. */
-/** Whitelist of legal `?view=` values, kept in sync with ViewKey.
- *  Anything outside this set (typos, removed views, hostile URLs)
- *  falls back to "calculator". Living next to the ViewKey type lets
- *  TS catch drift via the exhaustive `satisfies` check below. */
-const VIEW_PARAM_VALUES = [
-  "calculator",
-  "profile",
-  "plan",
-  "progress",
-  "health",
-  "foods",
-  "recipes",
-  "templates",
-  "shopping",
-  "pantry",
-  "settings",
-] as const satisfies readonly ViewKey[];
-
-function viewFromParam(raw: string | null): ViewKey {
-  if (raw === null) return "calculator";
-  // Back-compat: the fasting page became the Health page — keep old
-  // `?view=fasting` links (bookmarks, prior emails) landing in the right place.
-  if (raw === "fasting") return "health";
-  return (VIEW_PARAM_VALUES as readonly string[]).includes(raw)
-    ? (raw as ViewKey)
-    : "calculator";
-}
-
 function isDefaultProfile(p: PersonalInfo): boolean {
   return (
     p.age === DEFAULT_PROFILE.age &&
@@ -549,8 +521,8 @@ const MacroCalculator = () => {
   // Initial view honors `?view=…` if present, so links from emails
   // ("Manage email preferences" → /app?view=settings, weekly recap →
   // /app?view=progress) and the Stripe Customer Portal's return URL
-  // land on the right tab. The set of valid values mirrors ViewKey
-  // 1:1 so an unknown param falls back to the default. The lazy
+  // land on the right tab. No (or an unknown) param opens Today, the
+  // day view — see `viewFromParam` in the nav registry. The lazy
   // initializer reads `searchParams` (which Next supplies on both
   // server and client), so the initial render is correct without
   // any post-mount setState dance.
@@ -2714,9 +2686,10 @@ const MacroCalculator = () => {
         onFinish={({ profile, skipped }) => {
           if (profile && !skipped) {
             setPersonalInfo(profile);
-            // First run done: land them on the meal planner — their fresh
-            // targets plus the log-a-meal action — instead of the default
-            // calculator view (a wall of the inputs they just filled in).
+            // First run done: land them on Today — their fresh targets
+            // plus quick add — even if they arrived on another view
+            // (e.g. `?view=calculator`, a wall of the inputs they just
+            // filled in).
             setView("plan");
           }
           markOnboardingDone();

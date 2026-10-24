@@ -34,7 +34,7 @@ import {
   Meal,
 } from "../../components/macro/types";
 import { DateNavigator } from "../shell/DateNavigator";
-import type { ViewKey } from "../shell/Sidebar";
+import type { ViewKey } from "../shell/nav";
 import { Button } from "../ui/button";
 import { ActivePhaseBanner } from "./ActivePhaseBanner";
 import AddFoodForm from "./AddFoodForm";

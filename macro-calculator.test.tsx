@@ -352,6 +352,49 @@ describe("macro-calculator: the day view gets the selected date's targets", () =
   });
 });
 
+describe("macro-calculator: Today-first landing", () => {
+  /** Which of the day view / calculator rendered. */
+  const rendered = () => ({
+    today: "MealPlanner" in ui.props,
+    calculator: "MacroResults" in ui.props,
+  });
+
+  it.each(["", "view=today", "view=plan", "view=bogus", "view=__proto__"])(
+    "%j opens Today (the day view)",
+    (search) => {
+      nav.search = search;
+      render(<MacroCalculator />);
+      expect(rendered()).toEqual({ today: true, calculator: false });
+      expect(prop("MealPlanner", "selectedDate")).toBe(TODAY);
+    },
+  );
+
+  it("?view=calculator still opens the calculator", () => {
+    nav.search = "view=calculator";
+    render(<MacroCalculator />);
+    expect(rendered()).toEqual({ today: false, calculator: true });
+  });
+
+  it("?upgrade= opens over Today", () => {
+    nav.search = "upgrade=pro";
+    render(<MacroCalculator />);
+    expect(rendered().today).toBe(true);
+    expect(prop("UpgradeDialog", "open")).toBe(false);
+  });
+
+  it("finishing onboarding lands on Today even from another view", async () => {
+    nav.search = "view=calculator";
+    render(<MacroCalculator />);
+    await act(async () => {
+      prop<(r: { profile: PersonalInfo | null; skipped: boolean }) => void>(
+        "OnboardingWizard",
+        "onFinish",
+      )({ profile: PROFILE, skipped: false });
+    });
+    expect(rendered().today).toBe(true);
+  });
+});
+
 describe("macro-calculator: ?upgrade=<plan>", () => {
   const APP_URL = "http://localhost:3000/app?upgrade=pro";
 

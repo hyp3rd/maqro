@@ -38,7 +38,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { NotificationsSheet } from "./NotificationsSheet";
-import type { ViewKey } from "./Sidebar";
+import type { ViewKey } from "./nav";
 import { ThemeMenuItem } from "./ThemeMenuItem";
 
 type UserMenuProps = {

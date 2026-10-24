@@ -3,7 +3,7 @@
 import { useFastingStatus } from "@/hooks/use-fasting-status";
 import { formatDuration } from "@/lib/fasting";
 import { Hourglass, Utensils } from "lucide-react";
-import type { ViewKey } from "./Sidebar";
+import type { ViewKey } from "./nav";
 
 /** Persistent Topbar countdown chip — the fast status follows the user
  *  across every tab. Self-contained via `useFastingStatus` (it sits outside

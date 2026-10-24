@@ -11,7 +11,7 @@ import {
   Utensils,
 } from "lucide-react";
 import { motion } from "motion/react";
-import type { ViewKey } from "./Sidebar";
+import type { ViewKey } from "./nav";
 
 type NavItem = {
   key: ViewKey;

@@ -20,7 +20,7 @@ import {
   Square,
   Utensils,
 } from "lucide-react";
-import type { ViewKey } from "../shell/Sidebar";
+import type { ViewKey } from "../shell/nav";
 import {
   AlertDialog,
   AlertDialogAction,
