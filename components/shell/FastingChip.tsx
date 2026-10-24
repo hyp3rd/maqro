@@ -3,6 +3,7 @@
 import { useFastingStatus } from "@/hooks/use-fasting-status";
 import { formatDuration } from "@/lib/fasting";
 import { Hourglass, Utensils } from "lucide-react";
+import { useFastingCardOnScreen } from "./fasting-card-visibility";
 import type { ViewKey } from "./nav";
 
 /** Persistent Topbar countdown chip — the fast status follows the user
@@ -17,8 +18,18 @@ export function FastingChip({
   onSelectView?: (key: ViewKey) => void;
 }) {
   const { status, fasting, isHydrated } = useFastingStatus();
+  // The day view's Fasting card shows the same countdown: don't repeat it
+  // while the card is on screen.
+  const cardOnScreen = useFastingCardOnScreen();
 
-  if (!isHydrated || !fasting?.enabled || status.phase === "none") return null;
+  if (
+    !isHydrated ||
+    !fasting?.enabled ||
+    status.phase === "none" ||
+    cardOnScreen
+  ) {
+    return null;
+  }
 
   const fastingPhase = status.phase === "fasting";
 

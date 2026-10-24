@@ -20,6 +20,7 @@ import {
   Square,
   Utensils,
 } from "lucide-react";
+import { useFastingCardRef } from "../shell/fasting-card-visibility";
 import type { ViewKey } from "../shell/nav";
 import {
   AlertDialog,
@@ -91,13 +92,19 @@ export function FastingCard({
   // Minute-aligned clock for the edit input's max bound (avoids an impure
   // `Date.now()` during render; event handlers below still use Date.now()).
   const now = useNow();
+  // While the card is on screen the Topbar's fasting chip, which repeats
+  // its countdown, steps aside.
+  const onScreenRef = useFastingCardRef();
 
   if (!isHydrated) return null;
 
   // Disabled / first-run: a compact prompt rather than the full timer.
   if (!fasting?.enabled) {
     return (
-      <div className="flex items-center justify-between gap-3">
+      <div
+        ref={onScreenRef}
+        className="flex items-center justify-between gap-3"
+      >
         <h3 className="flex items-center gap-1.5 text-sm font-semibold tracking-tight">
           <Hourglass className="h-4 w-4 text-brand" />
           Fasting
@@ -136,7 +143,10 @@ export function FastingCard({
   }
 
   return (
-    <div className="space-y-3">
+    <div
+      ref={onScreenRef}
+      className="space-y-3"
+    >
       <div className="flex items-center justify-between gap-2">
         <h3 className="flex items-center gap-1.5 text-sm font-semibold tracking-tight">
           <Hourglass className="h-4 w-4 text-brand" />
