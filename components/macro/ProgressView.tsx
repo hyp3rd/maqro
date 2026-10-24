@@ -91,7 +91,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { toast } from "sonner";
-import { isDateKey } from "@maqro/core/date";
+import { isDateKey, localDateOfKey } from "@maqro/core/date";
 import { ExportReportDialog } from "./ExportReportDialog";
 
 const WINDOW_DAYS = 60;
@@ -176,16 +176,12 @@ type Props = {
   onClearPhaseTdee: (phaseId: string) => void;
 };
 
-function parseLocalDate(d: string): Date {
-  const [y, m, day] = d.split("-").map(Number);
-  return new Date(y, m - 1, day);
-}
-
+/** "Oct 24" for a `YYYY-MM-DD` key: its local calendar day
+ *  (`localDateOfKey`), so a key never names the day before west of UTC. */
 function shortLabel(d: string): string {
-  return parseLocalDate(d).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
+  const day = localDateOfKey(d);
+  if (!day) return d;
+  return day.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 /** Render minutes-since-local-midnight as a locale-aware clock ("8:15 AM").
