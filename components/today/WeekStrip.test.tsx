@@ -1,6 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
+import { countDateFormats } from "@/lib/i18n/date-format-counter";
 import { intlWrapper } from "@/lib/i18n/intl-test-wrapper";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -121,16 +122,9 @@ describe("WeekStrip", () => {
   });
 
   it("builds its date formatters once, not per day on every render", () => {
-    const Original = Intl.DateTimeFormat;
-    let built = 0;
-    const spy = vi.spyOn(Intl, "DateTimeFormat").mockImplementation(function (
-      ...args: ConstructorParameters<typeof Intl.DateTimeFormat>
-    ) {
-      built += 1;
-      return new Original(...args);
-    } as unknown as typeof Intl.DateTimeFormat);
-    try {
-      const { rerender } = render(
+    let rerender: ReturnType<typeof render>["rerender"] = () => {};
+    const first = countDateFormats(() => {
+      rerender = render(
         <WeekStrip
           days={WEEK}
           eatenByDate={EATEN}
@@ -139,8 +133,9 @@ describe("WeekStrip", () => {
           onSelect={vi.fn()}
         />,
         { wrapper: intlWrapper() },
-      );
-      const first = built;
+      ).rerender;
+    });
+    const again = countDateFormats(() =>
       rerender(
         <WeekStrip
           days={WEEK}
@@ -149,13 +144,11 @@ describe("WeekStrip", () => {
           selectedDate="2026-10-22"
           onSelect={vi.fn()}
         />,
-      );
-      // One per part (weekday, day, month) for the locale, then none.
-      expect(first).toBeLessThanOrEqual(3);
-      expect(built).toBe(first);
-    } finally {
-      spy.mockRestore();
-    }
+      ),
+    );
+    // One per part (weekday, day, month) for the locale, then none.
+    expect(first).toBeLessThanOrEqual(3);
+    expect(again).toBe(0);
   });
 
   it("compacts an overshoot of 1,000 or more so it fits its cell", () => {
