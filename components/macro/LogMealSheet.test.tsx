@@ -1,8 +1,15 @@
 /**
  * @vitest-environment jsdom
  */
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import type { Meal } from "./types";
 
 // The recents strip reads IndexedDB; only the launcher's own steps matter.
@@ -64,5 +71,51 @@ describe("LogMealSheet names its target", () => {
     renderSheet(2, false);
     expect(screen.queryByRole("button", { name: /Photo/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Voice/ })).toBeNull();
+  });
+});
+
+describe("LogMealSheet focus", () => {
+  /** The launcher has no Radix trigger: the tab bar's [+] opens it. */
+  function Opener() {
+    const [open, setOpen] = useState(false);
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+        >
+          Quick add
+        </button>
+        <LogMealSheet
+          open={open}
+          onOpenChange={setOpen}
+          meals={MEALS}
+          dayLabel="Today"
+          aiAvailable
+          initialMealId={2}
+          onMethod={() => {}}
+          onQuickLog={() => {}}
+        />
+      </>
+    );
+  }
+
+  it("closing hands focus back to what opened it", async () => {
+    render(<Opener />);
+    const opener = screen.getByRole("button", { name: "Quick add" });
+    opener.focus();
+    fireEvent.click(opener);
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() => {
+      expect(dialog.contains(document.activeElement)).toBe(true);
+    });
+
+    fireEvent.keyDown(document.activeElement ?? dialog, { key: "Escape" });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(opener);
+    });
   });
 });

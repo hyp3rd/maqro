@@ -1,7 +1,7 @@
 "use client";
 
 import { mealIcon } from "@/lib/meal-icon";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   Camera,
   ChevronLeft,
@@ -103,12 +103,34 @@ export function LogMealSheet({
   onMethod,
   onQuickLog,
 }: Props) {
+  // The launcher has no Radix trigger (the tab bar's [+] opens it), so Radix
+  // has nowhere to return focus on close and it falls to <body>. Remember
+  // what had focus when it opened, before focus moves in, and hand it back.
+  const returnFocusTo = useRef<HTMLElement | null>(null);
   return (
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
     >
-      <DialogContent className="gap-3">
+      <DialogContent
+        className="gap-3"
+        onOpenAutoFocus={() => {
+          const el = document.activeElement;
+          returnFocusTo.current =
+            el instanceof HTMLElement && el !== document.body ? el : null;
+        }}
+        onCloseAutoFocus={(event) => {
+          const el = returnFocusTo.current;
+          returnFocusTo.current = null;
+          // A method hands off to its tool, whose own dialog already holds
+          // focus by now: leave it there.
+          const active = document.activeElement;
+          if (active && active !== document.body) return;
+          if (!el?.isConnected) return;
+          event.preventDefault();
+          el.focus();
+        }}
+      >
         <LogMealFlow
           meals={meals}
           dayLabel={dayLabel}
