@@ -147,3 +147,116 @@ describe("GoalPhasesPlanner — phases without valid dates", () => {
     ).toBe(false);
   });
 });
+
+/** The list's "Edit or remove it" note must lead to a real fix: the editor
+ *  never renders NaN, says what is missing, and only saves a phase with a
+ *  valid window (core `phaseHasValidWindow`). */
+describe("GoalPhasesPlanner — editing a phase without a valid window", () => {
+  const unreadable: GoalPhase = {
+    id: "ph_unreadable",
+    kind: "leanBulk",
+    startDate: "2026-06-01T08:00:00",
+    durationWeeks: Number.NaN,
+    weeklyRateKg: Number.NaN,
+  };
+  const valid: GoalPhase = {
+    id: "ph_ok",
+    kind: "cut",
+    startDate: "2026-06-01",
+    durationWeeks: 4,
+    weeklyRateKg: 0.4,
+  };
+
+  async function editPhase(phase: GoalPhase, onChange = vi.fn()) {
+    const { GoalPhasesPlanner } = await import("./GoalPhasesPlanner");
+    render(
+      <GoalPhasesPlanner
+        {...BASE}
+        phases={[phase]}
+        onChange={onChange}
+        targetForPhases={() => 2000}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^Edit .* phase$/ }));
+    return {
+      onChange,
+      start: screen.getByLabelText("Starts") as HTMLInputElement,
+      weeks: screen.getByLabelText("Weeks") as HTMLInputElement,
+      save: screen.getByRole("button", { name: "Save phase" }),
+    };
+  }
+
+  it("opens without NaN in any input, says what is missing, and can't be saved", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    const { start, weeks, save } = await editPhase(unreadable);
+
+    // React warns when it is handed NaN for an input's value.
+    expect(
+      consoleError.mock.calls.some((args) =>
+        args.map(String).join(" ").includes("NaN"),
+      ),
+    ).toBe(false);
+    consoleError.mockRestore();
+    expect(weeks.value).toBe("");
+    expect(start.value).toBe("");
+    expect((screen.getByLabelText(/^Rate/) as HTMLInputElement).value).toBe("");
+
+    expect(start.getAttribute("aria-invalid")).toBe("true");
+    expect(weeks.getAttribute("aria-invalid")).toBe("true");
+    const messageId = start.getAttribute("aria-describedby");
+    expect(messageId).toBeTruthy();
+    expect(weeks.getAttribute("aria-describedby")).toBe(messageId);
+    const message = document.getElementById(messageId ?? "");
+    expect(message?.textContent).toMatch(/start date/i);
+    expect(message?.textContent).toMatch(/weeks/i);
+
+    expect(save).toHaveProperty("disabled", true);
+  });
+
+  it("saves once the window is valid", async () => {
+    const { start, weeks, save, onChange } = await editPhase(unreadable);
+    fireEvent.change(start, { target: { value: "2026-07-01" } });
+    expect(save).toHaveProperty("disabled", true);
+    expect(weeks.getAttribute("aria-invalid")).toBe("true");
+    expect(start.hasAttribute("aria-invalid")).toBe(false);
+
+    fireEvent.change(weeks, { target: { value: "6" } });
+    expect(save).toHaveProperty("disabled", false);
+    expect(weeks.hasAttribute("aria-invalid")).toBe(false);
+    expect(screen.queryByText(/start date|how many weeks/i)).toBeNull();
+
+    fireEvent.click(save);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const [saved] = onChange.mock.calls[0]?.[0] as GoalPhase[];
+    expect(saved).toMatchObject({
+      id: "ph_unreadable",
+      startDate: "2026-07-01",
+      durationWeeks: 6,
+    });
+  });
+
+  it("a valid phase opens without a message and can be saved", async () => {
+    const { start, weeks, save } = await editPhase(valid);
+    expect(start.hasAttribute("aria-invalid")).toBe(false);
+    expect(weeks.hasAttribute("aria-invalid")).toBe(false);
+    expect(save).toHaveProperty("disabled", false);
+  });
+
+  it("clearing a field of a valid phase blocks saving until it is filled in", async () => {
+    const { start, weeks, save } = await editPhase(valid);
+    fireEvent.change(weeks, { target: { value: "" } });
+    expect(weeks.value).toBe("");
+    expect(save).toHaveProperty("disabled", true);
+    expect(weeks.getAttribute("aria-invalid")).toBe("true");
+
+    fireEvent.change(weeks, { target: { value: "0" } });
+    expect(save).toHaveProperty("disabled", true);
+
+    fireEvent.change(weeks, { target: { value: "3" } });
+    fireEvent.change(start, { target: { value: "" } });
+    expect(save).toHaveProperty("disabled", true);
+    expect(start.getAttribute("aria-invalid")).toBe("true");
+  });
+});

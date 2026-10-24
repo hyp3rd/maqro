@@ -5,6 +5,8 @@ import { useTier } from "@/hooks/use-ai-usage";
 import { FEATURES } from "@/lib/billing/tiers";
 import {
   activePhase,
+  isValidPhaseDuration,
+  isValidPhaseStart,
   newPhase,
   normalizePhase,
   phaseEndDate,
@@ -61,6 +63,21 @@ const GOAL_LABEL: Record<PersonalInfo["goal"], string> = {
 
 const INPUT_CLASS =
   "mt-1 h-8 w-full rounded-md border border-border/60 bg-card px-2 text-sm text-foreground";
+
+/** A number for a numeric input's `value`: an unreadable one (NaN from a
+ *  phase synced by an older client) shows as empty, never as "NaN". */
+function inputNumber(n: number): number | "" {
+  return Number.isFinite(n) ? n : "";
+}
+
+/** What the editor's draft still needs before it has a valid window. */
+function windowProblem(startOk: boolean, weeksOk: boolean): string {
+  if (!startOk && !weeksOk) {
+    return "Pick a start date and enter how many weeks it runs (1–52) to save this phase.";
+  }
+  if (!startOk) return "Pick a start date to save this phase.";
+  return "Enter how many weeks it runs (1–52) to save this phase.";
+}
 
 function fmtDate(d: string): string {
   const [y, m, day] = d.split("-").map(Number);
@@ -383,6 +400,13 @@ function PhaseEditor({
   const showRate = phaseHasRate(draft.kind);
   const capKg = weightKg * 0.01;
   const unitLabel = units === "imperial" ? "lb" : "kg";
+  // Only a phase with a valid window is saved (a phase without one is
+  // ignored by every target computation); each field says if it's the
+  // reason, so an unreadable phase from the list can actually be fixed.
+  const startOk = isValidPhaseStart(draft.startDate);
+  const weeksOk = isValidPhaseDuration(draft.durationWeeks);
+  const canSave = phaseHasValidWindow(draft);
+  const problemId = useId();
 
   return (
     <div className="space-y-2.5 rounded-lg border border-border/60 bg-muted/20 p-3">
@@ -418,7 +442,9 @@ function PhaseEditor({
             type="date"
             value={draft.startDate}
             onChange={(e) => setDraft({ ...draft, startDate: e.target.value })}
-            className={INPUT_CLASS}
+            aria-invalid={startOk ? undefined : true}
+            aria-describedby={startOk ? undefined : problemId}
+            className={cn(INPUT_CLASS, !startOk && "border-destructive")}
           />
         </label>
 
@@ -429,12 +455,21 @@ function PhaseEditor({
             inputMode="numeric"
             min={1}
             max={52}
-            value={draft.durationWeeks}
-            onChange={(e) => {
-              const n = Number.parseInt(e.target.value, 10);
-              if (Number.isFinite(n)) setDraft({ ...draft, durationWeeks: n });
-            }}
-            className={cn(INPUT_CLASS, "font-mono tabular-nums")}
+            value={inputNumber(draft.durationWeeks)}
+            // A cleared field is NaN: no valid window until it is filled in.
+            onChange={(e) =>
+              setDraft({
+                ...draft,
+                durationWeeks: Number.parseInt(e.target.value, 10),
+              })
+            }
+            aria-invalid={weeksOk ? undefined : true}
+            aria-describedby={weeksOk ? undefined : problemId}
+            className={cn(
+              INPUT_CLASS,
+              "font-mono tabular-nums",
+              !weeksOk && "border-destructive",
+            )}
           />
         </label>
 
@@ -447,7 +482,7 @@ function PhaseEditor({
               min={0}
               max={kgToDisplay(capKg, units)}
               step={0.05}
-              value={kgToDisplay(draft.weeklyRateKg, units)}
+              value={inputNumber(kgToDisplay(draft.weeklyRateKg, units))}
               onChange={(e) => {
                 const v = Number.parseFloat(e.target.value);
                 if (Number.isFinite(v))
@@ -462,11 +497,31 @@ function PhaseEditor({
         )}
       </div>
 
+      {/* Always rendered, so screen readers announce the message as it
+          appears; while empty it takes no space (`sr-only`, not hidden,
+          keeps the live region in the accessibility tree). */}
+      <p
+        id={problemId}
+        aria-live="polite"
+        className="flex items-start gap-1.5 text-xs leading-snug text-foreground empty:sr-only"
+      >
+        {!canSave && (
+          <>
+            <AlertCircle
+              aria-hidden="true"
+              className="mt-px h-3.5 w-3.5 shrink-0 text-destructive"
+            />
+            {windowProblem(startOk, weeksOk)}
+          </>
+        )}
+      </p>
+
       <div className="flex items-center gap-1.5">
         <Button
           type="button"
           size="sm"
           className="h-8"
+          disabled={!canSave}
           onClick={() => onSave(draft)}
         >
           Save phase
