@@ -871,6 +871,20 @@ export async function listDailyLogs(): Promise<DailyLog[]> {
   return rows.sort((a, b) => (a.date < b.date ? 1 : -1));
 }
 
+/** The daily logs dated `start` to `end` inclusive, oldest first. A ranged
+ *  read on the store's date key (`YYYY-MM-DD` keys order lexicographically,
+ *  so the key range is the calendar range) instead of loading every day the
+ *  user ever logged — the Today week strip reads one week at a time. A
+ *  reversed range has no days (IDBKeyRange.bound would throw a DataError). */
+export async function listDailyLogsBetween(
+  start: string,
+  end: string,
+): Promise<DailyLog[]> {
+  if (start > end) return [];
+  const db = await getDB();
+  return db.getAll(STORE_DAILY_LOGS, IDBKeyRange.bound(start, end));
+}
+
 export async function deleteDailyLog(date: string): Promise<void> {
   const db = await getDB();
   await db.delete(STORE_DAILY_LOGS, date);

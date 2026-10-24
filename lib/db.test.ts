@@ -245,6 +245,33 @@ describe("daily logs", () => {
     ]);
   });
 
+  it("listDailyLogsBetween reads only the inclusive date range, oldest first", async () => {
+    const { saveDailyLog, listDailyLogsBetween } = await freshDb();
+    for (const date of [
+      "2026-10-18",
+      "2026-10-21",
+      "2026-10-19",
+      "2026-10-25",
+      "2026-10-26",
+      "2026-11-01",
+    ]) {
+      await saveDailyLog(date, SAMPLE_MEALS);
+    }
+    const rows = await listDailyLogsBetween("2026-10-19", "2026-10-25");
+    expect(rows.map((r) => r.date)).toEqual([
+      "2026-10-19",
+      "2026-10-21",
+      "2026-10-25",
+    ]);
+    expect(rows[0]?.meals).toEqual(SAMPLE_MEALS);
+  });
+
+  it("listDailyLogsBetween is empty for a reversed range instead of throwing", async () => {
+    const { saveDailyLog, listDailyLogsBetween } = await freshDb();
+    await saveDailyLog("2026-10-20", SAMPLE_MEALS);
+    expect(await listDailyLogsBetween("2026-10-25", "2026-10-19")).toEqual([]);
+  });
+
   it("dateKey produces ISO YYYY-MM-DD in local timezone", async () => {
     const { dateKey } = await freshDb();
     expect(dateKey(new Date(2026, 0, 5))).toBe("2026-01-05"); // month is 0-indexed
