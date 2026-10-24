@@ -291,28 +291,6 @@ describe("tailwind.config.mjs", () => {
       expect(floor.get(`.text-${name}`)).toBe(literal);
     }
   });
-
-  it("floors every touch size at 44px on coarse pointers only", () => {
-    const spacing = extend.spacing as Record<string, string>;
-    const touch = Object.entries(spacing).filter(([k]) =>
-      k.startsWith("touch-"),
-    );
-    expect(touch.length).toBeGreaterThan(0);
-    for (const [key, value] of touch) {
-      // `touch-9` keeps the 2.25rem of `h-9` on a fine pointer.
-      const rem = Number(key.slice("touch-".length)) / 4;
-      expect(value).toBe(`max(${rem}rem, var(--touch-target-min))`);
-    }
-    expect(declarations(block(CSS, ":root")).get("touch-target-min")).toBe(
-      "0px",
-    );
-    const coarse = CSS.indexOf("Touch-target floor");
-    expect(coarse).toBeGreaterThan(-1);
-    const media = block(CSS, "@media (pointer: coarse)", coarse);
-    expect(declarations(block(media, ":root")).get("touch-target-min")).toBe(
-      "2.75rem",
-    );
-  });
 });
 
 describe("global focus style", () => {

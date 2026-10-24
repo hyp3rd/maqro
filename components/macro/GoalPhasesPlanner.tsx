@@ -27,14 +27,8 @@ import {
 } from "@/lib/units";
 import { cn } from "@/lib/utils";
 import { useId, useState } from "react";
-import {
-  AlertCircle,
-  Pencil,
-  Plus,
-  Sparkles,
-  Target,
-  Trash2,
-} from "lucide-react";
+import { Pencil, Plus, Sparkles, Target, Trash2 } from "lucide-react";
+import { isDateKey } from "@maqro/core/date";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -94,6 +88,9 @@ function draftProblem({
 }
 
 function fmtDate(d: string): string {
+  // A phase saved by an older build may hold "" here; name the gap instead of
+  // printing "Invalid Date", so the user knows to edit it.
+  if (!isDateKey(d)) return "no date";
   const [y, m, day] = d.split("-").map(Number);
   return new Date(y, m - 1, day).toLocaleDateString(undefined, {
     month: "short",
@@ -411,6 +408,10 @@ function PhaseEditor({
   onCancel: () => void;
 }) {
   const [draft, setDraft] = useState<GoalPhase>(phase);
+  // A cleared or half-typed <input type="date"> reports "". Such a phase can't
+  // be placed on the calendar, so it must not be saved into the synced profile.
+  const startValid = isDateKey(draft.startDate);
+  const startErrorId = useId();
   const showRate = phaseHasRate(draft.kind);
   const capKg = weightKg * 0.01;
   const unitLabel = units === "imperial" ? "lb" : "kg";
@@ -460,10 +461,19 @@ function PhaseEditor({
             type="date"
             value={draft.startDate}
             onChange={(e) => setDraft({ ...draft, startDate: e.target.value })}
-            aria-invalid={startOk ? undefined : true}
-            aria-describedby={startOk ? undefined : problemId}
-            className={cn(INPUT_CLASS, !startOk && "border-destructive")}
+            required
+            aria-invalid={!startValid}
+            aria-describedby={startValid ? undefined : startErrorId}
+            className={INPUT_CLASS}
           />
+          {!startValid && (
+            <span
+              id={startErrorId}
+              className="mt-1 block text-xs text-foreground"
+            >
+              Pick a start date to save this phase.
+            </span>
+          )}
         </label>
 
         <label className="text-xs text-muted-foreground">
@@ -547,7 +557,7 @@ function PhaseEditor({
           type="button"
           size="sm"
           className="h-8"
-          disabled={!canSave}
+          disabled={!startValid}
           onClick={() => onSave(draft)}
         >
           Save phase

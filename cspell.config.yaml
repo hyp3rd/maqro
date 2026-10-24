@@ -250,6 +250,8 @@ words:
   - msttexthash
   - Navigations
   - ndash
+  - neighbour
+  - neighbouring
   - networkidle
   - noeng
   - Nominatim
@@ -375,6 +377,7 @@ words:
   - squircle
   - staticcheck
   - stdlib
+  - Steffen
   - strawberr
   - stringly
   - sublicensable
@@ -384,6 +387,7 @@ words:
   - subtransaction
   - sulfonylureas
   - summarise
+  - summarises
   - supabase
   - svix
   - swipeable
