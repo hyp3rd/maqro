@@ -188,6 +188,61 @@ describe("targetsForDate", () => {
       goal: "lose",
       phaseId: "ph_cut",
     },
+    {
+      // "2026-06-01T08:00:00" sorts before the date and its end computes as
+      // "NaN-NaN-NaN" (above every date), so it used to cover every later day.
+      name: "a legacy phase whose start carries a time part is ignored",
+      profile: profile({
+        goalPhases: [
+          cut({ startDate: "2026-06-01T08:00:00", tdeeOverride: 2450 }),
+        ],
+      }),
+      date: "2027-01-15",
+      ctx: PRO,
+      kcal: 2600,
+      tdee: 2600,
+      goal: "maintain",
+      phaseId: null,
+    },
+    {
+      name: "a legacy phase with a blank start date is ignored",
+      profile: profile({
+        goalPhases: [cut({ startDate: "", tdeeOverride: 2450 })],
+      }),
+      date: "2026-06-10",
+      ctx: PRO,
+      kcal: 2600,
+      tdee: 2600,
+      goal: "maintain",
+      phaseId: null,
+    },
+    {
+      name: "a phase with a non-positive duration is ignored",
+      profile: profile({
+        goalPhases: [cut({ durationWeeks: 0, tdeeOverride: 2450 })],
+      }),
+      date: "2026-06-01",
+      ctx: PRO,
+      kcal: 2600,
+      tdee: 2600,
+      goal: "maintain",
+      phaseId: null,
+    },
+    {
+      name: "an invalid phase never shadows the valid one covering the date",
+      profile: profile({
+        goalPhases: [
+          cut({ tdeeOverride: 2450 }),
+          cut({ id: "ph_legacy", startDate: "2026-02-30", tdeeOverride: 3000 }),
+        ],
+      }),
+      date: "2026-06-10",
+      ctx: PRO,
+      kcal: 1900,
+      tdee: 2450,
+      goal: "lose",
+      phaseId: "ph_cut",
+    },
   ];
 
   for (const row of rows) {

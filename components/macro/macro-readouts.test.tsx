@@ -17,6 +17,8 @@ import type { Food, Meal, Recipe } from "./types";
 
 vi.mock("@/hooks/use-ai-usage", () => ({
   useAiUsage: () => ({ state: { status: "anon" } }),
+  useTier: () => ({ tier: null, resolved: true }),
+  useRefreshAiUsage: () => () => {},
 }));
 
 afterEach(() => cleanup());

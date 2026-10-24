@@ -1,8 +1,9 @@
 "use client";
 
 import { useUser } from "@/hooks/use-user";
+import { OFFLINE_UNVERIFIED_HINT } from "@/lib/auth/offline-unverified-copy";
 import {
-  clearCachedTier,
+  forgetCachedTier,
   readCachedTier,
   writeCachedTier,
 } from "@/lib/billing/tier-cache";
@@ -40,7 +41,13 @@ export type AiUsageState =
   | { status: "loading" }
   | { status: "anon" } // not signed in — no usage to fetch
   | { status: "ok"; data: AiUsage }
-  | { status: "error"; message: string };
+  | {
+      status: "error";
+      message: string;
+      /** Set only on `OFFLINE_UNVERIFIED_USAGE`: no request was made, because
+       *  the identity is offline-unverified (see `UserState`). */
+      offlineUnverified?: true;
+    };
 
 export type UseAiUsageResult = {
   state: AiUsageState;
@@ -62,8 +69,10 @@ export type UseAiUsageResult = {
 export type TierState = { tier: Tier | null; resolved: boolean };
 
 /** Pure gate policy behind `useTier` — exported for direct tests. The cached
- *  tier is consulted ONLY when the live request failed, never in place of a
- *  live answer, so it can't grant more than the server last said. */
+ *  tier is consulted ONLY when there is no live answer to be had (the
+ *  request failed, or there is no session to make it with while
+ *  offline-unverified), never in place of a live answer, so it can't grant
+ *  more than the server last said. */
 export function resolveTierState(
   state: AiUsageState,
   cachedTier: () => Tier | null,
@@ -93,6 +102,14 @@ export function resolveTierState(
  *  this budget even on a cold start. */
 export const USAGE_FETCH_TIMEOUT_MS = 8_000;
 
+/** The usage state while offline-unverified (see `UserState`): no request is
+ *  made, and the gate falls back to the cached tier as for a failed one. */
+export const OFFLINE_UNVERIFIED_USAGE: AiUsageState = {
+  status: "error",
+  message: `${OFFLINE_UNVERIFIED_HINT}. Usage loads once it can be reached.`,
+  offlineUnverified: true,
+};
+
 type AiUsageContextValue = UseAiUsageResult & {
   tier: TierState;
   /** `refresh()` unless a request is already pending or in flight — a reader
@@ -108,6 +125,11 @@ const AiUsageContext = createContext<AiUsageContextValue | null>(null);
  *  is persisted per user (lib/billing/tier-cache.ts) so an offline Pro user
  *  keeps their Pro-gated targets.
  *
+ *  Offline-unverified (an expired session opened offline — see `UserState`)
+ *  makes no request at all: the on-device record is not a credential, so
+ *  nothing calls the server as that user. The cached tier applies until the
+ *  session is verified again, which triggers the initial fetch.
+ *
  *  Auto-refresh:
  *    - On mount / when the signed-in user changes (initial fetch)
  *    - When a live-usage reader (`useAiUsage`) mounts, e.g. opening Profile,
@@ -121,8 +143,9 @@ const AiUsageContext = createContext<AiUsageContextValue | null>(null);
  *  Each request is bounded by `USAGE_FETCH_TIMEOUT_MS` and aborted when it is
  *  superseded (a newer refresh, a user switch) or the provider unmounts. */
 export function AiUsageProvider({ children }: { children: ReactNode }) {
-  const { user, isLoaded } = useUser();
-  const userId = user?.id ?? null;
+  // `localUserId`: the session's user, or the last-known one while
+  // offline-unverified — whose cached tier applies.
+  const { localUserId: userId, isOfflineUnverified, isLoaded } = useUser();
   // The settled response, tagged with the user it belongs to: after an
   // account switch the previous user's answer must never surface for the
   // new one while their own request is in flight.
@@ -151,9 +174,10 @@ export function AiUsageProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     // Signed-out users have no usage to fetch — skip the auth-only endpoint
-    // entirely rather than fire a guaranteed 401 at it. The "anon"/"loading"
-    // gate states are derived below, so there's nothing to set here.
-    if (!isLoaded || !userId) return;
+    // entirely rather than fire a guaranteed 401 at it; offline-unverified
+    // has no session to fetch with. The "anon"/"loading"/offline gate states
+    // are derived below, so there's nothing to set here.
+    if (!isLoaded || !userId || isOfflineUnverified) return;
     let cancelled = false;
     requestPending.current = true;
     // AbortController + timer rather than AbortSignal.timeout/any: `any` needs
@@ -180,9 +204,10 @@ export function AiUsageProvider({ children }: { children: ReactNode }) {
       .then(async (res) => {
         if (cancelled) return;
         if (res.status === 401) {
-          // Session expired mid-flight — fall back to anon, and forget the
-          // tier: the server no longer vouches for this session.
-          clearCachedTier();
+          // Session expired mid-flight — fall back to anon, and forget this
+          // user's tier: the server no longer vouches for this session. It
+          // says nothing about another account's entry.
+          forgetCachedTier(userId);
           settle({ status: "anon" });
           return;
         }
@@ -214,7 +239,7 @@ export function AiUsageProvider({ children }: { children: ReactNode }) {
       clearTimeout(timeout);
       controller.abort();
     };
-  }, [tick, userId, isLoaded]);
+  }, [tick, userId, isLoaded, isOfflineUnverified]);
 
   // Refresh whenever the tab regains visibility. The user might have
   // been on the meal planner making AI calls, switched away, and is
@@ -233,18 +258,21 @@ export function AiUsageProvider({ children }: { children: ReactNode }) {
 
   // Derive the gate states instead of setting them in the effect (a sync
   // setState there triggers cascading renders): a guest is "anon", an
-  // unresolved session is "loading", a response for another user (or none
-  // yet) is "loading", otherwise the settled state.
+  // unresolved session is "loading", offline-unverified is the no-request
+  // error state, a response for another user (or none yet) is "loading",
+  // otherwise the settled state.
   const state: AiUsageState = useMemo(
     () =>
       !isLoaded
         ? { status: "loading" }
         : !userId
           ? { status: "anon" }
-          : settled?.userId === userId
-            ? settled.state
-            : { status: "loading" },
-    [isLoaded, userId, settled],
+          : isOfflineUnverified
+            ? OFFLINE_UNVERIFIED_USAGE
+            : settled?.userId === userId
+              ? settled.state
+              : { status: "loading" },
+    [isLoaded, userId, isOfflineUnverified, settled],
   );
 
   const value = useMemo<AiUsageContextValue>(

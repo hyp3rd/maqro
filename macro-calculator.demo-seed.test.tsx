@@ -55,6 +55,8 @@ vi.mock("next/navigation", () => ({
 // target is the profile's linear goal (what a guest sees).
 vi.mock("@/hooks/use-ai-usage", () => ({
   useAiUsage: () => ({ state: { status: "loading" } }),
+  useTier: () => ({ tier: null, resolved: false }),
+  useRefreshAiUsage: () => () => {},
 }));
 
 const ONBOARDING_EVENTS = "/api/onboarding/events";
