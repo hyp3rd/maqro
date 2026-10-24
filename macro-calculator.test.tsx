@@ -11,7 +11,7 @@ import {
   targetsForDate,
   weekTargets,
 } from "@maqro/core/targets";
-import type { Meal, PersonalInfo } from "@maqro/core/types";
+import type { Meal, PersonalInfo, TrainingSchedule } from "@maqro/core/types";
 import type { User } from "@supabase/supabase-js";
 import { act, cleanup, render } from "@testing-library/react";
 
@@ -107,9 +107,11 @@ vi.mock("./hooks/use-ai-usage", () => ({
 }));
 vi.mock("./hooks/use-user", () => ({ useUser: () => auth.state }));
 const patchProfile = vi.hoisted(() => vi.fn());
+/** The profile `useProfile` serves: PROFILE unless a test swaps it. */
+const stored = vi.hoisted(() => ({ profile: null as PersonalInfo | null }));
 vi.mock("./hooks/use-profile", () => ({
   useProfile: () => ({
-    profile: PROFILE,
+    profile: stored.profile ?? PROFILE,
     setProfile: vi.fn(),
     patchProfile,
     isHydrated: true,
@@ -275,6 +277,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date(2026, 5, 10, 12, 0, 0));
   nav.search = "view=plan";
+  stored.profile = null;
   auth.state = SIGNED_IN;
   dayMeals.override = null;
   dayMeals.byDate = {};
@@ -419,6 +422,45 @@ describe("macro-calculator: training week wiring", () => {
       "planWeek",
     );
     expect(planWeek(PROFILE)).toEqual(weekTargets(PROFILE, TODAY, pro));
+  });
+});
+
+/** Progress compares AVERAGED intake with a target: with a training week on
+ *  that is the weekly average, not today's planned day (which sits above or
+ *  below it). Without one, exactly today's target as before. */
+describe("macro-calculator: Progress averages against the weekly average", () => {
+  it("passes the training week's average beside today's planned day", () => {
+    // 2026-06-10 is a Wednesday: a hard lower-body day plans above the mean.
+    const rest = { type: "rest" } as const;
+    const training: TrainingSchedule = {
+      enabled: true,
+      cycling: "modest",
+      days: [
+        rest,
+        rest,
+        rest,
+        { type: "lower", intensity: "hard" },
+        rest,
+        rest,
+        rest,
+      ],
+    };
+    const profile: PersonalInfo = { ...PROFILE, goalPhases: [], training };
+    stored.profile = profile;
+    const planned = targetsForDate(profile, TODAY, pro);
+    const mean = planned.training?.meanCalories ?? 0;
+    expect(planned.targetCalories).toBeGreaterThan(mean);
+    nav.search = "view=progress";
+    render(<MacroCalculator />);
+    expect(prop("ProgressView", "targetCalories")).toBe(planned.targetCalories);
+    expect(prop("ProgressView", "weeklyAverageCalories")).toBe(mean);
+  });
+
+  it("without training, Progress gets today's target and no average", () => {
+    nav.search = "view=progress";
+    render(<MacroCalculator />);
+    expect(prop("ProgressView", "targetCalories")).toBe(2600);
+    expect(prop("ProgressView", "weeklyAverageCalories")).toBeUndefined();
   });
 });
 

@@ -153,19 +153,39 @@ describe("ProgressView", () => {
     expect(screen.queryByText(/0 kcal target/)).toBeNull();
   });
 
-  it("sends people to the destinations the nav actually has", async () => {
-    await clearAllStores();
-    const { container } = render(<ProgressView {...BASE} />);
+  it("without training, compares the 7-day average with today's target", async () => {
+    render(<ProgressView {...BASE} />);
+    // 1800 … 2400 → a 2,100 kcal average: 105% of 2,000.
     expect(
       await screen.findByText(
-        /^Update your weight in Profile \(You on a phone\) - /,
+        "Logged calories per day vs your current target of 2,000 kcal.",
       ),
     ).toBeTruthy();
+    expect(await screen.findByText("105% of target")).toBeTruthy();
+  });
+
+  it("with a training week, compares averages with the weekly average, not today's planned day", async () => {
+    // Today is a heavy day planned at 2,300; the week averages 2,000.
+    render(
+      <ProgressView
+        {...BASE}
+        targetCalories={2300}
+        weeklyAverageCalories={2000}
+      />,
+    );
     expect(
-      screen.getByText(/Auto-logs when you change your weight in/).textContent,
-    ).toMatch(/in Profile \(You on a phone\)\.$/);
-    expect(screen.getByText(/^Add foods in Today - /)).toBeTruthy();
-    expect(container.textContent).not.toMatch(/Calculator tab|Meal Plan/);
+      await screen.findByText(
+        "Logged calories per day vs your weekly average target of 2,000 kcal.",
+      ),
+    ).toBeTruthy();
+    // 2,100 / 2,000, not 2,100 / 2,300 (91%).
+    expect(await screen.findByText("105% of target")).toBeTruthy();
+    const chart = await screen.findByRole("img", {
+      name: /^Calories per day\. Bar chart/,
+    });
+    expect(chart.getAttribute("aria-label")).toMatch(/Target 2,000 kcal\./);
+    expect(screen.getByText("2000 kcal average")).toBeTruthy();
+    expect(screen.queryByText(/2,?300/)).toBeNull();
   });
 
   describe("hydration chart", () => {

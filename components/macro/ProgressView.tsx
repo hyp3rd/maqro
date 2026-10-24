@@ -104,6 +104,12 @@ type Props = {
    *  day against it, so a phase change or a planned training day inside the
    *  window counts against that day's target, not today's. */
   targetCaloriesForDate: (date: string) => number;
+  /** With a training week on, the weekly average its days are planned
+   *  around (`DateTargets.training.meanCalories`). Today's planned day sits
+   *  above or below it, so averaged intake (the 7-day average, the calorie
+   *  chart's reference line) is compared with this instead of today's
+   *  `targetCalories`. Absent without training. */
+  weeklyAverageCalories?: number;
   /** Formula TDEE (before goal adjustment) - feeds the recalibration
    *  helper. Drawn from `calculatedValues.tdee` on the calling side. */
   formulaTdee: number;
@@ -193,6 +199,7 @@ function clockFromMinOfDay(min: number): string {
 export function ProgressView({
   targetCalories,
   targetCaloriesForDate,
+  weeklyAverageCalories,
   formulaTdee,
   dailyDelta,
   goal,
@@ -456,7 +463,8 @@ export function ProgressView({
       />
       <CalorieSection
         logs={logs}
-        targetCalories={targetCalories}
+        targetCalories={weeklyAverageCalories ?? targetCalories}
+        weeklyAverage={weeklyAverageCalories !== undefined}
         targetWindow={WINDOW_DAYS}
         markers={phaseMarkers}
       />
@@ -1159,11 +1167,15 @@ function WeightSection({
 function CalorieSection({
   logs,
   targetCalories,
+  weeklyAverage,
   targetWindow,
   markers,
 }: {
   logs: DailyLog[] | null;
+  /** The daily target averaged intake is compared with: a training week's
+   *  weekly average (`weeklyAverage`), else today's target. */
   targetCalories: number;
+  weeklyAverage: boolean;
   targetWindow: number;
   markers?: ChartMarker[];
 }) {
@@ -1224,7 +1236,8 @@ function CalorieSection({
               Calorie adherence
             </h3>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Logged calories per day vs your current target of{" "}
+              Logged calories per day vs your{" "}
+              {weeklyAverage ? "weekly average target" : "current target"} of{" "}
               {targetCalories.toLocaleString()} kcal.
             </p>
           </div>
@@ -1271,7 +1284,9 @@ function CalorieSection({
               // rather than every day "over" a 0 kcal line.
               targetY={targetCalories > 0 ? targetCalories : undefined}
               targetLabel={
-                targetCalories > 0 ? `${targetCalories} kcal target` : undefined
+                targetCalories > 0
+                  ? `${targetCalories} kcal ${weeklyAverage ? "average" : "target"}`
+                  : undefined
               }
               markers={markers}
             />

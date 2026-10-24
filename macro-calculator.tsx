@@ -2380,6 +2380,9 @@ const MacroCalculator = () => {
         <ProgressView
           targetCalories={todayTargets.targetCalories}
           targetCaloriesForDate={targetCaloriesForDate}
+          // Averages compare with a training week's weekly average, not
+          // today's planned day.
+          weeklyAverageCalories={todayTargets.training?.meanCalories}
           formulaTdee={todayTargets.tdee}
           dailyDelta={todayTargets.dailyDelta}
           // The goal actually driving today's target (a phase's, when one
