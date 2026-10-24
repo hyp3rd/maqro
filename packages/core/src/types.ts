@@ -100,7 +100,8 @@ export type FoodItem = {
   /** Wall-clock time (ms epoch) this food was actually *logged as eaten*.
    *  Stamped by every action a client presents as logging, and ONLY when
    *  logging to today: manual add / search / quick-add, photo·voice·
-   *  barcode, copy-a-meal, applying a recipe or a meal template, logging a
+   *  barcode, copy-a-meal, "I had another of these" (a second portion is
+   *  a new consumption), applying a recipe or a meal template, logging a
    *  scheduled recipe, and logging a suggested day. A food swap keeps the
    *  outgoing food's time. Never set by AI-generated plans (auto-fill,
    *  regenerate, refine), which are intent not consumption, nor by any

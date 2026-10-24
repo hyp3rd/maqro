@@ -1614,7 +1614,9 @@ const MacroCalculator = () => {
    *  copy is independently editable / removable, and re-draws the
    *  pantry if the original was linked to an item on hand (eating a
    *  second portion consumes a second portion). Inserts the copy
-   *  right after the original so it reads as a pair. */
+   *  right after the original so it reads as a pair. The second portion
+   *  is a new consumption: on today it is eaten now (its own `loggedAt`,
+   *  not the first portion's), on another day untimed. */
   const duplicateFood = (mealId: number, foodId: number) => {
     const source = meals
       .find((m) => m.id === mealId)
@@ -1623,10 +1625,12 @@ const MacroCalculator = () => {
     // Re-plan the pantry draw for the duplicate from the source's
     // name + portion, so the copy carries its own restorable link.
     const drawDown = planFoodDrawDown(source.name, source.portionSize);
+    const now = Date.now();
     const copy: FoodItem = {
       ...source,
-      id: Date.now() + Math.random(),
+      id: now + Math.random(),
       pantrySource: drawDown ?? undefined,
+      loggedAt: eatenAt(now),
     };
     const updatedMeals = meals.map((meal) => {
       if (meal.id !== mealId) return meal;

@@ -1246,4 +1246,49 @@ describe("macro-calculator: every way of logging food times it on today", () => 
       expect.objectContaining({ name: "Tofu", loggedAt: EATEN_AT }),
     ]);
   });
+
+  it("'I had another of these' is a new portion eaten now on today, untimed on another day", async () => {
+    const EATEN_AT = new Date(2026, 5, 10, 8, 30).getTime();
+    const eggs: FoodItem = {
+      id: 11,
+      name: "Eggs",
+      protein: 13,
+      carbs: 1,
+      fat: 10,
+      calories: 150,
+      portionSize: 100,
+      loggedAt: EATEN_AT,
+    };
+    const lunchWithEggs = MEALS.map((m) =>
+      m.id === 2 ? { ...m, foods: [eggs] } : m,
+    );
+    const duplicate = () =>
+      act(async () => {
+        prop<(mealId: number, foodId: number) => void>(
+          "MealPlanner",
+          "duplicateFood",
+        )(2, 11);
+      });
+
+    dayMeals.override = lunchWithEggs;
+    render(<MacroCalculator />);
+    await duplicate();
+    const [original, copy] = writtenLunch();
+    // The first portion keeps its time; the second was eaten just now.
+    expect(original).toEqual(eggs);
+    expect(copy).toEqual(
+      expect.objectContaining({ name: "Eggs", loggedAt: NOW }),
+    );
+    expect(copy?.id).not.toBe(eggs.id);
+
+    // Another day has no true hour for a portion added to it now.
+    cleanup();
+    writes.setMeals.mockReset();
+    dayMeals.byDate[PAST_DAY] = lunchWithEggs;
+    await renderOnPastDay();
+    await duplicate();
+    const past = writtenLunch();
+    expect(past).toHaveLength(2);
+    expect(past[1]?.loggedAt).toBeUndefined();
+  });
 });
