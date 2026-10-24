@@ -29,6 +29,8 @@ type Props = {
   /** The mobile tab bar's centre [+], with the button itself (see
    *  MobileBottomNav). */
   onQuickAdd: (trigger: HTMLElement) => void;
+  /** A quick add is waiting for today's log (see MobileBottomNav). */
+  quickAddPending: boolean;
   children: React.ReactNode;
 };
 
@@ -56,6 +58,7 @@ function AppShellLayout({
   title,
   onSelect,
   onQuickAdd,
+  quickAddPending,
   children,
 }: Props) {
   return (
@@ -128,6 +131,7 @@ function AppShellLayout({
         current={current}
         onSelect={onSelect}
         onQuickAdd={onQuickAdd}
+        quickAddPending={quickAddPending}
       />
       <InstallPrompt />
       <UpdateBanner />

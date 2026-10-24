@@ -2261,6 +2261,7 @@ const MacroCalculator = () => {
       title={view === "plan" ? dayLabel : undefined}
       onSelect={selectFromNav}
       onQuickAdd={handleQuickAdd}
+      quickAddPending={quickAddAt !== null}
     >
       {view === "calculator" && (
         <div className="space-y-6">

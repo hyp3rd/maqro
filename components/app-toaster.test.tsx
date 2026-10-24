@@ -120,6 +120,7 @@ describe("AppToaster", () => {
         current="plan"
         onSelect={() => undefined}
         onQuickAdd={() => undefined}
+        quickAddPending={false}
       />,
     );
     expect(

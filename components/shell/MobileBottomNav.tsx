@@ -3,7 +3,7 @@
 import { haptic } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
 import * as React from "react";
-import { Ellipsis, type LucideIcon, Plus } from "lucide-react";
+import { Ellipsis, LoaderCircle, type LucideIcon, Plus } from "lucide-react";
 import { motion } from "motion/react";
 import { MoreSheet } from "./MoreSheet";
 import { activeTabSlot, NAV, TAB_BAR, type ViewKey } from "./nav";
@@ -15,6 +15,9 @@ type Props = {
    *  today's date first, then opens the guided launcher, returning focus to
    *  `trigger` (this button) when it closes. */
   onQuickAdd: (trigger: HTMLElement) => void;
+  /** A quick add is waiting for today's log to load before the launcher
+   *  opens (from another view or day): the [+] shows it is busy. */
+  quickAddPending: boolean;
 };
 
 /** Mobile-only tab bar ("Instrument"): the slots come from the nav registry
@@ -22,7 +25,12 @@ type Props = {
  *  over the content with a hairline top edge; the active slot carries an
  *  LED-style indicator on that edge. Pinned to the viewport bottom, clear of
  *  the iOS home indicator via the safe-area inset. */
-export function MobileBottomNav({ current, onSelect, onQuickAdd }: Props) {
+export function MobileBottomNav({
+  current,
+  onSelect,
+  onQuickAdd,
+  quickAddPending,
+}: Props) {
   const lit = activeTabSlot(current);
   return (
     <nav
@@ -52,6 +60,10 @@ export function MobileBottomNav({ current, onSelect, onQuickAdd }: Props) {
               <button
                 type="button"
                 aria-label="Quick add"
+                // It opens the launcher, a dialog.
+                aria-haspopup="dialog"
+                aria-busy={quickAddPending || undefined}
+                data-pending={quickAddPending ? "true" : undefined}
                 onClick={(event) => {
                   haptic("tap");
                   onQuickAdd(event.currentTarget);
@@ -64,11 +76,19 @@ export function MobileBottomNav({ current, onSelect, onQuickAdd }: Props) {
                   "motion-safe:active:scale-95",
                 )}
               >
-                <Plus
-                  aria-hidden
-                  className="size-6"
-                  strokeWidth={2.2}
-                />
+                {quickAddPending ? (
+                  <LoaderCircle
+                    aria-hidden
+                    className="size-6 motion-safe:animate-spin"
+                    strokeWidth={2.2}
+                  />
+                ) : (
+                  <Plus
+                    aria-hidden
+                    className="size-6"
+                    strokeWidth={2.2}
+                  />
+                )}
               </button>
             </div>
           );

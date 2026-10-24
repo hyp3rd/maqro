@@ -754,14 +754,18 @@ describe("macro-calculator: quick add (the tab bar's centre [+])", () => {
 
     it("waits for today's slots, then targets today's", async () => {
       const view = await onPastDayBeforeTodayLoads();
+      expect(prop("AppShell", "quickAddPending")).toBe(false);
       await quickAdd();
       expect(prop("MealPlanner", "selectedDate")).toBe(TODAY);
-      // Still showing the past day's slots: no launcher yet.
+      // Still showing the past day's slots: no launcher yet, and the [+]
+      // says it is working on it.
       expect(launcher().open).toBe(false);
+      expect(prop("AppShell", "quickAddPending")).toBe(true);
 
       dayMeals.loaded?.add(TODAY);
       view.rerender(<MacroCalculator />);
       expect(launcher()).toEqual({ open: true, mealId: 2, dayLabel: "Today" });
+      expect(prop("AppShell", "quickAddPending")).toBe(false);
     });
 
     it.each([

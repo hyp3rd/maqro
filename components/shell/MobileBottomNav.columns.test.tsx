@@ -32,6 +32,7 @@ describe("MobileBottomNav with four slots", () => {
         current="plan"
         onSelect={() => {}}
         onQuickAdd={() => {}}
+        quickAddPending={false}
       />,
     );
     const bar = screen.getByRole("navigation", {

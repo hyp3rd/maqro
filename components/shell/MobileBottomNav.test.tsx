@@ -26,7 +26,7 @@ afterEach(() => {
   cleanup();
 });
 
-function renderNav(current: ViewKey = "plan") {
+function renderNav(current: ViewKey = "plan", quickAddPending = false) {
   const onSelect = vi.fn();
   const onQuickAdd = vi.fn();
   render(
@@ -34,6 +34,7 @@ function renderNav(current: ViewKey = "plan") {
       current={current}
       onSelect={onSelect}
       onQuickAdd={onQuickAdd}
+      quickAddPending={quickAddPending}
     />,
   );
   const bar = screen.getByRole("navigation", {
@@ -90,6 +91,20 @@ describe("MobileBottomNav", () => {
     expect(onQuickAdd.mock.calls).toEqual([[plus]]);
     expect(onSelect).not.toHaveBeenCalled();
     expect(haptic).toHaveBeenCalledWith("tap");
+  });
+
+  it("the centre button says it opens a dialog", () => {
+    const { bar } = renderNav("plan");
+    const add = within(bar).getByRole("button", { name: "Quick add" });
+    expect(add.getAttribute("aria-haspopup")).toBe("dialog");
+    expect(add.getAttribute("aria-busy")).toBeNull();
+  });
+
+  it("while today loads before the launcher opens, the centre button shows it is busy", () => {
+    const { bar } = renderNav("progress", true);
+    const add = within(bar).getByRole("button", { name: "Quick add" });
+    expect(add.getAttribute("aria-busy")).toBe("true");
+    expect(add.dataset.pending).toBe("true");
   });
 
   it("lays the bar out with one column per slot", () => {
