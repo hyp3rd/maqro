@@ -49,8 +49,12 @@ export function DayTypeChip({
           rest ? "text-muted-foreground" : "text-brand-text",
         )}
       />
-      <span>{label}</span>
-      {training.overridden && <span className="font-normal">· changed</span>}
+      {/* One text run, so the marker's separator spaces like the label's
+          own ("Rest day · changed") rather than at the flex gap. */}
+      <span>
+        {label}
+        {training.overridden && <span className="font-normal"> · changed</span>}
+      </span>
     </>
   );
 

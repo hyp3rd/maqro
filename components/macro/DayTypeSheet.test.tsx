@@ -186,7 +186,7 @@ describe("Today's session chip", () => {
       screen.getByRole("button", {
         name: "Rest day, changed from the plan. Change today’s session",
       }).textContent,
-    ).toBe("Rest day· changed");
+    ).toBe("Rest day · changed");
   });
 });
 

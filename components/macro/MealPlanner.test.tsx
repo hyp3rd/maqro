@@ -442,7 +442,7 @@ describe("Today: changing the day's session from the chip", () => {
     const restChip = await screen.findByRole("button", {
       name: "Rest day, changed from the plan. Change today’s session",
     });
-    expect(restChip.textContent).toBe("Rest day· changed");
+    expect(restChip.textContent).toBe("Rest day · changed");
     expect(gaugeStatus().textContent).toBe(
       `${kcal(restToday.targetCalories - 1240)} kcal left today`,
     );
