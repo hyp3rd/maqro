@@ -14,6 +14,7 @@ const {
   mockGetSupabaseSecretConfig,
   mockComputeWeeklyRecap,
   mockLoadUserTier,
+  mockLoadBodyFat,
   optedInRows,
   profileRow,
   gteCalls,
@@ -33,6 +34,16 @@ const {
     ) => { daysLogged: number }
   >(() => ({ daysLogged: 3 })),
   mockLoadUserTier: vi.fn(async () => "free"),
+  mockLoadBodyFat: vi.fn<
+    (
+      admin: unknown,
+      userId: string,
+      profile: unknown,
+    ) => Promise<
+      | { ok: true; bodyFatPct: number | null }
+      | { ok: false; error: { message: string } }
+    >
+  >(async () => ({ ok: true, bodyFatPct: null })),
   optedInRows: [] as { user_id: string; timezone?: string | null }[],
   /** The `profiles` row the fake returns (`null` = no profile yet). */
   profileRow: { value: null as { payload: unknown } | null },
@@ -51,6 +62,14 @@ vi.mock("@/lib/weekly-recap", () => ({
   computeWeeklyRecap: mockComputeWeeklyRecap,
 }));
 vi.mock("@/lib/billing/usage", () => ({ loadUserTier: mockLoadUserTier }));
+vi.mock("@/lib/latest-body-fat", () => ({
+  loadLatestBodyFatPct: mockLoadBodyFat,
+}));
+// The real resolver, observed: every call's context is asserted below.
+vi.mock("@maqro/core/targets", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@maqro/core/targets")>();
+  return { ...actual, targetsForDate: vi.fn(actual.targetsForDate) };
+});
 vi.mock("@supabase/supabase-js", () => {
   const rows = (data: unknown, table: string) => ({
     eq: () => ({
@@ -87,6 +106,7 @@ beforeEach(() => {
   profileRow.value = null;
   gteCalls.splice(0, gteCalls.length);
   mockLoadUserTier.mockResolvedValue("free");
+  mockLoadBodyFat.mockResolvedValue({ ok: true, bodyFatPct: null });
   vi.stubEnv("CRON_SECRET", "cron-secret");
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.test");
   optedInRows.splice(0, optedInRows.length, { user_id: userId(TARGET_INDEX) });
@@ -245,5 +265,68 @@ describe("GET /api/cron/weekly-recap — target", () => {
     await callRoute();
     expect(lastRecapCall()).toEqual([2600, "2026-06-14"]);
     expect(gteCalls).toContainEqual(["daily_logs", "date", "2026-06-08"]);
+  });
+});
+
+/** The email scores days against the SAME targets the app shows, so the
+ *  resolver gets the same body-fat estimate the app derives
+ *  (`latestBodyFatPct` over the latest usable body measurement). */
+describe("GET /api/cron/weekly-recap — body fat", () => {
+  const PROFILE = {
+    gender: "male",
+    age: 30,
+    weight: 80,
+    height: 180,
+    activityLevel: "moderate",
+    goal: "maintain",
+    dietType: "balanced",
+    dietPreference: "omnivore",
+    cuisinePreferences: [],
+    allergies: [],
+    dislikedFoods: [],
+    weeklyRateKg: 0,
+    manualTdee: 2600,
+    units: "metric",
+  };
+
+  beforeEach(() => {
+    profileRow.value = { payload: PROFILE };
+  });
+
+  it("passes the user's body-fat estimate to every target it resolves", async () => {
+    const { targetsForDate } = await import("@maqro/core/targets");
+    const resolver = vi.mocked(targetsForDate);
+    mockLoadBodyFat.mockResolvedValue({ ok: true, bodyFatPct: 18.4 });
+    const res = await callRoute();
+    expect(res.status).toBe(200);
+    expect(mockLoadBodyFat).toHaveBeenCalledWith(
+      expect.anything(),
+      userId(TARGET_INDEX),
+      PROFILE,
+    );
+    // Today's target and each day the recap scores.
+    const [, , targetFor] = mockComputeWeeklyRecap.mock.calls.at(-1) ?? [];
+    targetFor?.("2026-06-10");
+    expect(resolver.mock.calls.length).toBeGreaterThanOrEqual(2);
+    for (const [, , ctx] of resolver.mock.calls) {
+      expect(ctx).toEqual({ phasesEnabled: false, bodyFatPct: 18.4 });
+    }
+  });
+
+  it("skips the user (an error, no email) when the measurements can't be read", async () => {
+    mockLoadBodyFat.mockResolvedValue({
+      ok: false,
+      error: { message: "db down" },
+    });
+    const res = await callRoute();
+    expect(await res.json()).toEqual({ sent: 0, skipped: 0, errors: 1 });
+    expect(mockSendEmail).not.toHaveBeenCalled();
+    expect(mockComputeWeeklyRecap).not.toHaveBeenCalled();
+  });
+
+  it("makes no measurement read for a user without a profile", async () => {
+    profileRow.value = null;
+    await callRoute();
+    expect(mockLoadBodyFat).not.toHaveBeenCalled();
   });
 });

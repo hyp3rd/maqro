@@ -8,6 +8,7 @@ const {
   mockLoadUserTier,
   mockDecideAutoAdapt,
   mockTargetsForDate,
+  mockLoadBodyFat,
   profileRows,
 } = vi.hoisted(() => ({
   mockLoadUserTier: vi.fn(async () => "pro"),
@@ -19,7 +20,21 @@ const {
     }
   >(() => ({ action: "skip", newTdee: null, deltaKcal: 0 })),
   mockTargetsForDate: vi.fn(),
+  mockLoadBodyFat: vi.fn<
+    (
+      admin: unknown,
+      userId: string,
+      profile: unknown,
+    ) => Promise<
+      | { ok: true; bodyFatPct: number | null }
+      | { ok: false; error: { message: string } }
+    >
+  >(async () => ({ ok: true, bodyFatPct: null })),
   profileRows: [] as { user_id: string; payload: unknown }[],
+}));
+
+vi.mock("@/lib/latest-body-fat", () => ({
+  loadLatestBodyFatPct: mockLoadBodyFat,
 }));
 
 vi.mock("@/lib/supabase/env", () => ({
@@ -114,6 +129,7 @@ beforeEach(() => {
   vi.stubEnv("CRON_SECRET", "cron-secret");
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.test");
   mockLoadUserTier.mockResolvedValue("pro");
+  mockLoadBodyFat.mockResolvedValue({ ok: true, bodyFatPct: null });
   profileRows.splice(0, profileRows.length);
 });
 
@@ -137,12 +153,33 @@ describe("GET /api/cron/auto-adapt-tdee — current TDEE", () => {
   it("compares against the resolver's TDEE for today (Pro phases on)", async () => {
     const payload = profile(null);
     profileRows.push({ user_id: "u1", payload });
+    mockLoadBodyFat.mockResolvedValue({ ok: true, bodyFatPct: 17.2 });
     await callRoute();
+    // The same body-fat estimate the app derives (one shared helper), so
+    // the target here is the one the app shows.
+    expect(mockLoadBodyFat).toHaveBeenCalledWith(
+      expect.anything(),
+      "u1",
+      payload,
+    );
     expect(mockTargetsForDate).toHaveBeenCalledWith(payload, TODAY, {
       phasesEnabled: true,
+      bodyFatPct: 17.2,
     });
     expect(mockDecideAutoAdapt).toHaveBeenCalledTimes(1);
     expect(mockDecideAutoAdapt.mock.calls[0]?.[0].currentTdee).toBe(2600);
+  });
+
+  it("skips the user as an error when the measurements can't be read", async () => {
+    profileRows.push({ user_id: "u1", payload: profile(null) });
+    mockLoadBodyFat.mockResolvedValue({
+      ok: false,
+      error: { message: "db down" },
+    });
+    const body = await callRoute();
+    expect(mockTargetsForDate).not.toHaveBeenCalled();
+    expect(mockDecideAutoAdapt).not.toHaveBeenCalled();
+    expect(body).toMatchObject({ errors: 1, applied: 0, held: 0 });
   });
 
   it("skips a user whose active phase pins its own TDEE (found via the resolver)", async () => {
@@ -158,6 +195,7 @@ describe("GET /api/cron/auto-adapt-tdee — current TDEE", () => {
     profileRows.push({ user_id: "u1", payload: profile(2450) });
     const body = await callRoute();
     expect(mockTargetsForDate).not.toHaveBeenCalled();
+    expect(mockLoadBodyFat).not.toHaveBeenCalled();
     expect(body).toMatchObject({ skipped: 1 });
   });
 });

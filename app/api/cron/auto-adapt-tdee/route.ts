@@ -5,6 +5,7 @@ import { FEATURES } from "@/lib/billing/tiers";
 import { loadUserTier } from "@/lib/billing/usage";
 import { sendEmail } from "@/lib/email/resend";
 import { autoAdaptEmail } from "@/lib/email/templates";
+import { loadLatestBodyFatPct } from "@/lib/latest-body-fat";
 import { sendPush } from "@/lib/push/send";
 import { emailsById, listAllAuthUsers } from "@/lib/supabase/admin-users";
 import { getSupabaseSecretConfig } from "@/lib/supabase/env";
@@ -210,11 +211,26 @@ export async function GET(req: Request): Promise<NextResponse> {
         continue;
       }
 
+      // The same body-fat estimate the app derives, so the resolver below
+      // sees exactly the inputs it sees in-app. A failed read is an error
+      // for this user (retried on the next run), never a silent "none".
+      const bodyFat = await loadLatestBodyFatPct(admin, userId, profile);
+      if (!bodyFat.ok) {
+        console.error(
+          "[cron/auto-adapt-tdee] body measurements read failed:",
+          userId,
+          bodyFat.error,
+        );
+        errors++;
+        continue;
+      }
+
       // Today's target through the shared resolver — the same one the app,
       // /report and the weekly email use (goal phases are Pro; auto-adapt is
       // Pro too, but the phase gate is checked on its own terms).
       const target = targetsForDate(profile, today, {
         phasesEnabled: FEATURES.canUseGoalPhases(tier),
+        bodyFatPct: bodyFat.bodyFatPct,
       });
 
       // If the active goal phase carries its own (manually-pinned) TDEE
