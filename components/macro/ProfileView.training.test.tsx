@@ -94,9 +94,7 @@ describe("ProfileView: Training week", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /Training week/ }));
     fireEvent.click(
-      screen.getByRole("button", {
-        name: "Add measurements in My measurements",
-      }),
+      screen.getByRole("button", { name: "Open My measurements" }),
     );
     expect(screen.getByText("measurement history")).toBeTruthy();
   });
