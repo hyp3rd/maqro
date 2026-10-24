@@ -148,10 +148,9 @@ components/
                                     #   ShopForMeDialog, NearbyStores, FavoriteStores,
                                     #   MicronutrientsSection, MealDetailSheet,
                                     #   LogMealSheet + FoodSearchSheet (guided mobile
-                                    #   add-food), SheetAction (shared sheet primitives)
-  today/                            # Instrument Today day view: TodayGauge (ring gauge),
-                                    #   MacroReadout, DayTimeline (24-h track), WeekStrip,
-                                    #   DayTypeChip, MealRail, TodayHeader
+                                    #   add-food), SheetAction (shared sheet primitives),
+                                    #   TrainingWeekEditor (Profile → Training week:
+                                    #   TrainingDayDialog + TrainingWeekChart)
   icons/                            # In-tree SVGs (e.g. GoogleLogo for OAuth button)
   marketing/                        # StructuredData (JSON-LD for landing SEO)
   ui/                               # shadcn primitives
@@ -160,6 +159,8 @@ hooks/
   use-user-role.ts                  # Client-side isAdmin (UX hint only)
   use-profile.ts                    # IDB-hydrated profile state
   use-daily-log.ts                  # IDB-hydrated day log state
+  use-targets.ts                    # Every app target via core targetsForDate (one tier + body-fat context)
+  use-latest-body-fat.ts            # Body-fat % the targets read (core latestBodyFatPct over IDB)
   use-food-search.ts                # Debounced merged search
   use-today.ts                      # Live today-date (rolls at midnight)
   use-targets.ts                    # Day / today / selected-week targets via core targetsForDate
@@ -173,6 +174,7 @@ hooks/
 lib/
   db.ts                             # IndexedDB wrapper (idb)
   macros.ts                         # BMR, TDEE, target calories
+  latest-body-fat.ts                # Crons' read of the latest usable body measurement (same derivation as the app)
   meal-planner.ts                   # 3×3 Cramer-based portion solver
   trends.ts                         # Smoothing, plateau detection, TDEE recalibration
   streaks.ts                        # Consecutive-logged-days computation
