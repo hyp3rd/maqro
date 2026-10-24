@@ -1,5 +1,37 @@
+import {
+  clearLastKnownUser,
+  readLastKnownUserId,
+} from "@/lib/auth/last-known-user";
+import { clearCachedTier, forgetCachedTier } from "@/lib/billing/tier-cache";
 import { clearAllStores } from "@/lib/db";
 import type { SupabaseClient } from "@supabase/supabase-js";
+
+/** Forget the signed-out account's records kept outside IndexedDB — its
+ *  cached tier and the last-known user — so the next user on this device is
+ *  never shown as the previous one, and the signed-out account is not gated
+ *  on a tier the server no longer vouches for. The account is `userId` when
+ *  the caller knows it (the signed-in user signing out, or the account a
+ *  forced sign-out or a sync's auth failure is scoped to), else the one the
+ *  last-known record names (whose local data this device holds) — a record
+ *  that can be stale, so it is only the fallback. Other accounts' cached
+ *  tiers stay, since each applies only to its own user. With neither, whose
+ *  tier it is cannot be told, so every cached tier is forgotten. Used by
+ *  sign-out, forced sign-out and a sync's auth failure. Never throws (both
+ *  records degrade to "absent" on storage errors). */
+export function clearAccountRecords(userId?: string): void {
+  const account = userId ?? readLastKnownUserId();
+  if (account === null) clearCachedTier();
+  else forgetCachedTier(account);
+  clearLastKnownUser();
+}
+
+/** Forget every account's records kept outside IndexedDB (device reset: the
+ *  device is handed over, so nothing of any account may remain). Never
+ *  throws. */
+export function clearAllAccountRecords(): void {
+  clearCachedTier();
+  clearLastKnownUser();
+}
 
 /** Sign out and wipe the local IndexedDB *before* tearing down the
  *  session, so a different user signing in on the same device starts
@@ -12,10 +44,17 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  *  Errors during the wipe are swallowed: storage being unavailable (a
  *  private window with persistence blocked, an extension intercepting
  *  IDB) must not strand the user in a half-signed-out state. The auth
- *  call is the user-visible step; the wipe is best-effort defence. */
+ *  call is the user-visible step; the wipe is best-effort defence.
+ *
+ *  `userId` is the account signing out, when the caller knows it; see
+ *  `clearAccountRecords` for the fallback when it does not. */
 export async function signOutAndClearLocal(
   supabase: SupabaseClient,
+  userId?: string,
 ): Promise<void> {
   await clearAllStores().catch(() => {});
+  // Cleared here rather than left to the SIGNED_OUT event, which never
+  // fires when `signOut()` can't load an expired session offline.
+  clearAccountRecords(userId);
   await supabase.auth.signOut();
 }

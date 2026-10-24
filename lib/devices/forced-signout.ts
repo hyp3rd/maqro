@@ -1,5 +1,6 @@
 "use client";
 
+import { clearAccountRecords } from "@/lib/auth/sign-out";
 import { clearAllStores } from "@/lib/db";
 import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 import { getCurrentSessionId } from "./registry";
@@ -75,6 +76,9 @@ export function watchForForcedSignOut(
           } catch {
             // Best-effort; sign-out + nav still proceed.
           }
+          // Per-account state like the IDB wipe above (never throws) —
+          // of `userId`, the account this watcher (and session) belongs to.
+          clearAccountRecords(userId);
           try {
             await supabase.auth.signOut();
           } catch {

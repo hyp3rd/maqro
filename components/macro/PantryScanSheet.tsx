@@ -3,6 +3,7 @@
 import type { ResolvedPantryScan } from "@/app/api/identify-pantry/route";
 import { CameraView } from "@/components/capture/CameraView";
 import { Button } from "@/components/ui/button";
+import { useRefreshAiUsage } from "@/hooks/use-ai-usage";
 import { useModalOverlay } from "@/hooks/use-modal-overlay";
 import { clientFetch } from "@/lib/auth/client-fetch";
 import { useRef, useState } from "react";
@@ -73,6 +74,7 @@ function PantryScanBody({
 }) {
   const [resetKey, setResetKey] = useState(0);
   const [phase, setPhase] = useState<Phase>({ kind: "capture" });
+  const refreshAiUsage = useRefreshAiUsage();
 
   async function identify(blob: Blob) {
     setPhase({ kind: "identifying" });
@@ -90,6 +92,8 @@ function PantryScanBody({
             "Couldn't scan that photo. Try again with better lighting.",
         );
       }
+      // The server debited this call — bring the shared counter up to date.
+      refreshAiUsage();
       const result = (await res.json()) as ResolvedPantryScan;
       if (result.items.length === 0) {
         throw new Error("No items identified. Try a clearer, closer shot.");

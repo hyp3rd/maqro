@@ -4,6 +4,7 @@ import type { ResolvedMealPhoto } from "@/app/api/identify-meal/route";
 import { CameraView } from "@/components/capture/CameraView";
 import type { DietPreference, Food } from "@/components/macro/types";
 import { Button } from "@/components/ui/button";
+import { useRefreshAiUsage } from "@/hooks/use-ai-usage";
 import { useModalOverlay } from "@/hooks/use-modal-overlay";
 import { toAiCustomFoods } from "@/lib/ai/request-payload";
 import { clientFetch } from "@/lib/auth/client-fetch";
@@ -191,6 +192,7 @@ function CameraSheetBody({
 }) {
   const [resetKey, setResetKey] = useState(0);
   const [phase, setPhase] = useState<Phase>({ kind: "capture" });
+  const refreshAiUsage = useRefreshAiUsage();
 
   // `lockMode` pins the sheet to the requested tab (scan needs no AI; photo
   // does), hiding the switcher so a mealless Photo capture can't fall into a
@@ -269,6 +271,8 @@ function CameraSheetBody({
             "We couldn't read that photo. Try again with better lighting.",
         );
       }
+      // The server debited this call — bring the shared counter up to date.
+      refreshAiUsage();
       const result = (await res.json()) as ResolvedMealPhoto;
       if (result.foods.length === 0) {
         throw new Error("No foods identified in the photo.");

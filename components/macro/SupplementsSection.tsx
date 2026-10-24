@@ -1,6 +1,6 @@
 "use client";
 
-import { useAiUsage } from "@/hooks/use-ai-usage";
+import { useTier } from "@/hooks/use-ai-usage";
 import { useNotificationPrefs } from "@/hooks/use-notification-prefs";
 import { FEATURES } from "@/lib/billing/tiers";
 import {
@@ -66,9 +66,8 @@ const VITAMIN_D_IU_PER_UG = 40;
  *  nothing here — the Micronutrients upgrade card already sells the Pro micro
  *  suite, so a second prompt would be redundant. */
 export function SupplementsSection() {
-  const { state } = useAiUsage();
-  const isPro =
-    state.status === "ok" && FEATURES.canTrackMicronutrients(state.data.tier);
+  const { tier } = useTier();
+  const isPro = tier !== null && FEATURES.canTrackMicronutrients(tier);
 
   const [supplements, setSupplements] = useState<Supplement[] | null>(null);
   const [takenToday, setTakenToday] = useState<SupplementIntakeEntry[]>([]);

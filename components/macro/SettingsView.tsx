@@ -22,7 +22,10 @@ import { useSafeSignOut } from "@/hooks/use-safe-sign-out";
 import { useUser } from "@/hooks/use-user";
 import { isLikelyEmail } from "@/lib/account/backup-email";
 import { clientFetch } from "@/lib/auth/client-fetch";
-import { signOutAndClearLocal } from "@/lib/auth/sign-out";
+import {
+  clearAllAccountRecords,
+  signOutAndClearLocal,
+} from "@/lib/auth/sign-out";
 import { clearAllStores } from "@/lib/db";
 import {
   buildExport,
@@ -244,7 +247,7 @@ export function SettingsView({
         await import("@/lib/devices/registry");
       await unregisterCurrentDevice(supabase, user.id).catch(() => {});
     }
-    await signOutAndClearLocal(supabase);
+    await signOutAndClearLocal(supabase, user?.id);
     // Hard navigation, like reset / delete-account: drops every in-memory
     // copy of this account's data (the displayed day, the profile form) so
     // nothing is written back into the freshly wiped store.
@@ -654,6 +657,7 @@ export function SettingsView({
 
       {user && (
         <DeleteAccountSection
+          userId={user.id}
           userEmail={user.email ?? null}
           configured={!isUnconfigured}
         />
@@ -673,7 +677,7 @@ export function SettingsView({
  *  destroying their account. Also useful for "this device is acting
  *  weird, reset and re-sync" troubleshooting and for handing the
  *  device to someone else. */
-function ResetDeviceSection({ signedIn }: { signedIn: boolean }) {
+export function ResetDeviceSection({ signedIn }: { signedIn: boolean }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -696,6 +700,9 @@ function ResetDeviceSection({ signedIn }: { signedIn: boolean }) {
         // Storage disabled - fine, the rest of the reset is still
         // useful.
       }
+      // Every account's records too, also when there is no session to
+      // sign out (an expired one opened offline still has them).
+      clearAllAccountRecords();
 
       if (signedIn) {
         const supabase = getSupabaseBrowser();
@@ -1096,9 +1103,11 @@ function Row({
 }
 
 function DeleteAccountSection({
+  userId,
   userEmail,
   configured,
 }: {
+  userId: string;
   userEmail: string | null;
   configured: boolean;
 }) {
@@ -1132,10 +1141,11 @@ function DeleteAccountSection({
         );
       }
       // Wipe the local cache so a future sign-in on this device starts
-      // empty rather than re-uploading the deleted user's data.
+      // empty rather than re-uploading the deleted user's data. Named by
+      // id so the deleted account's own records are the ones forgotten.
       const supabase = getSupabaseBrowser();
       if (supabase) {
-        await signOutAndClearLocal(supabase);
+        await signOutAndClearLocal(supabase, userId);
       } else {
         await clearAllStores();
       }

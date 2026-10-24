@@ -24,6 +24,7 @@
     "./records": "./src/records.ts",
     "./streaks": "./src/streaks.ts",
     "./supplements": "./src/supplements.ts",
+    "./targets": "./src/targets.ts",
     "./timing-insights": "./src/timing-insights.ts",
     "./trends": "./src/trends.ts",
     "./types": "./src/types.ts",
