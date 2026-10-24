@@ -19,8 +19,10 @@ const NODE = {
 /** The Today meal list on a rail that echoes the timing track: a filled
  *  node per logged meal (with the time its first food was logged), a
  *  highlighted node for today's next slot to log, hollow nodes for the
- *  rest. The meal cards themselves are the caller's (`renderMeal`), so
- *  every existing card action keeps working unchanged. */
+ *  rest. The time column is there only when some meal has a time, so an
+ *  untimed day gives its width back to the cards. The meal cards
+ *  themselves are the caller's (`renderMeal`), so every existing card
+ *  action keeps working unchanged. */
 export function MealRail({
   meals,
   date,
@@ -35,6 +37,8 @@ export function MealRail({
   className?: string;
 }) {
   const entries = railNodes(meals, relativeDay(date, today));
+  const starts = meals.map((meal) => mealStartMinute(meal, date));
+  const timed = starts.some((start) => start !== null);
 
   return (
     <ol
@@ -43,19 +47,26 @@ export function MealRail({
     >
       {meals.map((meal, i) => {
         const entry = entries[i] ?? { node: "open", lineStrong: false };
-        const start = mealStartMinute(meal, date);
+        const start = starts[i] ?? null;
         const last = i === meals.length - 1;
         return (
           <li
             key={meal.id}
-            className="grid grid-cols-[2.5rem_0.75rem_minmax(0,1fr)] gap-x-2"
+            className={cn(
+              "grid gap-x-2",
+              timed
+                ? "grid-cols-[2.5rem_0.75rem_minmax(0,1fr)]"
+                : "grid-cols-[0.75rem_minmax(0,1fr)]",
+            )}
           >
-            <span
-              data-part="time"
-              className="pt-[1.125rem] text-right font-mono text-xs leading-4 tabular-nums text-muted-foreground"
-            >
-              {start !== null ? formatClock(start) : ""}
-            </span>
+            {timed && (
+              <span
+                data-part="time"
+                className="pt-[1.125rem] text-right font-mono text-xs leading-4 tabular-nums text-muted-foreground"
+              >
+                {start !== null ? formatClock(start) : ""}
+              </span>
+            )}
             <span
               aria-hidden
               className="relative"

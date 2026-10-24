@@ -27,10 +27,10 @@ const MEALS: Meal[] = [
   { id: 4, name: "Snacks", foods: [] },
 ];
 
-function renderRail(today = DAY) {
+function renderRail(today = DAY, meals = MEALS) {
   return render(
     <MealRail
-      meals={MEALS}
+      meals={meals}
       date={DAY}
       today={today}
       renderMeal={(meal) => <h3>{meal.name}</h3>}
@@ -66,6 +66,20 @@ describe("MealRail", () => {
       (t) => t.textContent,
     );
     expect(times).toEqual(["07:30", "", "", ""]);
+  });
+
+  it("gives the time column back to the cards when no meal has a time", () => {
+    const untimed: Meal[] = [
+      { id: 1, name: "Breakfast", foods: [food(1)] },
+      { id: 2, name: "Lunch", foods: [] },
+    ];
+    const { container } = renderRail(DAY, untimed);
+    expect(container.querySelector("[data-part=time]")).toBeNull();
+    for (const li of container.querySelectorAll("li")) {
+      expect(li.getAttribute("class")).toContain(
+        "grid-cols-[0.75rem_minmax(0,1fr)]",
+      );
+    }
   });
 
   it("has no 'now' slot on another day", () => {
