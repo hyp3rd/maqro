@@ -20,9 +20,14 @@ function yesterdayKey(): string {
 
 /** Show yesterday through the Today header's date picker (the week strip
  *  holds only the shown day's week, and yesterday is last week's Sunday on
- *  a Monday). */
+ *  a Monday). The date button opens the platform's picker, which Playwright
+ *  can't drive, so this fills the date field the picker writes to. */
 async function showYesterday(page: Page): Promise<void> {
-  await page.getByLabel(/choose a day/).fill(yesterdayKey());
+  await page
+    .getByRole("button", { name: /choose a day/ })
+    .locator("xpath=..")
+    .locator('input[type="date"]')
+    .fill(yesterdayKey());
 }
 
 /** End-to-end smoke for the post-revamp UI. Catches the integration

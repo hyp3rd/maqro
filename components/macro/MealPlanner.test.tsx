@@ -426,7 +426,11 @@ describe("MealPlanner as Instrument Today", () => {
     expect(
       screen.getAllByRole("button", { name: /^(Back to today|Today)$/ }),
     ).toHaveLength(1);
-    fireEvent.click(screen.getByRole("button", { name: "Back to today" }));
+    // On the date line beside the date (its own 44 px row on a touch
+    // screen), so a long session chip never pushes it onto a row of its own.
+    const back = screen.getByRole("button", { name: "Back to today" });
+    expect(back.closest('[data-part="date-line"]')).not.toBeNull();
+    fireEvent.click(back);
     expect(props.onSelectDate).toHaveBeenCalledWith(TODAY);
     expect(document.activeElement).toBe(heading);
   });
@@ -443,16 +447,81 @@ describe("MealPlanner as Instrument Today", () => {
     ).toBeTruthy();
   });
 
-  it("picks any day from the date, future days included", () => {
-    const props = renderPlanner();
-    const picker = screen.getByLabelText(/choose a day/);
-    expect(picker.getAttribute("type")).toBe("date");
-    // A future day can be planned, as on the week strip: no cap at today.
-    expect(picker.hasAttribute("max")).toBe(false);
-    fireEvent.change(picker, { target: { value: "2026-11-02" } });
-    expect(props.onSelectDate).toHaveBeenCalledWith("2026-11-02");
-    fireEvent.change(picker, { target: { value: "2026-09-30" } });
-    expect(props.onSelectDate).toHaveBeenLastCalledWith("2026-09-30");
+  describe("the date opens a picker for any day", () => {
+    const trigger = () =>
+      screen.getByRole("button", { name: "Wed, Oct 21, choose a day" });
+    /** The date field the picker writes to (hidden behind the button). */
+    const field = () => {
+      const input =
+        trigger().parentElement?.querySelector('input[type="date"]');
+      if (!(input instanceof HTMLInputElement)) throw new Error("no field");
+      return input;
+    };
+
+    afterEach(() => {
+      // jsdom has no showPicker(); a case that needs one adds it.
+      Reflect.deleteProperty(HTMLInputElement.prototype, "showPicker");
+    });
+
+    it("is a visible button that shows keyboard focus and is touch-sized", () => {
+      renderPlanner();
+      const button = trigger();
+      expect(button.tagName).toBe("BUTTON");
+      // Focus is drawn on the date itself, since the button is taller.
+      const face = button.querySelector('[data-part="date-trigger-face"]');
+      expect(face?.className).toContain("group-focus-visible:ring-2");
+      expect(button.className).toContain("group");
+      // 44 px on a touch screen, reserved above the date (never over the
+      // heading below it): the button fills the line, its text at the foot.
+      const line = button.closest('[data-part="date-line"]');
+      expect(line?.className).toContain("coarse:h-11");
+      expect(line?.className).toContain("items-end");
+      expect(button.className).toContain("h-full");
+      expect(line?.contains(screen.getByRole("heading", { level: 1 }))).toBe(
+        false,
+      );
+      // The field behind it is neither tabbable nor announced.
+      expect(field().tabIndex).toBe(-1);
+      expect(field().getAttribute("aria-hidden")).toBe("true");
+    });
+
+    it("opens the platform picker; a chosen day, future included, is shown", () => {
+      const showPicker = vi.fn();
+      Object.defineProperty(HTMLInputElement.prototype, "showPicker", {
+        value: showPicker,
+        configurable: true,
+      });
+      const props = renderPlanner();
+      fireEvent.click(trigger());
+      expect(showPicker).toHaveBeenCalledOnce();
+      expect(showPicker.mock.contexts[0]).toBe(field());
+      // A future day can be planned, as on the week strip: no cap at today.
+      expect(field().hasAttribute("max")).toBe(false);
+      fireEvent.change(field(), { target: { value: "2026-11-02" } });
+      expect(props.onSelectDate).toHaveBeenCalledWith("2026-11-02");
+      fireEvent.change(field(), { target: { value: "2026-09-30" } });
+      expect(props.onSelectDate).toHaveBeenLastCalledWith("2026-09-30");
+    });
+
+    it("shows the date field itself when the browser can't open a picker", () => {
+      Object.defineProperty(HTMLInputElement.prototype, "showPicker", {
+        value: () => {
+          throw new DOMException("no gesture", "NotAllowedError");
+        },
+        configurable: true,
+      });
+      const props = renderPlanner();
+      fireEvent.click(trigger());
+      const typed = screen.getByLabelText("Wed, Oct 21, choose a day");
+      expect(typed.getAttribute("type")).toBe("date");
+      expect(typed.getAttribute("aria-hidden")).toBeNull();
+      expect(document.activeElement).toBe(typed);
+      fireEvent.change(typed, { target: { value: "2026-10-15" } });
+      expect(props.onSelectDate).toHaveBeenCalledWith("2026-10-15");
+      // Leaving it brings the button back.
+      fireEvent.blur(typed);
+      expect(trigger().tagName).toBe("BUTTON");
+    });
   });
 });
 
