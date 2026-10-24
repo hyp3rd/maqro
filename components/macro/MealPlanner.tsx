@@ -272,10 +272,16 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
   const now = useNow();
   // The week strip: that week's logged kcal from IndexedDB, with the shown
   // day's live total over its stored one (the day log saves behind edits).
+  // Only once that day has loaded: until then `meals` (and so `totalMacros`)
+  // are still the previous day's or the empty default, and the stored value
+  // is the better reading.
   const weekIntake = useWeekIntake(week?.weekStart ?? null);
   const eatenByDate = React.useMemo(
-    () => new Map(weekIntake).set(selectedDate, totalMacros.calories),
-    [weekIntake, selectedDate, totalMacros.calories],
+    () =>
+      dayHydrated
+        ? new Map(weekIntake).set(selectedDate, totalMacros.calories)
+        : weekIntake,
+    [dayHydrated, weekIntake, selectedDate, totalMacros.calories],
   );
 
   // Schedules that fall on the displayed day — but only surface the "log it"

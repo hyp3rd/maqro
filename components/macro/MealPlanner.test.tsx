@@ -13,6 +13,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import MealPlanner from "./MealPlanner";
@@ -253,6 +254,35 @@ describe("MealPlanner as Instrument Today", () => {
     expect(days[2]?.getAttribute("aria-current")).toBe("date");
     fireEvent.click(days[4] as HTMLElement);
     expect(props.onSelectDate).toHaveBeenCalledWith("2026-10-23");
+  });
+
+  it("puts the loaded day's live total on its strip bar", async () => {
+    const props = renderPlanner();
+    const wed = props.week?.days[2]?.targetCalories ?? 0;
+    const week = screen.getByRole("navigation", { name: "Week" });
+    // Settle the (empty) IndexedDB week read: the live total still shows.
+    await waitFor(() =>
+      expect(
+        within(week).getByRole("button", {
+          name: `Wed 21 Oct, today, 1,240 of ${wed.toLocaleString("en")} kcal so far`,
+        }),
+      ).toBeTruthy(),
+    );
+  });
+
+  it("keeps a day that has not loaded yet off the live total", async () => {
+    // Mid date change: `totalMacros` is still the previous day's.
+    const props = renderPlanner({ dayHydrated: false });
+    const wed = props.week?.days[2]?.targetCalories ?? 0;
+    const week = screen.getByRole("navigation", { name: "Week" });
+    await waitFor(() =>
+      expect(
+        within(week).getByRole("button", {
+          name: `Wed 21 Oct, today, target ${wed.toLocaleString("en")} kcal`,
+        }),
+      ).toBeTruthy(),
+    );
+    expect(within(week).queryByRole("button", { name: /1,240/ })).toBeNull();
   });
 
   it("puts the meals on a rail with the next slot highlighted", () => {
