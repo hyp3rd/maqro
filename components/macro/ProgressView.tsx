@@ -1043,15 +1043,9 @@ function EngagementSection({
               {recap.weightDeltaKg !== null && (
                 <>
                   {" · "}
-                  <span
-                    className={
-                      recap.weightDeltaKg < 0
-                        ? "text-emerald-700 dark:text-emerald-400"
-                        : recap.weightDeltaKg > 0
-                          ? "text-amber-700 dark:text-amber-400"
-                          : "text-muted-foreground"
-                    }
-                  >
+                  {/* Stated, never judged: a loss is no success and a gain
+                      no warning (a lean bulk gains on purpose). */}
+                  <span className="text-muted-foreground">
                     {recap.weightDeltaKg < 0
                       ? "↓ "
                       : recap.weightDeltaKg > 0
@@ -1972,14 +1966,6 @@ function Metric({
   units: "metric" | "imperial";
 }) {
   const delta = cm !== undefined && prevCm !== undefined ? cm - prevCm : null;
-  const deltaColor =
-    delta === null
-      ? "text-muted-foreground"
-      : delta < 0
-        ? "text-emerald-600 dark:text-emerald-400"
-        : delta > 0
-          ? "text-amber-600 dark:text-amber-400"
-          : "text-muted-foreground";
   const unitLabel = units === "imperial" ? "in" : "cm";
   const toDisplay = (value: number): number =>
     units === "imperial" ? cmToInches(value) : value;
@@ -1992,9 +1978,9 @@ function Metric({
         {cm !== undefined ? `${toDisplay(cm).toFixed(1)} ${unitLabel}` : "-"}
       </p>
       {delta !== null && (
-        <p
-          className={`mt-0.5 font-mono text-[10px] tabular-nums ${deltaColor}`}
-        >
+        // The direction is stated, in a neutral colour: a smaller waist is
+        // no success and a larger one no warning (wellbeing rule).
+        <p className="mt-0.5 font-mono text-[10px] tabular-nums text-muted-foreground">
           {delta < 0 ? "↓ " : delta > 0 ? "↑ " : ""}
           {Math.abs(toDisplay(delta)).toFixed(1)} {unitLabel} vs prev
         </p>
