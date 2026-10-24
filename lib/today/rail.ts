@@ -2,10 +2,11 @@ import type { Meal } from "@maqro/core/types";
 import type { RelativeDay } from "./timeline";
 
 /** The Today meal rail: one node per meal slot, echoing the timing track.
- *  Slots carry no planned time, so "next" is positional — on today, the
- *  first slot after the last LOGGED one (`RailEntry.next`). A planned
- *  slot isn't logged, so an auto-filled lunch after a logged breakfast is
- *  what is next to log; a slot skipped before a logged one is not.
+ *  On today, "next to log" (`RailEntry.next`) is the first slot that isn't
+ *  LOGGED and is still ahead: a planned one wherever it sits (its food is
+ *  still to log — a planned dinner before an afternoon snack logged in the
+ *  last slot), or an empty one after the last logged slot. An empty slot
+ *  skipped before a logged one is not next.
  *
  *  - `logged`: the slot has food that was logged as eaten (a filled node).
  *  - `planned`: the slot's food is intent, not a record — on today or a
@@ -41,10 +42,12 @@ export function railNodes(
       (when === "past" || m.foods.some((f) => f.loggedAt !== undefined)),
   );
   const lastLogged = logged.lastIndexOf(true);
-  // Every slot after the last logged one is unlogged, so the next is the
-  // one right after it — if the day has one.
   const nextIndex =
-    when === "today" && lastLogged + 1 < meals.length ? lastLogged + 1 : -1;
+    when === "today"
+      ? meals.findIndex(
+          (_, i) => !logged[i] && ((filled[i] ?? false) || i > lastLogged),
+        )
+      : -1;
   return meals.map((_, i) => ({
     node: logged[i] ? "logged" : filled[i] ? "planned" : "open",
     next: i === nextIndex,

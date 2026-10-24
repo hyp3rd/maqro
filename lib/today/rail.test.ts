@@ -106,6 +106,19 @@ describe("railNodes", () => {
     expect(nextIndex(untouched, "today")).toBe(0);
   });
 
+  it("today: a planned slot is next even before a logged one (an afternoon snack)", () => {
+    // The demo's afternoon: breakfast, lunch and a snack logged, dinner
+    // planned. The snack slot sits last, but dinner is still to log.
+    const afternoon = [
+      meal(1, "Breakfast", true),
+      meal(2, "Lunch", true),
+      planned(3, "Dinner"),
+      meal(4, "Snacks", true),
+    ];
+    expect(nextIndex(afternoon, "today")).toBe(2);
+    expect(railNodes(afternoon, "today")[2]?.node).toBe("planned");
+  });
+
   it("a fully auto-filled day reads as planned throughout", () => {
     const plan = day.map((m) => planned(m.id, m.name));
     for (const when of ["today", "future"] as const) {
