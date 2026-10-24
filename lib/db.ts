@@ -1245,10 +1245,11 @@ export async function deleteDayOverride(date: string): Promise<void> {
   notifyDataChanged("trainingDayOverrides");
 }
 
-/** Sync-layer hook: write a server-pulled override row. */
+/** Sync-layer hook: write a server-pulled override row. `day` is stored as
+ *  pulled (`unknown`): readers validate it (`parseTrainingDay`). */
 export async function applyServerDayOverride(
   date: string,
-  day: TrainingDay,
+  day: unknown,
   serverUpdatedAt: string,
 ): Promise<ApplyServerOutcome> {
   return applyServerRecord(

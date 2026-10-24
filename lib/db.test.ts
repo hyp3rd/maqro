@@ -572,9 +572,9 @@ describe("training day overrides", () => {
     await saveDayOverride("2026-10-21", { type: "rest" });
     await saveDayOverride("2026-10-22", { type: "rest" });
     const rows = await listDayOverrides();
-    expect(rows.map((r) => [r.date, r.day.type])).toEqual([
-      ["2026-10-21", "rest"],
-      ["2026-10-22", "rest"],
+    expect(rows.map((r) => [r.date, r.day])).toEqual([
+      ["2026-10-21", { type: "rest" }],
+      ["2026-10-22", { type: "rest" }],
     ]);
   });
 
