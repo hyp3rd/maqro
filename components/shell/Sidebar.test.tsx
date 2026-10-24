@@ -77,6 +77,19 @@ describe("Sidebar", () => {
     expect(first?.className).not.toContain("border-t");
   });
 
+  it("collapsed, the section hairlines are stronger in dark mode", () => {
+    window.localStorage.setItem("maqro:sidebar-collapsed", "1");
+    render(
+      <Sidebar
+        current="plan"
+        onSelect={() => {}}
+      />,
+    );
+    const library = screen.getByRole("group", { name: "Library" });
+    expect(library.className).toContain("border-t");
+    expect(library.className).toContain("dark:border-border");
+  });
+
   it("marks only the current view with aria-current=page", () => {
     render(
       <Sidebar

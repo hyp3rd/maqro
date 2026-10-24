@@ -171,7 +171,8 @@ export function Sidebar({ current, onSelect }: Props) {
       {/* Grouped from the nav registry (./nav.ts). Each section is a
           labelled list; collapsed, the labels give way to a hairline so the
           grouping still reads in the 56 px rail. An unlabelled section after
-          the first is set off by the same hairline. */}
+          the first is set off by the same hairline. In dark mode the 60%
+          border all but vanishes on the near-black rail, so it runs full. */}
       <nav className="flex-1 space-y-3 overflow-y-auto p-2">
         {SIDEBAR_GROUPS.map((group, i) => {
           const headingId = `sidebar-group-${group.id}`;
@@ -183,7 +184,7 @@ export function Sidebar({ current, onSelect }: Props) {
               className={cn(
                 i > 0 &&
                   (collapsed || !group.label) &&
-                  "border-t border-border/60 pt-3",
+                  "border-t border-border/60 pt-3 dark:border-border",
               )}
             >
               {group.label && !collapsed && (
