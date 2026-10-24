@@ -1,5 +1,5 @@
 import type { MicronutrientValues } from "./rda";
-import type { Food, FoodItem, Meal } from "./types";
+import type { Food, FoodItem, Meal, TrainingDay } from "./types";
 
 /** Persisted-record domain types — the shapes stored locally (IndexedDB) and
  *  synced to Supabase. Pure types, shared with the native app; the web storage
@@ -183,5 +183,17 @@ export type SupplementIntakeEntry = {
 export type SupplementIntake = {
   date: string;
   taken: SupplementIntakeEntry[];
+  recordedAt: number;
+} & Versioned;
+
+/** The user's session for ONE calendar day, replacing that weekday's entry
+ *  in the training template ("today is a rest day", "moved legs to
+ *  Thursday"). Keyed by `YYYY-MM-DD` local date; one row per day,
+ *  last-write-wins; deleting it ("back to plan") restores the template day.
+ *  FREE. `day` is stored as written: readers validate it with
+ *  `parseTrainingDay` and ignore a malformed row (`targetsForDate`). */
+export type TrainingDayOverride = {
+  date: string;
+  day: TrainingDay;
   recordedAt: number;
 } & Versioned;

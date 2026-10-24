@@ -7,6 +7,7 @@ import {
   listBodyMeasurements,
   listCustomFoods,
   listDailyLogs,
+  listDayOverrides,
   listMealTemplates,
   listRecipes,
   listWaterIntake,
@@ -16,6 +17,7 @@ import {
   type CustomFood,
   type DailyLog,
   type MealTemplate,
+  type TrainingDayOverride,
   type WaterIntake,
   type WeightEntry,
 } from "@/lib/db";
@@ -29,8 +31,10 @@ import {
  *        absent).
  *  - v3: adds `bodyMeasurements`, `waterIntake`, `bloodPressure` so a backup
  *        is a complete copy of the user's health data. Older bundles import
- *        fine (the new stores are treated as absent). */
-export const EXPORT_VERSION = 3;
+ *        fine (the new stores are treated as absent).
+ *  - v4: adds `trainingDayOverrides` (per-date training sessions). Older
+ *        bundles import fine (no overrides). */
+export const EXPORT_VERSION = 4;
 
 export type ExportBundle = {
   version: typeof EXPORT_VERSION;
@@ -46,6 +50,7 @@ export type ExportBundle = {
     customFoods: CustomFood[];
     mealTemplates: MealTemplate[];
     recipes: Recipe[];
+    trainingDayOverrides: TrainingDayOverride[];
   };
 };
 
@@ -62,6 +67,7 @@ export type ExportPhase =
   | "customFoods"
   | "mealTemplates"
   | "recipes"
+  | "trainingDayOverrides"
   | "done";
 
 export type ExportProgress = {
@@ -82,6 +88,7 @@ const EXPORT_PHASES: readonly Exclude<ExportPhase, "done">[] = [
   "customFoods",
   "mealTemplates",
   "recipes",
+  "trainingDayOverrides",
 ];
 
 /** Map the `phase` to a step index (0–5) and total (6). Convenience for
@@ -166,6 +173,15 @@ export async function buildExport(
   emit("recipes", 0, 0);
   const recipes = await listRecipes();
   emit("recipes", recipes.length, recipes.length);
+  await yieldToEventLoop();
+
+  emit("trainingDayOverrides", 0, 0);
+  const trainingDayOverrides = await listDayOverrides();
+  emit(
+    "trainingDayOverrides",
+    trainingDayOverrides.length,
+    trainingDayOverrides.length,
+  );
 
   const bundle: ExportBundle = {
     version: EXPORT_VERSION,
@@ -181,6 +197,7 @@ export async function buildExport(
       customFoods,
       mealTemplates,
       recipes,
+      trainingDayOverrides,
     },
   };
   emit("done", 0, 0);

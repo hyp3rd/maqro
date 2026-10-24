@@ -551,6 +551,96 @@ describe("body measurements", () => {
   });
 });
 
+describe("training day overrides", () => {
+  const LEGS = { type: "lower", intensity: "hard", durationMin: 75 } as const;
+
+  it("round-trips a session through save + get, keyed by date", async () => {
+    const { saveDayOverride, getDayOverride } = await freshDb();
+    await saveDayOverride("2026-10-22", LEGS);
+    const row = await getDayOverride("2026-10-22");
+    expect(row?.date).toBe("2026-10-22");
+    expect(row?.day).toEqual(LEGS);
+    expect(typeof row?.recordedAt).toBe("number");
+    // A local write is dirty until the next push acknowledges it.
+    expect(row?.serverUpdatedAt).toBeNull();
+    expect(await getDayOverride("2026-10-23")).toBeNull();
+  });
+
+  it("overwrites on same-day save and lists oldest first", async () => {
+    const { saveDayOverride, listDayOverrides } = await freshDb();
+    await saveDayOverride("2026-10-22", LEGS);
+    await saveDayOverride("2026-10-21", { type: "rest" });
+    await saveDayOverride("2026-10-22", { type: "rest" });
+    const rows = await listDayOverrides();
+    expect(rows.map((r) => [r.date, r.day.type])).toEqual([
+      ["2026-10-21", "rest"],
+      ["2026-10-22", "rest"],
+    ]);
+  });
+
+  it("back to plan deletes the row and leaves a tombstone for the sync", async () => {
+    const {
+      saveDayOverride,
+      deleteDayOverride,
+      listDayOverrides,
+      listDeletions,
+    } = await freshDb();
+    await saveDayOverride("2026-10-22", LEGS);
+    await deleteDayOverride("2026-10-22");
+    expect(await listDayOverrides()).toHaveLength(0);
+    expect((await listDeletions()).map((t) => [t.storeName, t.rowKey])).toEqual(
+      [["trainingDayOverrides", "2026-10-22"]],
+    );
+  });
+
+  // Every target reads overrides through the data bus (`useDayOverrides`),
+  // so a local change must reach them without a reload.
+  it("saving or deleting an override bumps the trainingDayOverrides rev", async () => {
+    const { saveDayOverride, deleteDayOverride } = await freshDb();
+    const { getDataVersion } = await import("./sync/data-bus");
+    expect(getDataVersion("trainingDayOverrides")).toBe(0);
+    await saveDayOverride("2026-10-22", LEGS);
+    expect(getDataVersion("trainingDayOverrides")).toBe(1);
+    await deleteDayOverride("2026-10-22");
+    expect(getDataVersion("trainingDayOverrides")).toBe(2);
+  });
+
+  it("a server row lands clean and is not re-pushed; a pending tombstone blocks it", async () => {
+    const db = await freshDb();
+    const at = "2026-10-22T08:00:00.000+00:00";
+    expect(await db.applyServerDayOverride("2026-10-22", LEGS, at)).toBe(
+      "applied",
+    );
+    const row = await db.getDayOverride("2026-10-22");
+    expect(row?.day).toEqual(LEGS);
+    expect(row?.localUpdatedAt).toBe(at);
+    expect(row?.serverUpdatedAt).toBe(at);
+
+    await db.deleteDayOverride("2026-10-22");
+    expect(
+      await db.applyServerDayOverride(
+        "2026-10-22",
+        LEGS,
+        "2026-10-22T09:00:00.000+00:00",
+      ),
+    ).toBe("tombstoned");
+    expect(await db.getDayOverride("2026-10-22")).toBeNull();
+  });
+
+  it("clearAllStores and the demo clear both drop overrides", async () => {
+    const db = await freshDb();
+    await db.saveDayOverride("2026-10-22", LEGS);
+    await db.clearAllStores();
+    expect(await db.listDayOverrides()).toHaveLength(0);
+
+    // An override made while exploring the sample profile's training week
+    // is demo data: it must not reach the account signed in next.
+    await db.saveDayOverride("2026-10-22", LEGS);
+    await db.clearDemoSeededStores();
+    expect(await db.listDayOverrides()).toHaveLength(0);
+  });
+});
+
 describe("clearAllStores", () => {
   beforeEach(async () => {
     await freshDb();

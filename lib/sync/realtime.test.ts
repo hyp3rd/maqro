@@ -23,6 +23,7 @@ vi.mock("@/lib/db", () => ({
   applyServerCustomFood: vi.fn().mockResolvedValue("applied"),
   applyServerMealTemplate: vi.fn().mockResolvedValue("applied"),
   applyServerRecipe: vi.fn().mockResolvedValue("applied"),
+  applyServerDayOverride: vi.fn().mockResolvedValue("applied"),
   deleteDailyLog: vi.fn(),
   deleteWeightEntry: vi.fn(),
   // Pass A: realtime DELETE handler now uses applyServerDeletion
@@ -109,6 +110,7 @@ describe("startRealtimeSubscription — channel wiring", () => {
       "profiles",
       "recipes",
       "supplement_intake",
+      "training_day_overrides",
       "water_intake",
       "weight_history",
     ]);
@@ -122,10 +124,10 @@ describe("startRealtimeSubscription — channel wiring", () => {
   it("unsubscribe removes every channel", () => {
     const { sb, channels, getRemoveCalls } = makeFakeSupabase();
     const handle = startRealtimeSubscription(sb, USER_ID);
-    expect(channels).toHaveLength(13);
+    expect(channels).toHaveLength(14);
 
     handle.unsubscribe();
-    expect(getRemoveCalls()).toBe(13);
+    expect(getRemoveCalls()).toBe(14);
   });
 });
 
@@ -362,6 +364,62 @@ describe("startRealtimeSubscription — payload dispatch", () => {
       "dailyLogs",
       "2026-05-16",
     );
+  });
+
+  it("applies a peer's training-day override and its back-to-plan DELETE (owner-checked)", async () => {
+    const { sb, channels } = makeFakeSupabase();
+    startRealtimeSubscription(sb, USER_ID);
+    const ch = channels.find((c) => c.table === "training_day_overrides");
+    if (!ch) throw new Error("missing training_day_overrides channel");
+    const busCb = vi.fn();
+    const unsub = subscribeDataChanged("trainingDayOverrides", busCb);
+
+    ch.onCallback({
+      eventType: "INSERT",
+      new: {
+        user_id: USER_ID,
+        date: "2026-10-22",
+        day: { type: "rest" },
+        recorded_at: "2026-10-22T07:00:00Z",
+        updated_at: "2026-10-22T07:00:01Z",
+      },
+      old: {},
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(vi.mocked(db.applyServerDayOverride)).toHaveBeenCalledWith(
+      "2026-10-22",
+      { type: "rest" },
+      "2026-10-22T07:00:01Z",
+    );
+    expect(busCb).toHaveBeenCalledTimes(1);
+
+    // Another user's back-to-plan for the same date must not touch ours.
+    ch.onCallback({
+      eventType: "DELETE",
+      new: {},
+      old: {
+        user_id: "22222222-2222-4222-8222-222222222222",
+        date: "2026-10-22",
+      },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(vi.mocked(db.applyServerDeletion)).not.toHaveBeenCalled();
+
+    ch.onCallback({
+      eventType: "DELETE",
+      new: {},
+      old: { user_id: USER_ID, date: "2026-10-22" },
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(vi.mocked(db.applyServerDeletion)).toHaveBeenCalledWith(
+      "trainingDayOverrides",
+      "2026-10-22",
+    );
+    expect(busCb).toHaveBeenCalledTimes(2);
+    unsub();
   });
 
   it("does not apply a server placeholder profile ({} payload) over the local one", async () => {

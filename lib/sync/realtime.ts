@@ -12,6 +12,7 @@ import {
   applyServerProfile,
   applyServerRecipe,
   applyServerSupplementIntake,
+  applyServerDayOverride,
   applyServerWaterIntake,
   applyServerWeightEntry,
   applyServerDeletion,
@@ -36,6 +37,7 @@ import {
   profileFromRow,
   recipeFromRow,
   supplementIntakeFromRow,
+  trainingDayOverrideFromRow,
   waterFromRow,
   weightFromRow,
   type CustomFoodRow,
@@ -49,6 +51,7 @@ import {
   type ProfileRow,
   type RecipeRow,
   type SupplementIntakeRow,
+  type TrainingDayOverrideRow,
   type WaterRow,
   type WeightRow,
 } from "./mappers";
@@ -151,6 +154,22 @@ export function startRealtimeSubscription(
         "postgres_changes",
         { event: "*", schema: "public", table: "supplement_intake", filter },
         run(userId, handleSupplementIntake),
+      )
+      .subscribe(buildSubscribeHandler()),
+  );
+
+  channels.push(
+    supabase
+      .channel("sync-training-day-overrides")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "training_day_overrides",
+          filter,
+        },
+        run(userId, handleDayOverride),
       )
       .subscribe(buildSubscribeHandler()),
   );
@@ -375,6 +394,26 @@ async function handleSupplementIntake(payload: LoosePayload) {
   }
 }
 
+async function handleDayOverride(payload: LoosePayload, userId: string) {
+  // Unlike the other date-keyed day rows, an override IS user-deleted
+  // ("back to plan"), so another device's DELETE must land here — through
+  // the owner check (`OWNER_KEYED_STORES`): the date alone is shared across
+  // users.
+  if (payload.eventType === "DELETE") {
+    await handleDeletion(payload, userId, "trainingDayOverrides", "date");
+    return;
+  }
+  const row = newRow<TrainingDayOverrideRow>(payload);
+  if (!row) return;
+  const entry = trainingDayOverrideFromRow(row);
+  if (
+    (await applyServerDayOverride(entry.date, entry.day, row.updated_at)) ===
+    "applied"
+  ) {
+    notifyDataChanged("trainingDayOverrides");
+  }
+}
+
 async function handleCustomFood(payload: LoosePayload, userId: string) {
   if (payload.eventType === "DELETE") {
     await handleDeletion(payload, userId, "customFoods", "id");
@@ -523,6 +562,7 @@ async function handleMicronutrientProfile(payload: LoosePayload) {
 const OWNER_KEYED_STORES: ReadonlySet<DeletableStore> = new Set([
   "dailyLogs",
   "weightHistory",
+  "trainingDayOverrides",
   "favoriteStores",
 ]);
 

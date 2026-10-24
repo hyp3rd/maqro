@@ -23,13 +23,15 @@ import type {
   SupplementIntake,
   SupplementIntakeEntry,
   SupplementSchedule,
+  TrainingDayOverride,
   Versioned,
   WaterIntake,
   WeightEntry,
 } from "@maqro/core/records";
+import type { TrainingDay } from "@maqro/core/types";
 
 const DB_NAME = "maqro";
-const DB_VERSION = 21;
+const DB_VERSION = 22;
 
 const STORE_CUSTOM_FOODS = "customFoods";
 const STORE_PROFILE = "profile";
@@ -44,6 +46,9 @@ const STORE_RECIPES = "recipes";
 const STORE_MEAL_SCHEDULES = "mealSchedules";
 const STORE_SUPPLEMENTS = "supplements";
 const STORE_SUPPLEMENT_INTAKE = "supplementIntake";
+/** Per-date training-session overrides (`training_day_overrides`): one
+ *  last-write-wins row per day, deletable ("back to plan"). */
+const STORE_TRAINING_DAY_OVERRIDES = "trainingDayOverrides";
 const STORE_PANTRY_ITEMS = "pantryItems";
 const STORE_PANTRY_NOTIFICATIONS = "pantryNotifications";
 const STORE_FAVORITE_STORES = "favoriteStores";
@@ -106,6 +111,7 @@ export type {
   SupplementIntake,
   SupplementIntakeEntry,
   SupplementSchedule,
+  TrainingDayOverride,
   Versioned,
   WaterIntake,
   WeightEntry,
@@ -125,6 +131,7 @@ export type DeletableStore =
   | "bodyMeasurements"
   | "bloodPressure"
   | "fastSessions"
+  | "trainingDayOverrides"
   | "pantryItems"
   | "pantryNotifications"
   | "favoriteStores"
@@ -301,6 +308,7 @@ interface MacroDB extends DBSchema {
   [STORE_WEIGHT_HISTORY]: { key: string; value: WeightEntry };
   [STORE_WATER_INTAKE]: { key: string; value: WaterIntake };
   [STORE_SUPPLEMENT_INTAKE]: { key: string; value: SupplementIntake };
+  [STORE_TRAINING_DAY_OVERRIDES]: { key: string; value: TrainingDayOverride };
   [STORE_BODY_MEASUREMENTS]: { key: string; value: BodyMeasurement };
   [STORE_BLOOD_PRESSURE]: { key: string; value: BloodPressure };
   [STORE_FAST_SESSIONS]: { key: string; value: FastSession };
@@ -578,6 +586,12 @@ function getDB(): Promise<IDBPDatabase<MacroDB>> {
         db.createObjectStore(STORE_SUPPLEMENTS, { keyPath: "id" });
         db.createObjectStore(STORE_SUPPLEMENT_INTAKE, { keyPath: "date" });
       }
+      // v21 → v22: trainingDayOverrides store. Additive — `date`-keyed like
+      // supplementIntake (one last-write-wins row per day), but deletable
+      // ("back to plan"), so deletes leave tombstones like weightHistory.
+      if (oldVersion < 22) {
+        db.createObjectStore(STORE_TRAINING_DAY_OVERRIDES, { keyPath: "date" });
+      }
     },
   });
   return dbPromise;
@@ -760,7 +774,9 @@ export async function isProfileMarkedAsDemo(): Promise<boolean> {
 }
 
 /** Wipe only the IDB stores the demo seed actually populates
- *  (`profile` / `dailyLogs` / `weightHistory`). Pantry items, recipes,
+ *  (`profile` / `dailyLogs` / `weightHistory`, …) or that only make sense
+ *  against the sample profile (session overrides of its training week).
+ *  Pantry items, recipes,
  *  custom foods, templates, favourites etc. the user added in guest
  *  mode are deliberately preserved — they aren't demo data. Used by
  *  `clearDemoModeData` before the first post-sign-in sync. */
@@ -778,6 +794,9 @@ export async function clearDemoSeededStores(): Promise<void> {
       // the demo→real transition and the user would see their demo
       // shopping-list preferences on their real account.
       STORE_SHOPPING_LIST_META,
+      // Session overrides change days of the sample profile's training
+      // week: they belong to the demo plan, not to the account signing in.
+      STORE_TRAINING_DAY_OVERRIDES,
     ],
     "readwrite",
   );
@@ -787,6 +806,7 @@ export async function clearDemoSeededStores(): Promise<void> {
     tx.objectStore(STORE_WEIGHT_HISTORY).clear(),
     tx.objectStore(STORE_WATER_INTAKE).clear(),
     tx.objectStore(STORE_SHOPPING_LIST_META).clear(),
+    tx.objectStore(STORE_TRAINING_DAY_OVERRIDES).clear(),
     tx.done,
   ]);
 }
@@ -1158,6 +1178,71 @@ export async function getSupplementIntake(
 export async function listSupplementIntake(): Promise<SupplementIntake[]> {
   const db = await getDB();
   const rows = await db.getAll(STORE_SUPPLEMENT_INTAKE);
+  return rows.sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
+// ─── Training day overrides ────────────────────────────────────────────────
+
+/** Replace `date`'s template session with `day` — one row per day,
+ *  last-write-wins. Preserves the row's `serverUpdatedAt` so the push knows
+ *  the right base version, and wakes the data bus: every target on screen
+ *  reads overrides through it (`useDayOverrides`). */
+export async function saveDayOverride(
+  date: string,
+  day: TrainingDay,
+): Promise<void> {
+  await saveLocalRecord(STORE_TRAINING_DAY_OVERRIDES, date, (existing) => ({
+    date,
+    day,
+    recordedAt: Date.now(),
+    localUpdatedAt: nowIso(),
+    serverUpdatedAt: existing?.serverUpdatedAt ?? null,
+  }));
+  notifyDataChanged("trainingDayOverrides");
+}
+
+/** "Back to plan": drop `date`'s override, leaving a tombstone so the sync
+ *  deletes the server row too (otherwise the next pull would bring it
+ *  back). */
+export async function deleteDayOverride(date: string): Promise<void> {
+  const db = await getDB();
+  await db.delete(STORE_TRAINING_DAY_OVERRIDES, date);
+  await recordDeletion("trainingDayOverrides", date);
+  notifyDataChanged("trainingDayOverrides");
+}
+
+/** Sync-layer hook: write a server-pulled override row. */
+export async function applyServerDayOverride(
+  date: string,
+  day: TrainingDay,
+  serverUpdatedAt: string,
+): Promise<ApplyServerOutcome> {
+  return applyServerRecord(
+    STORE_TRAINING_DAY_OVERRIDES,
+    date,
+    {
+      date,
+      day,
+      recordedAt: Date.parse(serverUpdatedAt) || Date.now(),
+      localUpdatedAt: serverUpdatedAt,
+      serverUpdatedAt,
+    },
+    "trainingDayOverrides",
+  );
+}
+
+export async function getDayOverride(
+  date: string,
+): Promise<TrainingDayOverride | null> {
+  const db = await getDB();
+  const row = await db.get(STORE_TRAINING_DAY_OVERRIDES, date);
+  return row ?? null;
+}
+
+/** Every override on this device, oldest first. */
+export async function listDayOverrides(): Promise<TrainingDayOverride[]> {
+  const db = await getDB();
+  const rows = await db.getAll(STORE_TRAINING_DAY_OVERRIDES);
   return rows.sort((a, b) => (a.date < b.date ? -1 : 1));
 }
 
@@ -2066,6 +2151,7 @@ type VersionedStore =
   | typeof STORE_WEIGHT_HISTORY
   | typeof STORE_WATER_INTAKE
   | typeof STORE_SUPPLEMENT_INTAKE
+  | typeof STORE_TRAINING_DAY_OVERRIDES
   | typeof STORE_BODY_MEASUREMENTS
   | typeof STORE_BLOOD_PRESSURE
   | typeof STORE_FAST_SESSIONS
