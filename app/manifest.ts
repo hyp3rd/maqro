@@ -11,7 +11,7 @@ import type { MetadataRoute } from "next";
  *  already defined in [layout.tsx](./layout.tsx) instead. */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Maqro Calculator",
+    name: "Maqro",
     short_name: "Maqro",
     description:
       "Private macro calculator, meal planner, and progress tracker.",
