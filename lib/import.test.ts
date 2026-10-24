@@ -285,6 +285,43 @@ describe("importBundle - happy path round-trips", () => {
     });
   });
 
+  it("plans a pulled override in jsonb key order as unchanged", async () => {
+    const db = await freshDb();
+    const { planImport } = await import("./import");
+    // Postgres jsonb stores keys shortest first, so a pulled row's `day`
+    // comes back in a different order than the canonical one.
+    await db.applyServerDayOverride(
+      "2026-10-22",
+      { time: "07:30", type: "lower", intensity: "hard", durationMin: 75 },
+      "2026-10-22T08:00:00.000+00:00",
+    );
+
+    const plan = await planImport({
+      version: 4,
+      data: {
+        trainingDayOverrides: [
+          {
+            date: "2026-10-22",
+            day: {
+              type: "lower",
+              intensity: "hard",
+              time: "07:30",
+              durationMin: 75,
+            },
+            recordedAt: 1,
+          },
+        ],
+      },
+    });
+
+    expect(plan.tables.trainingDayOverrides).toEqual({
+      new: 0,
+      updated: 0,
+      unchanged: 1,
+      skipped: 0,
+    });
+  });
+
   it("plans a changed override as updated and a new date as new", async () => {
     const db = await freshDb();
     const { planImport } = await import("./import");

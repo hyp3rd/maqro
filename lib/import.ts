@@ -474,7 +474,10 @@ export async function planImport(raw: unknown): Promise<ImportPlan> {
     async (row) => {
       const local = await getDayOverride(row.date);
       if (!local) return null;
-      return eq(local.day, parseTrainingDay(row.day));
+      // Both sides through the parser: a row pulled from the server holds
+      // its `day` in jsonb key order, which `eq`'s JSON.stringify would
+      // read as a change against the canonical order of the backup's row.
+      return eq(parseTrainingDay(local.day), parseTrainingDay(row.day));
     },
   );
 
