@@ -779,6 +779,8 @@ export async function isProfileMarkedAsDemo(): Promise<boolean> {
  *  would delete that account's real row for the same date. The wipe drops
  *  those tombstones with the rows. */
 const DEMO_WIPED_DELETABLE_STORES: readonly DeletableStore[] = [
+  "dailyLogs",
+  "weightHistory",
   "trainingDayOverrides",
 ];
 

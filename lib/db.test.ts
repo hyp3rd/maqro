@@ -665,6 +665,22 @@ describe("training day overrides", () => {
   });
 });
 
+describe("clearDemoSeededStores", () => {
+  it("drops the tombstones of demo log and weight deletes", async () => {
+    const db = await freshDb();
+    await db.saveDailyLog("2026-10-22", SAMPLE_MEALS);
+    await db.deleteDailyLog("2026-10-22");
+    await db.saveWeightEntry("2026-10-22", 70);
+    await db.deleteWeightEntry("2026-10-22");
+
+    await db.clearDemoSeededStores();
+
+    // Replayed after sign-in, these would delete the account's real log
+    // and weigh-in for that date.
+    expect(await db.listDeletions()).toEqual([]);
+  });
+});
+
 describe("clearAllStores", () => {
   beforeEach(async () => {
     await freshDb();

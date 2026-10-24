@@ -1170,6 +1170,38 @@ describe("signing in after exploring the sample data", () => {
     ).toEqual({ type: "rest" });
     expect((await db.getDayOverride(DAY))?.day).toEqual({ type: "rest" });
   });
+
+  it("deleting a sample log or weigh-in never deletes the account's", async () => {
+    const { db, sync, server, sb } = env;
+    server.seed("daily_logs", {
+      user_id: USER_ID,
+      date: DAY,
+      meals: meals("eggs"),
+    });
+    server.seed("weight_history", { user_id: USER_ID, date: DAY, kg: 80 });
+    const { getDemoProfile } = await import("@/lib/demo-data");
+    await db.saveDemoProfile(getDemoProfile());
+    await db.saveDailyLog(DAY, meals("sample"));
+    await db.deleteDailyLog(DAY);
+    await db.saveWeightEntry(DAY, 68);
+    await db.deleteWeightEntry(DAY);
+
+    const { clearDemoModeData } = await import("@/lib/demo-data");
+    await clearDemoModeData();
+    const result = await sync.triggerSync(sb, USER_ID);
+
+    expect(result?.deletionsPushed).toBe(0);
+    expect(
+      mealNames(
+        server.find("daily_logs", { user_id: USER_ID, date: DAY }) as {
+          meals: Meal[];
+        },
+      ),
+    ).toEqual(["eggs"]);
+    expect(
+      server.find("weight_history", { user_id: USER_ID, date: DAY })?.kg,
+    ).toBe(80);
+  });
 });
 
 describe("error isolation", () => {
