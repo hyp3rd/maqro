@@ -31,12 +31,13 @@ describe("DayTypeChip", () => {
 
   it("names the selected day's session and its start, read-only by default", () => {
     render(<DayTypeChip training={LOWER} />);
-    expect(screen.getByText("Lower · heavy day")).toBeTruthy();
+    // The start time explains the workout block on the day's timeline.
+    expect(screen.getByText("Lower · heavy day · 18:00")).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull();
     expect(screen.queryByText("· changed")).toBeNull();
     expect(
       screen
-        .getByText("Lower · heavy day")
+        .getByText("Lower · heavy day · 18:00")
         .closest("[title]")
         ?.getAttribute("title"),
     ).toBe("Lower, heavy day, 18:00, 75\u00a0min");
