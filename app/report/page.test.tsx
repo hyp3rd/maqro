@@ -271,7 +271,7 @@ describe("/report body fat", () => {
     expect(bodyFat?.sub).toContain(`from ${from}`);
   });
 
-  it("with nothing measured in the window, shows the older reading the targets use, with its date", async () => {
+  it("with nothing measured in the window, shows the older reading, with its date", async () => {
     data.query = "sections=summary,body,calories&days=30";
     // The only complete reading predates the 30-day window.
     data.measurements = [measurement("2026-04-01", 88, 38)];
@@ -296,11 +296,46 @@ describe("/report body fat", () => {
     expect(section.textContent).toContain(`Latest reading (${from})`);
     expect(section.textContent).toContain("88.0 cm");
     expect(section.textContent).toContain(value);
+    // Training is off (the default), so the targets read no body fat: the
+    // line must not claim they use this reading.
+    expect(section.textContent).not.toContain("your targets use");
     const bodyFat = model.body.stats.find((s) => s.label === "Body fat");
     expect(bodyFat?.value).toBe(value);
     expect(bodyFat?.sub).toContain(`from ${from}`);
     const waist = model.body.stats.find((s) => s.label === "Waist");
     expect(waist?.value).toBe("88.0 cm");
+  });
+
+  it("with a training week on, says the targets use that older reading", async () => {
+    data.query = "sections=summary,body,calories&days=30";
+    data.profile = {
+      ...PROFILE,
+      training: {
+        enabled: true,
+        cycling: "modest",
+        days: [
+          { type: "rest" },
+          { type: "upper", intensity: "moderate" },
+          { type: "rest" },
+          { type: "lower", intensity: "hard" },
+          { type: "rest" },
+          { type: "fullBody", intensity: "moderate" },
+          { type: "rest" },
+        ],
+      },
+    };
+    data.measurements = [measurement("2026-04-01", 88, 38)];
+    const from = new Date(2026, 3, 1).toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+    });
+
+    await downloadedModel();
+    const section = screen.getByRole("heading", { name: "Body composition" })
+      .parentElement as HTMLElement;
+    expect(section.textContent).toContain(
+      `Latest reading (${from}), which your targets use.`,
+    );
   });
 
   it("with no usable reading anywhere, says nothing was measured in the window", async () => {

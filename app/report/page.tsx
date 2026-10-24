@@ -84,6 +84,7 @@ import {
   type TargetContext,
   dayOverrideResolver,
   targetsForDate,
+  targetsUseBodyFat,
 } from "@maqro/core/targets";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -1365,6 +1366,9 @@ function BodySection({
     cm === undefined
       ? "—"
       : `${(units === "imperial" ? cmToInches(cm) : cm).toFixed(1)} ${cmUnitLabel}`;
+  // Only an enabled training schedule's protein reads the estimate; without
+  // one the targets don't use any reading, so the line must not claim they do.
+  const readByTargets = profile !== null && targetsUseBodyFat(profile);
   return (
     <ReportSection title="Body composition">
       <p className="mb-2 text-[11px] text-muted-foreground">
@@ -1375,7 +1379,7 @@ function BodySection({
         <span className="whitespace-nowrap">
           ({shortDateLabel(latest.date)})
         </span>
-        {inWindow ? "" : ", which your targets use."}
+        {inWindow ? "" : readByTargets ? ", which your targets use." : "."}
       </p>
       <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
         <Stat
