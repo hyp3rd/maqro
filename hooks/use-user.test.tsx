@@ -454,6 +454,24 @@ describe("useUser — SIGNED_IN from storage is still checked with the server", 
     error: new AuthApiError("User is banned", 403, "user_banned"),
   };
 
+  /** A banned user's cold start, then a tab focus re-delivers the refused
+   *  session while the server can't be reached: the re-check falls back to
+   *  the stored session (getSession() still returns it offline), so the
+   *  session stays hidden and unverified. Two getUser calls so far. */
+  async function startRefusedOffline() {
+    const started = await startWith(SESSION);
+    await act(async () => started.releaseGetUser(bannedGetUser));
+    await waitFor(() => expect(started.result.current.isLoaded).toBe(true));
+    started.answerGetUserWith(offlineGetUser);
+    started.emit("SIGNED_IN", SESSION);
+    await waitFor(() => expect(started.getUser).toHaveBeenCalledTimes(2));
+    await act(async () => {});
+    expect(started.result.current.user).toBeNull();
+    expect(started.result.current.localUserId).toBeNull();
+    expect(readLastKnownUserId()).toBeNull();
+    return started;
+  }
+
   it("a rejected session ends signed out and forgotten although SIGNED_IN came first", async () => {
     writeLastKnownUserId("u1");
     const { result, releaseGetUser, emit, getUser } = await startWith(SESSION);
@@ -551,27 +569,10 @@ describe("useUser — SIGNED_IN from storage is still checked with the server", 
   });
 
   it("a refused session that can't be checked offline stays hidden", async () => {
-    const {
-      result,
-      releaseGetUser,
-      emit,
-      answerGetUserWith,
-      holdGetUser,
-      getUser,
-    } = await startWith(SESSION);
-    await act(async () => releaseGetUser(bannedGetUser));
-    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+    const { result, emit, answerGetUserWith, holdGetUser, getUser } =
+      await startRefusedOffline();
 
-    // getSession() still returns the stored (refused) session offline.
-    answerGetUserWith(offlineGetUser);
-    emit("SIGNED_IN", SESSION);
-    await waitFor(() => expect(getUser).toHaveBeenCalledTimes(2));
-    await act(async () => {});
-    expect(result.current.user).toBeNull();
-    expect(result.current.localUserId).toBeNull();
-    expect(readLastKnownUserId()).toBeNull();
-
-    // … and is checked again once that could succeed.
+    // It stays hidden, and is checked again once that could succeed.
     answerGetUserWith(bannedGetUser);
     await goOnline();
     expect(getUser).toHaveBeenCalledTimes(3);
@@ -590,22 +591,81 @@ describe("useUser — SIGNED_IN from storage is still checked with the server", 
     expect(readLastKnownUserId()).toBeNull();
   });
 
-  it("the re-check of a hidden refused session asks about that session, not about whoever signs in next", async () => {
-    const {
-      result,
-      releaseGetUser,
-      emit,
-      answerGetUserWith,
-      holdGetUser,
-      getUser,
-    } = await startWith(SESSION);
-    await act(async () => releaseGetUser(bannedGetUser));
-    await waitFor(() => expect(result.current.isLoaded).toBe(true));
-    answerGetUserWith(offlineGetUser);
+  /** The real order on tab focus: the hook's visibilitychange handler runs
+   *  first and starts the re-check, while auth-js's `_onVisibilityChanged`
+   *  awaits `initializePromise` and its lock before `_recoverAndRefresh`
+   *  emits SIGNED_IN — so that SIGNED_IN lands while the re-check is in
+   *  flight, and is left to it. */
+  it("a refused session re-delivered on tab focus during the re-check stays hidden and is not asked about twice", async () => {
+    const { result, emit, holdGetUser, getUser } = await startRefusedOffline();
+
+    const answer = holdGetUser();
+    await becomeVisible();
+    expect(getUser).toHaveBeenCalledTimes(3);
     emit("SIGNED_IN", SESSION);
-    await waitFor(() => expect(getUser).toHaveBeenCalledTimes(2));
-    await act(async () => {});
+    expect(getUser).toHaveBeenCalledTimes(3);
     expect(result.current.user).toBeNull();
+    expect(result.current.localUserId).toBeNull();
+    expect(readLastKnownUserId()).toBeNull();
+
+    await answer(bannedGetUser);
+    expect(result.current.user).toBeNull();
+    expect(result.current.localUserId).toBeNull();
+    expect(readLastKnownUserId()).toBeNull();
+    expect(getUser).toHaveBeenCalledTimes(3);
+  });
+
+  it("a refused session re-delivered while an 'online' re-check is in flight stays hidden, also when the tab then becomes visible", async () => {
+    const { result, emit, holdGetUser, getUser } = await startRefusedOffline();
+
+    const answer = holdGetUser();
+    await goOnline();
+    expect(getUser).toHaveBeenCalledTimes(3);
+    emit("SIGNED_IN", SESSION);
+    await becomeVisible();
+    expect(getUser).toHaveBeenCalledTimes(3);
+    expect(result.current.user).toBeNull();
+    expect(result.current.localUserId).toBeNull();
+    expect(readLastKnownUserId()).toBeNull();
+
+    await answer(bannedGetUser);
+    expect(result.current.user).toBeNull();
+    expect(readLastKnownUserId()).toBeNull();
+    expect(getUser).toHaveBeenCalledTimes(3);
+  });
+
+  it("after a thrown check, a refusal of the session SIGNED_IN delivered keeps it hidden on the next tab focus", async () => {
+    const { result, failGetUser, emit, holdGetUser, getUser } =
+      await startWith(SESSION);
+    await act(async () => failGetUser(new Error("storage failed")));
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+    expect(result.current.user).toBeNull();
+
+    // The re-check holds no identity to ask about; auth-js's SIGNED_IN then
+    // names the session it asks about, shown provisionally meanwhile.
+    const refusal = holdGetUser();
+    await becomeVisible();
+    expect(getUser).toHaveBeenCalledTimes(2);
+    emit("SIGNED_IN", SESSION);
+    expect(getUser).toHaveBeenCalledTimes(2);
+    expect(result.current.user).toBe(USER);
+    await refusal(bannedGetUser);
+    expect(result.current.user).toBeNull();
+
+    // That refusal is bound to u1's session: re-delivered, it stays hidden
+    // while it is checked again.
+    const answer = holdGetUser();
+    emit("SIGNED_IN", SESSION);
+    expect(getUser).toHaveBeenCalledTimes(3);
+    expect(result.current.user).toBeNull();
+    expect(result.current.localUserId).toBeNull();
+    await answer(bannedGetUser);
+    expect(result.current.user).toBeNull();
+    expect(readLastKnownUserId()).toBeNull();
+  });
+
+  it("the re-check of a hidden refused session asks about that session, not about whoever signs in next", async () => {
+    const { result, emit, holdGetUser, getUser } = await startRefusedOffline();
 
     // Back online, the hidden u1 session is checked again; meanwhile
     // another tab signs in as u2. That is another session than the one
