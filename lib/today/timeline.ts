@@ -187,15 +187,18 @@ export function labelAnchor(minutes: number): "start" | "middle" | "end" {
   return "middle";
 }
 
-/** What the track shows, in words — its accessible name. */
+/** What the track shows, in words — its accessible name. `formatKcal`
+ *  prints a kcal figure for the app locale, as the track's labels do. */
 export function timelineSummary(input: {
   ticks: readonly MealTick[];
   spans: readonly TimelineSpan[];
   nowMinute: number | null;
+  formatKcal: (kcal: number) => string;
 }): string {
   const parts = [
     ...input.ticks.map(
-      (t) => `${t.name} at ${formatClock(t.minutes)}, ${t.kcal} kcal.`,
+      (t) =>
+        `${t.name} at ${formatClock(t.minutes)}, ${input.formatKcal(t.kcal)} kcal.`,
     ),
     ...input.spans.map((s) =>
       s.endMin > s.startMin

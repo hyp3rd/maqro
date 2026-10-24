@@ -1,5 +1,6 @@
 "use client";
 
+import { formatNumber } from "@/lib/i18n/number";
 import { dayTypeLabel } from "@/lib/today/day-type";
 import {
   type TimelineSpan,
@@ -15,6 +16,7 @@ import {
   workoutSpan,
 } from "@/lib/today/timeline";
 import { cn } from "@/lib/utils";
+import { useLocale } from "next-intl";
 import type { TrainingDayTargets } from "@maqro/core/targets";
 import type { Meal } from "@maqro/core/types";
 
@@ -64,7 +66,9 @@ export function DayTimeline({
     ? workoutSpan(training.day, dayTypeLabel(training))
     : null;
   const spans: TimelineSpan[] = workout ? [workout] : [];
-  const summary = timelineSummary({ ticks, spans, nowMinute });
+  const locale = useLocale();
+  const formatKcal = (kcal: number) => formatNumber(kcal, locale);
+  const summary = timelineSummary({ ticks, spans, nowMinute, formatKcal });
 
   return (
     <div
@@ -90,7 +94,7 @@ export function DayTimeline({
             )}
             style={{ left: `${trackPercent(t.minutes)}%` }}
           >
-            {t.kcal}
+            {formatKcal(t.kcal)}
           </span>
         ))}
       </div>

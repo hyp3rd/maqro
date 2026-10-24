@@ -1,3 +1,4 @@
+import { formatNumber } from "@/lib/i18n/number";
 import { describe, expect, it } from "vitest";
 import type { Meal } from "@maqro/core/types";
 import {
@@ -210,12 +211,31 @@ describe("labels", () => {
           },
         ],
         nowMinute: 910,
+        formatKcal: String,
       }),
     ).toBe(
       "Breakfast at 07:30, 520 kcal. Workout, Lower · heavy day, 18:00 to 19:15. Now 15:10.",
     );
-    expect(timelineSummary({ ticks: [], spans: [], nowMinute: null })).toBe(
-      "No timed meals yet.",
-    );
+    expect(
+      timelineSummary({
+        ticks: [],
+        spans: [],
+        nowMinute: null,
+        formatKcal: String,
+      }),
+    ).toBe("No timed meals yet.");
+  });
+
+  it("prints kcal through the caller's locale formatter", () => {
+    expect(
+      timelineSummary({
+        ticks: [
+          { mealId: 1, name: "Lunch", minutes: 765, kcal: 1050, lane: 0 },
+        ],
+        spans: [],
+        nowMinute: null,
+        formatKcal: (n) => formatNumber(n, "en"),
+      }),
+    ).toBe("Lunch at 12:45, 1,050 kcal.");
   });
 });

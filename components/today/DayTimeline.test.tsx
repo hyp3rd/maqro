@@ -1,6 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
+import { intlWrapper } from "@/lib/i18n/intl-test-wrapper";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Meal } from "@maqro/core/types";
 import { cleanup, render, screen } from "@testing-library/react";
@@ -42,6 +43,27 @@ const width = (el: Element | null) =>
   Number.parseFloat((el as HTMLElement | null)?.style.width ?? "NaN");
 
 describe("DayTimeline", () => {
+  it("prints the meal kcal for the app locale", () => {
+    const heavy: Meal[] = [
+      { id: 1, name: "Lunch", foods: [food(1, 1050, at(12, 45))] },
+    ];
+    render(
+      <DayTimeline
+        meals={heavy}
+        date={DAY}
+        today={DAY}
+        now={at(15, 10)}
+      />,
+      { wrapper: intlWrapper("en") },
+    );
+    expect(screen.getByText("1,050")).toBeTruthy();
+    expect(
+      screen.getByRole("img", {
+        name: "Day timeline: Lunch at 12:45, 1,050 kcal. Now 15:10.",
+      }),
+    ).toBeTruthy();
+  });
+
   it("draws 24 hours of ticks with the elapsed part of today lit", () => {
     const { container } = render(
       <DayTimeline
@@ -51,6 +73,7 @@ describe("DayTimeline", () => {
         now={at(15, 10)}
         training={LOWER}
       />,
+      { wrapper: intlWrapper() },
     );
     expect(container.querySelectorAll("[data-part=hour-tick]")).toHaveLength(
       25,
@@ -69,6 +92,7 @@ describe("DayTimeline", () => {
         today={DAY}
         now={at(15, 10)}
       />,
+      { wrapper: intlWrapper() },
     );
     const ticks = container.querySelectorAll("[data-part=meal-tick]");
     expect(ticks).toHaveLength(2);
@@ -86,6 +110,7 @@ describe("DayTimeline", () => {
         today={DAY}
         now={at(15, 10)}
       />,
+      { wrapper: intlWrapper() },
     );
     expect(left(container.querySelector("[data-part=now]"))).toBeCloseTo(
       (910 / 1440) * 100,
@@ -100,6 +125,7 @@ describe("DayTimeline", () => {
         today={DAY}
         now={at(15, 10)}
       />,
+      { wrapper: intlWrapper() },
     );
     expect(past.container.querySelector("[data-part=now]")).toBeNull();
     // A past day has fully elapsed.
@@ -116,6 +142,7 @@ describe("DayTimeline", () => {
         today={DAY}
         now={0}
       />,
+      { wrapper: intlWrapper() },
     );
     expect(container.querySelector("[data-part=now]")).toBeNull();
   });
@@ -129,6 +156,7 @@ describe("DayTimeline", () => {
         now={at(15, 10)}
         training={LOWER}
       />,
+      { wrapper: intlWrapper() },
     );
     const block = container.querySelector("[data-part=workout]");
     expect(left(block)).toBeCloseTo((1080 / 1440) * 100, 6);
@@ -144,6 +172,7 @@ describe("DayTimeline", () => {
         now={at(15, 10)}
         training={{ day: { type: "rest" }, dayClass: "rest" }}
       />,
+      { wrapper: intlWrapper() },
     );
     expect(rest.container.querySelector("[data-part=workout]")).toBeNull();
     cleanup();
@@ -154,6 +183,7 @@ describe("DayTimeline", () => {
         today={DAY}
         now={at(15, 10)}
       />,
+      { wrapper: intlWrapper() },
     );
     expect(off.container.querySelector("[data-part=workout]")).toBeNull();
   });
@@ -167,6 +197,7 @@ describe("DayTimeline", () => {
         now={at(15, 10)}
         training={LOWER}
       />,
+      { wrapper: intlWrapper() },
     );
     expect(
       screen.getByRole("img", {
