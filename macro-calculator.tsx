@@ -724,7 +724,7 @@ const MacroCalculator = () => {
     dayTargets,
     targetForPhases,
     targetCaloriesForDate,
-    selectedWeek,
+    planWeek,
   } = useTargets(personalInfo, today, selectedDate);
   const activeGoalPhase = todayTargets.phase;
   // Every AI request below calls this after a 2xx so the shared usage counter
@@ -2264,6 +2264,11 @@ const MacroCalculator = () => {
           onPersonalInfoChange={handlePersonalInfoChange}
           today={today}
           onSelectView={setView}
+          planWeek={planWeek}
+          onTrainingChange={(next) => patchProfile("training", next)}
+          onProteinSettingChange={(next) =>
+            patchProfile("proteinSetting", next)
+          }
         />
       )}
 

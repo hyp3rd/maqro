@@ -61,6 +61,9 @@ function openBilling() {
       personalInfo={PROFILE}
       onPersonalInfoChange={() => {}}
       today="2026-06-10"
+      planWeek={() => null}
+      onTrainingChange={() => {}}
+      onProteinSettingChange={() => {}}
     />,
   );
   fireEvent.click(screen.getByText("Billing & subscription"));

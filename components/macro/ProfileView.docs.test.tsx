@@ -50,6 +50,9 @@ function openDocs() {
       personalInfo={PROFILE}
       onPersonalInfoChange={() => {}}
       today="2026-06-10"
+      planWeek={() => null}
+      onTrainingChange={() => {}}
+      onProteinSettingChange={() => {}}
     />,
   );
   fireEvent.click(screen.getByText("My docs"));

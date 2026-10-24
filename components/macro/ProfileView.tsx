@@ -6,10 +6,13 @@ import React, { useState } from "react";
 import {
   ArrowLeft,
   CreditCard,
-  Ellipsis,
+  Dumbbell,
   FolderOpen,
   HeartPulse,
 } from "lucide-react";
+import type { WeekTargets } from "@maqro/core/targets";
+import { normalizeTrainingSchedule } from "@maqro/core/training";
+import type { ProteinSetting, TrainingSchedule } from "@maqro/core/types";
 import type { PersonalInfo } from "../../components/macro/types";
 import { ageFromBirthDate } from "../../lib/age";
 import { MoreSheet } from "../shell/MoreSheet";
@@ -35,6 +38,7 @@ import {
   WeightField,
 } from "./FormFields";
 import { SavedReportsList } from "./SavedReportsList";
+import { TrainingWeekEditor } from "./TrainingWeekEditor";
 
 interface ProfileViewProps {
   personalInfo: PersonalInfo;
@@ -47,14 +51,22 @@ interface ProfileViewProps {
    *  opens the calculator) and the measurement archive's shortcut to the
    *  Progress view, where measurements are actually logged. */
   onSelectView?: (key: ViewKey) => void;
+  /** The week containing today, planned with the app's target context
+   *  (`useTargets().planWeek`) — the training-week editor's figures. */
+  planWeek: (profile: PersonalInfo) => WeekTargets | null;
+  /** Persist the training template (`patchProfile("training", …)`). */
+  onTrainingChange: (next: TrainingSchedule) => void;
+  /** Persist the protein setting (`patchProfile("proteinSetting", …)`). */
+  onProteinSettingChange: (next: ProteinSetting) => void;
 }
 
-type Sub = "home" | "measurements" | "docs" | "billing";
+type Sub = "home" | "measurements" | "docs" | "billing" | "training";
 
 /** Profile page — the home for the user's body data (gender, birthdate-derived
- *  age, weight, height, units, display name), plus three tiles that open
- *  sub-sections: **My measurements** (blood pressure + body-measurement
- *  history), **My docs** (report PDFs archived to encrypted cloud storage), and
+ *  age, weight, height, units, display name), plus tiles that open
+ *  sub-sections: **Training week** (the FREE per-weekday session template
+ *  that plans each day's targets), **My measurements** (blood pressure +
+ *  body-measurement history), **My docs** (report PDFs archived to encrypted cloud storage), and
  *  **Billing & subscription** (plan, renewal, the Stripe portal, and the
  *  monthly AI-usage meter — all moved here out of Settings).
  *
@@ -65,9 +77,31 @@ export function ProfileView({
   onPersonalInfoChange,
   today,
   onSelectView,
+  planWeek,
+  onTrainingChange,
+  onProteinSettingChange,
 }: ProfileViewProps) {
   const [sub, setSub] = useState<Sub>("home");
   const { user, isOfflineUnverified } = useUser();
+
+  if (sub === "training") {
+    return (
+      <div className="space-y-6">
+        <SubHeader
+          title="Training week"
+          onBack={() => setSub("home")}
+        />
+        <TrainingWeekEditor
+          profile={personalInfo}
+          today={today}
+          planWeek={planWeek}
+          onTrainingChange={onTrainingChange}
+          onProteinSettingChange={onProteinSettingChange}
+          onOpenMeasurements={() => setSub("measurements")}
+        />
+      </div>
+    );
+  }
 
   if (sub === "measurements") {
     return (
@@ -322,6 +356,12 @@ function ProfileHome({
           </MoreSheet>
         )}
         <ProfileTile
+          icon={Dumbbell}
+          title="Training week"
+          hint={trainingHint(personalInfo.training)}
+          onClick={() => onOpen("training")}
+        />
+        <ProfileTile
           icon={HeartPulse}
           title="My measurements"
           hint="Blood pressure & body measurements"
@@ -342,6 +382,15 @@ function ProfileHome({
       </div>
     </div>
   );
+}
+
+/** The Training week tile's one-line state: the planned session count while
+ *  the schedule is on, else what turning it on does. */
+function trainingHint(raw: unknown): string {
+  const schedule = normalizeTrainingSchedule(raw);
+  if (!schedule?.enabled) return "Plan targets by session";
+  const sessions = schedule.days.filter((d) => d.type !== "rest").length;
+  return sessions === 1 ? "1 session a week" : `${sessions} sessions a week`;
 }
 
 function SubHeader({ title, onBack }: { title: string; onBack: () => void }) {
