@@ -283,26 +283,70 @@ describe("TrainingWeekEditor: editing a day", () => {
     );
   });
 
-  it("drops a duration outside 1–1440 minutes instead of saving it", async () => {
+  it.each(["0", "1500", "45.5", "-30"])(
+    "holds Save with a hint for a duration of %s, never dropping it",
+    async (value) => {
+      const onTraining = vi.fn();
+      renderEditor({ initial: profile, onTraining });
+      fireEvent.click(row("Monday"));
+      const dialog = await screen.findByRole("dialog", { name: "Monday" });
+      const duration = within(dialog).getByLabelText("Duration (min)");
+      const save = within(dialog).getByRole("button", { name: "Save Monday" });
+      fireEvent.change(duration, { target: { value } });
+
+      expect(duration.getAttribute("aria-invalid")).toBe("true");
+      const hint = document.getElementById(
+        duration.getAttribute("aria-describedby") ?? "",
+      );
+      expect(hint?.textContent).toBe(
+        "Enter whole minutes from 1 to 1,440, or leave it blank.",
+      );
+      expect(save.hasAttribute("disabled")).toBe(true);
+      fireEvent.click(save);
+      expect(onTraining).not.toHaveBeenCalled();
+      expect(screen.getByRole("dialog", { name: "Monday" })).toBeTruthy();
+
+      // Cleared, the (optional) duration is simply left out.
+      fireEvent.change(duration, { target: { value: "" } });
+      expect(duration.getAttribute("aria-invalid")).toBe("false");
+      expect(save.hasAttribute("disabled")).toBe(false);
+      await act(async () => {
+        fireEvent.click(save);
+      });
+      expect(onTraining).toHaveBeenCalledWith(
+        withTrainingDay(SCHEDULE, 1, {
+          type: "upper",
+          intensity: "moderate",
+          time: "18:00",
+        }),
+      );
+    },
+  );
+
+  it("keeps a stored session's unset intensity unset", async () => {
+    // Another client (or an older payload) can store a session without an
+    // intensity; the engine classes `lower` without one as heavy.
+    const stored = withTrainingDay(SCHEDULE, 3, { type: "lower" });
     const onTraining = vi.fn();
-    renderEditor({ initial: profile, onTraining });
-    fireEvent.click(row("Monday"));
-    const dialog = await screen.findByRole("dialog", { name: "Monday" });
-    fireEvent.change(within(dialog).getByLabelText("Duration (min)"), {
-      target: { value: "0" },
-    });
+    renderEditor({ initial: { ...BASE, training: stored }, onTraining });
+    fireEvent.click(row("Wednesday"));
+    const dialog = await screen.findByRole("dialog", { name: "Wednesday" });
+    for (const name of ["Light", "Moderate", "Hard"]) {
+      expect(
+        within(dialog)
+          .getByRole("radio", { name })
+          .getAttribute("aria-checked"),
+      ).toBe("false");
+    }
+    expect(
+      within(dialog).getByText("Heavy training day", { exact: false }),
+    ).toBeTruthy();
     await act(async () => {
       fireEvent.click(
-        within(dialog).getByRole("button", { name: "Save Monday" }),
+        within(dialog).getByRole("button", { name: "Save Wednesday" }),
       );
     });
-    expect(onTraining).toHaveBeenCalledWith(
-      withTrainingDay(SCHEDULE, 1, {
-        type: "upper",
-        intensity: "moderate",
-        time: "18:00",
-      }),
-    );
+    expect(onTraining).toHaveBeenCalledWith(stored);
   });
 });
 

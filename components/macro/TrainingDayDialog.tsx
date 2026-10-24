@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { formatNumber } from "@/lib/i18n/number";
+import { cn } from "@/lib/utils";
 import { useId, useState } from "react";
 import { useLocale } from "next-intl";
 import {
@@ -37,7 +38,10 @@ const MAX_DURATION_MIN = 24 * 60;
 
 type Draft = {
   type: TrainingType;
-  intensity: TrainingIntensity;
+  /** `null` while unset: the engine classes a session without an
+   *  intensity on its own terms (`classifyTrainingDay`), so a stored day
+   *  without one keeps none until the user picks one. */
+  intensity: TrainingIntensity | null;
   time: string;
   /** The input's text, so a half-typed value doesn't jump around. */
   duration: string;
@@ -46,27 +50,32 @@ type Draft = {
 function toDraft(day: TrainingDay): Draft {
   return {
     type: day.type,
-    intensity: day.intensity ?? "moderate",
+    intensity: day.intensity ?? null,
     time: day.time ?? "",
     duration: day.durationMin !== undefined ? String(day.durationMin) : "",
   };
 }
 
-/** The session the draft describes: a rest day carries nothing else; empty
- *  or out-of-range time and duration are left out (both optional). */
+/** The draft's duration: `null` when blank (it is optional), the minutes
+ *  when whole and in 1–1440, else `"invalid"`: shown, never dropped. */
+function draftDuration(text: string): number | null | "invalid" {
+  if (text.trim() === "") return null;
+  const minutes = Number(text);
+  return Number.isInteger(minutes) && minutes > 0 && minutes <= MAX_DURATION_MIN
+    ? minutes
+    : "invalid";
+}
+
+/** The session the draft describes: a rest day carries nothing else; an
+ *  unset intensity, an empty time and a blank duration are left out (Save
+ *  is held while the duration is invalid). */
 function draftToDay(draft: Draft): TrainingDay {
   if (draft.type === "rest") return { type: "rest" };
-  const day: TrainingDay = { type: draft.type, intensity: draft.intensity };
+  const day: TrainingDay = { type: draft.type };
+  if (draft.intensity !== null) day.intensity = draft.intensity;
   if (/^([01]\d|2[0-3]):[0-5]\d$/.test(draft.time)) day.time = draft.time;
-  const minutes = Number(draft.duration);
-  if (
-    draft.duration.trim() !== "" &&
-    Number.isInteger(minutes) &&
-    minutes > 0 &&
-    minutes <= MAX_DURATION_MIN
-  ) {
-    day.durationMin = minutes;
-  }
+  const minutes = draftDuration(draft.duration);
+  if (typeof minutes === "number") day.durationMin = minutes;
   return day;
 }
 
@@ -96,6 +105,8 @@ export function TrainingDayDialog({
   const id = useId();
   const [draft, setDraft] = useState<Draft>(() => toDraft(day));
   const next = draftToDay(draft);
+  const durationInvalid =
+    draft.type !== "rest" && draftDuration(draft.duration) === "invalid";
   const kcal = plannedKcal(next);
   const name = WEEKDAY_NAME[weekday] ?? "";
   const set = (patch: Partial<Draft>) => setDraft((d) => ({ ...d, ...patch }));
@@ -193,11 +204,22 @@ export function TrainingDayDialog({
                   value={draft.duration}
                   onChange={(e) => set({ duration: e.target.value })}
                   placeholder="60"
+                  aria-invalid={durationInvalid}
+                  aria-describedby={`${id}-duration-hint`}
+                  className={cn(durationInvalid && "border-warning")}
                 />
               </div>
             </div>
-            <p className="text-label text-muted-foreground">
-              Both optional. A long endurance session counts as a bigger day.
+            <p
+              id={`${id}-duration-hint`}
+              className={cn(
+                "text-label",
+                durationInvalid ? "text-foreground" : "text-muted-foreground",
+              )}
+            >
+              {durationInvalid
+                ? `Enter whole minutes from 1 to ${formatNumber(MAX_DURATION_MIN, locale)}, or leave it blank.`
+                : "Both optional. A long endurance session counts as a bigger day."}
             </p>
           </>
         )}
@@ -213,6 +235,7 @@ export function TrainingDayDialog({
           <Button
             type="button"
             variant="brand"
+            disabled={durationInvalid}
             onClick={() => onSave(next)}
           >
             Save {name}
