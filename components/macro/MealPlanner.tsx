@@ -52,6 +52,8 @@ import {
   PreDiabeticDisclaimerDialog,
   hasDismissedPreDiabeticDisclaimer,
 } from "./PreDiabeticDisclaimerDialog";
+import { ShareTodayButton } from "./ShareTodayButton";
+import { StreakChip } from "./StreakChip";
 import { WaterCounter } from "./WaterCounter";
 
 interface MealPlannerProps {
@@ -423,6 +425,17 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
           titleId={titleId}
           onSelectDate={onSelectDate}
           onEditDayType={onEditDayType}
+          actions={
+            <>
+              {/* Self-hides with no active streak, so the row stays clean
+                  for first-time and lapsed users. */}
+              <StreakChip />
+              <ShareTodayButton
+                totalMacros={totalMacros}
+                calculatedValues={calculatedValues}
+              />
+            </>
+          }
         />
         {week && (
           <WeekStrip

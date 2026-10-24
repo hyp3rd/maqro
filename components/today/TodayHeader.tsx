@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { localDate, relativeDay } from "@/lib/today/timeline";
+import type * as React from "react";
 import { useId, useMemo, useRef } from "react";
 import { ChevronDown } from "lucide-react";
 import { useLocale } from "next-intl";
@@ -43,9 +44,10 @@ function editSessionLabel(date: string, today: string, formats: HeaderFormats) {
 
 /** The Today screen's header and the page's one heading (`h1`; the shell's
  *  top bar carries none on this view): the day, relative when it can be,
- *  under its full date. The date opens a date picker for any day, past or
- *  future (a future day can be planned, as on the week strip); the session
- *  chip (training on; with `onEditDayType` it opens the day-type sheet);
+ *  under its full date, with the day's `actions` (streak, Share) at the end
+ *  of that row. The date opens a date picker for any day, past or future
+ *  (a future day can be planned, as on the week strip). Below: the session
+ *  chip (training on; with `onEditDayType` it opens the day-type sheet)
  *  and, on any other day, the one way back to today, which then puts
  *  focus on the heading so a keyboard or screen-reader user lands on the
  *  day they returned to. Before hydration the date key is empty: the
@@ -57,6 +59,7 @@ export function TodayHeader({
   titleId,
   onSelectDate,
   onEditDayType,
+  actions,
 }: {
   date: string;
   today: string;
@@ -67,6 +70,9 @@ export function TodayHeader({
   /** Change the shown day's session (the day-type sheet), given the chip
    *  to return focus to. Without it the chip is read-only. */
   onEditDayType?: (trigger: HTMLElement) => void;
+  /** The day's quiet extras (the logging streak, Share), at the end of
+   *  the title row so the instrument below starts right away. */
+  actions?: React.ReactNode;
 }) {
   const locale = useLocale();
   const formats = useMemo(() => headerFormats(locale), [locale]);
@@ -82,73 +88,85 @@ export function TodayHeader({
     : null;
 
   return (
-    <header className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-      <div className="min-w-0">
-        {/* Reserved line, so the date arriving after hydration never shifts
+    <header className="space-y-2">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          {/* Reserved line, so the date arriving after hydration never shifts
             the screen. */}
-        <div className="relative h-[1.125rem] w-fit">
-          {fullDate !== null && (
-            <>
-              <label
-                htmlFor={pickerId}
-                className="inline-flex items-center gap-1 text-label text-muted-foreground"
-              >
-                {fullDate}
-                <ChevronDown
-                  aria-hidden
-                  className="h-3.5 w-3.5"
-                />
-                <span className="sr-only">, choose a day</span>
-              </label>
-              {/* Invisible over its label (and a little past it, for a
+          <div className="relative h-[1.125rem] w-fit">
+            {fullDate !== null && (
+              <>
+                <label
+                  htmlFor={pickerId}
+                  className="inline-flex items-center gap-1 text-label text-muted-foreground"
+                >
+                  {fullDate}
+                  <ChevronDown
+                    aria-hidden
+                    className="h-3.5 w-3.5"
+                  />
+                  <span className="sr-only">, choose a day</span>
+                </label>
+                {/* Invisible over its label (and a little past it, for a
                   touch-sized target without moving the layout): a tap
                   opens the platform's date picker. */}
-              <input
-                id={pickerId}
-                type="date"
-                value={date}
-                onClick={(event) => event.currentTarget.showPicker()}
-                onChange={(event) => {
-                  if (isDateKey(event.target.value))
-                    onSelectDate(event.target.value);
-                }}
-                className="absolute -inset-x-1 -inset-y-2.5 cursor-pointer opacity-0"
-              />
-            </>
+                <input
+                  id={pickerId}
+                  type="date"
+                  value={date}
+                  onClick={(event) => event.currentTarget.showPicker()}
+                  onChange={(event) => {
+                    if (isDateKey(event.target.value))
+                      onSelectDate(event.target.value);
+                  }}
+                  className="absolute -inset-x-1 -inset-y-2.5 cursor-pointer opacity-0"
+                />
+              </>
+            )}
+          </div>
+          <h1
+            ref={headingRef}
+            id={titleId}
+            // Focus target for "Back to today", never in the tab order.
+            tabIndex={-1}
+            className="rounded-sm text-2xl font-semibold leading-7 tracking-tight text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {known ? dayTitle(date, today, formats) : "Today"}
+          </h1>
+        </div>
+        {actions !== undefined && (
+          <div className="flex shrink-0 items-center gap-2">{actions}</div>
+        )}
+      </div>
+      {/* The session (with its start) reads as the day's subtitle, on its
+          own row so a long one never squeezes the title or the actions. */}
+      {(training !== undefined || !isToday) && (
+        <div className="flex flex-wrap items-center gap-2">
+          <DayTypeChip
+            training={training}
+            onEdit={known ? onEditDayType : undefined}
+            editLabel={
+              known ? editSessionLabel(date, today, formats) : undefined
+            }
+          />
+          {!isToday && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-label="Back to today"
+              className="ml-auto"
+              onClick={() => {
+                onSelectDate(today);
+                // The button goes once today is shown; the heading stays.
+                headingRef.current?.focus();
+              }}
+            >
+              Today
+            </Button>
           )}
         </div>
-        <h1
-          ref={headingRef}
-          id={titleId}
-          // Focus target for "Back to today", never in the tab order.
-          tabIndex={-1}
-          className="rounded-sm text-2xl font-semibold leading-7 tracking-tight text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          {known ? dayTitle(date, today, formats) : "Today"}
-        </h1>
-      </div>
-      <div className="flex items-center gap-2">
-        {!isToday && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            aria-label="Back to today"
-            onClick={() => {
-              onSelectDate(today);
-              // The button goes once today is shown; the heading stays.
-              headingRef.current?.focus();
-            }}
-          >
-            Today
-          </Button>
-        )}
-        <DayTypeChip
-          training={training}
-          onEdit={known ? onEditDayType : undefined}
-          editLabel={known ? editSessionLabel(date, today, formats) : undefined}
-        />
-      </div>
+      )}
     </header>
   );
 }

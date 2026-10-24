@@ -220,6 +220,20 @@ const gaugeStatus = () => {
 };
 
 describe("MealPlanner as Instrument Today", () => {
+  it("keeps Share in the header's title row, ahead of the gauge", () => {
+    renderPlanner();
+    const header = screen
+      .getByRole("heading", { level: 1 })
+      .closest("header") as HTMLElement;
+    const share = within(header).getByRole("button", {
+      name: "Share today's macros",
+    });
+    expect(
+      share.compareDocumentPosition(gaugeStatus()) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it("is one region, named by the day, with no region nested inside", () => {
     renderPlanner();
     const today = screen.getByRole("region", { name: "Today" });
