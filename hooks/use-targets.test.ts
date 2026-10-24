@@ -106,6 +106,71 @@ describe("useTargets", () => {
   });
 });
 
+/** The Today week strip: the Monday-to-Sunday week of the displayed day,
+ *  every day through the same resolver (and tier decision) as `dayTargets`,
+ *  so a cycled training week shows each day's OWN planned target. */
+describe("useTargets selectedWeek", () => {
+  const TRAINING: PersonalInfo = {
+    ...PROFILE,
+    training: {
+      enabled: true,
+      cycling: "modest",
+      days: [
+        { type: "rest" },
+        { type: "upper", intensity: "moderate" },
+        { type: "rest" },
+        { type: "lower", intensity: "hard", time: "18:00", durationMin: 75 },
+        { type: "rest" },
+        { type: "fullBody", intensity: "moderate" },
+        { type: "endurance", durationMin: 90 },
+      ],
+    },
+  };
+
+  it("is the Monday-first week of the selected day, each day its own target", () => {
+    const { result } = renderHook(() => useTargets(TRAINING, TODAY, TODAY));
+    const week = result.current.selectedWeek;
+    expect(week?.weekStart).toBe("2026-06-08");
+    expect(week?.days.map((d) => d.date)).toEqual([
+      "2026-06-08",
+      "2026-06-09",
+      "2026-06-10",
+      "2026-06-11",
+      "2026-06-12",
+      "2026-06-13",
+      "2026-06-14",
+    ]);
+    // The selected day's entry is exactly the day view's target.
+    expect(week?.days[2]).toEqual(result.current.dayTargets);
+    // Cycled: Wednesday's hard lower day > Monday's upper day > Tuesday's
+    // rest day, and the planned days still sum to seven weekly-mean days
+    // (no banking, no top-up).
+    const kcal = week?.days.map((d) => d.targetCalories) ?? [];
+    expect(kcal[2]).toBeGreaterThan(kcal[0] ?? Infinity);
+    expect(kcal[0]).toBeGreaterThan(kcal[1] ?? Infinity);
+    expect(week?.totalCalories).toBe(7 * 1900);
+    expect(week?.days[3]?.training?.dayClass).toBe("rest");
+  });
+
+  it("follows a past selected day into its own week and tier decision", () => {
+    tierState.tier = "free";
+    const { result } = renderHook(() =>
+      useTargets(TRAINING, TODAY, BEFORE_CUT),
+    );
+    const week = result.current.selectedWeek;
+    expect(week?.weekStart).toBe("2026-05-25");
+    expect(week?.days.find((d) => d.date === BEFORE_CUT)).toEqual(
+      result.current.dayTargets,
+    );
+    expect(week?.totalCalories).toBe(7 * 2600);
+  });
+
+  it("is null before the date is known (pre-hydration empty key)", () => {
+    const { result } = renderHook(() => useTargets(TRAINING, "", ""));
+    expect(result.current.selectedWeek).toBeNull();
+  });
+});
+
 /** Every target the app resolves reads the SAME body-fat estimate the
  *  report and the crons use (`useLatestBodyFatPct` → `latestBodyFatPct`):
  *  a lean-mass protein setting is the visible difference. */
@@ -175,5 +240,19 @@ describe("useTargets — body fat", () => {
     expect(result.current.todayTargets).toEqual(
       targetsForDate(TRAINING, TODAY, ctx(null)),
     );
+  });
+
+  it("selectedWeek reads the same estimate as the day view and planWeek", () => {
+    bodyFat.pct = 20;
+    const { result } = renderHook(() => useTargets(TRAINING, TODAY, TODAY));
+    expect(result.current.selectedWeek).toEqual(
+      weekTargets(TRAINING, TODAY, ctx(20)),
+    );
+    expect(result.current.selectedWeek).toEqual(
+      result.current.planWeek(TRAINING),
+    );
+    expect(
+      result.current.selectedWeek?.days.find((d) => d.date === TODAY),
+    ).toEqual(result.current.dayTargets);
   });
 });

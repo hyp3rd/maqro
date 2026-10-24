@@ -48,6 +48,9 @@ describe("Profile as the You hub", () => {
         personalInfo={PROFILE}
         onPersonalInfoChange={() => {}}
         today="2026-06-10"
+        planWeek={() => null}
+        onTrainingChange={() => {}}
+        onProteinSettingChange={() => {}}
         onSelectView={onSelectView}
       />,
     );
@@ -63,6 +66,9 @@ describe("Profile as the You hub", () => {
         personalInfo={PROFILE}
         onPersonalInfoChange={() => {}}
         today="2026-06-10"
+        planWeek={() => null}
+        onTrainingChange={() => {}}
+        onProteinSettingChange={() => {}}
       />,
     );
     expect(screen.queryByRole("button", { name: /Targets/ })).toBeNull();
@@ -78,6 +84,9 @@ describe("Profile as the You hub", () => {
         personalInfo={PROFILE}
         onPersonalInfoChange={() => {}}
         today="2026-06-10"
+        planWeek={() => null}
+        onTrainingChange={() => {}}
+        onProteinSettingChange={() => {}}
         onSelectView={() => {}}
       />,
     );

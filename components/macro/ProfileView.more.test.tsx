@@ -61,6 +61,9 @@ describe("You hub without a More tab", () => {
         personalInfo={PROFILE}
         onPersonalInfoChange={() => {}}
         today="2026-06-10"
+        planWeek={() => null}
+        onTrainingChange={() => {}}
+        onProteinSettingChange={() => {}}
         onSelectView={onSelectView}
       />,
     );

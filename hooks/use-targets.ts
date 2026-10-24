@@ -32,6 +32,13 @@ export type AppTargets = {
    *  current one, or an unsaved edit of it) with the same context — the
    *  training-week editor and its live preview. */
   planWeek: (profile: PersonalInfo) => WeekTargets | null;
+  /** The Monday-to-Sunday week containing the displayed day, each day its
+   *  own `targetsForDate` result (a cycled training week plans every day
+   *  differently) — the Today week strip. `null` while the date key is not
+   *  a calendar date (before hydration). The one place a week of day
+   *  targets is resolved, so a per-date session override plugs in here
+   *  for the strip and the day view alike. */
+  selectedWeek: WeekTargets | null;
 };
 
 /** The app's calorie/macro targets, all from `targetsForDate` with one tier
@@ -77,10 +84,9 @@ export function useTargets(
     (planned: PersonalInfo) => weekTargets(planned, today, ctx),
     [today, ctx],
   );
-
   const selectedWeek = useMemo(
-    () => weekTargets(profile, selectedDate, { phasesEnabled }),
-    [profile, selectedDate, phasesEnabled],
+    () => weekTargets(profile, selectedDate, ctx),
+    [profile, selectedDate, ctx],
   );
 
   return {
@@ -90,5 +96,6 @@ export function useTargets(
     targetForPhases,
     targetCaloriesForDate,
     planWeek,
+    selectedWeek,
   };
 }

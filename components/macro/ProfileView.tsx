@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   CreditCard,
   Dumbbell,
+  Ellipsis,
   FolderOpen,
   HeartPulse,
 } from "lucide-react";
