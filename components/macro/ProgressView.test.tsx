@@ -153,6 +153,21 @@ describe("ProgressView", () => {
     expect(screen.queryByText(/0 kcal target/)).toBeNull();
   });
 
+  it("sends people to the destinations the nav actually has", async () => {
+    await clearAllStores();
+    const { container } = render(<ProgressView {...BASE} />);
+    expect(
+      await screen.findByText(
+        /^Update your weight in Profile \(You on a phone\) - /,
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/Auto-logs when you change your weight in/).textContent,
+    ).toMatch(/in Profile \(You on a phone\)\.$/);
+    expect(screen.getByText(/^Add foods in Today - /)).toBeTruthy();
+    expect(container.textContent).not.toMatch(/Calculator tab|Meal Plan/);
+  });
+
   describe("hydration chart", () => {
     beforeEach(async () => {
       const today = todayKey();

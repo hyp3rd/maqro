@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { offCodeFromFoodId } from "@maqro/core/off";
+import { quickAddMealId } from "@maqro/core/quick-add";
 import type { ResolvedMealPhoto } from "./app/api/identify-meal/route";
 import { SignInPromptDialog } from "./components/auth/SignInPromptDialog";
 import { AdvancedSettingsSection } from "./components/macro/AdvancedSettingsSection";
@@ -50,7 +51,8 @@ import {
 } from "./components/macro/types";
 import { OnboardingWizard } from "./components/onboarding/OnboardingWizard";
 import { AppShell } from "./components/shell/AppShell";
-import type { ViewKey } from "./components/shell/Sidebar";
+import { formatDayLabel } from "./components/shell/DateNavigator";
+import { type ViewKey, viewFromParam } from "./components/shell/nav";
 import { foodDatabase } from "./data/food-database";
 import { useRefreshAiUsage } from "./hooks/use-ai-usage";
 import { type DayTarget, useDailyLog } from "./hooks/use-daily-log";
@@ -243,34 +245,6 @@ function markOnboardingDone(): void {
  *  wizard on first load: a returning user whose profile is non-default
  *  has clearly used the app before, so we don't onboard them again
  *  even if the device-local flag is missing. */
-/** Whitelist of legal `?view=` values, kept in sync with ViewKey.
- *  Anything outside this set (typos, removed views, hostile URLs)
- *  falls back to "calculator". Living next to the ViewKey type lets
- *  TS catch drift via the exhaustive `satisfies` check below. */
-const VIEW_PARAM_VALUES = [
-  "calculator",
-  "profile",
-  "plan",
-  "progress",
-  "health",
-  "foods",
-  "recipes",
-  "templates",
-  "shopping",
-  "pantry",
-  "settings",
-] as const satisfies readonly ViewKey[];
-
-function viewFromParam(raw: string | null): ViewKey {
-  if (raw === null) return "calculator";
-  // Back-compat: the fasting page became the Health page — keep old
-  // `?view=fasting` links (bookmarks, prior emails) landing in the right place.
-  if (raw === "fasting") return "health";
-  return (VIEW_PARAM_VALUES as readonly string[]).includes(raw)
-    ? (raw as ViewKey)
-    : "calculator";
-}
-
 function isDefaultProfile(p: PersonalInfo): boolean {
   return (
     p.age === DEFAULT_PROFILE.age &&
@@ -361,6 +335,10 @@ const MacroCalculator = () => {
   const today = useToday();
   const [explicitDate, setExplicitDate] = useState<string | null>(null);
   const selectedDate = explicitDate ?? today;
+  // The shown day as the user reads it ("Today", "Yesterday", "Mon, Oct 20"):
+  // the day view's heading and the log launcher name it, matching the date
+  // navigator, so nothing claims "Today" while another day is on screen.
+  const dayLabel = formatDayLabel(selectedDate, today);
 
   // `day` + `commitToDay` serve the deferred writers (Undo toasts, AI plan
   // results) that resolve seconds after the render that started them,
@@ -549,14 +527,55 @@ const MacroCalculator = () => {
   // Initial view honors `?view=…` if present, so links from emails
   // ("Manage email preferences" → /app?view=settings, weekly recap →
   // /app?view=progress) and the Stripe Customer Portal's return URL
-  // land on the right tab. The set of valid values mirrors ViewKey
-  // 1:1 so an unknown param falls back to the default. The lazy
+  // land on the right tab. No (or an unknown) param opens Today, the
+  // day view — see `viewFromParam` in the nav registry. The lazy
   // initializer reads `searchParams` (which Next supplies on both
   // server and client), so the initial render is correct without
   // any post-mount setState dance.
   const [view, setView] = useState<ViewKey>(() =>
     viewFromParam(searchParams.get("view")),
   );
+
+  // Quick add (the mobile tab bar's centre [+]): log something now, into
+  // TODAY — never into a day the user can't see. From another tab or a past
+  // day it first switches to Today on today's date; the launcher then opens
+  // once that day has loaded, pre-targeted to the meal for the local time
+  // of the tap (`quickAddMealId`; `null` = the time maps to none of the
+  // day's slots, so the launcher asks which meal). Holds the tap's minute
+  // of the day while the switch is pending.
+  const [quickAddAt, setQuickAddAt] = useState<number | null>(null);
+  // The shell's nav (tab bar, sidebar, More sheet, command palette) labels
+  // the day view "Today", so choosing it always shows today's date — from
+  // another view as well as re-tapping it while a past day is open (the
+  // phone convention: tap the active tab to return to its root). In-view
+  // links that only need the day view (e.g. "Go to plan") keep `setView`.
+  const selectFromNav = (key: ViewKey) => {
+    if (key === "plan") setExplicitDate(null);
+    setView(key);
+  };
+  const handleQuickAdd = () => {
+    const now = new Date();
+    setView("plan");
+    setExplicitDate(null);
+    setQuickAddAt(now.getHours() * 60 + now.getMinutes());
+  };
+  // Open the launcher as soon as Today's log is the one on screen —
+  // adjusted during render (React's "storing information from previous
+  // renders" pattern, as useDailyLog does) rather than in an effect, so the
+  // switch and the open land in one commit. `logFlowMealId` is what seeds
+  // the launcher's meal step (and a tool's "Back" to it).
+  if (quickAddAt !== null) {
+    if (view !== "plan" || explicitDate !== null) {
+      // The tap set both, so either changing means the user went elsewhere
+      // before today loaded: drop the request rather than pop the launcher
+      // open, unprompted, the next time they land on Today.
+      setQuickAddAt(null);
+    } else if (dayHydrated) {
+      setQuickAddAt(null);
+      setLogFlowMealId(quickAddMealId(meals, quickAddAt));
+      setLogMealOpen(true);
+    }
+  }
 
   const search = useFoodSearch(foodSearch, customFoodsRev);
   const foodSuggestions = search.results;
@@ -2192,7 +2211,9 @@ const MacroCalculator = () => {
   return (
     <AppShell
       current={view}
-      onSelect={setView}
+      title={view === "plan" ? dayLabel : undefined}
+      onSelect={selectFromNav}
+      onQuickAdd={handleQuickAdd}
     >
       {view === "calculator" && (
         <div className="space-y-6">
@@ -2345,25 +2366,6 @@ const MacroCalculator = () => {
             setMealDetailId(mealId);
             setMealHubIntent(intent ?? "add");
           }}
-          onOpenLogMeal={() => {
-            // Fresh entry from the FAB / "Log meal" button always starts
-            // at the meal step, never a stale method step.
-            setLogFlowMealId(null);
-            setLogMealOpen(true);
-          }}
-          onOpenPhoto={
-            user
-              ? () => {
-                  // Mealless capture from the FAB satellite: the photo
-                  // review step picks the meal, so clear any guided target
-                  // (and the "Back to method" affordance with it).
-                  setLogTargetMealId(null);
-                  setLogFlowMealId(null);
-                  setCameraMode("photo");
-                  setCameraSheetOpen(true);
-                }
-              : undefined
-          }
         />
       )}
 
@@ -2462,9 +2464,9 @@ const MacroCalculator = () => {
         onOpenChange={setCameraSheetOpen}
         aiAvailable={!!user}
         initialMode={cameraMode}
-        // The mealless Photo quick-capture (FAB) is the only path that opens
-        // photo mode with no target meal; lock out the Barcode tab there, as a
-        // scan would have no meal to log to. Every other path sets a target.
+        // Photo mode with no target meal would leave a barcode scan with no
+        // meal to log to, so the Barcode tab is locked out there. Today's
+        // paths (the guided launcher, desktop's inline Scan) never open it.
         lockMode={cameraMode === "photo" && logTargetMealId === null}
         dietPreference={personalInfo.dietPreference}
         pairPhoneAvailable={!!user && !isMobile}
@@ -2664,6 +2666,8 @@ const MacroCalculator = () => {
           if (!o) setLogFlowMealId(null);
         }}
         meals={meals}
+        // The launcher names the day it logs into ("Lunch · Today").
+        dayLabel={dayLabel}
         aiAvailable={!!user}
         initialMealId={logFlowMealId}
         onMethod={handleLogMethod}
@@ -2714,9 +2718,10 @@ const MacroCalculator = () => {
         onFinish={({ profile, skipped }) => {
           if (profile && !skipped) {
             setPersonalInfo(profile);
-            // First run done: land them on the meal planner — their fresh
-            // targets plus the log-a-meal action — instead of the default
-            // calculator view (a wall of the inputs they just filled in).
+            // First run done: land them on Today — their fresh targets
+            // plus quick add — even if they arrived on another view
+            // (e.g. `?view=calculator`, a wall of the inputs they just
+            // filled in).
             setView("plan");
           }
           markOnboardingDone();

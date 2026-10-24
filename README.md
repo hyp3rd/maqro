@@ -19,7 +19,13 @@ ships with privacy-respecting operational logging.
 
 ## What it does
 
-- **Calculator** - Mifflin–St Jeor BMR, TDEE from activity, target
+- **Today first** - the app opens on the day view. On a phone the tab
+  bar's centre **+** logs now: it switches to today and opens the guided
+  launcher at the meal for the time of day (search, barcode, photo,
+  voice, recipe or template). Foods, recipes, templates, shopping,
+  pantry, health and settings sit behind **More**; the calculator is
+  **Targets**, in the **You** hub.
+- **Calculator (Targets)** - Mifflin–St Jeor BMR, TDEE from activity, target
   calories from a signed weekly weight-change rate (1 kg ≈ 7700 kcal,
   clamped at ±1%/week of bodyweight and floored at `max(BMR, 1200)`).
   Manual TDEE override for calibrating against real-world outcomes.
@@ -28,7 +34,7 @@ ships with privacy-respecting operational logging.
   is active today. Applying a phase that would _raise_ today's target
   (e.g. a cut gentler than your current deficit) asks for a quick
   confirm first, so the change is never a surprise.
-- **Meal Plan** - log foods against a per-profile set of meal slots
+- **Today (the day view)** - log foods against a per-profile set of meal slots
   (Breakfast / Lunch / Dinner / Snacks by default, fully editable in
   the Template editor). Auto-fill a day that hits your macro targets
   via a 3×3 linear solve over a protein/carb/fat triplet; portions

@@ -1,6 +1,7 @@
 "use client";
 
 import { PageTopBar } from "@/components/shell/PageTopBar";
+import { navPlace } from "@/components/shell/nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -139,7 +140,7 @@ function ImportFlow() {
           <h1 className="font-semibold">Imported &ldquo;{state.name}&rdquo;</h1>
         </header>
         <p className="leading-relaxed text-foreground">
-          It&apos;s now in your templates. Open it from the Meal Plan tab and
+          It&apos;s now in your templates. Open it from {navPlace("plan")} and
           tap &ldquo;Apply template&rdquo; on any meal slot, or manage it from
           Templates.
         </p>

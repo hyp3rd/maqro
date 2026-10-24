@@ -1,11 +1,10 @@
 "use client";
 
 import { mealIcon } from "@/lib/meal-icon";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   Camera,
   ChevronLeft,
-  ChevronRight,
   LayoutGrid,
   Mic,
   Search,
@@ -33,6 +32,9 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   meals: Meal[];
+  /** The day the launcher logs into, as the user reads it ("Today"); the
+   *  title names it next to the meal ("Add to Lunch · Today"). */
+  dayLabel: string;
   /** Whether AI features (photo identify, voice log) are wired. Gates
    *  the Photo + Voice methods so they don't appear when they'd 503. */
   aiAvailable: boolean;
@@ -94,19 +96,43 @@ export function LogMealSheet({
   open,
   onOpenChange,
   meals,
+  dayLabel,
   aiAvailable,
   initialMealId,
   onMethod,
   onQuickLog,
 }: Props) {
+  // The launcher has no Radix trigger (the tab bar's [+] opens it), so Radix
+  // has nowhere to return focus on close and it falls to <body>. Remember
+  // what had focus when it opened, before focus moves in, and hand it back.
+  const returnFocusTo = useRef<HTMLElement | null>(null);
   return (
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
     >
-      <DialogContent className="gap-3">
+      <DialogContent
+        className="gap-3"
+        onOpenAutoFocus={() => {
+          const el = document.activeElement;
+          returnFocusTo.current =
+            el instanceof HTMLElement && el !== document.body ? el : null;
+        }}
+        onCloseAutoFocus={(event) => {
+          const el = returnFocusTo.current;
+          returnFocusTo.current = null;
+          // A method hands off to its tool, whose own dialog already holds
+          // focus by now: leave it there.
+          const active = document.activeElement;
+          if (active && active !== document.body) return;
+          if (!el?.isConnected) return;
+          event.preventDefault();
+          el.focus();
+        }}
+      >
         <LogMealFlow
           meals={meals}
+          dayLabel={dayLabel}
           aiAvailable={aiAvailable}
           initialMealId={initialMealId ?? null}
           onMethod={onMethod}
@@ -119,12 +145,14 @@ export function LogMealSheet({
 
 function LogMealFlow({
   meals,
+  dayLabel,
   aiAvailable,
   initialMealId,
   onMethod,
   onQuickLog,
 }: {
   meals: Meal[];
+  dayLabel: string;
   aiAvailable: boolean;
   initialMealId: number | null;
   onMethod: (method: LogMethod, mealId: number) => void;
@@ -141,8 +169,8 @@ function LogMealFlow({
       <DialogHeader>
         <DialogTitle className="text-left">
           {mealId === null
-            ? "Log a meal"
-            : `Add to ${targetMeal?.name ?? "meal"}`}
+            ? `Log a meal · ${dayLabel}`
+            : `Add to ${targetMeal?.name ?? "meal"} · ${dayLabel}`}
         </DialogTitle>
         <DialogDescription className="text-left">
           {mealId === null
@@ -209,23 +237,26 @@ function LogMealFlow({
               onAdd={(food, portion) => onQuickLog(food, mealId, portion)}
             />
 
+            {/* One row per tile pair, icon beside the words: six methods
+                (with AI) stay above the fold of a 390×844 sheet under the
+                recents, clear of the home indicator. */}
             <div className="grid grid-cols-2 gap-2">
               {methods.map(({ key, icon: Icon, label, hint }) => (
                 <button
                   key={key}
                   type="button"
                   onClick={() => onMethod(key, mealId)}
-                  className="flex min-h-24 flex-col items-start justify-between rounded-xl border border-border/60 bg-card p-3 text-left transition-colors active:bg-muted"
+                  className="flex min-h-14 items-center gap-3 rounded-xl border border-border/60 bg-card px-3 py-2.5 text-left transition-colors active:bg-muted"
                 >
-                  <Icon className="h-6 w-6 text-foreground" />
-                  <span className="mt-2 w-full">
-                    <span className="flex items-center justify-between gap-1">
-                      <span className="text-sm font-medium text-foreground">
-                        {label}
-                      </span>
-                      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+                  <Icon
+                    aria-hidden
+                    className="size-5 shrink-0 text-foreground"
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium text-foreground">
+                      {label}
                     </span>
-                    <span className="block text-[11px] text-muted-foreground">
+                    <span className="block text-xs leading-snug text-muted-foreground">
                       {hint}
                     </span>
                   </span>

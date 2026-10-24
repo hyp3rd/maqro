@@ -1,5 +1,6 @@
 import { HelpSearch } from "@/components/marketing/HelpSearch";
 import { Footer } from "@/components/shell/Footer";
+import { navPlace } from "@/components/shell/nav";
 import { GITHUB_REPO_URL } from "@/lib/links";
 import {
   ArrowLeft,
@@ -71,29 +72,29 @@ export default function HelpPage() {
             icon={Target}
             title="Set your targets in five minutes"
           >
-            Open the Calculator view. Pick gender, age, weight, and height; the
-            BMR (Mifflin–St Jeor) and TDEE compute instantly. Choose an activity
-            level honestly — the multiplier is the biggest source of error in
-            the whole chain. Pick a goal (lose / maintain / gain) and a weekly
-            rate. The app derives the target calories and a macro split.
-            You&apos;re done.
+            Enter gender, age, weight, and height in {navPlace("profile")}, then
+            open {navPlace("calculator")}: the BMR (Mifflin–St Jeor) and TDEE
+            compute instantly. Choose an activity level honestly — the
+            multiplier is the biggest source of error in the whole chain. Pick a
+            goal (lose / maintain / gain) and a weekly rate. The app derives the
+            target calories and a macro split. You&apos;re done.
           </Topic>
           <Topic
             icon={Utensils}
             title="Log meals against the targets"
           >
-            Meal Plan view. Search for a food — your custom foods, the built-in
-            catalog, generic foods from the French ANSES-CIQUAL table (used
-            under the Etalab Open Licence), and live Open Food Facts — set a
-            portion in grams, pick the meal slot, hit Add. The day&apos;s totals
-            update at the top and the planner tracks how close you&apos;re
-            hitting the targets.
+            Open {navPlace("plan")}. Search for a food — your custom foods, the
+            built-in catalog, generic foods from the French ANSES-CIQUAL table
+            (used under the Etalab Open Licence), and live Open Food Facts — set
+            a portion in grams, pick the meal slot, hit Add. The day&apos;s
+            totals update at the top and the planner tracks how close
+            you&apos;re hitting the targets.
           </Topic>
           <Topic
             icon={Sparkles}
             title="Or let the planner auto-fill the day"
           >
-            Auto-fill button on the Meal Plan view. Two paths: the calculator
+            Auto-fill button in {navPlace("plan")}. Two paths: the calculator
             hits your macro targets within tolerance using a protein-heavy +
             carb-heavy + fat-heavy meal combination. If AI is enabled, Claude
             Sonnet drafts a coherent day with breakfast-y breakfasts (checked so
@@ -113,8 +114,8 @@ export default function HelpPage() {
             TDEE is different from what the multiplier predicts. The Progress
             view will suggest a recalibration when the divergence exceeds 50
             kcal/day. Apply it via{" "}
-            <span className="font-mono">manual TDEE</span> in the Calculator
-            view.
+            <span className="font-mono">manual TDEE</span> in{" "}
+            {navPlace("calculator")}.
           </Topic>
           <Topic
             icon={Target}
@@ -135,8 +136,8 @@ export default function HelpPage() {
             dates and weekly rate. Your daily target follows whichever phase is
             active today, and a heads-up warns you before a phase would raise
             today&apos;s calories (which happens when your current setting
-            already runs a steeper deficit). Set it up in the Calculator under
-            Goal phases.
+            already runs a steeper deficit). Set it up in{" "}
+            {navPlace("calculator")} under Goal phases.
           </Topic>
         </Section>
 

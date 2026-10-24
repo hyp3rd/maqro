@@ -229,6 +229,25 @@ describe("UserMenu while offline-unverified", () => {
     expect(await screen.findByText(HINT)).toBeTruthy();
     expect(screen.queryByText("Guest mode")).toBeNull();
     expect(screen.queryByRole("menuitem", { name: /sign in/i })).toBeNull();
-    expect(screen.getByRole("menuitem", { name: /settings/i })).toBeTruthy();
+    expect(
+      screen.getByRole("menuitem", { name: /notifications/i }),
+    ).toBeTruthy();
+  });
+
+  it("the mobile menu holds no navigation (the tab bar and More sheet do)", async () => {
+    const { UserMenu } = await import("./UserMenu");
+    renderWithIntl(
+      <UserMenu
+        compact
+        onSelectView={() => {}}
+      />,
+    );
+    fireEvent.keyDown(screen.getByRole("button", { name: /account menu/i }), {
+      key: "Enter",
+    });
+    await screen.findByRole("menuitem", { name: /notifications/i });
+    for (const name of [/settings/i, /templates/i, /health/i, /profile/i]) {
+      expect(screen.queryByRole("menuitem", { name })).toBeNull();
+    }
   });
 });

@@ -11,16 +11,22 @@ import { MobileBottomNav } from "./MobileBottomNav";
 import { PastDueBanner } from "./PastDueBanner";
 import { PullToSync } from "./PullToSync";
 import { ServiceWorkerProvider } from "./ServiceWorkerProvider";
-import { Sidebar, type ViewKey } from "./Sidebar";
+import { Sidebar } from "./Sidebar";
 import { StorageBanner } from "./StorageBanner";
 import { SyncManager } from "./SyncManager";
 import { SyncModeController } from "./SyncModeController";
 import { Topbar } from "./Topbar";
 import { UpdateBanner } from "./UpdateBanner";
+import type { ViewKey } from "./nav";
 
 type Props = {
   current: ViewKey;
+  /** The Topbar heading, when the view's registry title doesn't fit (see
+   *  Topbar). */
+  title?: string;
   onSelect: (key: ViewKey) => void;
+  /** The mobile tab bar's centre [+] (see MobileBottomNav). */
+  onQuickAdd: () => void;
   children: React.ReactNode;
 };
 
@@ -32,7 +38,13 @@ type Props = {
  * the sidebar footer (UserMenu) pinned to the bottom and the mobile bottom
  * nav above the keyboard. The animated wrapper keys off `current` so
  * switching nav items produces a soft fade/translate transition. */
-export function AppShell({ current, onSelect, children }: Props) {
+export function AppShell({
+  current,
+  title,
+  onSelect,
+  onQuickAdd,
+  children,
+}: Props) {
   return (
     <div className="flex h-screen bg-background text-foreground">
       <DemoSeed />
@@ -55,6 +67,7 @@ export function AppShell({ current, onSelect, children }: Props) {
       >
         <Topbar
           current={current}
+          title={title}
           onSelectView={onSelect}
         />
         {/* Billing dunning sits above the storage banner because a
@@ -82,7 +95,8 @@ export function AppShell({ current, onSelect, children }: Props) {
               // sm+ goes back to the original generous padding. Bottom
               // padding on mobile is added below the AnimatePresence
               // on the footer wrapper to clear the fixed bottom tab
-              // bar (min-h-14 content + env(safe-area-inset-bottom)).
+              // bar (~67px + env(safe-area-inset-bottom); 5.25rem, the
+              // same clearance toasts get via --toast-offset-bottom).
               className="mx-auto w-full max-w-6xl flex-1 px-4 py-4 sm:px-6 sm:py-8 lg:py-10"
             >
               {children}
@@ -92,7 +106,7 @@ export function AppShell({ current, onSelect, children }: Props) {
               with content rather than pinning to the viewport. The
               mobile bottom nav still floats over it via fixed
               positioning. Mobile padding here clears the bottom nav. */}
-          <div className="pb-[calc(env(safe-area-inset-bottom)+4.5rem)] md:pb-0">
+          <div className="pb-[calc(env(safe-area-inset-bottom)+5.25rem)] md:pb-0">
             <Footer />
           </div>
         </PullToSync>
@@ -100,6 +114,7 @@ export function AppShell({ current, onSelect, children }: Props) {
       <MobileBottomNav
         current={current}
         onSelect={onSelect}
+        onQuickAdd={onQuickAdd}
       />
       <InstallPrompt />
       <UpdateBanner />

@@ -31,6 +31,7 @@ import {
 } from "@/lib/units";
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
+import { navPlace } from "../shell/nav";
 
 /** First-run onboarding wizard. Four steps:
  *
@@ -431,8 +432,8 @@ function StepActivityGoal({
           />
           <p className="text-[11px] text-muted-foreground">
             0.3–0.7 kg / week is sustainable for most people. Faster paces are
-            harder to maintain and risk muscle loss; the Calculator caps how
-            aggressive a deficit can get to keep you above a safe minimum.
+            harder to maintain and risk muscle loss; Maqro caps how aggressive a
+            deficit can get to keep you above a safe minimum.
           </p>
         </div>
       )}
@@ -451,8 +452,8 @@ function StepDiet({
     <div className="space-y-4">
       <p className="text-xs text-muted-foreground">
         The AI meal planner respects this when picking foods. You can also list
-        allergies and disliked foods on the Calculator tab - those settings live
-        in the same form and feed the same prompt.
+        allergies and disliked foods in {navPlace("calculator")} - those
+        settings live in the same form and feed the same prompt.
       </p>
       <div className="space-y-1.5">
         <Label htmlFor="ob-diet">Diet preference</Label>
@@ -478,8 +479,9 @@ function StepDiet({
       <div className="rounded-md border border-dashed border-border/60 px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">
         <span className="font-medium text-foreground">Almost done.</span> Click{" "}
         <strong>Get started</strong> and we&apos;ll save your profile.
-        Allergies, dislikes, and cuisine preferences live on the Calculator tab
-        - those are optional and can be filled in later.
+        Allergies, dislikes, and cuisine preferences live in{" "}
+        {navPlace("calculator")} - those are optional and can be filled in
+        later.
       </div>
     </div>
   );

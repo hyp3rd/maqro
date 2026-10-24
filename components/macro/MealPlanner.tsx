@@ -34,7 +34,7 @@ import {
   Meal,
 } from "../../components/macro/types";
 import { DateNavigator } from "../shell/DateNavigator";
-import type { ViewKey } from "../shell/Sidebar";
+import type { ViewKey } from "../shell/nav";
 import { Button } from "../ui/button";
 import { ActivePhaseBanner } from "./ActivePhaseBanner";
 import AddFoodForm from "./AddFoodForm";
@@ -46,7 +46,6 @@ import {
   PreDiabeticDisclaimerDialog,
   hasDismissedPreDiabeticDisclaimer,
 } from "./PreDiabeticDisclaimerDialog";
-import { QuickAddFab } from "./QuickAddFab";
 import { WaterCounter } from "./WaterCounter";
 
 interface MealPlannerProps {
@@ -185,14 +184,6 @@ interface MealPlannerProps {
   /** Open the per-meal hub for a slot. `intent` decides what the hub leads
    *  with: "add" (the recents strip) vs "insights" (the breakdown body). */
   onOpenMealDetail: (mealId: number, intent?: MealHubIntent) => void;
-  /** Open the guided "Log meal" sheet — the mobile add-food entry
-   *  point. The dense inline AddFoodForm is desktop-only; on mobile
-   *  this drives a step-by-step bottom-sheet instead. */
-  onOpenLogMeal: () => void;
-  /** Open the photo-capture sheet directly (mealless — the review step
-   *  picks the meal). Surfaced as a mobile FAB satellite; omitted when AI
-   *  is unavailable so the satellite hides. */
-  onOpenPhoto?: () => void;
 }
 
 const MealPlanner: React.FC<MealPlannerProps> = ({
@@ -260,8 +251,6 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
   onLogScheduled,
   onOpenSuggestDay,
   onOpenMealDetail,
-  onOpenLogMeal,
-  onOpenPhoto,
 }) => {
   const isError = mealPlanMessage.toLowerCase().includes("error");
   const dayIsEmpty = meals.every((m) => m.foods.length === 0);
@@ -420,11 +409,9 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
         </Button>
       )}
 
-      {/* Mobile's add-food entry point is the thumb-zone QuickAddFab (rendered
-          at the end of this view) — it floats over the whole list, so a second
-          inline "Log meal" button here was redundant (identical onOpenLogMeal)
-          and doubled up on short days. The dense inline form below is
-          desktop-only. */}
+      {/* Mobile's add-food entry point is the tab bar's centre [+] quick add
+          (MobileBottomNav), reachable from every view. The dense inline form
+          below is desktop-only. */}
       <div className="hidden md:block">
         <AddFoodForm
           meals={meals}
@@ -542,8 +529,25 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
             <span className="font-medium text-foreground">
               No meals logged for this day.
             </span>{" "}
-            Use the search above to add foods to any meal, apply a saved
-            template from a meal&apos;s menu, or hit{" "}
+            {/* Name the add that exists at each breakpoint: the search
+                (AddFoodForm) is desktop-only; a phone has each meal's
+                "Add food" and, on today only, the tab bar's [+] (which
+                always logs into today, so a past day doesn't offer it). */}
+            <span className="md:hidden">
+              {selectedDate === today && (
+                <>
+                  Tap <span className="font-medium text-foreground">+</span>{" "}
+                  below to log a meal,{" "}
+                </>
+              )}
+              {selectedDate === today ? "use" : "Use"}{" "}
+              <span className="font-medium text-foreground">Add food</span> on
+              any meal,
+            </span>
+            <span className="hidden md:inline">
+              Use the search above to add foods to any meal,
+            </span>{" "}
+            apply a saved template from a meal&apos;s menu, or hit{" "}
             <span className="font-medium text-foreground">Auto-fill</span> to
             generate a plan that matches your macros.
           </div>
@@ -659,14 +663,6 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
           setPendingPreDiabeticRefinement(null);
           if (text) void onRefineMealPlan(text);
         }}
-      />
-
-      {/* Thumb-zone quick-add: opens the guided Log meal sheet from
-          anywhere in the list. Mobile-only. */}
-      <QuickAddFab
-        onOpen={onOpenLogMeal}
-        onPhoto={onOpenPhoto}
-        onVoice={onOpenVoice}
       />
     </div>
   );

@@ -19,6 +19,7 @@
     "./macros": "./src/macros.ts",
     "./meal-schedule": "./src/meal-schedule.ts",
     "./off": "./src/off.ts",
+    "./quick-add": "./src/quick-add.ts",
     "./rda": "./src/rda.ts",
     "./recent-foods": "./src/recent-foods.ts",
     "./records": "./src/records.ts",

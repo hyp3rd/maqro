@@ -4,37 +4,25 @@ import Link from "next/link";
 import { FastingChip } from "./FastingChip";
 import { LogoMark } from "./LogoMark";
 import { NotificationBell } from "./NotificationBell";
-import type { ViewKey } from "./Sidebar";
 import { SyncModeIndicator } from "./SyncModeIndicator";
 import { SyncStatusPill } from "./SyncStatusPill";
 import { ThemeToggle } from "./ThemeToggle";
 import { TopbarSearchButton } from "./TopbarSearchButton";
 import { UserMenu } from "./UserMenu";
-
-const LABELS: Record<ViewKey, string> = {
-  calculator: "Calculator",
-  profile: "Profile",
-  plan: "Meal Plan",
-  progress: "Progress",
-  health: "Health",
-  foods: "My Foods",
-  recipes: "Recipes",
-  templates: "Meal Templates",
-  shopping: "Shopping List",
-  pantry: "Pantry",
-  settings: "Settings",
-};
+import { NAV, type ViewKey } from "./nav";
 
 type Props = {
   current: ViewKey;
-  /** Forwarded to the mobile `UserMenu` so it can surface the
-   *  Settings + Templates entries that we removed from the bottom
-   *  tab bar to declutter it. Desktop ignores it (the sidebar
-   *  already exposes those views directly). */
+  /** Heading override for a view whose name depends on its state: the day
+   *  view names the day it shows ("Today", "Yesterday", "Mon, Oct 20").
+   *  Defaults to the view's registry title. */
+  title?: string;
+  /** Forwarded to the chips and the mobile `UserMenu`, whose
+   *  notifications open the view they point at. */
   onSelectView?: (key: ViewKey) => void;
 };
 
-export function Topbar({ current, onSelectView }: Props) {
+export function Topbar({ current, title, onSelectView }: Props) {
   return (
     // `min-h-14`, not `h-14`. Same reason the bottom nav uses
     // `min-h`: `pt-safe` adds `env(safe-area-inset-top)` as
@@ -63,7 +51,7 @@ export function Topbar({ current, onSelectView }: Props) {
         />
       </Link>
       <h1 className="shrink-0 text-sm font-semibold tracking-tight text-foreground">
-        {LABELS[current]}
+        {title ?? NAV[current].title}
       </h1>
       {/* Spacer + search button take the middle column; on mobile
           the search button collapses to an icon-only affordance and

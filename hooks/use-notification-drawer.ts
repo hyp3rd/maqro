@@ -1,6 +1,6 @@
 "use client";
 
-import type { ViewKey } from "@/components/shell/Sidebar";
+import type { ViewKey } from "@/components/shell/nav";
 import { usePantryNotifications } from "@/hooks/use-pantry-notifications";
 import type { PantryNotification } from "@/lib/db";
 import { useCallback, useState } from "react";

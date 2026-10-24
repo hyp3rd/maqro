@@ -40,7 +40,10 @@ function shiftDays(d: string, delta: number): string {
   return dateKey(dt);
 }
 
-function formatLabel(d: string, today: string): string {
+/** A day as the user reads it: "Today", "Yesterday", else the short local
+ *  date ("Mon, Jun 2"). The navigator's pill, the day view's heading and the
+ *  log launcher all name the shown day with it, so they never disagree. */
+export function formatDayLabel(d: string, today: string): string {
   if (d === today) return "Today";
   if (d === shiftDays(today, -1)) return "Yesterday";
   const dt = parseLocal(d);
@@ -105,7 +108,7 @@ export function DateNavigator({ date, today, onSelect }: Props) {
             !isToday && "text-foreground",
           )}
         >
-          <span>{formatLabel(date, today)}</span>
+          <span>{formatDayLabel(date, today)}</span>
           {!isToday && (
             // The exact ISO date is supplementary to the human label
             // ("Yesterday" / "Mon, Jun 2"); hide it on narrow screens so

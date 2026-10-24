@@ -43,7 +43,7 @@ export function WaterCounter({
           </span>
           <span className="mx-1 text-muted-foreground/50">/</span>
           {formatVolume(goalMl, units)}
-          <span className="ml-2 text-xs text-muted-foreground/70">{pct}%</span>
+          <span className="ml-2 text-xs text-faint-foreground">{pct}%</span>
         </p>
       </div>
 

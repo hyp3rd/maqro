@@ -77,11 +77,17 @@ function installBrowserStubs(): void {
   vi.stubGlobal("fetch", fetchMock);
   // jsdom ships neither. Reduced motion makes NumberTicker snap to its value
   // instead of counting up, so the rendered target is the computed one.
+  // Motion's `useReducedMotion` asks for the bare "(prefers-reduced-motion)"
+  // (and caches the first answer for the whole file); the app's own checks
+  // ask for "(prefers-reduced-motion: reduce)". Both must match, or the
+  // ticker animates and the target is read mid-count.
   vi.stubGlobal(
     "matchMedia",
     (q: string) =>
       ({
-        matches: q === "(prefers-reduced-motion: reduce)",
+        matches:
+          q === "(prefers-reduced-motion)" ||
+          q === "(prefers-reduced-motion: reduce)",
         media: q,
         addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
@@ -140,8 +146,13 @@ function renderAppBySoftNavigation(url: string) {
   );
 }
 
-/** Resolves once the seed's profile is visible: the summary strip leads with
- *  the demo's sex/age instead of DEFAULT_PROFILE's "Male · 30 yrs". */
+/** The funnel lands on Today; the checks of the seeded profile's body data
+ *  and inputs read the calculator (Targets), so they open it directly. */
+const DEMO_ON_CALCULATOR = "/app?demo=1&view=calculator";
+
+/** Resolves once the seed's profile is visible on the calculator: the summary
+ *  strip leads with the demo's sex/age instead of DEFAULT_PROFILE's
+ *  "Male · 30 yrs". */
 async function findDemoSummary(): Promise<HTMLElement> {
   return screen.findByText("Female", {}, { timeout: 3_000 });
 }
@@ -189,8 +200,27 @@ afterEach(() => {
 vi.setConfig({ testTimeout: 15_000 });
 
 describe("?demo=1 first load", () => {
-  it("shows the demo profile and its target without a reload", async () => {
+  it("lands on Today with the seeded day", async () => {
     window.history.replaceState({}, "", "/app?demo=1");
+    renderApp();
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Today" }),
+    ).toBeTruthy();
+    // Today's sample meals show without a reload.
+    expect(
+      (await screen.findAllByText("Greek Yogurt", {}, { timeout: 3_000 }))
+        .length,
+    ).toBeGreaterThan(0);
+    // The seed strips `?demo=1` as its last step: wait for it, so none of
+    // its later writes (weights, water) land in the next test's stores.
+    await waitFor(
+      () => expect(window.location.search).not.toContain("demo=1"),
+      { timeout: 3_000 },
+    );
+  });
+
+  it("shows the demo profile and its target without a reload", async () => {
+    window.history.replaceState({}, "", DEMO_ON_CALCULATOR);
     renderApp();
 
     const sex = await findDemoSummary();
@@ -241,7 +271,7 @@ describe("?demo=1 first load", () => {
   });
 
   it("leaves the seeded profile row alone once it is loaded (no re-save)", async () => {
-    window.history.replaceState({}, "", "/app?demo=1");
+    window.history.replaceState({}, "", DEMO_ON_CALCULATOR);
     renderApp();
     await findDemoSummary();
     const before = await getProfileRecord();
@@ -253,7 +283,7 @@ describe("?demo=1 first load", () => {
   });
 
   it("shows the demo's cuisine preference as selected", async () => {
-    window.history.replaceState({}, "", "/app?demo=1");
+    window.history.replaceState({}, "", DEMO_ON_CALCULATOR);
     renderApp();
     await findDemoSummary();
 
@@ -281,7 +311,7 @@ describe("signing in after exploring the sample data", () => {
     // The load after the sign-in redirect: the seeded dataset is still in
     // IndexedDB and this device never finished onboarding.
     await saveDemoProfile(getDemoProfile());
-    window.history.replaceState({}, "", "/app");
+    window.history.replaceState({}, "", "/app?view=calculator");
     renderApp();
     await findDemoSummary();
 

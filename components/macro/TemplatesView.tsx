@@ -1,5 +1,6 @@
 "use client";
 
+import { NAV } from "@/components/shell/nav";
 import { Button } from "@/components/ui/button";
 import { DestructiveConfirmDialog } from "@/components/ui/destructive-confirm-dialog";
 import { Input } from "@/components/ui/input";
@@ -58,8 +59,8 @@ import { useSortableRow } from "./useSortableRow";
  *  A "create blank template + add foods directly here" flow needs a
  *  food-picker UI that's bigger than this Pass; tracked as a follow-up. */
 type Props = {
-  /** Switch the app to the Meal Plan view. Surfaced from the empty
-   *  state's "Open Meal Plan" CTA so a fresh user can jump straight
+  /** Switch the app to the day view (Today). Surfaced from the empty
+   *  state's "Open Today" CTA so a fresh user can jump straight
    *  to the surface that creates templates. Optional - the empty
    *  state degrades to a passive sentence if not provided. */
   onGoToPlan?: () => void;
@@ -326,7 +327,7 @@ export function TemplatesView({ onGoToPlan }: Props = {}) {
                     size="sm"
                     onClick={onGoToPlan}
                   >
-                    Open Meal Plan
+                    Open {NAV.plan.label}
                   </Button>
                 </div>
               )}

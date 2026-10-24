@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useNotificationDrawer } from "@/hooks/use-notification-drawer";
 import { Bell } from "lucide-react";
 import { NotificationsSheet } from "./NotificationsSheet";
-import type { ViewKey } from "./Sidebar";
+import type { ViewKey } from "./nav";
 
 type Props = {
   /** Forwarded from the topbar so a notification tap can switch the

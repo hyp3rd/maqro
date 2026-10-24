@@ -13,134 +13,19 @@ import {
 import { useIsAdmin } from "@/hooks/use-user-role";
 import { subscribeOpenCommandPalette } from "@/lib/command-palette-bus";
 import * as React from "react";
-import {
-  Activity,
-  Calculator,
-  ChefHat,
-  HelpCircle,
-  Hourglass,
-  LayoutGrid,
-  LineChart,
-  Moon,
-  Package,
-  Settings,
-  ShieldAlert,
-  ShoppingCart,
-  Sun,
-  UserCircle,
-  Utensils,
-} from "lucide-react";
+import { HelpCircle, Moon, ShieldAlert, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useRouter } from "next/navigation";
-import type { ViewKey } from "./Sidebar";
+import { NAV, VIEW_KEYS, type ViewKey } from "./nav";
 
 type Props = {
   /** Switch the main app view. Mirrors AppShell's `onSelect`. */
   onSelectView: (key: ViewKey) => void;
 };
 
-type NavCommand = {
-  key: ViewKey;
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  /** Optional alt keywords for fuzzy search — cmdk searches against
-   *  `value` by default but our value is the route key. Adding
-   *  keywords lets a user type "weight" or "graph" and still land
-   *  on Progress. */
-  keywords: string[];
-};
-
-const NAV_COMMANDS: NavCommand[] = [
-  {
-    key: "calculator",
-    label: "Calculator",
-    icon: Calculator,
-    keywords: ["macros", "tdee", "bmr", "target", "home"],
-  },
-  {
-    key: "profile",
-    label: "Profile",
-    icon: UserCircle,
-    keywords: ["body", "age", "birthdate", "weight", "height", "gender", "me"],
-  },
-  {
-    key: "plan",
-    label: "Meal Plan",
-    icon: Utensils,
-    keywords: ["meals", "today", "log", "breakfast", "lunch", "dinner"],
-  },
-  {
-    key: "progress",
-    label: "Progress",
-    icon: LineChart,
-    keywords: ["weight", "graph", "trend", "plateau", "streak"],
-  },
-  {
-    key: "health",
-    label: "Health",
-    icon: Hourglass,
-    keywords: [
-      "intermittent",
-      "if",
-      "16:8",
-      "phase",
-      "autophagy",
-      "ketosis",
-      "eating window",
-      "fasting",
-      "supplement",
-      "vitamin",
-      "supplements",
-    ],
-  },
-  {
-    key: "foods",
-    label: "My Foods",
-    icon: Activity,
-    keywords: ["catalog", "custom", "ingredients"],
-  },
-  {
-    key: "recipes",
-    label: "Recipes",
-    icon: ChefHat,
-    keywords: ["cookbook", "ingredients"],
-  },
-  {
-    key: "templates",
-    label: "Templates",
-    icon: LayoutGrid,
-    keywords: ["saved meals", "presets"],
-  },
-  {
-    key: "shopping",
-    label: "Shopping",
-    icon: ShoppingCart,
-    keywords: ["grocery", "list", "buy"],
-  },
-  {
-    key: "pantry",
-    label: "Pantry",
-    icon: Package,
-    keywords: ["inventory", "stock", "fridge", "on hand", "have"],
-  },
-  {
-    key: "settings",
-    label: "Settings",
-    icon: Settings,
-    keywords: [
-      "account",
-      "billing",
-      "subscription",
-      "notifications",
-      "export",
-      "import",
-      "delete",
-    ],
-  },
-];
-
 /** Global command palette — Cmd-K / Ctrl-K to open. Surfaces:
- *    - Every nav destination as a typeable command
+ *    - Every nav destination (from the registry, ./nav.ts) as a
+ *      typeable command, matched on its label and keywords
  *    - Theme toggle (light / dark / system)
  *    - Admin entry point (only when the caller is an admin)
  *
@@ -191,16 +76,18 @@ export function CommandPalette({ onSelectView }: Props) {
         <CommandEmpty>No matches.</CommandEmpty>
 
         <CommandGroup heading="Navigate">
-          {NAV_COMMANDS.map((cmd) => {
-            const Icon = cmd.icon;
+          {VIEW_KEYS.map((key) => {
+            const { label, icon: Icon, keywords } = NAV[key];
             return (
               <CommandItem
-                key={cmd.key}
-                value={`${cmd.label} ${cmd.keywords.join(" ")}`}
-                onSelect={() => runAndClose(() => onSelectView(cmd.key))}
+                key={key}
+                // cmdk filters on `value`; the keywords let "weight" or
+                // "graph" still land on Progress.
+                value={`${label} ${keywords.join(" ")}`}
+                onSelect={() => runAndClose(() => onSelectView(key))}
               >
                 <Icon className="mr-2 h-4 w-4" />
-                <span>{cmd.label}</span>
+                <span>{label}</span>
               </CommandItem>
             );
           })}
