@@ -30,16 +30,23 @@ const EATEN = new Map([
   ["2026-10-21", 1240],
 ]);
 
-function renderStrip(selectedDate = "2026-10-21", onSelect = vi.fn()) {
+function renderStrip(
+  selectedDate = "2026-10-21",
+  onSelect = vi.fn(),
+  {
+    eaten = EATEN,
+    locale = "en",
+  }: { eaten?: ReadonlyMap<string, number>; locale?: "en" | "it" } = {},
+) {
   render(
     <WeekStrip
       days={WEEK}
-      eatenByDate={EATEN}
+      eatenByDate={eaten}
       today="2026-10-21"
       selectedDate={selectedDate}
       onSelect={onSelect}
     />,
-    { wrapper: intlWrapper() },
+    { wrapper: intlWrapper(locale) },
   );
   return onSelect;
 }
@@ -111,5 +118,70 @@ describe("WeekStrip", () => {
     expect(mon.querySelector("[data-part=fill]")?.className).toContain(
       "bg-foreground",
     );
+  });
+
+  it("builds its date formatters once, not per day on every render", () => {
+    const Original = Intl.DateTimeFormat;
+    let built = 0;
+    const spy = vi.spyOn(Intl, "DateTimeFormat").mockImplementation(function (
+      ...args: ConstructorParameters<typeof Intl.DateTimeFormat>
+    ) {
+      built += 1;
+      return new Original(...args);
+    } as unknown as typeof Intl.DateTimeFormat);
+    try {
+      const { rerender } = render(
+        <WeekStrip
+          days={WEEK}
+          eatenByDate={EATEN}
+          today="2026-10-21"
+          selectedDate="2026-10-21"
+          onSelect={vi.fn()}
+        />,
+        { wrapper: intlWrapper() },
+      );
+      const first = built;
+      rerender(
+        <WeekStrip
+          days={WEEK}
+          eatenByDate={EATEN}
+          today="2026-10-21"
+          selectedDate="2026-10-22"
+          onSelect={vi.fn()}
+        />,
+      );
+      // One per part (weekday, day, month) for the locale, then none.
+      expect(first).toBeLessThanOrEqual(3);
+      expect(built).toBe(first);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("compacts an overshoot of 1,000 or more so it fits its cell", () => {
+    // Tue: 3,250 against 1,950 → 1,300 over.
+    renderStrip("2026-10-21", vi.fn(), {
+      eaten: new Map([["2026-10-20", 3250]]),
+    });
+    const tue = screen.getByRole("button", { name: /^Tue 20 Oct/ });
+    // The full figure stays in the day's name.
+    expect(tue.getAttribute("aria-label")).toContain("1,300 above target");
+    const plus = within(tue).getByText("+1.3K");
+    // Clipped to its cell, never spilling into the next day's.
+    expect(plus.className).toContain("w-[calc(100%+0.5rem)]");
+    expect(plus.className).toContain("overflow-hidden");
+    expect(screen.queryByText("+1,300")).toBeNull();
+  });
+
+  it("compacts in the app locale and keeps smaller overshoots whole", () => {
+    renderStrip("2026-10-21", vi.fn(), {
+      eaten: new Map([
+        ["2026-10-19", 3600],
+        ["2026-10-20", 2949],
+      ]),
+      locale: "it",
+    });
+    expect(screen.getByText("+1,3K")).toBeTruthy();
+    expect(screen.getByText("+999")).toBeTruthy();
   });
 });

@@ -9,18 +9,36 @@ import {
   weekStripDays,
 } from "@/lib/today/week-strip";
 import { cn } from "@/lib/utils";
+import { useMemo } from "react";
 import { useLocale } from "next-intl";
 
-function dayNames(key: string, locale: string) {
-  const date = localDate(key);
-  const part = (options: Intl.DateTimeFormatOptions) =>
-    new Intl.DateTimeFormat(locale, options).format(date);
+/** The strip's formatters for one locale, built once per locale rather
+ *  than three per day on every render (a search keystroke re-renders the
+ *  day view). A compact "+1.3K" keeps a large overshoot inside its cell;
+ *  the day's accessible name still carries the full figure. */
+function stripFormats(locale: string) {
   return {
-    weekday: part({ weekday: "short" }),
-    day: part({ day: "numeric" }),
-    month: part({ month: "short" }),
+    weekday: new Intl.DateTimeFormat(locale, { weekday: "short" }),
+    day: new Intl.DateTimeFormat(locale, { day: "numeric" }),
+    month: new Intl.DateTimeFormat(locale, { month: "short" }),
+    compact: new Intl.NumberFormat(locale, { notation: "compact" }),
   };
 }
+
+type StripFormats = ReturnType<typeof stripFormats>;
+
+function dayNames(key: string, formats: StripFormats) {
+  const date = localDate(key);
+  return {
+    weekday: formats.weekday.format(date),
+    day: formats.day.format(date),
+    month: formats.month.format(date),
+  };
+}
+
+/** Overshoots under 1,000 read whole ("+110"); from 1,000 the strip's
+ *  ~5-character cell takes the locale's compact form ("+1.3K", "+1,3K"). */
+const COMPACT_FROM = 1000;
 
 function accessibleName(
   day: StripDay,
@@ -77,7 +95,10 @@ export function WeekStrip({
   className?: string;
 }) {
   const locale = useLocale();
+  const formats = useMemo(() => stripFormats(locale), [locale]);
   const show = (n: number) => formatNumber(n, locale);
+  const showOver = (n: number) =>
+    n >= COMPACT_FROM ? formats.compact.format(n) : show(n);
   const strip = weekStripDays(days, eatenByDate, today, selectedDate);
 
   return (
@@ -90,7 +111,7 @@ export function WeekStrip({
     >
       <ul className="grid grid-cols-7 gap-1">
         {strip.map((day) => {
-          const names = dayNames(day.date, locale);
+          const names = dayNames(day.date, formats);
           const tone = FILL[day.when];
           return (
             <li key={day.date}>
@@ -180,12 +201,16 @@ export function WeekStrip({
                     />
                   )}
                 </span>
-                {/* Reserved so a "+N" appearing never shifts the row. */}
+                {/* Reserved so a "+N" appearing never shifts the row. It
+                    spans the cell's full width (the button's padding
+                    included: a 320 px phone leaves ~37 px, room for a
+                    five-character "+1.3K") and is clipped to it, so it
+                    never runs into the next day. */}
                 <span
                   aria-hidden
-                  className="h-4 font-mono text-xs leading-4 tabular-nums text-muted-foreground"
+                  className="-mx-1 h-4 w-[calc(100%+0.5rem)] overflow-hidden whitespace-nowrap text-center font-mono text-xs leading-4 tabular-nums text-muted-foreground"
                 >
-                  {day.over > 0 ? `+${show(day.over)}` : null}
+                  {day.over > 0 ? `+${showOver(day.over)}` : null}
                 </span>
               </button>
             </li>
