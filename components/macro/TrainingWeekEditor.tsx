@@ -15,6 +15,7 @@ import type { DateTargets, WeekTargets } from "@maqro/core/targets";
 import {
   CYCLING_PRESETS,
   CYCLING_WEIGHTS,
+  DEFAULT_PROTEIN_SETTING,
   DAY_KCAL_STEP,
   PROTEIN_G_PER_KG_MAX,
   PROTEIN_G_PER_KG_MIN,
@@ -697,10 +698,15 @@ function BodyFatNote({
   proteinBasis: "bodyweight" | "leanMass" | "referenceWeight";
   onOpenMeasurements: () => void;
 }) {
+  const locale = useLocale();
+  // The lean-mass fallback's cap is the engine's default g/kg.
+  const cap = formatNumber(DEFAULT_PROTEIN_SETTING.gPerKg, locale, 1);
+  // With an estimate a bodyweight setting is taken on the full bodyweight
+  // (`proteinGrams`), not the reference weight.
   const copy =
     setting.basis === "leanMass"
-      ? `Lean mass needs a body-fat estimate. Until there is one, protein uses up to 2.0 g/kg of ${proteinBasis === "referenceWeight" ? "a reference weight for your height" : "your bodyweight"}.`
-      : "Protein is set from a reference weight for your height. A body-fat estimate would make it more precise.";
+      ? `Lean mass needs a body-fat estimate. Until there is one, protein uses up to ${cap} g/kg of ${proteinBasis === "referenceWeight" ? "a reference weight for your height" : "your bodyweight"}.`
+      : "Protein is set from a reference weight for your height. With a body-fat estimate it would use your own bodyweight.";
   return (
     <Callout tone="info">
       <p>{copy}</p>

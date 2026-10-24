@@ -485,7 +485,11 @@ describe("TrainingWeekEditor: notes from the engine's flags", () => {
   it("the BMI reference weight suggests a body-fat estimate too", () => {
     // 180 cm at 115 kg: BMI ≈ 35.5, so protein is on the reference weight.
     renderEditor({ initial: { ...profile, weight: 115 } });
-    expect(screen.getByText(/reference weight for your height/)).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Protein is set from a reference weight for your height. With a body-fat estimate it would use your own bodyweight.",
+      ),
+    ).toBeTruthy();
   });
 
   /** A custom split with a 10% fat share, under the fat floor. */
