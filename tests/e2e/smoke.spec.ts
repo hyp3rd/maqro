@@ -188,7 +188,11 @@ test.describe("maqro happy path", () => {
 
     // Click "Previous day" to go to yesterday.
     await page.getByRole("button", { name: "Previous day" }).click();
-    await expect(page.getByText("Yesterday", { exact: true })).toBeVisible();
+    // (Off today the label also carries the ISO date on wide screens.)
+    await expect(dateLabel).toHaveText(/^Yesterday/);
+    // The page heading names the shown day too, never "Today" off today.
+    const heading = page.getByRole("heading", { level: 1 });
+    await expect(heading).toHaveText("Yesterday");
     // The "Today" snap-back button appears when off today (in the day view,
     // not the sidebar's "Today").
     const snapBack = page
@@ -199,6 +203,7 @@ test.describe("maqro happy path", () => {
     // Snap back to today.
     await snapBack.click();
     await expect(dateLabel).toHaveText("Today");
+    await expect(heading).toHaveText("Today");
   });
 
   test("meal templates round-trip: save then apply on an empty meal", async ({
