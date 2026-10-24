@@ -190,6 +190,57 @@ describe("quickAddMealId", () => {
       expect(quickAddMealId(day, at(23))).toBe(4);
     });
 
+    describe("snacks named for another part of the day", () => {
+      it("stay out of the positional pick while an unqualified snack exists", () => {
+        // A "Morning snack" listed after Dinner never takes late night: the
+        // positional rule picks among the snacks that name no part of the
+        // day ("Snacks"), even though the morning one is the first after
+        // Dinner.
+        const day = [
+          { id: 1, name: "Breakfast" },
+          { id: 2, name: "Lunch" },
+          { id: 3, name: "Dinner" },
+          { id: 4, name: "Morning snack" },
+          { id: 5, name: "Snacks" },
+        ];
+        expect(quickAddMealId(day, at(23))).toBe(5);
+        expect(quickAddMealId(day, at(15, 30))).toBe(5);
+      });
+
+      it("are the pool when every snack names a part of the day", () => {
+        // No evening slot and both snacks qualified: the positional rule
+        // falls back to all of them, so late night (nothing after Dinner)
+        // takes the last one listed — the afternoon one, never the morning
+        // one listed first.
+        const morningFirst = [
+          { id: 1, name: "Breakfast" },
+          { id: 2, name: "Morning snack" },
+          { id: 3, name: "Lunch" },
+          { id: 4, name: "Afternoon snack" },
+          { id: 5, name: "Dinner" },
+        ];
+        expect(quickAddMealId(morningFirst, at(23))).toBe(4);
+        expect(quickAddMealId(morningFirst, at(1))).toBe(4);
+      });
+
+      it("a morning snack never wins by name: no snack window is in the morning", () => {
+        // The snack windows are 15:00–17:00 and 22:00–04:00; at every
+        // minute of them, a day with only a morning snack and an
+        // unqualified one targets the unqualified one.
+        const day = [
+          { id: 1, name: "Breakfast" },
+          { id: 2, name: "Snack" },
+          { id: 3, name: "Morning snack" },
+          { id: 4, name: "Lunch" },
+          { id: 5, name: "Dinner" },
+        ];
+        for (let m = 0; m < 24 * 60; m++) {
+          if (slotKindAt(m) !== "snack") continue;
+          expect(quickAddMealId(day, m)).toBe(2);
+        }
+      });
+    });
+
     it("only snack slots → the first", () => {
       const day = [
         { id: 1, name: "Snack 1" },
