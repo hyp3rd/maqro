@@ -2,6 +2,7 @@
 
 import { StreakChip } from "@/components/macro/StreakChip";
 import { NumberTicker } from "@/components/shell/NumberTicker";
+import { type MacroKey, MacroStat } from "@/components/ui/macro-stat";
 import React, { useEffect, useState } from "react";
 import { Loader2, Share2 } from "lucide-react";
 import { toast } from "sonner";
@@ -69,13 +70,11 @@ const SUB_MACRO_LABELS: Record<keyof MacroBreakdown, string> = {
   polyFat: "Poly-unsat. fat",
 };
 
-type Row = {
-  key: keyof TotalMacros;
-  label: string;
-  target: number;
-  unit: string;
-  cssVar?: string;
-};
+/** Whole numbers without grouping, matching the animated NumberTicker
+ *  figure so "/ 2200 kcal" and "1240" read alike. */
+function wholeNumber(n: number): string {
+  return String(Math.round(n));
+}
 
 const DailyTotals: React.FC<DailyTotalsProps> = ({
   calculatedValues,
@@ -84,9 +83,6 @@ const DailyTotals: React.FC<DailyTotalsProps> = ({
   selectedDate,
   today,
 }) => {
-  const pct = (current: number, target: number) =>
-    target === 0 ? 0 : Math.min(Math.round((current / target) * 100), 100);
-
   // The single most actionable number on the page: how many calories are
   // left against the displayed day's target. The tiles show consumed/target, which
   // forces the user to do the subtraction in their head — this does it for
@@ -103,34 +99,14 @@ const DailyTotals: React.FC<DailyTotalsProps> = ({
   const goalReached = targetCalories > 0 && consumedCalories >= targetCalories;
   useGoalReachedCelebration(goalReached, isToday, today);
 
-  const rows: Row[] = [
-    {
-      key: "protein",
-      label: "Protein",
-      target: calculatedValues.protein,
-      unit: "g",
-      cssVar: "--macro-protein",
-    },
-    {
-      key: "carbs",
-      label: "Carbs",
-      target: calculatedValues.carbs,
-      unit: "g",
-      cssVar: "--macro-carbs",
-    },
-    {
-      key: "fat",
-      label: "Fat",
-      target: calculatedValues.fat,
-      unit: "g",
-      cssVar: "--macro-fat",
-    },
-    {
-      key: "calories",
-      label: "kcal",
-      target: calculatedValues.targetCalories,
-      unit: "",
-    },
+  // Each meter runs against the day's target and keeps going past it: over
+  // and under are shown (a same-hue overshoot and a neutral "+N"), never
+  // clamped at 100% and never judged.
+  const rows: { macro: MacroKey; target: number }[] = [
+    { macro: "protein", target: calculatedValues.protein },
+    { macro: "carbs", target: calculatedValues.carbs },
+    { macro: "fat", target: calculatedValues.fat },
+    { macro: "calories", target: calculatedValues.targetCalories },
   ];
 
   return (
@@ -174,74 +150,34 @@ const DailyTotals: React.FC<DailyTotalsProps> = ({
               </span>
             </>
           ) : remainingCalories === 0 ? (
-            <span className="font-medium text-emerald-600 dark:text-emerald-400">
+            <span className="font-medium text-foreground">
               Daily target reached
             </span>
           ) : (
+            // Over is stated, not judged: same neutral styling as "left".
             <>
-              <span className="font-semibold tabular-nums text-amber-600 dark:text-amber-400">
+              <span className="font-semibold tabular-nums text-foreground">
                 {Math.abs(remainingCalories).toLocaleString()}
               </span>{" "}
-              <span className="text-muted-foreground">kcal over target</span>
+              <span className="text-muted-foreground">kcal above target</span>
             </>
           )}
         </p>
       )}
-      <div className="grid grid-cols-2 gap-x-3 gap-y-4 sm:grid-cols-4 sm:gap-x-4">
-        {rows.map((row) => {
-          const current = totalMacros[row.key];
-          const p = pct(current, row.target);
-          return (
-            <div
-              key={row.key}
-              className="space-y-1.5"
-            >
-              <div className="flex items-baseline justify-between gap-2">
-                <div className="flex items-center gap-1.5">
-                  {row.cssVar && (
-                    <span
-                      className="h-1.5 w-1.5 rounded-full"
-                      style={{ background: `hsl(var(${row.cssVar}))` }}
-                      aria-hidden
-                    />
-                  )}
-                  <span className="text-xs font-medium text-foreground">
-                    {row.label}
-                  </span>
-                </div>
-                <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-                  / {row.target}
-                  {row.unit}
-                </span>
-              </div>
-              <p className="font-mono text-xl font-semibold tabular-nums text-foreground">
-                <NumberTicker
-                  value={current}
-                  suffix={row.unit}
-                />
-              </p>
-              <div
-                className="h-0.5 w-full overflow-hidden rounded-full bg-muted"
-                role="progressbar"
-                aria-valuemin={0}
-                aria-valuemax={row.target}
-                aria-valuenow={current}
-                aria-label={`${row.label} ${current} of ${row.target}${row.unit}`}
-              >
-                <div
-                  className="h-full rounded-full transition-[width] duration-500 ease-out"
-                  style={{
-                    width: `${p}%`,
-                    background: row.cssVar
-                      ? `hsl(var(${row.cssVar}))`
-                      : "hsl(var(--foreground))",
-                  }}
-                />
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-4 sm:grid-cols-4 sm:gap-x-4">
+        {rows.map(({ macro, target }) => (
+          <MacroStat
+            key={macro}
+            macro={macro}
+            value={totalMacros[macro]}
+            target={target}
+            format={wholeNumber}
+            size="lg"
+          >
+            <NumberTicker value={totalMacros[macro]} />
+          </MacroStat>
+        ))}
+      </dl>
 
       {breakdown && Object.keys(breakdown).length > 0 && (
         <details className="mt-3 text-xs">

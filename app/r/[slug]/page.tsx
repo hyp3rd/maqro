@@ -1,4 +1,5 @@
 import type { RecipeIngredient } from "@/components/macro/types";
+import { MacroStat } from "@/components/ui/macro-stat";
 import { getEffectiveUser } from "@/lib/auth/effective-user";
 import { isValidShareSlug } from "@/lib/share-slug";
 import { getSupabaseServer } from "@/lib/supabase/server";
@@ -178,25 +179,25 @@ export default async function PublicRecipePage({
         <h2 className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
           Macros (full recipe)
         </h2>
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 font-mono tabular-nums sm:grid-cols-4">
-          <MacroCell
-            label="Calories"
-            value={`${Math.round(totals.calories)} kcal`}
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4">
+          <MacroStat
+            macro="calories"
+            value={totals.calories}
           />
-          <MacroCell
-            label="Protein"
-            value={`${totals.protein.toFixed(1)} g`}
-            cssVar="--macro-protein"
+          <MacroStat
+            macro="protein"
+            value={totals.protein}
+            format={oneDecimal}
           />
-          <MacroCell
-            label="Carbs"
-            value={`${totals.carbs.toFixed(1)} g`}
-            cssVar="--macro-carbs"
+          <MacroStat
+            macro="carbs"
+            value={totals.carbs}
+            format={oneDecimal}
           />
-          <MacroCell
-            label="Fat"
-            value={`${totals.fat.toFixed(1)} g`}
-            cssVar="--macro-fat"
+          <MacroStat
+            macro="fat"
+            value={totals.fat}
+            format={oneDecimal}
           />
         </dl>
       </section>
@@ -305,26 +306,7 @@ function UnavailablePanel({
   );
 }
 
-function MacroCell({
-  label,
-  value,
-  cssVar,
-}: {
-  label: string;
-  value: string;
-  cssVar?: string;
-}) {
-  return (
-    <div className="flex flex-col gap-1">
-      <dt className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-        {label}
-      </dt>
-      <dd
-        className="text-lg font-semibold text-foreground"
-        style={cssVar ? { color: `hsl(var(${cssVar}))` } : undefined}
-      >
-        {value}
-      </dd>
-    </div>
-  );
+/** Recipe gram totals read to one decimal, as before the MacroStat move. */
+function oneDecimal(n: number): string {
+  return n.toFixed(1);
 }
