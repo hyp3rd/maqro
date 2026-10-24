@@ -392,7 +392,9 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
     // the instrument, the day's extras (phase banner, water, fasting), then
     // logging. Phone (390 × 844 first): the instrument — header, week strip,
     // gauge + readout, 24-hour track — sits above the fold and one-tap water
-    // follows it, ahead of the meal list. Wider, the grid places the groups.
+    // follows it, ahead of the meal list. In one column the instrument
+    // keeps an instrument's width (36rem) rather than stretching its
+    // readout across a tablet. Wider, the grid places the groups.
     // The breakpoints assume the expanded 240 px sidebar plus the shell's
     // padding (18rem), so each tier has room for its columns whatever the
     // sidebar's state (a container query here would also contain the
@@ -406,7 +408,7 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
     <div className="grid grid-cols-1 gap-6 min-[66rem]:grid-cols-[24rem_minmax(0,1fr)] min-[84rem]:grid-cols-[24rem_minmax(40rem,1fr)] min-[84rem]:grid-rows-[auto_1fr]">
       <section
         aria-labelledby={titleId}
-        className="min-w-0 space-y-4 min-[66rem]:col-[1] min-[66rem]:row-[1] min-[66rem]:self-start"
+        className="min-w-0 max-w-xl space-y-4 min-[66rem]:col-[1] min-[66rem]:row-[1] min-[66rem]:self-start"
       >
         <TodayHeader
           date={selectedDate}
