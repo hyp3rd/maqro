@@ -122,12 +122,16 @@ async function matchingLastKnownUserId(): Promise<string | null> {
   return (await readStoredSessionUserId()) === recorded ? recorded : null;
 }
 
-/** Keep the last-known record in step with what the hook reports: a session
- *  records its user (an account switch replaces the previous one), the
- *  offline-unverified state leaves it alone, and signed out clears it. */
-function syncLastKnownUser(identity: Identity): void {
-  if (identity.user !== null) writeLastKnownUserId(identity.user.id);
-  else if (identity.offlineUserId === null) clearLastKnownUser();
+/** Keep the last-known record in step with an answer about the session.
+ *  The record is the offline fallback's only identity, so only a session the
+ *  server has `verified` records its user (an account switch replaces the
+ *  previous one); a session it has not verified (resolved offline, say)
+ *  and the offline-unverified state leave the record alone, and signed out
+ *  clears it. */
+function syncLastKnownUser(identity: Identity, verified: boolean): void {
+  if (identity.user !== null) {
+    if (verified) writeLastKnownUserId(identity.user.id);
+  } else if (identity.offlineUserId === null) clearLastKnownUser();
 }
 
 /** Auth events whose session auth-js has just obtained from the auth server
@@ -174,16 +178,29 @@ export function useUser(): UserState {
     // was checking discards it (`inFlight = null`), so a late answer never
     // restores the identity the event replaced.
     let inFlight: Check | null = null;
+    // The user id the server has vouched for, while that is the identity the
+    // hook reports (`null` otherwise).
+    let verifiedUserId: string | null = null;
+    // The user id of the session the server last refused, until it accepts
+    // one or the session is signed out. auth-js keeps a session that
+    // `/auth/v1/user` refused as banned or deleted (it removes only a
+    // missing one) and re-delivers it as SIGNED_IN on every tab focus.
+    let refusedUserId: string | null = null;
 
-    const show = (next: Identity) => {
+    const show = (next: Identity, verified: boolean) => {
       shownUserId = next.user?.id ?? next.offlineUserId;
+      verifiedUserId = verified ? (next.user?.id ?? null) : null;
       setIdentity(next);
     };
 
-    const apply = (next: Identity) => {
-      syncLastKnownUser(next);
-      show(next);
-    };
+    /** Show a session the server has not vouched for: provisionally, and
+     *  never one it has refused, which stays hidden (nothing keyed to the
+     *  account, like sync, may start) until a check accepts it. */
+    const showUnverified = (user: User) =>
+      show(
+        user.id === refusedUserId ? SIGNED_OUT : { user, offlineUserId: null },
+        false,
+      );
 
     /** Ask the server about the session auth-js holds, as the session of
      *  `subject` (`null` while that is not known yet: the first session
@@ -211,7 +228,10 @@ export function useUser(): UserState {
           inFlight = null;
           resolved = true;
           unverified = stale;
-          apply(next);
+          if (!stale) refusedUserId = next.user === null ? check.subject : null;
+          syncLastKnownUser(next, !stale);
+          if (stale && next.user !== null) showUnverified(next.user);
+          else show(next, !stale);
           setAuthResolved(true);
           if (stale && check.retry) verify(check.subject);
         },
@@ -230,7 +250,7 @@ export function useUser(): UserState {
           inFlight = null;
           resolved = true;
           unverified = true;
-          show(SIGNED_OUT);
+          show(SIGNED_OUT, false);
           setAuthResolved(true);
           if (check.retry) verify(check.subject);
         },
@@ -251,7 +271,7 @@ export function useUser(): UserState {
           // Provisional only. Offline with an expired token it is `null`
           // although nothing signed the user out, so once `verify()` has
           // answered it must not override that answer.
-          if (!resolved) show({ user, offlineUserId: null });
+          if (!resolved) show({ user, offlineUserId: null }, false);
           return;
         }
         // Any other event reflects the session auth-js holds now (sign-in,
@@ -265,7 +285,9 @@ export function useUser(): UserState {
           inFlight = null;
           resolved = true;
           unverified = false;
-          apply(next);
+          refusedUserId = null;
+          syncLastKnownUser(next, true);
+          show(next, true);
           setAuthResolved(true);
           return;
         }
@@ -273,9 +295,10 @@ export function useUser(): UserState {
         // SIGNED_IN from `_recoverAndRefresh` while it initializes — so on
         // every cold start, while the first check is in flight — and on
         // every tab focus, without asking the server. It is the current
-        // session, so it shows at once (provisionally until an answer), but
-        // it says nothing about whether the server still accepts it (a
-        // banned or deleted user's token stays valid until it expires).
+        // session, but it says nothing about whether the server still
+        // accepts it (a banned or deleted user's token stays valid until it
+        // expires): it shows at once only provisionally — never written to
+        // the last-known record — until a check answers for it.
         if (
           inFlight !== null &&
           (inFlight.subject === null || inFlight.subject === user.id)
@@ -283,19 +306,19 @@ export function useUser(): UserState {
           // The check in flight is already asking about this session: it
           // decides. Asking again would only double the round trip.
           inFlight.subject = user.id;
-          if (resolved) apply(next);
-          else show(next);
+          showUnverified(user);
           return;
         }
-        // Otherwise the server's verdict on it is known only when nothing
-        // is in flight, the identity is verified and it is the user the
-        // hook reports. A session of another account than the one being
-        // checked discards that check, and is checked in turn.
-        const known =
-          inFlight === null && !unverified && user.id === shownUserId;
-        if (resolved) apply(next);
-        else show(next);
-        if (!known) verify(user.id);
+        if (inFlight === null && user.id === verifiedUserId) {
+          // The verified session, re-delivered (tab focus, another tab).
+          show(next, true);
+          return;
+        }
+        // Otherwise the server's verdict on it is not known. A session of
+        // another account than the one being checked discards that check,
+        // and is checked in turn.
+        showUnverified(user);
+        verify(user.id);
       },
     );
 

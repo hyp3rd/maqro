@@ -17,10 +17,11 @@
  *  so sync, AI, billing and account actions (which key off `user`) stay
  *  off. Every server route keeps re-authenticating the request itself.
  *
- *  Lifecycle: written whenever `useUser` observes a session (so an account
- *  switch replaces it); cleared when the server says the session is gone, on
- *  sign-out (`signOutAndClearLocal`), forced sign-out, account deletion and
- *  device reset.
+ *  Lifecycle: written whenever the server verifies a session `useUser`
+ *  reports (so an account switch replaces it) — never from a session only
+ *  read from storage, resolved offline, or refused; cleared when the server
+ *  says the session is gone, on sign-out (`signOutAndClearLocal`), forced
+ *  sign-out, account deletion and device reset.
  *
  *  localStorage can throw (Safari private mode, blocked site data, quota).
  *  A failed read means "no record" and a failed write means "nothing

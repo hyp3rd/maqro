@@ -496,17 +496,90 @@ describe("useUser — SIGNED_IN from storage is still checked with the server", 
     expect(readLastKnownUserId()).toBe("u1");
   });
 
-  it("a session the server refused is checked again when SIGNED_IN re-delivers it", async () => {
+  it("a session the server refused is checked again when SIGNED_IN re-delivers it, and never shown or recorded meanwhile", async () => {
     // auth-js keeps a session that `/auth/v1/user` refused with anything but
     // "session missing", and re-emits it as SIGNED_IN on the next tab focus.
-    const { result, releaseGetUser, emit, getUser } = await startWith(SESSION);
+    const { result, releaseGetUser, emit, getUser, holdGetUser } =
+      await startWith(SESSION);
     await act(async () => releaseGetUser(bannedGetUser));
     await waitFor(() => expect(result.current.isLoaded).toBe(true));
     expect(result.current.user).toBeNull();
 
+    const answer = holdGetUser();
+    emit("SIGNED_IN", SESSION);
+    expect(getUser).toHaveBeenCalledTimes(2);
+    // Still refused as far as anyone knows: nothing keyed to the account
+    // (sync, AI, billing) may start, and the offline fallback stays empty.
+    expect(result.current.user).toBeNull();
+    expect(result.current.localUserId).toBeNull();
+    expect(readLastKnownUserId()).toBeNull();
+
+    await answer(bannedGetUser);
+    expect(result.current.user).toBeNull();
+    expect(readLastKnownUserId()).toBeNull();
+  });
+
+  it("a refused session the server accepts later is shown and recorded", async () => {
+    const { result, releaseGetUser, emit, answerGetUserWith } =
+      await startWith(SESSION);
+    await act(async () => releaseGetUser(bannedGetUser));
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+
+    answerGetUserWith({ data: { user: USER }, error: null });
+    emit("SIGNED_IN", SESSION);
+    await waitFor(() => expect(result.current.user).toBe(USER));
+    expect(readLastKnownUserId()).toBe("u1");
+  });
+
+  it("a refused account signing in afresh after a sign-out is shown while checked", async () => {
+    const { result, releaseGetUser, emit, holdGetUser } =
+      await startWith(SESSION);
+    await act(async () => releaseGetUser(bannedGetUser));
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+
+    // The refused session is gone; a new sign-in is a new session.
+    emit("SIGNED_OUT", null);
+    const answer = holdGetUser();
+    emit("SIGNED_IN", SESSION);
+    expect(result.current.user).toBe(USER);
+    expect(readLastKnownUserId()).toBeNull();
+    await answer({ data: { user: USER }, error: null });
+    expect(readLastKnownUserId()).toBe("u1");
+  });
+
+  it("a refused session that can't be checked offline stays hidden", async () => {
+    const { result, releaseGetUser, emit, answerGetUserWith, getUser } =
+      await startWith(SESSION);
+    await act(async () => releaseGetUser(bannedGetUser));
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+
+    // getSession() still returns the stored (refused) session offline.
+    answerGetUserWith(offlineGetUser);
     emit("SIGNED_IN", SESSION);
     await waitFor(() => expect(getUser).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(result.current.user).toBeNull());
+    await act(async () => {});
+    expect(result.current.user).toBeNull();
+    expect(result.current.localUserId).toBeNull();
+    expect(readLastKnownUserId()).toBeNull();
+
+    // … and is checked again once that could succeed.
+    answerGetUserWith(bannedGetUser);
+    await goOnline();
+    expect(getUser).toHaveBeenCalledTimes(3);
+    expect(result.current.user).toBeNull();
+  });
+
+  it("a SIGNED_IN before the first answer shows the session but does not record it", async () => {
+    const { result, releaseGetUser, emit } = await startWith(SESSION);
+    emit("SIGNED_IN", SESSION);
+    // Provisional: shown at once, but nothing the server confirmed yet, so
+    // the last-known record (the offline fallback) is not written from it.
+    expect(result.current.user).toBe(USER);
+    expect(readLastKnownUserId()).toBeNull();
+
+    await act(async () => releaseGetUser(bannedGetUser));
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+    expect(result.current.user).toBeNull();
     expect(readLastKnownUserId()).toBeNull();
   });
 
@@ -667,8 +740,8 @@ describe("useUser — the identity check throws", () => {
 });
 
 describe("useUser — account switch", () => {
-  it("signing in as another account replaces the record", async () => {
-    const { result, releaseGetUser, emit, answerGetUserWith } =
+  it("signing in as another account replaces the record once the server verified it", async () => {
+    const { result, releaseGetUser, emit, holdGetUser } =
       await startWith(SESSION);
     await act(async () =>
       releaseGetUser({ data: { user: USER }, error: null }),
@@ -676,11 +749,15 @@ describe("useUser — account switch", () => {
     await waitFor(() => expect(readLastKnownUserId()).toBe("u1"));
 
     const other = { id: "u2" } as User;
-    answerGetUserWith({ data: { user: other }, error: null });
+    const answer = holdGetUser();
     emit("SIGNED_IN", { user: other } as Session);
+    // Shown at once (it is the current session), recorded only once verified.
+    expect(result.current.user).toBe(other);
+    expect(readLastKnownUserId()).toBe("u1");
+
+    await answer({ data: { user: other }, error: null });
     expect(result.current.user).toBe(other);
     expect(readLastKnownUserId()).toBe("u2");
-    await waitFor(() => expect(result.current.user).toBe(other));
   });
 });
 
@@ -783,6 +860,32 @@ describe("useUser — one identity check per instance", () => {
     await answer({ data: { user: USER }, error: null });
     expect(result.current.user).toBeNull();
     expect(readLastKnownUserId()).toBeNull();
+  });
+});
+
+/** The last-known record is the offline fallback's only identity, so only a
+ *  session the server has vouched for may write it. */
+describe("useUser — only a verified session is recorded", () => {
+  it("a session resolved offline is shown but not recorded", async () => {
+    const { result, releaseGetUser } = await startWith(SESSION);
+    await act(async () => releaseGetUser(offlineGetUser));
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+    expect(result.current.user).toBe(USER);
+    expect(readLastKnownUserId()).toBeNull();
+  });
+
+  it("after a thrown check, SIGNED_IN shows the session provisionally and records it only once verified", async () => {
+    const { result, failGetUser, emit, holdGetUser } = await startWith(SESSION);
+    await act(async () => failGetUser(new Error("storage failed")));
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+
+    const answer = holdGetUser();
+    emit("SIGNED_IN", SESSION);
+    expect(result.current.user).toBe(USER);
+    expect(readLastKnownUserId()).toBeNull();
+
+    await answer({ data: { user: USER }, error: null });
+    expect(readLastKnownUserId()).toBe("u1");
   });
 });
 
