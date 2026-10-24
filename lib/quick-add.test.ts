@@ -81,9 +81,123 @@ describe("quickAddMealId", () => {
       { id: 10, name: "Supper" },
     ];
     expect(quickAddMealId(day, at(9))).toBe(7);
-    // Two snack slots: the first one in the day's order wins.
-    expect(quickAddMealId(day, at(15, 30))).toBe(8);
+    // Two snack slots: the afternoon one's name says it's the one for 15:30.
+    expect(quickAddMealId(day, at(15, 30))).toBe(9);
     expect(quickAddMealId(day, at(20))).toBe(10);
+  });
+
+  describe("several snack slots: the one for the time of day", () => {
+    const FIVE_MEALS = [
+      { id: 1, name: "Breakfast" },
+      { id: 2, name: "Morning snack" },
+      { id: 3, name: "Lunch" },
+      { id: 4, name: "Afternoon snack" },
+      { id: 5, name: "Dinner" },
+    ];
+
+    it("15:30 → Afternoon snack, not the morning one", () => {
+      expect(quickAddMealId(FIVE_MEALS, at(15, 30))).toBe(4);
+    });
+
+    it("late night with no evening snack → the latest snack slot", () => {
+      // No slot after Dinner: the snack after the most recent main meal
+      // falls back to the day's last snack, never the morning one.
+      expect(quickAddMealId(FIVE_MEALS, at(23))).toBe(4);
+      expect(quickAddMealId(FIVE_MEALS, at(2))).toBe(4);
+    });
+
+    it("an evening snack slot takes late night", () => {
+      const day = [...FIVE_MEALS, { id: 6, name: "Evening snack" }];
+      expect(quickAddMealId(day, at(15, 30))).toBe(4);
+      expect(quickAddMealId(day, at(23))).toBe(6);
+      expect(quickAddMealId(day, at(1))).toBe(6);
+    });
+
+    it.each([
+      "Night snack",
+      "Late-night snack",
+      "Midnight snack",
+      "Bedtime snack",
+    ])("%j reads as late night", (name) => {
+      const day = [...FIVE_MEALS, { id: 6, name }];
+      expect(quickAddMealId(day, at(23))).toBe(6);
+      expect(quickAddMealId(day, at(16))).toBe(4);
+    });
+
+    it("a time word inside another word is not a qualifier", () => {
+      // "Chocolate" contains "late" but says nothing about the time.
+      const day = [
+        { id: 1, name: "Breakfast" },
+        { id: 2, name: "Lunch" },
+        { id: 3, name: "Chocolate snack" },
+        { id: 4, name: "Dinner" },
+        { id: 5, name: "Snack" },
+      ];
+      expect(quickAddMealId(day, at(15, 30))).toBe(3);
+      expect(quickAddMealId(day, at(23))).toBe(5);
+    });
+
+    it("qualified names win even when listed out of order", () => {
+      const day = [
+        { id: 1, name: "Breakfast" },
+        { id: 2, name: "Lunch" },
+        { id: 3, name: "Dinner" },
+        { id: 4, name: "Morning snack" },
+        { id: 5, name: "Afternoon snack" },
+      ];
+      expect(quickAddMealId(day, at(15, 30))).toBe(5);
+    });
+
+    it("Snack 1 / Snack 2 between the meals → by position", () => {
+      const day = [
+        { id: 1, name: "Breakfast" },
+        { id: 2, name: "Snack 1" },
+        { id: 3, name: "Lunch" },
+        { id: 4, name: "Snack 2" },
+        { id: 5, name: "Dinner" },
+      ];
+      // 15:30: the snack after Lunch. 23:00: none after Dinner → the last.
+      expect(quickAddMealId(day, at(15, 30))).toBe(4);
+      expect(quickAddMealId(day, at(23))).toBe(4);
+
+      const withEvening = [...day, { id: 6, name: "Snack 3" }];
+      expect(quickAddMealId(withEvening, at(15, 30))).toBe(4);
+      expect(quickAddMealId(withEvening, at(23))).toBe(6);
+      expect(quickAddMealId(withEvening, at(1))).toBe(6);
+    });
+
+    it("Snack 1 / Snack 2 after every meal → the first after the latest meal begun", () => {
+      const day = [
+        { id: 1, name: "Breakfast" },
+        { id: 2, name: "Lunch" },
+        { id: 3, name: "Dinner" },
+        { id: 4, name: "Snack 1" },
+        { id: 5, name: "Snack 2" },
+      ];
+      expect(quickAddMealId(day, at(15, 30))).toBe(4);
+      expect(quickAddMealId(day, at(23))).toBe(4);
+    });
+
+    it("a day missing the latest main meal anchors on the one before", () => {
+      // No dinner slot: at 23:00 the most recent main meal on the day is
+      // Lunch, so the snack after it.
+      const day = [
+        { id: 1, name: "Breakfast" },
+        { id: 2, name: "Snack 1" },
+        { id: 3, name: "Lunch" },
+        { id: 4, name: "Snack 2" },
+      ];
+      expect(quickAddMealId(day, at(23))).toBe(4);
+    });
+
+    it("only snack slots → the first", () => {
+      const day = [
+        { id: 1, name: "Snack 1" },
+        { id: 2, name: "Snack 2" },
+      ];
+      expect(quickAddMealId(day, at(15, 30))).toBe(1);
+      expect(quickAddMealId(day, at(23))).toBe(1);
+    });
   });
 
   it("no slot of the time's kind → null (the launcher starts at the meal step)", () => {
