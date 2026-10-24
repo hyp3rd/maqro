@@ -271,6 +271,55 @@ describe("/report body fat", () => {
     expect(bodyFat?.sub).toContain(`from ${from}`);
   });
 
+  it("with nothing measured in the window, shows the older reading the targets use, with its date", async () => {
+    data.query = "sections=summary,body,calories&days=30";
+    // The only complete reading predates the 30-day window.
+    data.measurements = [measurement("2026-04-01", 88, 38)];
+    const expected = estimateBodyFat({
+      bodyType: "male",
+      heightCm: 180,
+      waistCm: 88,
+      neckCm: 38,
+    });
+    const value = `${expected?.toFixed(1)}%`;
+    const from = new Date(2026, 3, 1).toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+    });
+
+    const model = (await downloadedModel()) as PdfModel & {
+      body: { stats: PdfStat[] };
+    };
+    const section = screen.getByRole("heading", { name: "Body composition" })
+      .parentElement as HTMLElement;
+    expect(section.textContent).toContain("No measurements in this window");
+    expect(section.textContent).toContain(`Latest reading (${from})`);
+    expect(section.textContent).toContain("88.0 cm");
+    expect(section.textContent).toContain(value);
+    const bodyFat = model.body.stats.find((s) => s.label === "Body fat");
+    expect(bodyFat?.value).toBe(value);
+    expect(bodyFat?.sub).toContain(`from ${from}`);
+    const waist = model.body.stats.find((s) => s.label === "Waist");
+    expect(waist?.value).toBe("88.0 cm");
+  });
+
+  it("with no usable reading anywhere, says nothing was measured in the window", async () => {
+    data.query = "sections=summary,body,calories&days=30";
+    // A waist-only check-in long ago: no estimate for the targets either.
+    data.measurements = [measurement("2026-04-01", 88)];
+    const model = (await downloadedModel()) as PdfModel & {
+      body: { stats: PdfStat[] };
+    };
+    const section = screen.getByRole("heading", { name: "Body composition" })
+      .parentElement as HTMLElement;
+    expect(section.textContent).toContain(
+      "No measurements logged in this window.",
+    );
+    expect(model.body.stats).toEqual([
+      { label: "Body", value: "—", sub: "No measurements yet" },
+    ]);
+  });
+
   /** A `YYYY-MM-DD` key is a calendar day, not UTC midnight: west of UTC,
    *  parsing it as UTC named the day before (the Progress screen, which
    *  parses it locally, named the right one). */
