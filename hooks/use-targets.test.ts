@@ -2,7 +2,11 @@
  * @vitest-environment jsdom
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { targetsForDate, weekTargets } from "@maqro/core/targets";
+import {
+  dayOverrideResolver,
+  targetsForDate,
+  weekTargets,
+} from "@maqro/core/targets";
 import type { PersonalInfo, TrainingSchedule } from "@maqro/core/types";
 import { renderHook } from "@testing-library/react";
 import { useTargets } from "./use-targets";
@@ -20,6 +24,17 @@ vi.mock("@/hooks/use-ai-usage", () => ({
 const bodyFat = vi.hoisted(() => ({ pct: null as number | null }));
 vi.mock("@/hooks/use-latest-body-fat", () => ({
   useLatestBodyFatPct: () => bodyFat.pct,
+}));
+const stored = vi.hoisted(() => ({
+  overrides: [] as { date: string; day: unknown; recordedAt: number }[],
+}));
+vi.mock("@/hooks/use-day-overrides", () => ({
+  useDayOverrides: () => ({
+    overrides: stored.overrides,
+    loaded: true,
+    setOverride: vi.fn(),
+    clearOverride: vi.fn(),
+  }),
 }));
 
 const TODAY = "2026-06-10";
@@ -58,6 +73,7 @@ beforeEach(() => {
   tierState.tier = "pro";
   tierState.resolved = true;
   bodyFat.pct = null;
+  stored.overrides = [];
 });
 
 describe("useTargets", () => {
@@ -242,17 +258,57 @@ describe("useTargets — body fat", () => {
     );
   });
 
-  it("selectedWeek reads the same estimate as the day view and planWeek", () => {
-    bodyFat.pct = 20;
-    const { result } = renderHook(() => useTargets(TRAINING, TODAY, TODAY));
-    expect(result.current.selectedWeek).toEqual(
-      weekTargets(TRAINING, TODAY, ctx(20)),
-    );
-    expect(result.current.selectedWeek).toEqual(
-      result.current.planWeek(TRAINING),
-    );
-    expect(
-      result.current.selectedWeek?.days.find((d) => d.date === TODAY),
-    ).toEqual(result.current.dayTargets);
+  describe("per-date session overrides", () => {
+    // TODAY (Wed 2026-06-10) is planned as a hard lower-body day.
+    const REST_TODAY = { date: TODAY, day: { type: "rest" }, recordedAt: 1 };
+    const withOverride = {
+      ...ctx(null),
+      overrideFor: dayOverrideResolver([REST_TODAY]),
+    };
+
+    it("today's, the shown day's and any day's target follow the stored override", () => {
+      stored.overrides = [REST_TODAY];
+      const plain = targetsForDate(TRAINING, TODAY, ctx(null));
+      const { result } = renderHook(() => useTargets(TRAINING, TODAY, TODAY));
+
+      expect(result.current.todayTargets).toEqual(
+        targetsForDate(TRAINING, TODAY, withOverride),
+      );
+      expect(result.current.todayTargets.training?.overridden).toBe(true);
+      expect(result.current.todayTargets.targetCalories).toBeLessThan(
+        plain.targetCalories,
+      );
+      expect(result.current.dayTargets).toBe(result.current.todayTargets);
+      expect(result.current.targetCaloriesForDate(TODAY)).toBe(
+        result.current.todayTargets.targetCalories,
+      );
+    });
+
+    it("planWeek plans the TEMPLATE week, without overrides (the editor)", () => {
+      stored.overrides = [REST_TODAY];
+      const { result } = renderHook(() => useTargets(TRAINING, TODAY, TODAY));
+      expect(result.current.planWeek(TRAINING)).toEqual(
+        weekTargets(TRAINING, TODAY, ctx(null)),
+      );
+    });
+
+    it("previewDayTargets resolves a candidate session, or the plan for null", () => {
+      stored.overrides = [REST_TODAY];
+      const { result } = renderHook(() => useTargets(TRAINING, TODAY, TODAY));
+      const legs = { type: "lower" as const, intensity: "hard" as const };
+      expect(result.current.previewDayTargets(BEFORE_CUT, legs)).toEqual(
+        targetsForDate(TRAINING, BEFORE_CUT, {
+          ...ctx(null),
+          overrideFor: dayOverrideResolver([
+            REST_TODAY,
+            { date: BEFORE_CUT, day: legs },
+          ]),
+        }),
+      );
+      // Back to plan: the template day even though an override is stored.
+      expect(result.current.previewDayTargets(TODAY, null)).toEqual(
+        targetsForDate(TRAINING, TODAY, ctx(null)),
+      );
+    });
   });
 });

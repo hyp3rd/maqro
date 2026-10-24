@@ -22,12 +22,14 @@ import {
   listBloodPressure,
   listBodyMeasurements,
   listDailyLogs,
+  listDayOverrides,
   listMicronutrientProfiles,
   listWaterIntake,
   listWeightEntries,
   type BloodPressure,
   type BodyMeasurement,
   type DailyLog,
+  type TrainingDayOverride,
   type WaterIntake,
   type WeightEntry,
 } from "@/lib/db";
@@ -78,7 +80,11 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { latestBodyFatPct } from "@maqro/core/body-fat";
 import { addDays } from "@maqro/core/date";
-import { type TargetContext, targetsForDate } from "@maqro/core/targets";
+import {
+  type TargetContext,
+  dayOverrideResolver,
+  targetsForDate,
+} from "@maqro/core/targets";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /** Dedicated print-optimised progress report.
@@ -137,6 +143,7 @@ function ReportClient() {
         bloodPressure: BloodPressure[];
         water: WaterIntake[];
         micronutrientProfiles: MicronutrientProfile[];
+        dayOverrides: TrainingDayOverride[];
       }
     | { kind: "error"; message: string }
   >({ kind: "loading" });
@@ -151,6 +158,7 @@ function ReportClient() {
       listMicronutrientProfiles(),
       listBloodPressure(),
       listWaterIntake(),
+      listDayOverrides(),
     ])
       .then(
         ([
@@ -161,6 +169,7 @@ function ReportClient() {
           micronutrientProfiles,
           bloodPressure,
           water,
+          dayOverrides,
         ]) => {
           if (cancelled) return;
           setState({
@@ -172,6 +181,7 @@ function ReportClient() {
             micronutrientProfiles: micronutrientProfiles ?? [],
             bloodPressure: bloodPressure ?? [],
             water: water ?? [],
+            dayOverrides: dayOverrides ?? [],
           });
         },
       )
@@ -211,6 +221,7 @@ function ReportClient() {
       bloodPressure={state.bloodPressure}
       water={state.water}
       micronutrientProfiles={state.micronutrientProfiles}
+      dayOverrides={state.dayOverrides}
     />
   );
 }
@@ -227,6 +238,7 @@ function ReportBody({
   bloodPressure,
   water,
   micronutrientProfiles,
+  dayOverrides,
 }: {
   title: string;
   note: string;
@@ -239,6 +251,7 @@ function ReportBody({
   bloodPressure: BloodPressure[];
   water: WaterIntake[];
   micronutrientProfiles: MicronutrientProfile[];
+  dayOverrides: TrainingDayOverride[];
 }) {
   // The user's LOCAL today — the same day key the app's day view, the
   // target below and every window (recap, streak, micronutrients, range
@@ -295,7 +308,9 @@ function ReportBody({
   const phasesEnabled = tier !== null && FEATURES.canUseGoalPhases(tier);
   // The body-fat estimate the app and the emails use: the latest usable
   // reading in the WHOLE history (not this report's window), so a training
-  // day's protein here matches theirs.
+  // day's protein here matches theirs. The per-date session overrides are
+  // the same rows the app reads, so an overridden day is scored against
+  // the target the app showed for it.
   const ctx = useMemo<TargetContext>(
     () => ({
       phasesEnabled,
@@ -305,8 +320,9 @@ function ReportBody({
             heightCm: profile.height,
           })
         : null,
+      overrideFor: dayOverrideResolver(dayOverrides),
     }),
-    [phasesEnabled, profile, measurements],
+    [phasesEnabled, profile, measurements, dayOverrides],
   );
   const calc = useMemo(
     () => (profile ? targetsForDate(profile, today, ctx) : null),

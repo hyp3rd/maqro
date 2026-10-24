@@ -66,6 +66,7 @@ const data = vi.hoisted(() => ({
   profile: null as PersonalInfo | null,
   logs: [] as DailyLog[],
   measurements: [] as BodyMeasurement[],
+  overrides: [] as { date: string; day: unknown; recordedAt: number }[],
 }));
 
 // The real resolver, observed: the body-fat suite asserts every call's
@@ -125,6 +126,7 @@ vi.mock("@/lib/db", async (importOriginal) => {
     listMicronutrientProfiles: async () => [],
     listBloodPressure: async () => [],
     listWaterIntake: async () => [],
+    listDayOverrides: async () => data.overrides,
     // The real local-day key, read off the (faked) clock — what `useToday`
     // and the report's windows run on.
     todayKey: actual.todayKey,
@@ -145,6 +147,7 @@ beforeEach(() => {
   data.profile = PROFILE;
   data.logs = [logged("2026-06-09", 1850)];
   data.measurements = [];
+  data.overrides = [];
   vi.useFakeTimers({ toFake: ["Date"] });
   // Midday on 2026-06-10, inside PROFILE's cut.
   vi.setSystemTime(new Date(2026, 5, 10, 12, 0, 0));
@@ -231,10 +234,42 @@ describe("/report body fat", () => {
     // report resolves (today's and each recap day's) carries the estimate.
     expect(resolver.mock.calls.length).toBeGreaterThan(0);
     for (const [, , ctx] of resolver.mock.calls) {
-      expect(ctx).toEqual({ phasesEnabled: false, bodyFatPct: expected });
+      expect(ctx).toMatchObject({ phasesEnabled: false, bodyFatPct: expected });
     }
   });
 });
+
+/** The model the report POSTs to the PDF renderer, as far as these tests
+ *  read it. */
+type PdfStat = { label: string; value: string; sub?: string };
+type PdfModel = {
+  targets: { stats: PdfStat[] } | null;
+  calories: { stats: PdfStat[]; chart: { targetY?: number } | null };
+};
+
+/** Render, press Download PDF and return the model POSTed to the server
+ *  renderer. */
+async function downloadedModel(): Promise<PdfModel> {
+  fetchMock.mockImplementation(async (input) =>
+    input === "/api/report/pdf" ? new Response("%PDF") : usage("free"),
+  );
+  vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:report");
+  vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+  await renderReport();
+  await screen.findByText(/^Daily kcal vs /);
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "Download PDF" }));
+  });
+  await waitFor(() =>
+    expect(
+      fetchMock.mock.calls.some(([url]) => url === "/api/report/pdf"),
+    ).toBe(true),
+  );
+  const call = fetchMock.mock.calls.find(([url]) => url === "/api/report/pdf");
+  const init = (call as unknown as [string, RequestInit])[1];
+  return JSON.parse(String(init.body)) as PdfModel;
+}
 
 /** With a training week on, today's target is the day's PLANNED share of the
  *  week: averaged intake is compared with the weekly average, and the PDF's
@@ -259,38 +294,6 @@ describe("/report with a training week", () => {
   const LINEAR: PersonalInfo = { ...PROFILE, goalPhases: [] };
   const TRAINING: PersonalInfo = { ...LINEAR, training };
   const FREE = { phasesEnabled: false, bodyFatPct: null };
-
-  type PdfStat = { label: string; value: string; sub?: string };
-  type PdfModel = {
-    targets: { stats: PdfStat[] } | null;
-    calories: { stats: PdfStat[]; chart: { targetY?: number } | null };
-  };
-
-  /** Render, press Download PDF and return the model POSTed to the server
-   *  renderer. */
-  async function downloadedModel(): Promise<PdfModel> {
-    fetchMock.mockImplementation(async (input) =>
-      input === "/api/report/pdf" ? new Response("%PDF") : usage("free"),
-    );
-    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:report");
-    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
-    await renderReport();
-    await screen.findByText(/^Daily kcal vs /);
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Download PDF" }));
-    });
-    await waitFor(() =>
-      expect(
-        fetchMock.mock.calls.some(([url]) => url === "/api/report/pdf"),
-      ).toBe(true),
-    );
-    const call = fetchMock.mock.calls.find(
-      ([url]) => url === "/api/report/pdf",
-    );
-    const init = (call as unknown as [string, RequestInit])[1];
-    return JSON.parse(String(init.body)) as PdfModel;
-  }
 
   afterEach(() => {
     vi.restoreAllMocks();
@@ -331,6 +334,65 @@ describe("/report with a training week", () => {
       value: "2600 kcal",
       sub: "0 kcal/day",
     });
+  });
+});
+
+/** A per-date session override changes that day's target here exactly as in
+ *  the app and the weekly email: the same stored rows, the same resolver. */
+describe("/report training day overrides", () => {
+  /** Plan targets by training day; Wednesday 2026-06-10 (today) is a hard
+   *  lower-body day. */
+  const TRAINING: PersonalInfo = {
+    ...PROFILE,
+    goalPhases: [],
+    training: {
+      enabled: true,
+      cycling: "modest",
+      days: [
+        { type: "rest" },
+        { type: "upper", intensity: "moderate" },
+        { type: "rest" },
+        { type: "lower", intensity: "hard" },
+        { type: "rest" },
+        { type: "fullBody", intensity: "moderate" },
+        { type: "rest" },
+      ],
+    },
+  };
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("today's target and each recap day follow the stored override", async () => {
+    const { targetsForDate, dayOverrideResolver } =
+      await import("@maqro/core/targets");
+    const rows = [{ date: "2026-06-10", day: { type: "rest" }, recordedAt: 0 }];
+    data.profile = TRAINING;
+    data.overrides = rows;
+    data.query = "sections=summary,calories";
+    const free = { phasesEnabled: false, bodyFatPct: null };
+    const planned = targetsForDate(TRAINING, "2026-06-10", free);
+    const rest = targetsForDate(TRAINING, "2026-06-10", {
+      ...free,
+      overrideFor: dayOverrideResolver(rows),
+    });
+    expect(rest.targetCalories).toBeLessThan(planned.targetCalories);
+    // Eaten on target for the rest day the user switched to.
+    data.logs = [logged("2026-06-10", rest.targetCalories)];
+    // Averaged intake is compared with the template week's average, which
+    // an override never moves (nothing is rebalanced)…
+    const mean = planned.training?.meanCalories;
+    expect(rest.training?.meanCalories).toBe(mean);
+    const model = await downloadedModel();
+    expect(
+      screen.getByText(`Daily kcal vs weekly average target of ${mean} kcal.`),
+    ).toBeTruthy();
+    // …while today's tile and the day's adherence follow the rest day.
+    expect(
+      model.targets?.stats.find((t) => t.label === "Today (planned)")?.value,
+    ).toBe(`${rest.targetCalories} kcal`);
+    expect(screen.getByText("100% within ±10%")).toBeTruthy();
   });
 });
 

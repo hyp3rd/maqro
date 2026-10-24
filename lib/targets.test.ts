@@ -5,6 +5,7 @@ import {
   dayOverrideResolver,
   targetsForDate,
   targetsUseBodyFat,
+  targetsUseOverrides,
   weekTargets,
 } from "@maqro/core/targets";
 import type {
@@ -1161,6 +1162,7 @@ describe("targetsForDate — per-date session overrides", () => {
 
   it("today is a rest day: that day only takes a rest day's target", () => {
     const p = mockupProfile();
+    expect(targetsUseOverrides(p)).toBe(true);
     const plan = weekTargets(p, WED, FREE);
     const week = weekTargets(p, WED, withOverride(WED, { type: "rest" }));
     if (!plan || !week) throw new Error("expected both weeks");
@@ -1238,6 +1240,8 @@ describe("targetsForDate — per-date session overrides", () => {
       { ...schedule(), enabled: "true" },
     ]) {
       const p = mockupProfile({ training: training as TrainingSchedule });
+      // So a caller may skip reading the rows here.
+      expect(targetsUseOverrides(p)).toBe(false);
       expect(targetsForDate(p, WED, ctx)).toStrictEqual(
         targetsForDate(p, WED, FREE),
       );

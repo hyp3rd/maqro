@@ -178,6 +178,16 @@ export function targetsUseBodyFat(
   return normalizeTrainingSchedule(profile.training)?.enabled === true;
 }
 
+/** Whether `targetsForDate` reads `ctx.overrideFor` for this profile: a
+ *  per-date session override applies only while the training schedule is
+ *  enabled. Otherwise every override is ignored, so a caller that has to
+ *  fetch the rows (the weekly-recap cron) can skip the read. */
+export function targetsUseOverrides(
+  profile: Pick<PersonalInfo, "training">,
+): boolean {
+  return normalizeTrainingSchedule(profile.training)?.enabled === true;
+}
+
 /** Resolve the calorie/macro target for `date` (local `YYYY-MM-DD`). */
 export function targetsForDate(
   profile: PersonalInfo,
