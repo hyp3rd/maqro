@@ -72,6 +72,39 @@ export function getDemoProfile(now: number = Date.now()): PersonalInfo {
     // break. Drives the calorie target + active-phase banner for the Pro
     // (mocked) verification; free users see the planner's upgrade prompt.
     goalPhases: demoGoalPhases(now),
+    // A realistic training week (FREE), so the landing funnel shows the
+    // Training week editor and planned per-day targets populated: three
+    // strength sessions (Wednesday's leg day hard) and a long Saturday run
+    // around three rest days, on the default modest cycling. Indexed by
+    // `getDay()` (0 = Sunday). Protein keeps the 2.0 g/kg default.
+    training: {
+      enabled: true,
+      cycling: "modest",
+      days: [
+        { type: "rest" },
+        {
+          type: "upper",
+          intensity: "moderate",
+          time: "18:00",
+          durationMin: 60,
+        },
+        { type: "rest" },
+        { type: "lower", intensity: "hard", time: "18:00", durationMin: 75 },
+        { type: "rest" },
+        {
+          type: "fullBody",
+          intensity: "moderate",
+          time: "07:00",
+          durationMin: 60,
+        },
+        {
+          type: "endurance",
+          intensity: "moderate",
+          time: "09:00",
+          durationMin: 90,
+        },
+      ],
+    },
   };
 }
 

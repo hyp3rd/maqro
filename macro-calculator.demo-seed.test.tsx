@@ -7,9 +7,9 @@ import {
   getProfileRecord,
   isProfileMarkedAsDemo,
   saveDemoProfile,
+  todayKey,
 } from "@/lib/db";
 import { clearDemoModeData, getDemoProfile } from "@/lib/demo-data";
-import { computeMacros } from "@/lib/macros";
 import {
   __resetSyncStatusForTests,
   setSynced,
@@ -20,6 +20,7 @@ import { useInsertionEffect } from "react";
 import "fake-indexeddb/auto";
 import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { targetsForDate } from "@maqro/core/targets";
 import {
   act,
   cleanup,
@@ -232,14 +233,13 @@ describe("?demo=1 first load", () => {
     const seeded = await getProfile();
     expect(seeded).not.toBeNull();
     expect(seeded!.displayName).toBe("Sample");
-    // The calculator pins the macro math to local midnight of today.
-    const d = new Date();
-    const midnight = new Date(
-      d.getFullYear(),
-      d.getMonth(),
-      d.getDate(),
-    ).getTime();
-    const expected = computeMacros(seeded!, midnight).targetCalories;
+    // The calculator shows today's target through the shared resolver: the
+    // demo plans a training week, so that is today's PLANNED day (no goal
+    // phases while the tier loads, no body measurements in the seed).
+    const expected = targetsForDate(seeded!, todayKey(), {
+      phasesEnabled: false,
+      bodyFatPct: null,
+    }).targetCalories;
     // DEFAULT_PROFILE's target is 2556 kcal; the demo's must differ for the
     // check below to prove the seeded profile drives the target.
     expect(expected).not.toBe(2556);
