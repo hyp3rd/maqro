@@ -150,6 +150,11 @@ const DEFAULT_MEALS: Meal[] = [
 const STALE_PLAN_MESSAGE =
   "Your day changed while the plan was being generated, so it wasn't applied. Try again.";
 
+/** Shown when an AI action is asked for before the day's session overrides
+ *  have loaded (`useTargets().overridesLoaded`). */
+const TARGETS_LOADING_MESSAGE =
+  "Still loading this day's session. Try again in a moment.";
+
 /** Convert a Blob to a bare base64 string (no data: prefix), as
  *  /api/identify-meal expects. Shared by the in-sheet photo flow and
  *  the paired-phone photo flow. FileReader is the most compatible
@@ -742,6 +747,7 @@ const MacroCalculator = () => {
   // past day is compared with (and AI-planned against) its own target.
   const {
     phasesEnabled: goalPhasesEnabled,
+    overridesLoaded,
     todayTargets,
     dayTargets,
     targetForPhases,
@@ -751,6 +757,17 @@ const MacroCalculator = () => {
     previewDayTargets,
   } = useTargets(personalInfo, today, selectedDate);
   const activeGoalPhase = todayTargets.phase;
+  // Until the per-date session overrides have loaded, `dayTargets` of an
+  // overridden date is its TEMPLATE day: nothing plans with AI or derives a
+  // suggestion from it yet (`overridesLoaded`). The AI actions say so and
+  // can be retried a moment later; the suggestion dialog, the recipe slot
+  // budget and the meal insights simply wait for the load.
+  const aiTargetsPending = (): boolean => {
+    if (overridesLoaded) return false;
+    setMealPlanMessage(TARGETS_LOADING_MESSAGE);
+    setTimeout(() => setMealPlanMessage(""), 4000);
+    return true;
+  };
   // Every AI request below calls this after a 2xx so the shared usage counter
   // (Profile's AI usage + near-cap warning) reflects what was just spent.
   const refreshAiUsage = useRefreshAiUsage();
@@ -1874,6 +1891,7 @@ const MacroCalculator = () => {
   // coherent food combinations; fall back to the deterministic 3×3
   // Cramer-based planner on any failure path - see lib/meal-planner.ts.
   const generateMealPlan = async () => {
+    if (aiTargetsPending()) return;
     // Pin the day + meals the plan is computed from (see applyDayPlan).
     const forDay = day;
     const baseMeals = meals;
@@ -2009,7 +2027,7 @@ const MacroCalculator = () => {
    *  `mealPlanMessage`; the existing meals are left untouched on
    *  error. */
   const handleRefineMealPlan = async (refinement: string) => {
-    if (isGeneratingMealPlan) return;
+    if (isGeneratingMealPlan || aiTargetsPending()) return;
     // Pin the day + meals being refined (see applyDayPlan).
     const forDay = day;
     const baseMeals = meals;
@@ -2100,7 +2118,7 @@ const MacroCalculator = () => {
    *  the day's meals are passed as context so the AI doesn't propose
    *  something culinarily clashing with what's around it. */
   const handleRegenerateMeal = async (mealId: number) => {
-    if (isGeneratingMealPlan) return;
+    if (isGeneratingMealPlan || aiTargetsPending()) return;
     // Pin the day + slot being regenerated: the result replaces ONLY that
     // slot, on THAT day, and only if the slot is still what it was built from.
     const forDay = day;
@@ -2655,26 +2673,34 @@ const MacroCalculator = () => {
         // the ranking consistent across opens. Helper returns zeros
         // when the day has no slots — the dialog falls back to natural
         // order on a zero budget.
-        slotBudget={computeSlotBudget(
-          {
-            protein: dayTargets.protein,
-            carbs: dayTargets.carbs,
-            fat: dayTargets.fat,
-          },
-          meals.length,
-        )}
+        slotBudget={
+          overridesLoaded
+            ? computeSlotBudget(
+                {
+                  protein: dayTargets.protein,
+                  carbs: dayTargets.carbs,
+                  fat: dayTargets.fat,
+                },
+                meals.length,
+              )
+            : undefined
+        }
         onApply={handleApplyRecipe}
         onBack={logFlowMealId !== null ? backToMethod : undefined}
       />
 
       <MealHubSheet
         meal={meals.find((m) => m.id === mealDetailId) ?? null}
-        goal={{
-          calories: dayTargets.targetCalories,
-          protein: dayTargets.protein,
-          carbs: dayTargets.carbs,
-          fat: dayTargets.fat,
-        }}
+        goal={
+          overridesLoaded
+            ? {
+                calories: dayTargets.targetCalories,
+                protein: dayTargets.protein,
+                carbs: dayTargets.carbs,
+                fat: dayTargets.fat,
+              }
+            : undefined
+        }
         customFoodsRev={customFoodsRev}
         onLogFood={logFoodToMeal}
         onQuickLog={quickLogFood}
@@ -2781,7 +2807,10 @@ const MacroCalculator = () => {
           returnFocusTo={dayTypeChipRef}
         />
       )}
-      {suggestDayOpen && (
+      {/* It suggests once on mount, so it mounts only on the day's real
+          session: a request made while the overrides load opens it once
+          they have. */}
+      {suggestDayOpen && overridesLoaded && (
         <SuggestDayDialog
           open={suggestDayOpen}
           onOpenChange={setSuggestDayOpen}

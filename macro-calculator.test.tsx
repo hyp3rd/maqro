@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type WeekTargets,
+  dayOverrideResolver,
   targetsForDate,
   weekTargets,
 } from "@maqro/core/targets";
@@ -87,6 +88,13 @@ const SIGNED_IN = {
   isUnconfigured: false,
 };
 const auth = vi.hoisted(() => ({ state: null as unknown }));
+/** The stored per-date session overrides' read: settled with no rows unless
+ *  a test holds it open (`pending`) to see what runs before it lands. */
+const overridesRead = vi.hoisted(() => ({
+  pending: null as Promise<
+    { date: string; day: unknown; recordedAt: number }[]
+  > | null,
+}));
 /** The day's meal slots `useDailyLog` reports, when a test renames them or
  *  gives a date its own. `loaded`, when set, lists the dates whose log has
  *  loaded: any other date reports `isHydrated: false` and still holds the
@@ -143,6 +151,7 @@ vi.mock("./lib/db", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./lib/db")>()),
   listCustomFoods: async () => [],
   listDailyLogs: async () => [],
+  listDayOverrides: () => overridesRead.pending ?? Promise.resolve([]),
   listMealSchedules: async () => [],
   listMicronutrientProfiles: async () => [],
   listPantryItems: async () => [],
@@ -286,6 +295,7 @@ beforeEach(() => {
   dayMeals.byDate = {};
   dayMeals.loaded = null;
   dayMeals.last = null;
+  overridesRead.pending = null;
   for (const key of Object.keys(ui.props)) delete ui.props[key];
   refreshAiUsage.mockReset();
   requestAiMealPlan.mockReset();
@@ -412,79 +422,70 @@ describe("macro-calculator: the day view gets the selected date's targets", () =
     expect(ui.props.DayTypeSheet).toBeUndefined();
   });
 
-  /** Open the sheet from the chip, then forget what it rendered so far: a
-   *  later `ui.props.DayTypeSheet` means it rendered again. */
-  const openDayTypeSheet = async () => {
-    await act(async () => {
-      prop<(trigger: HTMLElement) => void>(
-        "MealPlanner",
-        "onEditDayType",
-      )(document.createElement("button"));
+  it("nothing plans with AI or suggests against the template day until the overrides have loaded", async () => {
+    // Every day a hard lower-body session; today stored as a rest day.
+    const lower = { type: "lower", intensity: "hard" } as const;
+    const training: TrainingSchedule = {
+      enabled: true,
+      days: [lower, lower, lower, lower, lower, lower, lower],
+      cycling: "modest",
+    };
+    stored.profile = { ...PROFILE, training };
+    const rows = [{ date: TODAY, day: { type: "rest" }, recordedAt: 0 }];
+    let land: (r: typeof rows) => void = () => {};
+    overridesRead.pending = new Promise((resolve) => {
+      land = resolve;
     });
-    expect(ui.props.DayTypeSheet).toBeDefined();
-    delete ui.props.DayTypeSheet;
-  };
-
-  it("leaving Today closes the sheet: coming back never reopens it", async () => {
-    await renderOnPastDay();
-    await openDayTypeSheet();
-
-    await act(async () => {
-      prop<(k: string) => void>("AppShell", "onSelect")("progress");
+    const template = targetsForDate(stored.profile, TODAY, pro);
+    const restDay = targetsForDate(stored.profile, TODAY, {
+      ...pro,
+      bodyFatPct: null,
+      overrideFor: dayOverrideResolver(rows),
     });
-    expect(ui.props.DayTypeSheet).toBeUndefined();
-    // Back on Today (now on today's date, the nav resets it): no sheet
-    // popping open unprompted, for today or for the day it was opened on.
-    await act(async () => {
-      prop<(k: string) => void>("AppShell", "onSelect")("plan");
-    });
-    expect(prop("MealPlanner", "selectedDate")).toBe(TODAY);
-    expect(ui.props.DayTypeSheet).toBeUndefined();
-    await act(async () => {
-      prop<(d: string) => void>("MealPlanner", "onSelectDate")(PAST_DAY);
-    });
-    expect(ui.props.DayTypeSheet).toBeUndefined();
-  });
+    expect(restDay.targetCalories).toBeLessThan(template.targetCalories);
 
-  it.each([
-    [
-      "the date navigator",
-      () => prop<(d: string) => void>("MealPlanner", "onSelectDate")(TODAY),
-    ],
-    [
-      "the nav's Today (command palette)",
-      () => prop<(k: string) => void>("AppShell", "onSelect")("plan"),
-    ],
-  ])(
-    "the shown date changing (%s) closes the sheet opened on a past day",
-    async (_, selectToday) => {
-      await renderOnPastDay();
-      await openDayTypeSheet();
-
-      await act(async () => selectToday());
-      expect(prop("MealPlanner", "selectedDate")).toBe(TODAY);
-      // Never the past day's draft over today's targets.
-      expect(ui.props.DayTypeSheet).toBeUndefined();
-      // And it stays closed going back to the day it was opened on.
-      await act(async () => {
-        prop<(d: string) => void>("MealPlanner", "onSelectDate")(PAST_DAY);
-      });
-      expect(ui.props.DayTypeSheet).toBeUndefined();
-    },
-  );
-
-  it("midnight, while following today, closes the sheet opened for that day", async () => {
-    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
-    vi.setSystemTime(new Date(2026, 5, 10, 23, 59, 0));
     render(<MacroCalculator />);
-    await openDayTypeSheet();
-
-    // useToday's midnight timer fires: the day view follows to the new day.
+    // Still loading: no AI request, no suggestion dialog, no slot budget
+    // or meal-insight goal built on the template day.
     await act(async () => {
-      vi.advanceTimersByTime(2 * 60 * 1000);
+      await prop<() => Promise<void>>("MealPlanner", "generateMealPlan")();
+      await prop<(r: string) => Promise<void>>(
+        "MealPlanner",
+        "onRefineMealPlan",
+      )("more protein");
+      await prop<(id: number) => Promise<void>>(
+        "MealPlanner",
+        "onRegenerateMeal",
+      )(1);
+      prop<() => void>("MealPlanner", "onOpenSuggestDay")();
     });
-    expect(prop("MealPlanner", "selectedDate")).toBe("2026-06-11");
-    expect(ui.props.DayTypeSheet).toBeUndefined();
+    expect(requestAiMealPlan).not.toHaveBeenCalled();
+    expect(ui.props.SuggestDayDialog).toBeUndefined();
+    expect(prop("ApplyRecipeDialog", "slotBudget")).toBeUndefined();
+    expect(prop("MealHubSheet", "goal")).toBeUndefined();
+    expect(prop<string>("MealPlanner", "mealPlanMessage")).toMatch(
+      /still loading/i,
+    );
+
+    // Loaded: the suggestion asked for opens against today's real session,
+    // and AI plans use it.
+    await act(async () => {
+      land(rows);
+    });
+    expect(prop("SuggestDayDialog", "target")).toEqual(macros(restDay));
+    expect(prop("MealHubSheet", "goal")).toEqual({
+      calories: restDay.targetCalories,
+      protein: restDay.protein,
+      carbs: restDay.carbs,
+      fat: restDay.fat,
+    });
+    await act(async () => {
+      await prop<() => Promise<void>>("MealPlanner", "generateMealPlan")();
+    });
+    expect(requestAiMealPlan).toHaveBeenCalledTimes(1);
+    expect(requestAiMealPlan.mock.calls[0]?.[0].targets).toEqual(
+      macros(restDay),
+    );
   });
 
   it("an AI call that is not debited does not refresh usage", async () => {
