@@ -42,7 +42,7 @@ vi.mock("@/hooks/use-ai-usage", () => ({
 
 beforeEach(() => {
   globalThis.indexedDB = new IDBFactory();
-  // jsdom has no matchMedia; the date navigator asks for a coarse pointer.
+  // jsdom has no matchMedia; the gesture primitives ask for a coarse pointer.
   vi.stubGlobal("matchMedia", (query: string) => ({
     matches: false,
     media: query,
@@ -220,7 +220,7 @@ describe("MealPlanner as Instrument Today", () => {
   it("leads with the day's header and its planned session", () => {
     renderPlanner();
     expect(
-      screen.getByRole("heading", { level: 2, name: "Today" }),
+      screen.getByRole("heading", { level: 1, name: "Today" }),
     ).toBeTruthy();
     // Wednesday in the template: a hard lower-body session.
     expect(screen.getByText("Lower · heavy day")).toBeTruthy();
@@ -329,7 +329,7 @@ describe("MealPlanner as Instrument Today", () => {
       meals: MEALS.map((m) => ({ ...m, foods: [] })),
     });
     expect(gaugeStatus().textContent).toMatch(/kcal to plan$/);
-    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
       "Friday",
     );
     expect(
@@ -346,17 +346,46 @@ describe("MealPlanner as Instrument Today", () => {
       calculatedValues: targetsForDate(PROFILE, "", { phasesEnabled: false }),
       week: null,
     });
-    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Today");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Today");
     expect(screen.queryByRole("group", { name: "Week" })).toBeNull();
   });
 
-  it("offers a way back to today from another day", () => {
+  it("offers one way back to today from another day, landing on the heading", () => {
     const props = renderPlanner({ selectedDate: "2026-10-20" });
-    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(
-      "Yesterday",
-    );
+    const heading = screen.getByRole("heading", { level: 1 });
+    expect(heading.textContent).toBe("Yesterday");
+    // Exactly one control returns to today (the old date navigator's
+    // second "Today" button is gone).
+    expect(
+      screen.getAllByRole("button", { name: /^(Back to today|Today)$/ }),
+    ).toHaveLength(1);
     fireEvent.click(screen.getByRole("button", { name: "Back to today" }));
     expect(props.onSelectDate).toHaveBeenCalledWith(TODAY);
+    expect(document.activeElement).toBe(heading);
+  });
+
+  it("names the day once: one h1 and no second day navigator", () => {
+    renderPlanner();
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Previous day" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Next day" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Back to today" })).toBeNull();
+    // The meal list is a section of the page under that heading.
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Meals" }),
+    ).toBeTruthy();
+  });
+
+  it("picks any day from the date, future days included", () => {
+    const props = renderPlanner();
+    const picker = screen.getByLabelText(/choose a day/);
+    expect(picker.getAttribute("type")).toBe("date");
+    // A future day can be planned, as on the week strip: no cap at today.
+    expect(picker.hasAttribute("max")).toBe(false);
+    fireEvent.change(picker, { target: { value: "2026-11-02" } });
+    expect(props.onSelectDate).toHaveBeenCalledWith("2026-11-02");
+    fireEvent.change(picker, { target: { value: "2026-09-30" } });
+    expect(props.onSelectDate).toHaveBeenLastCalledWith("2026-09-30");
   });
 });
 

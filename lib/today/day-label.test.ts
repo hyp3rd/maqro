@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDayLabel } from "./DateNavigator";
+import { formatDayLabel } from "./day-label";
 
 describe("formatDayLabel", () => {
   const TODAY = "2026-06-10";

@@ -269,7 +269,7 @@ vi.mock("./components/macro/VoiceLogSheet", () => ({
 }));
 
 const { default: MacroCalculator } = await import("./macro-calculator");
-const { formatDayLabel } = await import("./components/shell/DateNavigator");
+const { formatDayLabel } = await import("./lib/today/day-label");
 
 /** A prop the stubbed `component` last rendered with. */
 function prop<T>(component: string, name: string): T {
@@ -630,16 +630,18 @@ describe("macro-calculator: Today-first landing", () => {
 });
 
 describe("macro-calculator: the day view's heading names the day it shows", () => {
-  it("reads Today on today, the date on another day, and the launcher agrees", async () => {
+  it("leaves the heading to the day's own header; the launcher names the day", async () => {
     render(<MacroCalculator />);
-    expect(prop("AppShell", "title")).toBe("Today");
+    // No second title in the top bar: the Today header is the page's h1.
+    expect(prop("AppShell", "title")).toBeNull();
+    expect(prop("LogMealSheet", "dayLabel")).toBe("Today");
 
     await act(async () => {
       prop<(d: string) => void>("MealPlanner", "onSelectDate")(PAST_DAY);
     });
     const pastLabel = formatDayLabel(PAST_DAY, TODAY);
     expect(pastLabel).not.toBe("Today");
-    expect(prop("AppShell", "title")).toBe(pastLabel);
+    expect(prop("AppShell", "title")).toBeNull();
     expect(prop("LogMealSheet", "dayLabel")).toBe(pastLabel);
   });
 
@@ -655,7 +657,7 @@ describe("macro-calculator: the day view's heading names the day it shows", () =
       expect(prop("AppShell", "current")).toBe("plan");
       await selectToday();
       expect(prop("MealPlanner", "selectedDate")).toBe(TODAY);
-      expect(prop("AppShell", "title")).toBe("Today");
+      expect(prop("AppShell", "title")).toBeNull();
     });
 
     it("coming back from another view lands on today, not the past day", async () => {
@@ -667,7 +669,7 @@ describe("macro-calculator: the day view's heading names the day it shows", () =
       await selectToday();
       expect(prop("AppShell", "current")).toBe("plan");
       expect(prop("MealPlanner", "selectedDate")).toBe(TODAY);
-      expect(prop("AppShell", "title")).toBe("Today");
+      expect(prop("AppShell", "title")).toBeNull();
     });
   });
 

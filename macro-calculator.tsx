@@ -52,7 +52,6 @@ import {
 } from "./components/macro/types";
 import { OnboardingWizard } from "./components/onboarding/OnboardingWizard";
 import { AppShell } from "./components/shell/AppShell";
-import { formatDayLabel } from "./components/shell/DateNavigator";
 import { type ViewKey, viewFromParam } from "./components/shell/nav";
 import { foodDatabase } from "./data/food-database";
 import { useRefreshAiUsage } from "./hooks/use-ai-usage";
@@ -113,6 +112,7 @@ import { scaleRecipeIngredients } from "./lib/scale-recipe";
 import { reportStorageError } from "./lib/storage-status";
 import { bumpPending, useSyncStatus } from "./lib/sync-status";
 import { useDataRev } from "./lib/sync/data-bus";
+import { formatDayLabel } from "./lib/today/day-label";
 
 const DEFAULT_PROFILE: PersonalInfo = {
   displayName: null,
@@ -342,8 +342,8 @@ const MacroCalculator = () => {
   const [explicitDate, setExplicitDate] = useState<string | null>(null);
   const selectedDate = explicitDate ?? today;
   // The shown day as the user reads it ("Today", "Yesterday", "Mon, Oct 20"):
-  // the day view's heading and the log launcher name it, matching the date
-  // navigator, so nothing claims "Today" while another day is on screen.
+  // the log launcher names the day it logs into with it, so nothing claims
+  // "Today" while another day is on screen.
   const dayLabel = formatDayLabel(selectedDate, today);
 
   // `day` + `commitToDay` serve the deferred writers (Undo toasts, AI plan
@@ -2258,7 +2258,9 @@ const MacroCalculator = () => {
   return (
     <AppShell
       current={view}
-      title={view === "plan" ? dayLabel : undefined}
+      // The day view's own header is its one heading (the h1, naming the
+      // shown day): the top bar carries none there.
+      title={view === "plan" ? null : undefined}
       onSelect={selectFromNav}
       onQuickAdd={handleQuickAdd}
       quickAddPending={quickAddAt !== null}

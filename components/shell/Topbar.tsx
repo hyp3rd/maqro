@@ -13,10 +13,11 @@ import { NAV, type ViewKey } from "./nav";
 
 type Props = {
   current: ViewKey;
-  /** Heading override for a view whose name depends on its state: the day
-   *  view names the day it shows ("Today", "Yesterday", "Mon, Oct 20").
-   *  Defaults to the view's registry title. */
-  title?: string;
+  /** The bar's heading (the page's h1): the view's registry title by
+   *  default, a string to override it, or `null` for a view whose own
+   *  header carries the page's h1 (the day view names the day it shows
+   *  there), so the page never repeats its title. */
+  title?: string | null;
   /** Forwarded to the chips and the mobile `UserMenu`, whose
    *  notifications open the view they point at. */
   onSelectView?: (key: ViewKey) => void;
@@ -50,9 +51,11 @@ export function Topbar({ current, title, onSelectView }: Props) {
           title=""
         />
       </Link>
-      <h1 className="shrink-0 text-sm font-semibold tracking-tight text-foreground">
-        {title ?? NAV[current].title}
-      </h1>
+      {title !== null && (
+        <h1 className="shrink-0 text-sm font-semibold tracking-tight text-foreground">
+          {title ?? NAV[current].title}
+        </h1>
+      )}
       {/* Spacer + search button take the middle column; on mobile
           the search button collapses to an icon-only affordance and
           the rest of the toolbar gets the remaining width. */}

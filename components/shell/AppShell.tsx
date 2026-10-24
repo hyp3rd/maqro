@@ -22,9 +22,9 @@ import type { ViewKey } from "./nav";
 
 type Props = {
   current: ViewKey;
-  /** The Topbar heading, when the view's registry title doesn't fit (see
-   *  Topbar). */
-  title?: string;
+  /** The Topbar heading, when the view's registry title doesn't fit, or
+   *  `null` when the view's own header holds the page's h1 (see Topbar). */
+  title?: string | null;
   onSelect: (key: ViewKey) => void;
   /** The mobile tab bar's centre [+], with the button itself (see
    *  MobileBottomNav). */

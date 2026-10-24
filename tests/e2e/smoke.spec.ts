@@ -1,13 +1,28 @@
 import { expect, type Page, test } from "@playwright/test";
 
 /** Open the day view ("Today") from the desktop sidebar. Scoped to the
- *  sidebar: the topbar heading and the date navigator's snap-back button
- *  are named "Today" too. */
+ *  sidebar: the day's heading and its snap-back button are named "Today"
+ *  too. */
 async function openToday(page: Page): Promise<void> {
   await page
     .getByRole("complementary", { name: "Primary navigation" })
     .getByRole("button", { name: "Today", exact: true })
     .click();
+}
+
+/** Yesterday's local `YYYY-MM-DD` (the browser runs in this process's
+ *  timezone). */
+function yesterdayKey(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** Show yesterday through the Today header's date picker (the week strip
+ *  holds only the shown day's week, and yesterday is last week's Sunday on
+ *  a Monday). */
+async function showYesterday(page: Page): Promise<void> {
+  await page.getByLabel(/choose a day/).fill(yesterdayKey());
 }
 
 /** End-to-end smoke for the post-revamp UI. Catches the integration
@@ -178,41 +193,33 @@ test.describe("maqro happy path", () => {
     await expect(input).toHaveValue("egg");
   });
 
-  test("date navigator switches between today and yesterday", async ({
+  test("the day header switches between today and yesterday", async ({
     page,
   }) => {
     await page.goto("/app");
     await openToday(page);
 
-    // Start on today. The shell's page heading (h1) and the Today header
-    // (h2) both name the shown day; the navigator's date label too.
+    // Start on today. The Today header is the page's one heading (the top
+    // bar carries none on this view).
     const heading = page.getByRole("heading", { level: 1 });
-    const dayHeading = (name: string) =>
-      page.getByRole("heading", { level: 2, name, exact: true });
-    const dateLabel = page.locator("label", { hasText: /^(Today|Yesterday)/ });
-    await expect(dayHeading("Today")).toBeVisible();
-    await expect(dateLabel).toHaveText("Today");
+    await expect(heading).toHaveCount(1);
+    await expect(heading).toHaveText("Today");
 
-    // Click "Previous day" to go to yesterday.
-    await page.getByRole("button", { name: "Previous day" }).click();
-    await expect(dayHeading("Yesterday")).toBeVisible();
-    // (Off today the label also carries the ISO date on wide screens.)
-    await expect(dateLabel).toHaveText(/^Yesterday/);
-    // The page heading names the shown day too, never "Today" off today.
+    // Pick yesterday from the header's date.
+    await showYesterday(page);
     await expect(heading).toHaveText("Yesterday");
-    // The navigator's "Today" snap-back button appears when off today (in
-    // the day view, not the sidebar's "Today"; exact: the header's "Back to
-    // today" and the week strip's day buttons also mention today).
+    // One way back to today, off today only (in the day view, not the
+    // sidebar's "Today").
     const snapBack = page
       .getByRole("main")
-      .getByRole("button", { name: "Today", exact: true });
-    await expect(snapBack).toBeVisible();
+      .getByRole("button", { name: "Back to today" });
+    await expect(snapBack).toHaveCount(1);
 
-    // Snap back to today.
+    // Snap back to today: the heading names it and takes focus.
     await snapBack.click();
-    await expect(dayHeading("Today")).toBeVisible();
-    await expect(dateLabel).toHaveText("Today");
     await expect(heading).toHaveText("Today");
+    await expect(heading).toBeFocused();
+    await expect(snapBack).toHaveCount(0);
   });
 
   test("meal templates round-trip: save then apply on an empty meal", async ({
@@ -249,7 +256,7 @@ test.describe("maqro happy path", () => {
     // to that day's Breakfast.
     await page.reload();
     await openToday(page);
-    await page.getByRole("button", { name: "Previous day" }).click();
+    await showYesterday(page);
 
     await page.getByRole("button", { name: "Breakfast actions" }).click();
     await page.getByRole("menuitem", { name: /Add from template/ }).click();
@@ -334,7 +341,7 @@ test.describe("maqro happy path", () => {
     await expect(page.getByText(/below to log a meal, use/)).toBeVisible();
 
     // [+] always logs into today, so a past day offers only Add food.
-    await page.getByRole("button", { name: "Previous day" }).first().click();
+    await showYesterday(page);
     await expect(page.getByText(/No meals logged for this day/)).toBeVisible();
     await expect(page.getByText(/below to log a meal/)).toHaveCount(0);
     await expect(page.getByText(/Use Add food on any meal,/)).toBeVisible();
