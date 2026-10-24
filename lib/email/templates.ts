@@ -1,3 +1,4 @@
+import { PALETTE } from "@/lib/design/palette";
 import type { WeeklyRecap } from "@/lib/weekly-recap";
 
 /** Plain-HTML email templates. No React-email or MJML — for the
@@ -16,6 +17,19 @@ import type { WeeklyRecap } from "@/lib/weekly-recap";
  *  Each template ships with `subject`, `html`, and a `text`
  *  alternative for plain-text clients. */
 
+/** The light Instrument palette (lib/design/palette.ts) as literal hex:
+ *  email clients cannot read CSS custom properties, and many drop rgba(). */
+const C = {
+  page: PALETTE.light.card,
+  panel: PALETTE.light.background,
+  rule: PALETTE.light.border,
+  ink: PALETTE.light.foreground,
+  body: PALETTE.light.mutedForeground,
+  meta: PALETTE.light.faintForeground,
+  cta: PALETTE.light.primary,
+  ctaText: PALETTE.light.primaryForeground,
+} as const;
+
 const FONT_STACK =
   "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
 
@@ -32,22 +46,22 @@ function shell(opts: {
   // ^ Email links go to /app — root `/` is the marketing landing
   //   page now; deep links into the product all live under /app.
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;padding:0;background:#f8f8f9;font-family:${FONT_STACK};color:#0a0a0c;">
+<body style="margin:0;padding:0;background:${C.page};font-family:${FONT_STACK};color:${C.ink};">
 <div style="display:none!important;visibility:hidden;opacity:0;height:0;width:0;overflow:hidden;mso-hide:all;">
   ${opts.preheader}
 </div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f8f8f9;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${C.page};">
   <tr><td align="center" style="padding:24px 16px;">
-    <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border:1px solid #e6e6e9;border-radius:12px;overflow:hidden;">
+    <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:${C.panel};border:1px solid ${C.rule};border-radius:12px;overflow:hidden;">
       <tr><td style="padding:24px;">
-        <a href="${opts.appUrl}" style="color:#0a0a0c;text-decoration:none;font-weight:600;font-size:14px;letter-spacing:-0.01em;">Maqro</a>
+        <a href="${opts.appUrl}" style="color:${C.ink};text-decoration:none;font-weight:600;font-size:14px;letter-spacing:-0.01em;">Maqro</a>
       </td></tr>
       <tr><td style="padding:0 24px 24px;">
         ${opts.bodyHtml}
       </td></tr>
-      <tr><td style="padding:16px 24px;border-top:1px solid #e6e6e9;font-size:12px;color:#6b6b76;line-height:1.5;">
+      <tr><td style="padding:16px 24px;border-top:1px solid ${C.rule};font-size:12px;color:${C.meta};line-height:1.5;">
         You're getting this because you opted in to Maqro emails.
-        <a href="${settingsUrl}" style="color:#0a0a0c;">Manage email preferences</a>
+        <a href="${settingsUrl}" style="color:${C.ink};">Manage email preferences</a>
         in the app's Settings tab.
       </td></tr>
     </table>
@@ -72,14 +86,14 @@ export function dailyReminderEmail(opts: {
     <h1 style="margin:0 0 12px;font-size:20px;font-weight:600;letter-spacing:-0.02em;">
       ${opts.streakDays > 0 ? `${opts.streakDays}-day streak` : "Nothing logged yet today"}
     </h1>
-    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#3a3a40;">
+    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:${C.body};">
       ${
         opts.streakDays > 0
           ? `Log a meal in the next few hours and you keep the streak going. It only takes a tap or two — your saved templates, recipes, and recent foods are right there.`
           : `A quick log keeps your weekly recap honest. Even a single meal counts — use a saved template, scan a barcode, or pick from your recent foods.`
       }
     </p>
-    <a href="${opts.appUrl}/app?view=plan" style="display:inline-block;background:#0a0a0c;color:#ffffff;text-decoration:none;padding:10px 16px;border-radius:8px;font-size:14px;font-weight:500;">
+    <a href="${opts.appUrl}/app?view=plan" style="display:inline-block;background:${C.cta};color:${C.ctaText};text-decoration:none;padding:10px 16px;border-radius:8px;font-size:14px;font-weight:500;">
       Open the meal planner
     </a>
   `;
@@ -146,10 +160,10 @@ export function autoAdaptEmail(opts: {
     <h1 style="margin:0 0 12px;font-size:20px;font-weight:600;letter-spacing:-0.02em;">
       ${headline}
     </h1>
-    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#3a3a40;">
+    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:${C.body};">
       ${message}
     </p>
-    <a href="${progressUrl}" style="display:inline-block;background:#0a0a0c;color:#ffffff;text-decoration:none;padding:10px 16px;border-radius:8px;font-size:14px;font-weight:500;">
+    <a href="${progressUrl}" style="display:inline-block;background:${C.cta};color:${C.ctaText};text-decoration:none;padding:10px 16px;border-radius:8px;font-size:14px;font-weight:500;">
       ${cta}
     </a>
   `;
@@ -197,11 +211,11 @@ export function supplementReminderEmail(opts: {
     <h1 style="margin:0 0 12px;font-size:20px;font-weight:600;letter-spacing:-0.02em;">
       Time for your ${opts.name}
     </h1>
-    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#3a3a40;">
+    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:${C.body};">
       A reminder to take your ${opts.name}${dose}. Mark it as taken in the app to
       keep your micronutrient totals accurate.
     </p>
-    <a href="${url}" style="display:inline-block;background:#0a0a0c;color:#ffffff;text-decoration:none;padding:10px 16px;border-radius:8px;font-size:14px;font-weight:500;">
+    <a href="${url}" style="display:inline-block;background:${C.cta};color:${C.ctaText};text-decoration:none;padding:10px 16px;border-radius:8px;font-size:14px;font-weight:500;">
       Open Maqro
     </a>
   `;
@@ -271,7 +285,7 @@ export function weeklyRecapEmail(opts: {
     <h1 style="margin:0 0 12px;font-size:20px;font-weight:600;letter-spacing:-0.02em;">
       Your week in macros
     </h1>
-    <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#3a3a40;">
+    <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:${C.body};">
       ${formatWindowDate(recap.windowStart)} – ${formatWindowDate(recap.windowEnd)}
     </p>
 
@@ -300,7 +314,7 @@ export function weeklyRecapEmail(opts: {
       ${statRow("Weight change", weightLine)}
     </table>
 
-    <p style="margin:0 0 20px;font-size:13px;line-height:1.6;color:#6b6b76;">
+    <p style="margin:0 0 20px;font-size:13px;line-height:1.6;color:${C.meta};">
       ${
         recap.daysLogged === 0
           ? "Nothing logged this week. A short log on most days produces a much better recap and keeps the AI meal planner anchored to what you actually eat."
@@ -310,7 +324,7 @@ export function weeklyRecapEmail(opts: {
       }
     </p>
 
-    <a href="${opts.appUrl}/app?view=progress" style="display:inline-block;background:#0a0a0c;color:#ffffff;text-decoration:none;padding:10px 16px;border-radius:8px;font-size:14px;font-weight:500;">
+    <a href="${opts.appUrl}/app?view=progress" style="display:inline-block;background:${C.cta};color:${C.ctaText};text-decoration:none;padding:10px 16px;border-radius:8px;font-size:14px;font-weight:500;">
       Open progress
     </a>
   `;
@@ -382,22 +396,22 @@ export function trialEndingEmail(opts: {
     <h1 style="margin:0 0 12px;font-size:20px;font-weight:600;letter-spacing:-0.02em;">
       Your trial ends ${trialDateLabel}
     </h1>
-    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#3a3a40;">
+    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:${C.body};">
       Your Maqro ${opts.tierLabel} trial is up tomorrow. If you keep
       the subscription, your card will be charged
       <strong>${formattedAmount}</strong> on ${trialDateLabel}, and
       you'll continue with full access — AI meal planning, recipe
       generation, and everything that was unlocked during the trial.
     </p>
-    <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#3a3a40;">
+    <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:${C.body};">
       If Maqro isn't a fit, cancel from the billing portal before
       then and you won't be charged. Your local data stays on your
       device either way.
     </p>
-    <a href="${opts.portalUrl}" style="display:inline-block;background:#0a0a0c;color:#ffffff;text-decoration:none;padding:10px 16px;border-radius:8px;font-size:14px;font-weight:500;">
+    <a href="${opts.portalUrl}" style="display:inline-block;background:${C.cta};color:${C.ctaText};text-decoration:none;padding:10px 16px;border-radius:8px;font-size:14px;font-weight:500;">
       Manage subscription
     </a>
-    <p style="margin:16px 0 0;font-size:12px;color:#6b6b76;line-height:1.5;">
+    <p style="margin:16px 0 0;font-size:12px;color:${C.meta};line-height:1.5;">
       This is a one-time transactional notice about your account.
       You'll receive it once per trial regardless of email
       preferences.
@@ -453,20 +467,20 @@ export function subscriptionConfirmedEmail(opts: {
     <h1 style="margin:0 0 12px;font-size:20px;font-weight:600;letter-spacing:-0.02em;">
       You're on ${opts.tierLabel}
     </h1>
-    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#3a3a40;">
+    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:${C.body};">
       Thanks for subscribing. Your card will be charged
       <strong>${formattedAmount} / ${opts.intervalLabel}</strong> on the
       same day each ${opts.intervalLabel}. Manage the subscription,
       change payment method, or grab past invoices any time from
       Settings → Subscription.
     </p>
-    <a href="${opts.appUrl}/app?view=plan" style="display:inline-block;background:#0a0a0c;color:#ffffff;text-decoration:none;padding:10px 16px;border-radius:8px;font-size:14px;font-weight:500;">
+    <a href="${opts.appUrl}/app?view=plan" style="display:inline-block;background:${C.cta};color:${C.ctaText};text-decoration:none;padding:10px 16px;border-radius:8px;font-size:14px;font-weight:500;">
       Open Maqro
     </a>
-    <p style="margin:16px 0 0;font-size:13px;line-height:1.6;color:#6b6b76;">
-      <a href="${opts.settingsUrl}" style="color:#0a0a0c;">Manage subscription</a>
+    <p style="margin:16px 0 0;font-size:13px;line-height:1.6;color:${C.meta};">
+      <a href="${opts.settingsUrl}" style="color:${C.ink};">Manage subscription</a>
     </p>
-    <p style="margin:16px 0 0;font-size:12px;color:#6b6b76;line-height:1.5;">
+    <p style="margin:16px 0 0;font-size:12px;color:${C.meta};line-height:1.5;">
       This is a one-time transactional notice about your account.
       You'll receive it whenever a subscription starts, regardless of
       email preferences.
@@ -523,21 +537,21 @@ export function subscriptionCancelledEmail(opts: {
     <h1 style="margin:0 0 12px;font-size:20px;font-weight:600;letter-spacing:-0.02em;">
       Cancellation confirmed
     </h1>
-    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#3a3a40;">
+    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:${C.body};">
       We've cancelled your Maqro ${opts.tierLabel} subscription.
       You'll keep full access through <strong>${dateLabel}</strong>;
       after that, your account drops back to the free tier. Your
       logged data, recipes, and meal plans stay put — you'll just
       lose the AI features and any paid-only gates.
     </p>
-    <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#3a3a40;">
+    <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:${C.body};">
       Changed your mind? You can resume the subscription before
       ${dateLabel} from Settings → Subscription and nothing breaks.
     </p>
-    <a href="${opts.settingsUrl}" style="display:inline-block;background:#0a0a0c;color:#ffffff;text-decoration:none;padding:10px 16px;border-radius:8px;font-size:14px;font-weight:500;">
+    <a href="${opts.settingsUrl}" style="display:inline-block;background:${C.cta};color:${C.ctaText};text-decoration:none;padding:10px 16px;border-radius:8px;font-size:14px;font-weight:500;">
       Manage subscription
     </a>
-    <p style="margin:16px 0 0;font-size:12px;color:#6b6b76;line-height:1.5;">
+    <p style="margin:16px 0 0;font-size:12px;color:${C.meta};line-height:1.5;">
       This is a one-time transactional notice about your account.
     </p>
   `;
@@ -590,22 +604,22 @@ export function paymentFailedFinalEmail(opts: {
     <h1 style="margin:0 0 12px;font-size:20px;font-weight:600;letter-spacing:-0.02em;">
       We couldn't process your payment
     </h1>
-    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#3a3a40;">
+    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:${C.body};">
       We tried a few times to charge <strong>${formattedAmount}</strong>
       for your Maqro ${opts.tierLabel} subscription and the card kept
       declining. Most of the time this is an expired card or your bank
       flagging the charge for review — nothing on our end.
     </p>
-    <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#3a3a40;">
+    <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:${C.body};">
       Open Settings → Subscription and update your payment method to
       restore access. If we still can't charge in the next few days,
       the subscription will be cancelled automatically and you'll drop
       to the free tier.
     </p>
-    <a href="${opts.settingsUrl}" style="display:inline-block;background:#0a0a0c;color:#ffffff;text-decoration:none;padding:10px 16px;border-radius:8px;font-size:14px;font-weight:500;">
+    <a href="${opts.settingsUrl}" style="display:inline-block;background:${C.cta};color:${C.ctaText};text-decoration:none;padding:10px 16px;border-radius:8px;font-size:14px;font-weight:500;">
       Update payment method
     </a>
-    <p style="margin:16px 0 0;font-size:12px;color:#6b6b76;line-height:1.5;">
+    <p style="margin:16px 0 0;font-size:12px;color:${C.meta};line-height:1.5;">
       This is a one-time transactional notice about your account.
     </p>
   `;
@@ -651,16 +665,16 @@ export function accountDeletedEmail(opts: { appUrl: string }): {
     <h1 style="margin:0 0 12px;font-size:20px;font-weight:600;letter-spacing:-0.02em;">
       Account deleted
     </h1>
-    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#3a3a40;">
+    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:${C.body};">
       Your Maqro account is gone. Every logged meal, recipe, plan,
       and setting is removed from our servers. Any active subscription
       has been cancelled — no further charges will hit your card.
     </p>
-    <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#3a3a40;">
+    <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:${C.body};">
       You're free to sign up again any time with the same address;
       we don't carry anything over from the deleted account.
     </p>
-    <p style="margin:0;font-size:12px;line-height:1.5;color:#6b6b76;">
+    <p style="margin:0;font-size:12px;line-height:1.5;color:${C.meta};">
       This is a one-time confirmation. You won't receive further mail
       from us at this address unless you create a new account.
     </p>
@@ -729,7 +743,7 @@ export function supportRequestEmail(opts: {
       ${envelopeRow("Received", opts.receivedAt)}
       ${envelopeRow("User-Agent", safeUa)}
     </table>
-    <div style="margin:0 0 8px;padding:12px 16px;background:#f8f8f9;border:1px solid #e6e6e9;border-radius:8px;font-size:14px;line-height:1.6;white-space:pre-wrap;color:#0a0a0c;">
+    <div style="margin:0 0 8px;padding:12px 16px;background:${C.page};border:1px solid ${C.rule};border-radius:8px;font-size:14px;line-height:1.6;white-space:pre-wrap;color:${C.ink};">
 ${safeBody}
     </div>
   `;
@@ -770,16 +784,16 @@ export function supportRequestConfirmationEmail(opts: {
     <h1 style="margin:0 0 12px;font-size:20px;font-weight:600;letter-spacing:-0.02em;">
       Thanks — we got your message
     </h1>
-    <p style="margin:0 0 12px;font-size:14px;line-height:1.6;color:#3a3a40;">
+    <p style="margin:0 0 12px;font-size:14px;line-height:1.6;color:${C.body};">
       We'll reply within a couple of business days — usually faster.
       Reference subject: <strong>${safeSubject}</strong>
     </p>
-    <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#3a3a40;">
+    <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:${C.body};">
       If anything's urgent (billing dispute, locked out of an
       account), reply to this email with the word "urgent" in the
       subject and we'll prioritize.
     </p>
-    <p style="margin:0;font-size:12px;line-height:1.5;color:#6b6b76;">
+    <p style="margin:0;font-size:12px;line-height:1.5;color:${C.meta};">
       Maqro is a small team; replies come from a real person, not a
       ticketing bot.
     </p>
@@ -807,8 +821,8 @@ export function supportRequestConfirmationEmail(opts: {
 
 function envelopeRow(label: string, value: string): string {
   return `<tr>
-    <td style="padding:4px 12px 4px 0;color:#6b6b76;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;vertical-align:top;white-space:nowrap;">${label}</td>
-    <td style="padding:4px 0;color:#0a0a0c;font-size:13px;font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,monospace;word-break:break-all;">${value}</td>
+    <td style="padding:4px 12px 4px 0;color:${C.meta};font-size:12px;text-transform:uppercase;letter-spacing:0.04em;vertical-align:top;white-space:nowrap;">${label}</td>
+    <td style="padding:4px 0;color:${C.ink};font-size:13px;font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,monospace;word-break:break-all;">${value}</td>
   </tr>`;
 }
 
@@ -842,8 +856,8 @@ function formatMoney(amountCents: number, currency: string): string {
 }
 
 function statRow(label: string, value: string): string {
-  return `<tr><td style="padding:8px 0;border-bottom:1px solid #e6e6e9;font-size:13px;color:#6b6b76;">${label}</td>
-<td style="padding:8px 0;border-bottom:1px solid #e6e6e9;font-size:14px;color:#0a0a0c;font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,monospace;text-align:right;">${value}</td></tr>`;
+  return `<tr><td style="padding:8px 0;border-bottom:1px solid ${C.rule};font-size:13px;color:${C.meta};">${label}</td>
+<td style="padding:8px 0;border-bottom:1px solid ${C.rule};font-size:14px;color:${C.ink};font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,monospace;text-align:right;">${value}</td></tr>`;
 }
 
 /** Welcome email sent exactly once per user, the first time they
@@ -879,7 +893,7 @@ export function welcomeEmail(opts: {
   }
   const listHtml =
     items.length > 0
-      ? `<ul style="margin:0 0 16px;padding:0 0 0 20px;font-size:14px;line-height:1.6;color:#3a3a40;">
+      ? `<ul style="margin:0 0 16px;padding:0 0 0 20px;font-size:14px;line-height:1.6;color:${C.body};">
 ${items.map((it) => `<li style="margin-bottom:8px;">${it}</li>`).join("\n")}
 </ul>`
       : "";
@@ -888,16 +902,16 @@ ${items.map((it) => `<li style="margin-bottom:8px;">${it}</li>`).join("\n")}
     <h1 style="margin:0 0 12px;font-size:20px;font-weight:600;letter-spacing:-0.02em;">
       You're in.
     </h1>
-    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#3a3a40;">
+    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:${C.body};">
       Thanks for opting in to Maqro emails. Here's what to expect:
     </p>
     ${listHtml}
-    <p style="margin:0 0 20px;font-size:13px;line-height:1.6;color:#6b6b76;">
+    <p style="margin:0 0 20px;font-size:13px;line-height:1.6;color:${C.meta};">
       Nothing else. No newsletters, no product announcements, no
       "we miss you" guilt-mail. Two opt-ins, two emails — that's it.
       Manage them any time in Settings &rarr; Email notifications.
     </p>
-    <a href="${opts.appUrl}/app?view=plan" style="display:inline-block;background:#0a0a0c;color:#ffffff;text-decoration:none;padding:10px 16px;border-radius:8px;font-size:14px;font-weight:500;">
+    <a href="${opts.appUrl}/app?view=plan" style="display:inline-block;background:${C.cta};color:${C.ctaText};text-decoration:none;padding:10px 16px;border-radius:8px;font-size:14px;font-weight:500;">
       Open the meal planner
     </a>
   `;
@@ -957,21 +971,21 @@ export function backupEmailVerificationEmail(opts: {
     <h1 style="margin:0 0 12px;font-size:20px;font-weight:600;letter-spacing:-0.02em;">
       Confirm this as a backup email
     </h1>
-    <p style="margin:0 0 12px;font-size:14px;line-height:1.6;color:#3a3a40;">
+    <p style="margin:0 0 12px;font-size:14px;line-height:1.6;color:${C.body};">
       Someone signed in to Maqro as
       <strong>${opts.primaryEmailMasked}</strong> and asked us to use this
       address as a backup. If that&rsquo;s you, paste the code below into
       Settings &rarr; Backup email to confirm.
     </p>
-    <p style="margin:0 0 20px;font-size:32px;font-weight:600;letter-spacing:0.12em;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#0a0a0c;">
+    <p style="margin:0 0 20px;font-size:32px;font-weight:600;letter-spacing:0.12em;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:${C.ink};">
       ${opts.code}
     </p>
-    <p style="margin:0 0 16px;font-size:13px;line-height:1.6;color:#6b6b76;">
+    <p style="margin:0 0 16px;font-size:13px;line-height:1.6;color:${C.meta};">
       The code expires in 10 minutes. If you weren&rsquo;t expecting this,
       ignore the email &mdash; nothing changes on your end and the request
       drops when the code expires.
     </p>
-    <p style="margin:0;font-size:12px;line-height:1.5;color:#6b6b76;">
+    <p style="margin:0;font-size:12px;line-height:1.5;color:${C.meta};">
       Maqro never shares your address. The backup is used only to deliver
       a sign-in link if you ever lose access to your primary inbox.
     </p>
@@ -1014,7 +1028,7 @@ export function accountRecoveryEmail(opts: {
     <h1 style="margin:0 0 12px;font-size:20px;font-weight:600;letter-spacing:-0.02em;">
       Recovery sign-in
     </h1>
-    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#3a3a40;">
+    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:${C.body};">
       This is a one-shot recovery link for the Maqro account at
       <strong>${opts.primaryEmailMasked}</strong>. Open it to get back in. If
       you still have your authenticator app, you&rsquo;ll enter a code; if
@@ -1022,16 +1036,16 @@ export function accountRecoveryEmail(opts: {
       recovery page and set it up again.
     </p>
     <p style="margin:0 0 20px;">
-      <a href="${opts.magicLink}" style="display:inline-block;background:#0a0a0c;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-size:14px;font-weight:500;">
+      <a href="${opts.magicLink}" style="display:inline-block;background:${C.cta};color:${C.ctaText};text-decoration:none;padding:12px 20px;border-radius:8px;font-size:14px;font-weight:500;">
         Continue to recovery
       </a>
     </p>
-    <p style="margin:0 0 16px;font-size:13px;line-height:1.6;color:#6b6b76;">
+    <p style="margin:0 0 16px;font-size:13px;line-height:1.6;color:${C.meta};">
       The link works once and expires in an hour. If you didn&rsquo;t
       request recovery, ignore the email &mdash; the link can only be
       delivered to this backup address you previously confirmed.
     </p>
-    <p style="margin:0;font-size:12px;line-height:1.5;color:#6b6b76;">
+    <p style="margin:0;font-size:12px;line-height:1.5;color:${C.meta};">
       If you&rsquo;ve also lost access to your primary email, you can update it
       in Settings once you&rsquo;re back in.
     </p>

@@ -1,4 +1,5 @@
 import { CHANGELOG } from "@/lib/changelog";
+import { PALETTE, tint } from "@/lib/design/palette";
 import { ImageResponse } from "next/og";
 import type { NextRequest } from "next/server";
 
@@ -14,13 +15,16 @@ export const runtime = "edge";
 
 const SIZE = 1080;
 
+// The dark Instrument palette (lib/design/palette.ts); the version chip
+// uses the artboards' accent tints (14 % fill, 45 % line over the ground).
+const DARK = PALETTE.dark;
 const COLORS = {
-  bg: "#0a0a0c",
-  fg: "#fafafa",
-  fgDim: "#52525b",
-  border: "#2a2535",
-  brand: "#a78bfa",
-  brandSoft: "#1b1530",
+  bg: DARK.background,
+  fg: DARK.foreground,
+  fgDim: DARK.faintForeground,
+  border: tint(DARK.brand, 0.45, DARK.background),
+  brand: DARK.brandText,
+  brandSoft: tint(DARK.brand, 0.14, DARK.background),
 };
 
 export async function GET(req: NextRequest): Promise<Response> {

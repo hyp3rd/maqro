@@ -1242,7 +1242,7 @@ function DeleteAccountSection({
                   confirm();
                 }}
                 disabled={!matches || busy}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                className="bg-destructive-strong text-destructive-foreground hover:bg-destructive-strong/90"
               >
                 {busy ? "Deleting…" : "Delete account"}
               </AlertDialogAction>

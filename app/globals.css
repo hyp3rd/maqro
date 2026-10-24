@@ -14,46 +14,84 @@
 @tailwind utilities;
 
 @layer base {
+  /* "Instrument" tokens. HSL channel triples consumed as `hsl(var(--x))`
+   * (tailwind.config.mjs) so opacity modifiers keep working. The hex source
+   * of truth is lib/design/palette.ts, which off-DOM renderers (OG images,
+   * PDF, email, manifest) import; palette.test.ts keeps both in sync and
+   * enforces WCAG AA for every text/surface pair.
+   *
+   * Surface tiers (solid blends of the artboards' translucent panels):
+   *   background  ground
+   *   card        tier 1 - panels
+   *   popover     tier 2 - menus, popovers, dialogs
+   *   muted       inset fill on a panel (tracks, wells) = secondary
+   *   accent      hover / selected fill
+   * Text tiers: foreground > muted-foreground > faint-foreground. */
   :root {
-    /* Linear/Vercel monochrome palette - light. */
     --background: 0 0% 100%;
-    --foreground: 240 10% 4%;
+    --foreground: 240 20% 4.9%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 4%;
+    --card: 0 0% 97.6%;
+    --card-foreground: 240 20% 4.9%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 4%;
+    --popover-foreground: 240 20% 4.9%;
 
-    --primary: 240 6% 10%;
-    --primary-foreground: 0 0% 98%;
+    --primary: 240 20% 4.9%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 240 5% 96%;
-    --secondary-foreground: 240 6% 10%;
+    --secondary: 0 0% 95.7%;
+    --secondary-foreground: 240 20% 4.9%;
 
-    --muted: 240 5% 96%;
-    --muted-foreground: 240 4% 46%;
+    --muted: 0 0% 95.7%;
+    --muted-foreground: 240 5.2% 33.9%;
+    --faint-foreground: 240 4.5% 43.9%;
 
-    --accent: 240 5% 96%;
-    --accent-foreground: 240 6% 10%;
+    --accent: 240 3.4% 94.3%;
+    --accent-foreground: 240 20% 4.9%;
 
-    /* Brand accent (violet). The one signature colour: active nav, focus
-       ring, feature icons (fasting / goal phases), and Pro CTAs. Buttons
-       stay neutral (`--primary`); water keeps its own blue. */
-    --brand: 262 83% 58%;
+    /* Brand violet. `--brand` is the graphic accent (arcs, bars, active
+       indicators, focus ring); `--brand-strong` is the fill behind a
+       `--brand-foreground` label; `--brand-text` is brand-coloured text. */
+    --brand: 262.1 83.3% 57.8%;
     --brand-foreground: 0 0% 100%;
+    --brand-strong: 262.1 83.3% 57.8%;
+    --brand-text: 262.1 83.3% 57.8%;
 
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 98%;
+    /* Signal cyan: "now / open / today" marks only. */
+    --signal: 192.9 82.3% 31%;
+    --signal-foreground: 0 0% 100%;
 
-    --border: 240 6% 90%;
-    --input: 240 6% 90%;
-    --ring: 262 83% 58%;
+    /* System status (saved, synced, failed). Each DEFAULT is text-safe on
+       every surface and carries its -foreground as a fill. Not for
+       over/under-target judgement: intake stays neutral.
+       Destructive splits like brand: `--destructive` is the text red,
+       `--destructive-strong` the fill behind a `--destructive-foreground`
+       label (white in both themes). */
+    --success: 142.7 73% 27.6%;
+    --success-foreground: 0 0% 100%;
+    --warning: 25.8 88.8% 34.9%;
+    --warning-foreground: 0 0% 100%;
+    --info: 224.3 76.3% 48%;
+    --info-foreground: 0 0% 100%;
+    --destructive: 0 73.7% 41.8%;
+    --destructive-foreground: 0 0% 100%;
+    --destructive-strong: 0 73.7% 41.8%;
 
-    /* Macro accents - desaturated, monochrome-friendly. */
-    --macro-protein: 200 80% 45%;
-    --macro-carbs: 35 90% 50%;
-    --macro-fat: 340 70% 55%;
+    /* Hairline; usually consumed at /60. `--input` is the form-control
+       boundary and keeps 3:1 against every surface. */
+    --border: 240 1.5% 86.9%;
+    --input: 240 3.8% 53.9%;
+    --ring: 262.1 83.3% 57.8%;
+
+    /* Macro fills (graphics) and their text-safe variants. Lightness runs
+       fat < protein < carbs in both themes. */
+    --macro-protein: 200.4 98% 39.4%;
+    --macro-protein-text: 201.3 96.3% 32.2%;
+    --macro-carbs: 32.1 94.4% 42%;
+    --macro-carbs-text: 25.8 88.8% 34.9%;
+    --macro-fat: 335.1 77.6% 42%;
+    --macro-fat-text: 335.1 77.6% 42%;
 
     /* Micronutrient accents - spread around the wheel so the report's
        ten progress bars + trend lines stay distinguishable. Same
@@ -70,58 +108,81 @@
     --micro-vitamin-d: 45 90% 50%;
     --micro-vitamin-b12: 320 55% 55%;
 
-    --radius: 0.5rem;
+    --radius: 0.75rem;
+
+    /* Geist carries both body and display; next/font only sets
+       --font-sans and --font-mono (app/layout.tsx). */
+    --font-display: var(--font-sans);
   }
 
-  .dark {
-    --background: 240 10% 4%;
-    --foreground: 0 0% 98%;
+  /* Screen-only so print always resolves the light tokens above, whatever
+     the on-screen theme (see the @media print block). */
+  @media screen {
+    .dark {
+      --background: 240 17.6% 3.3%;
+      --foreground: 240 16.1% 93.9%;
 
-    --card: 240 6% 6%;
-    --card-foreground: 0 0% 98%;
+      --card: 240 8.1% 7.3%;
+      --card-foreground: 240 16.1% 93.9%;
 
-    --popover: 240 6% 6%;
-    --popover-foreground: 0 0% 98%;
+      --popover: 240 5.9% 10%;
+      --popover-foreground: 240 16.1% 93.9%;
 
-    --primary: 0 0% 98%;
-    --primary-foreground: 240 6% 10%;
+      --primary: 240 16.1% 93.9%;
+      --primary-foreground: 240 17.6% 3.3%;
 
-    --secondary: 240 4% 12%;
-    --secondary-foreground: 0 0% 98%;
+      --secondary: 240 6.4% 9.2%;
+      --secondary-foreground: 240 16.1% 93.9%;
 
-    --muted: 240 4% 12%;
-    --muted-foreground: 240 5% 65%;
+      --muted: 240 6.4% 9.2%;
+      --muted-foreground: 240 5% 64.9%;
+      --faint-foreground: 240 5% 56.7%;
 
-    --accent: 240 4% 14%;
-    --accent-foreground: 0 0% 98%;
+      --accent: 240 4.9% 12%;
+      --accent-foreground: 240 16.1% 93.9%;
 
-    /* Brand accent (violet) — lifted lightness for dark surfaces. */
-    --brand: 258 90% 66%;
-    --brand-foreground: 0 0% 100%;
+      --brand: 258.3 89.5% 66.3%;
+      --brand-foreground: 0 0% 100%;
+      --brand-strong: 258.2 63.4% 58.2%;
+      --brand-text: 258.6 89.3% 78%;
 
-    --destructive: 0 63% 50%;
-    --destructive-foreground: 0 0% 98%;
+      --signal: 187 92.4% 69%;
+      --signal-foreground: 240 17.6% 3.3%;
 
-    --border: 240 4% 14%;
-    --input: 240 4% 14%;
-    --ring: 258 90% 66%;
+      --success: 141.9 69.2% 58%;
+      --success-foreground: 240 17.6% 3.3%;
+      --warning: 45.9 96.7% 64.5%;
+      --warning-foreground: 240 17.6% 3.3%;
+      --info: 213.1 93.9% 67.8%;
+      --info-foreground: 240 17.6% 3.3%;
+      --destructive: 0 90.6% 70.8%;
+      --destructive-foreground: 0 0% 100%;
+      --destructive-strong: 0 72.2% 50.6%;
 
-    --macro-protein: 200 75% 60%;
-    --macro-carbs: 35 90% 60%;
-    --macro-fat: 340 70% 65%;
+      --border: 240 3.7% 15.9%;
+      --input: 240 4.5% 43.9%;
+      --ring: 258.3 89.5% 66.3%;
 
-    /* Micronutrient accents - lifted lightness for dark-surface
-       contrast, same hues as the light theme. */
-    --micro-fiber: 140 55% 58%;
-    --micro-sodium: 210 65% 62%;
-    --micro-potassium: 270 55% 68%;
-    --micro-calcium: 190 60% 58%;
-    --micro-iron: 0 70% 64%;
-    --micro-magnesium: 168 55% 56%;
-    --micro-zinc: 240 50% 70%;
-    --micro-vitamin-c: 28 90% 62%;
-    --micro-vitamin-d: 45 90% 60%;
-    --micro-vitamin-b12: 320 60% 66%;
+      --macro-protein: 198.4 93.2% 59.6%;
+      --macro-protein-text: 198.4 93.2% 59.6%;
+      --macro-carbs: 43.3 96.4% 56.3%;
+      --macro-carbs-text: 43.3 96.4% 56.3%;
+      --macro-fat: 330.4 81.2% 60.4%;
+      --macro-fat-text: 330.4 81.2% 60.4%;
+
+      /* Micronutrient accents - lifted lightness for dark-surface
+         contrast, same hues as the light theme. */
+      --micro-fiber: 140 55% 58%;
+      --micro-sodium: 210 65% 62%;
+      --micro-potassium: 270 55% 68%;
+      --micro-calcium: 190 60% 58%;
+      --micro-iron: 0 70% 64%;
+      --micro-magnesium: 168 55% 56%;
+      --micro-zinc: 240 50% 70%;
+      --micro-vitamin-c: 28 90% 62%;
+      --micro-vitamin-d: 45 90% 60%;
+      --micro-vitamin-b12: 320 60% 66%;
+    }
   }
 }
 
@@ -143,33 +204,13 @@
     text-size-adjust: 100%;
   }
   body {
-    /* Inter OpenType features we want app-wide:
-     *
-     *   rlig - required ligatures (default on, explicit anyway)
-     *   calt - contextual alternates (kerning-like adjustments)
-     *   cv11 - single-storey "a" (more modern, less storybook)
-     *   ss03 - alternate "G" (less fishhook, more geometric)
-     *   ss04 - alternate "0" (zero with dot, distinguishes from O
-     *           in mixed contexts like share slugs and capture IDs)
-     *
-     * These are all subtle - none of them change the texture of
-     * body text in a way the casual user would notice. They make
-     * the *display* of numbers and edge-case glyphs nicer without
-     * shifting the overall feel. */
-    font-feature-settings:
-      "rlig" 1,
-      "calt" 1,
-      "cv11" 1,
-      "ss03" 1,
-      "ss04" 1;
     /* Smoother momentum scrolling inside scroll containers on iOS. */
     -webkit-overflow-scrolling: touch;
   }
 
-  /* Display typeface for headings + heading-shaped content.
-   * `font-display` resolves to Manrope via the Tailwind config; the
-   * fallback chain in that config covers the FOUT window with a
-   * metric-similar system font so widths don't visibly shift.
+  /* Headings: Geist 600 with tight tracking (the Instrument title style).
+   * `font-display` aliases Geist (see --font-display above); utilities
+   * such as `font-medium` still override the weight per heading.
    *
    * `text-wrap: balance` keeps multi-line headings visually
    * symmetric - the polish that separates "good" from "considered".
@@ -177,12 +218,8 @@
   h1,
   h2,
   h3 {
-    font-family: var(--font-display), var(--font-sans), system-ui, sans-serif;
-    font-feature-settings:
-      "ss01" 1,
-      "ss03" 1,
-      "ss04" 1,
-      "calt" 1;
+    font-family: var(--font-display), system-ui, sans-serif;
+    font-weight: 600;
     letter-spacing: -0.02em;
     text-wrap: balance;
   }
@@ -220,23 +257,46 @@
     }
   }
   /* Readability floor for touch. The dense desktop UI leans on sub-12px
-     literal sizes (text-[9px]/[10px]/[11px]) for meta + label text; at
-     phone arm's-length those fall below comfortable reading size. Nudge
-     each up on coarse pointers, capped at 12px (= text-xs) so the small-
-     text hierarchy never inverts against an adjacent text-xs. Desktop
-     density is untouched. Same `!important` reasoning as the input
-     zoom-fix above — these override Tailwind's per-element
-     arbitrary-size utilities (specificity tie, later layer otherwise
-     wins). */
+     sizes - the literal text-[9px]/[10px]/[11px] and their named
+     replacements text-3xs (10px) / text-2xs (11px) - for meta + label
+     text; at phone arm's-length those fall below comfortable reading
+     size. Nudge each up on coarse pointers, capped at 12px (= text-xs) so
+     the small-text hierarchy never inverts against an adjacent text-xs.
+     A named size and its literal twin get the same floor, so migrating
+     a class name never changes what a phone shows. Desktop density is
+     untouched. Same `!important` reasoning as the input zoom-fix above —
+     these override Tailwind's per-element size utilities (specificity
+     tie, later layer otherwise wins). */
   @media (pointer: coarse) {
     .text-\[9px\] {
       font-size: 10.5px !important;
     }
-    .text-\[10px\] {
+    .text-\[10px\],
+    .text-3xs {
       font-size: 11px !important;
     }
-    .text-\[11px\] {
+    .text-\[11px\],
+    .text-2xs {
       font-size: 12px !important;
+    }
+  }
+  /* Keyboard focus is always visible. Primitives that draw their own
+     ring (`focus-visible:outline-none focus-visible:ring-2`) override
+     this from the utilities layer; everything else - including the raw
+     <button>s and links without a focus style - gets a brand outline
+     with >= 3:1 against every surface. */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+  /* Toasts clear the mobile tab bar. The Toaster (components/
+     app-toaster.tsx) offsets by `--toast-offset-bottom`; it is only set
+     while the bar is mounted and visible (it hides from `md` up), so
+     pages without it keep Sonner's default edge offset. The bar is
+     ~58px + the home-indicator inset; 4.75rem leaves an 18px gap. */
+  @media not all and (min-width: 48rem) {
+    :root:has([data-mobile-bottom-nav]) {
+      --toast-offset-bottom: calc(env(safe-area-inset-bottom) + 4.75rem);
     }
   }
   /* Use tabular numerals for any element that wants stable digit width. */
@@ -330,13 +390,6 @@
   }
 }
 
-/* Animated stripe for progress bars / skeletons. */
-@keyframes shimmer {
-  100% {
-    transform: translateX(100%);
-  }
-}
-
 /* Print styles. The canonical print target is `/report` — a
  *  dedicated route that already renders a single-column, form-
  *  free layout; these rules just tighten that for paper output
@@ -366,24 +419,19 @@
     margin: 12mm 14mm;
   }
 
-  /* Force light colour scheme regardless of theme. Matches the
-   * existing light-mode token values so CSS variables resolve to
-   * the right HSL channels — no separate paper palette to keep
-   * in sync. */
-  :root,
-  .dark {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 4%;
+  /* Light colour scheme regardless of theme: the `.dark` tokens are
+   * screen-only, so every token already resolves to the light palette
+   * here. Paper only overrides what ink needs (PAPER in
+   * lib/design/palette.ts): white panels, and a darker rule so hairlines
+   * survive the printer. */
+  :root {
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 4%;
-    --muted: 240 5% 96%;
-    --muted-foreground: 240 4% 35%;
-    --border: 240 6% 80%;
+    --border: 240 6.9% 80.2%;
   }
   html,
   body {
-    background: white !important;
-    color: black !important;
+    background: hsl(var(--background)) !important;
+    color: hsl(var(--foreground)) !important;
   }
 
   /* Hide chrome, interactive controls, and anything explicitly
@@ -426,13 +474,13 @@
   .border-border\/60,
   .border-border\/40,
   .border-foreground\/30 {
-    border-color: #c9c9d0 !important;
+    border-color: hsl(var(--border)) !important;
   }
 
-  /* SVG charts use `currentColor`. Force dark grey so the line +
-   * gradient stay legible after a colour-scheme swap. */
+  /* SVG charts use `currentColor`. Force ink so the line + gradient
+   * stay legible after a colour-scheme swap. */
   svg {
-    color: #1f1f23 !important;
+    color: hsl(var(--foreground)) !important;
   }
 }
 
