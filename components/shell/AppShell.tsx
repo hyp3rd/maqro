@@ -21,6 +21,9 @@ import type { ViewKey } from "./nav";
 
 type Props = {
   current: ViewKey;
+  /** The Topbar heading, when the view's registry title doesn't fit (see
+   *  Topbar). */
+  title?: string;
   onSelect: (key: ViewKey) => void;
   /** The mobile tab bar's centre [+] (see MobileBottomNav). */
   onQuickAdd: () => void;
@@ -35,7 +38,13 @@ type Props = {
  * the sidebar footer (UserMenu) pinned to the bottom and the mobile bottom
  * nav above the keyboard. The animated wrapper keys off `current` so
  * switching nav items produces a soft fade/translate transition. */
-export function AppShell({ current, onSelect, onQuickAdd, children }: Props) {
+export function AppShell({
+  current,
+  title,
+  onSelect,
+  onQuickAdd,
+  children,
+}: Props) {
   return (
     <div className="flex h-screen bg-background text-foreground">
       <DemoSeed />
@@ -58,6 +67,7 @@ export function AppShell({ current, onSelect, onQuickAdd, children }: Props) {
       >
         <Topbar
           current={current}
+          title={title}
           onSelectView={onSelect}
         />
         {/* Billing dunning sits above the storage banner because a

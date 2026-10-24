@@ -51,6 +51,7 @@ import {
 } from "./components/macro/types";
 import { OnboardingWizard } from "./components/onboarding/OnboardingWizard";
 import { AppShell } from "./components/shell/AppShell";
+import { formatDayLabel } from "./components/shell/DateNavigator";
 import { type ViewKey, viewFromParam } from "./components/shell/nav";
 import { foodDatabase } from "./data/food-database";
 import { useRefreshAiUsage } from "./hooks/use-ai-usage";
@@ -334,6 +335,10 @@ const MacroCalculator = () => {
   const today = useToday();
   const [explicitDate, setExplicitDate] = useState<string | null>(null);
   const selectedDate = explicitDate ?? today;
+  // The shown day as the user reads it ("Today", "Yesterday", "Mon, Oct 20"):
+  // the day view's heading and the log launcher name it, matching the date
+  // navigator, so nothing claims "Today" while another day is on screen.
+  const dayLabel = formatDayLabel(selectedDate, today);
 
   // `day` + `commitToDay` serve the deferred writers (Undo toasts, AI plan
   // results) that resolve seconds after the render that started them,
@@ -2195,6 +2200,7 @@ const MacroCalculator = () => {
   return (
     <AppShell
       current={view}
+      title={view === "plan" ? dayLabel : undefined}
       onSelect={setView}
       onQuickAdd={handleQuickAdd}
     >
@@ -2650,14 +2656,7 @@ const MacroCalculator = () => {
         }}
         meals={meals}
         // The launcher names the day it logs into ("Lunch · Today").
-        dayLabel={
-          selectedDate === today
-            ? "Today"
-            : new Date(`${selectedDate}T00:00:00`).toLocaleDateString(
-                undefined,
-                { weekday: "short", month: "short", day: "numeric" },
-              )
-        }
+        dayLabel={dayLabel}
         aiAvailable={!!user}
         initialMealId={logFlowMealId}
         onMethod={handleLogMethod}

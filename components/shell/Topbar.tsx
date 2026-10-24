@@ -13,12 +13,16 @@ import { NAV, type ViewKey } from "./nav";
 
 type Props = {
   current: ViewKey;
+  /** Heading override for a view whose name depends on its state: the day
+   *  view names the day it shows ("Today", "Yesterday", "Mon, Oct 20").
+   *  Defaults to the view's registry title. */
+  title?: string;
   /** Forwarded to the chips and the mobile `UserMenu`, whose
    *  notifications open the view they point at. */
   onSelectView?: (key: ViewKey) => void;
 };
 
-export function Topbar({ current, onSelectView }: Props) {
+export function Topbar({ current, title, onSelectView }: Props) {
   return (
     // `min-h-14`, not `h-14`. Same reason the bottom nav uses
     // `min-h`: `pt-safe` adds `env(safe-area-inset-top)` as
@@ -47,7 +51,7 @@ export function Topbar({ current, onSelectView }: Props) {
         />
       </Link>
       <h1 className="shrink-0 text-sm font-semibold tracking-tight text-foreground">
-        {NAV[current].title}
+        {title ?? NAV[current].title}
       </h1>
       {/* Spacer + search button take the middle column; on mobile
           the search button collapses to an icon-only affordance and

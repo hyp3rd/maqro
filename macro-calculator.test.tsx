@@ -233,6 +233,7 @@ vi.mock("./components/macro/VoiceLogSheet", () => ({
 }));
 
 const { default: MacroCalculator } = await import("./macro-calculator");
+const { formatDayLabel } = await import("./components/shell/DateNavigator");
 
 /** A prop the stubbed `component` last rendered with. */
 function prop<T>(component: string, name: string): T {
@@ -401,6 +402,27 @@ describe("macro-calculator: Today-first landing", () => {
       )({ profile: PROFILE, skipped: false });
     });
     expect(rendered().today).toBe(true);
+  });
+});
+
+describe("macro-calculator: the day view's heading names the day it shows", () => {
+  it("reads Today on today, the date on another day, and the launcher agrees", async () => {
+    render(<MacroCalculator />);
+    expect(prop("AppShell", "title")).toBe("Today");
+
+    await act(async () => {
+      prop<(d: string) => void>("MealPlanner", "onSelectDate")(PAST_DAY);
+    });
+    const pastLabel = formatDayLabel(PAST_DAY, TODAY);
+    expect(pastLabel).not.toBe("Today");
+    expect(prop("AppShell", "title")).toBe(pastLabel);
+    expect(prop("LogMealSheet", "dayLabel")).toBe(pastLabel);
+  });
+
+  it("other views keep their registry title", () => {
+    nav.search = "view=progress";
+    render(<MacroCalculator />);
+    expect(prop("AppShell", "title")).toBeUndefined();
   });
 });
 
