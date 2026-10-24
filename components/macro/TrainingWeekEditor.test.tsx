@@ -100,6 +100,13 @@ function renderEditor(props: Parameters<typeof Harness>[0]) {
 }
 
 const fmt = (n: number) => n.toLocaleString("en");
+/** The safety floor the editor names: max(BMR, 1200) of today's plan. */
+const floorOf = (week: WeekTargets | null) =>
+  fmt(Math.max(week?.days[5]?.bmr ?? 0, 1200));
+const movesLine = (floor: string) =>
+  `Calories move between days; your weekly average stays the same and no day goes under your safety floor (${floor} kcal).`;
+const offLine = (floor: string) =>
+  `Every day stays at your weekly average, above your safety floor (${floor} kcal).`;
 const switchControl = () =>
   screen.getByRole("switch", { name: "Plan targets by training day" });
 const row = (day: string) =>
@@ -117,12 +124,25 @@ describe("TrainingWeekEditor: enable / disable", () => {
   it("off shows only the switch; turning it on seeds the default week", () => {
     const onTraining = vi.fn();
     renderEditor({ initial: BASE, onTraining });
+    // One page heading for assistive tech; the breadcrumb shows the name.
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Training week" }),
+    ).toBeTruthy();
     expect(switchControl().getAttribute("aria-checked")).toBe("false");
     expect(screen.queryByRole("button", { name: /^Edit / })).toBeNull();
+    // Off, the switch explains what turning it on does.
+    const hint = /training moves calories between days, never on top/;
+    const describedBy = switchControl().getAttribute("aria-describedby");
+    expect(document.getElementById(describedBy ?? "")?.textContent).toMatch(
+      hint,
+    );
 
     fireEvent.click(switchControl());
     expect(onTraining).toHaveBeenCalledWith(defaultTrainingSchedule());
     expect(switchControl().getAttribute("aria-checked")).toBe("true");
+    // On, it is a compact row: the week below carries the explanation.
+    expect(screen.queryByText(hint)).toBeNull();
+    expect(switchControl().hasAttribute("aria-describedby")).toBe(false);
     // Seven rows, Monday first.
     const rows = screen.getAllByRole("button", { name: /^Edit / });
     expect(rows).toHaveLength(7);
@@ -181,16 +201,10 @@ describe("TrainingWeekEditor: the week", () => {
       cycling: "pronounced",
     });
     expect(row("Tuesday").textContent).toContain(fmt(after));
-    expect(
-      screen.getByText(
-        "Calories move between days; your weekly average stays the same.",
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText(movesLine(floorOf(pronounced)))).toBeTruthy();
 
     fireEvent.click(screen.getByRole("radio", { name: "Off" }));
-    expect(
-      screen.getByText("Every day stays at your weekly average."),
-    ).toBeTruthy();
+    expect(screen.getByText(offLine(floorOf(pronounced)))).toBeTruthy();
   });
 
   it("the chart's table alternative lists every day around the average", () => {
@@ -538,8 +552,7 @@ describe("TrainingWeekEditor: when the days can't vary", () => {
     if (!card) throw new Error("expected the calorie card");
     return card;
   };
-  const MOVES =
-    "Calories move between days; your weekly average stays the same.";
+  const MOVES = /^Calories move between days;/;
   const proteinCard = () => screen.getByRole("region", { name: /Protein:/ });
 
   it("an average at the safety floor says so under the control", () => {
@@ -554,8 +567,7 @@ describe("TrainingWeekEditor: when the days can't vary", () => {
       new Set([week?.days[0]?.bmr]),
     );
     renderEditor({ initial: atFloor });
-    const line =
-      "Your average is already close to your safety floor, so every day stays at the average for now.";
+    const line = `Your average is already close to your safety floor (${floorOf(week)} kcal), so every day stays at the average for now.`;
     expect(within(caloriesCard()).getByText(line)).toBeTruthy();
     expect(screen.queryByText(MOVES)).toBeNull();
     // A bigger spread can't change that, and the line keeps saying why.
@@ -563,9 +575,7 @@ describe("TrainingWeekEditor: when the days can't vary", () => {
     expect(within(caloriesCard()).getByText(line)).toBeTruthy();
     fireEvent.click(screen.getByRole("radio", { name: "Off" }));
     expect(
-      within(caloriesCard()).getByText(
-        "Every day stays at your weekly average.",
-      ),
+      within(caloriesCard()).getByText(offLine(floorOf(week))),
     ).toBeTruthy();
   });
 
@@ -587,7 +597,7 @@ describe("TrainingWeekEditor: when the days can't vary", () => {
     renderEditor({ initial: heavy });
     expect(
       within(caloriesCard()).getByText(
-        "Your protein setting leaves little room for the other minimums at this calorie level, so every day stays at the average and protein is held under your setting for now. A lower g/kg setting would let the days vary.",
+        `Your protein setting leaves little room for the other minimums at this calorie level, so every day stays at the average and protein is held under your setting for now. A lower g/kg setting would let the days vary. No day goes under your safety floor (${floorOf(plan(heavy))} kcal).`,
       ),
     ).toBeTruthy();
     expect(screen.queryByText(MOVES)).toBeNull();
@@ -634,7 +644,7 @@ describe("TrainingWeekEditor: when the days can't vary", () => {
     renderEditor({ initial: cutting, planWeek });
     expect(
       within(caloriesCard()).getByText(
-        "Your calorie target leaves little room for the protein, fat and carb minimums together, so every day stays at the average and protein is held under your setting for now. A smaller deficit would give each day more room.",
+        `Your calorie target leaves little room for the protein, fat and carb minimums together, so every day stays at the average and protein is held under your setting for now. A smaller deficit would give each day more room. No day goes under your safety floor (${floorOf(planWeek(cutting))} kcal).`,
       ),
     ).toBeTruthy();
     expect(
@@ -667,7 +677,7 @@ describe("TrainingWeekEditor: when the days can't vary", () => {
     });
     expect(
       within(caloriesCard()).getByText(
-        /^Your calorie target leaves little room .* A smaller deficit would give each day more room\.$/,
+        /^Your calorie target leaves little room .* A smaller deficit would give each day more room\. No day goes under your safety floor \([\d,]+ kcal\)\.$/,
       ),
     ).toBeTruthy();
     expect(screen.queryByText(/A lower g\/kg setting/)).toBeNull();

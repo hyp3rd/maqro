@@ -154,44 +154,49 @@ export function TrainingWeekEditor({
     onTrainingChange(withTrainingEnabled(profile.training, on));
   };
 
+  const enableRow = (
+    <div className="flex items-center justify-between gap-4">
+      <div className="min-w-0">
+        <label
+          htmlFor={`${id}-enabled`}
+          className="block text-sm font-medium text-foreground"
+        >
+          Plan targets by training day
+        </label>
+        {!enabled && (
+          <p
+            id={`${id}-enabled-hint`}
+            className="mt-0.5 text-label text-muted-foreground"
+          >
+            Your goal sets the weekly average; training moves calories between
+            days, never on top. Free on every plan.
+          </p>
+        )}
+      </div>
+      <Switch
+        id={`${id}-enabled`}
+        aria-describedby={enabled ? undefined : `${id}-enabled-hint`}
+        checked={enabled}
+        onCheckedChange={toggle}
+      />
+    </div>
+  );
+
   return (
     <div className="max-w-2xl space-y-4">
-      <div className="space-y-1">
-        <h2 className="text-2xl font-semibold tracking-tight text-foreground">
-          Training week
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Your goal sets the weekly average. Training moves calories between
-          days, never on top.
-        </p>
-      </div>
+      {/* The breadcrumb above names the page; the heading keeps the outline
+          for assistive tech without spending the fold on it twice. */}
+      <h2 className="sr-only">Training week</h2>
 
-      <Card>
-        <CardBody className="flex items-center justify-between gap-4">
-          <div className="min-w-0">
-            <label
-              htmlFor={`${id}-enabled`}
-              className="block text-sm font-medium text-foreground"
-            >
-              Plan targets by training day
-            </label>
-            <p
-              id={`${id}-enabled-hint`}
-              className="mt-0.5 text-label text-muted-foreground"
-            >
-              {enabled
-                ? "Each day follows its session. Free on every plan."
-                : "Off: every day keeps the same target."}
-            </p>
-          </div>
-          <Switch
-            id={`${id}-enabled`}
-            aria-describedby={`${id}-enabled-hint`}
-            checked={enabled}
-            onCheckedChange={toggle}
-          />
-        </CardBody>
-      </Card>
+      {/* On, the switch is a compact header row so the week stays above the
+          fold; off, its card explains what turning it on does. */}
+      {enabled ? (
+        <div className="px-1">{enableRow}</div>
+      ) : (
+        <Card>
+          <CardBody>{enableRow}</CardBody>
+        </Card>
+      )}
 
       {enabled && schedule && week && (
         <EnabledEditor
@@ -323,20 +328,10 @@ function EnabledEditor({
                 <SpreadLine
                   spread={spread}
                   goal={current?.goal ?? profile.goal}
+                  floor={kcal(floor)}
                 />
               </div>
             </div>
-            <p className="flex items-start gap-2 text-label text-muted-foreground">
-              <ShieldCheck
-                aria-hidden
-                className="mt-0.5 h-4 w-4 shrink-0"
-              />
-              <span>
-                Every day stays at or above your safety floor (
-                <span className="font-mono tabular-nums">{kcal(floor)}</span>{" "}
-                kcal).
-              </span>
-            </p>
           </CardBody>
         </section>
       </Card>
@@ -637,23 +632,36 @@ function ProteinCard({
 }
 
 /** The line under the cycling control: what the choice does to this week,
- *  or, when the days can't vary, why (calm, one sentence or two). */
+ *  and the safety floor no day goes under, in one line, or, when the days
+ *  can't vary, why (calm, one sentence or two). The chart may leave out a
+ *  floor line that sits too far below (or too close to) the average, so
+ *  every state names the floor's figure here. */
 function SpreadLine({
   spread,
   goal,
+  floor,
 }: {
   spread: WeekSpread;
   goal: PersonalInfo["goal"];
+  /** The formatted safety floor (kcal). */
+  floor: string;
 }) {
   if (spread.kind === "moves" || spread.kind === "off") {
     return (
-      <p className="text-label text-muted-foreground">
-        {spread.kind === "off"
-          ? "Every day stays at your weekly average."
-          : "Calories move between days; your weekly average stays the same."}
+      <p className="flex items-start gap-2 text-label text-muted-foreground">
+        <ShieldCheck
+          aria-hidden
+          className="mt-0.5 h-4 w-4 shrink-0"
+        />
+        <span>
+          {spread.kind === "off"
+            ? `Every day stays at your weekly average, above your safety floor (${floor} kcal).`
+            : `Calories move between days; your weekly average stays the same and no day goes under your safety floor (${floor} kcal).`}
+        </span>
       </p>
     );
   }
+  const floorNote = ` No day goes under your safety floor (${floor} kcal).`;
   let copy: string;
   switch (spread.kind) {
     case "floors": {
@@ -662,21 +670,18 @@ function SpreadLine({
         : "";
       copy =
         spread.cause === "protein"
-          ? `Your protein setting leaves little room for the other minimums at this calorie level, so every day stays at the average${held}. A lower g/kg setting would let the days vary.`
-          : `Your calorie target leaves little room for the protein, fat and carb minimums together, so every day stays at the average${held}.${goal === "lose" ? " A smaller deficit would give each day more room." : ""}`;
+          ? `Your protein setting leaves little room for the other minimums at this calorie level, so every day stays at the average${held}. A lower g/kg setting would let the days vary.${floorNote}`
+          : `Your calorie target leaves little room for the protein, fat and carb minimums together, so every day stays at the average${held}.${goal === "lose" ? " A smaller deficit would give each day more room." : ""}${floorNote}`;
       break;
     }
     case "sameDays":
-      copy =
-        "Every day of your week plans the same way, so each stays at your weekly average. Days with different sessions would vary.";
+      copy = `Every day of your week plans the same way, so each stays at your weekly average. Days with different sessions would vary.${floorNote}`;
       break;
     case "atFloor":
-      copy =
-        "Your average is already close to your safety floor, so every day stays at the average for now.";
+      copy = `Your average is already close to your safety floor (${floor} kcal), so every day stays at the average for now.`;
       break;
     case "atMinimums":
-      copy =
-        "Your average is already close to the smallest day that fits your protein, fat and carb minimums, so every day stays at the average for now.";
+      copy = `Your average is already close to the smallest day that fits your protein, fat and carb minimums, so every day stays at the average for now.${floorNote}`;
       break;
   }
   return <Callout className="text-label leading-5">{copy}</Callout>;
