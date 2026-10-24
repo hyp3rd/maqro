@@ -3,7 +3,13 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PersonalInfo } from "@maqro/core/types";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 
 /** Profile is the You hub: besides its own sub-sections it offers the
  *  registry's You-hub views — Targets opens the calculator. */
@@ -91,5 +97,51 @@ describe("Profile as the You hub", () => {
       />,
     );
     expect(screen.queryByRole("button", { name: /^More/ })).toBeNull();
+  });
+
+  it("the hub's tiles sit above the long Body form", () => {
+    render(
+      <ProfileView
+        personalInfo={PROFILE}
+        onPersonalInfoChange={() => {}}
+        today="2026-06-10"
+        planWeek={() => null}
+        onTrainingChange={() => {}}
+        onProteinSettingChange={() => {}}
+        onSelectView={() => {}}
+      />,
+    );
+    const body = screen.getByRole("heading", { name: "Body" });
+    for (const name of [/Targets/, /Training week/]) {
+      const tile = screen.getByRole("button", { name });
+      expect(
+        tile.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+  });
+});
+
+describe("You hub sub-views", () => {
+  it("the breadcrumb goes back without repeating the screen's title", () => {
+    render(
+      <ProfileView
+        personalInfo={PROFILE}
+        onPersonalInfoChange={() => {}}
+        today="2026-06-10"
+        planWeek={() => null}
+        onTrainingChange={() => {}}
+        onProteinSettingChange={() => {}}
+        onSelectView={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /My measurements/ }));
+    const back = screen.getByRole("button", { name: "Back to You" });
+    const crumb = back.parentElement;
+    if (!crumb) throw new Error("no breadcrumb");
+    // The topbar already says "You": the crumb shows only where you are.
+    expect(crumb.textContent).toBe("My measurements");
+    expect(within(crumb).queryByText(/Profile|You/)).toBeNull();
+    fireEvent.click(back);
+    expect(screen.getByRole("heading", { name: "Body" })).toBeTruthy();
   });
 });

@@ -17,7 +17,13 @@ import type { ProteinSetting, TrainingSchedule } from "@maqro/core/types";
 import type { PersonalInfo } from "../../components/macro/types";
 import { ageFromBirthDate } from "../../lib/age";
 import { MoreSheet } from "../shell/MoreSheet";
-import { MORE_IN_TAB_BAR, NAV, type ViewKey, YOU_HUB } from "../shell/nav";
+import {
+  MORE_IN_TAB_BAR,
+  NAV,
+  type ViewKey,
+  YOU_HUB,
+  YOU_TAB,
+} from "../shell/nav";
 import { Input } from "../ui/input";
 import {
   Select,
@@ -213,6 +219,44 @@ function ProfileHome({
 
   return (
     <div className="space-y-6">
+      {/* The hub first: where you go from You (Targets, the training week,
+          and More once the tab bar has no More tab) sits above the long
+          Body form, so it is on screen when the tab opens. */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
+        {/* The You hub's views, from the nav registry (Targets → the
+            calculator). */}
+        {onSelectView &&
+          YOU_HUB.map(({ key, hint }) => (
+            <ProfileTile
+              key={key}
+              icon={NAV[key].icon}
+              title={NAV[key].label}
+              hint={hint}
+              onClick={() => onSelectView(key)}
+            />
+          ))}
+        <ProfileTile
+          icon={Dumbbell}
+          title="Training week"
+          hint={trainingHint(personalInfo.training)}
+          onClick={() => onOpen("training")}
+        />
+        {/* Once the tab bar no longer has a More tab (nav registry:
+            `TAB_BAR`), the More sheet's destinations are reached from here. */}
+        {onSelectView && !MORE_IN_TAB_BAR && (
+          <MoreSheet
+            current="profile"
+            onSelect={onSelectView}
+          >
+            <ProfileTile
+              icon={Ellipsis}
+              title="More"
+              hint="Foods, recipes, kitchen & settings"
+            />
+          </MoreSheet>
+        )}
+      </div>
+
       <Section
         title="Body"
         description="Used to estimate your BMR and TDEE — the basis for every calorie target."
@@ -329,39 +373,7 @@ function ProfileHome({
         </Row>
       </Section>
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-        {/* The You hub's views, from the nav registry (Targets → the
-            calculator). */}
-        {onSelectView &&
-          YOU_HUB.map(({ key, hint }) => (
-            <ProfileTile
-              key={key}
-              icon={NAV[key].icon}
-              title={NAV[key].label}
-              hint={hint}
-              onClick={() => onSelectView(key)}
-            />
-          ))}
-        {/* Once the tab bar no longer has a More tab (nav registry:
-            `TAB_BAR`), the More sheet's destinations are reached from here. */}
-        {onSelectView && !MORE_IN_TAB_BAR && (
-          <MoreSheet
-            current="profile"
-            onSelect={onSelectView}
-          >
-            <ProfileTile
-              icon={Ellipsis}
-              title="More"
-              hint="Foods, recipes, kitchen & settings"
-            />
-          </MoreSheet>
-        )}
-        <ProfileTile
-          icon={Dumbbell}
-          title="Training week"
-          hint={trainingHint(personalInfo.training)}
-          onClick={() => onOpen("training")}
-        />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
         <ProfileTile
           icon={HeartPulse}
           title="My measurements"
@@ -394,30 +406,31 @@ function trainingHint(raw: unknown): string {
   return sessions === 1 ? "1 session a week" : `${sessions} sessions a week`;
 }
 
+/** A sub-view's back row: the topbar already names the screen (You), so it
+ *  shows only where you are, behind a back arrow that names where it goes. */
 function SubHeader({ title, onBack }: { title: string; onBack: () => void }) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-1">
       <button
         type="button"
         onClick={onBack}
-        className="inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        aria-label={`Back to ${NAV[YOU_TAB].title}`}
+        className="-ml-2 inline-flex h-touch-8 w-touch-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <ArrowLeft className="h-4 w-4" />
-        Profile
+        <ArrowLeft
+          aria-hidden
+          className="h-4 w-4"
+        />
       </button>
-      <span
-        aria-hidden
-        className="text-muted-foreground/40"
-      >
-        /
-      </span>
       <span className="text-sm font-medium text-foreground">{title}</span>
     </div>
   );
 }
 
-/** A square hub tile. Extra button props (and, in React 19, `ref`) pass
- *  through, so a tile can also be a Radix trigger (the More tile). */
+/** A hub tile: icon over title and hint, no taller than its content needs
+ *  (not square), so the hub row above the Body form stays short on a phone.
+ *  Extra button props (and, in React 19, `ref`) pass through, so a tile can
+ *  also be a Radix trigger (the More tile). */
 function ProfileTile({
   icon: Icon,
   title,
@@ -432,9 +445,9 @@ function ProfileTile({
     <button
       type="button"
       {...buttonProps}
-      className="group flex aspect-square flex-col items-start justify-between rounded-xl border border-border/60 bg-card p-5 text-left transition-colors hover:border-brand/40 hover:bg-accent/40"
+      className="group flex min-h-28 flex-col items-start justify-between gap-3 rounded-xl border border-border/60 bg-card p-4 text-left transition-colors hover:border-brand/40 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-5"
     >
-      <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand/10 text-brand">
+      <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 text-brand">
         <Icon className="h-5 w-5" />
       </span>
       <span className="min-w-0">

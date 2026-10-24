@@ -9,6 +9,7 @@ import {
   TAB_BAR,
   VIEW_KEYS,
   YOU_HUB,
+  YOU_TAB,
   activeTabSlot,
   navPlace,
   viewFromParam,
@@ -75,6 +76,11 @@ describe("nav registry", () => {
       ["Kitchen", ["shopping", "pantry"]],
       ["You", ["profile", "calculator", "health", "settings"]],
     ]);
+  });
+
+  it("the You tab's screen is headed You, as the tab reads", () => {
+    expect(NAV[YOU_TAB].title).toBe(NAV[YOU_TAB].shortLabel);
+    expect(NAV.profile.title).toBe("You");
   });
 
   it("tab bar: Today · Progress · quick add · More · You", () => {

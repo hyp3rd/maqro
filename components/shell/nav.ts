@@ -134,7 +134,8 @@ export const NAV = {
   profile: {
     label: "Profile",
     shortLabel: "You",
-    title: "Profile",
+    // The screen the You tab opens is headed as the tab reads.
+    title: "You",
     icon: UserRound,
     group: "you",
     mobile: "tab",

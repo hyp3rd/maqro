@@ -65,7 +65,9 @@ test.describe("maqro happy path", () => {
 
     // The strip jumps to Profile, which carries the Body card + birthdate.
     await strip.click();
-    await expect(page.getByRole("heading", { name: "Profile" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "You", exact: true }),
+    ).toBeVisible();
     await expect(page.getByLabel("Birthdate")).toBeVisible();
 
     // Editing weight on Profile flows back into the Calculator's targets.
