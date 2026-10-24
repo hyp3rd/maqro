@@ -1,12 +1,12 @@
 "use client";
 
 import {
+  dateKey,
   getProfile,
   saveDailyLog,
   saveDemoProfile,
   saveWeightEntry,
   setWaterTotal,
-  todayKey,
 } from "@/lib/db";
 import {
   DEMO_FLAG_KEY,
@@ -14,6 +14,7 @@ import {
   getDemoProfile,
   getDemoWaterLogs,
   getDemoWeightHistory,
+  isDemoSeedRequest,
 } from "@/lib/demo-data";
 import { notifyProfileChanged } from "@/lib/profile-bus";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
@@ -37,8 +38,7 @@ import { toast } from "sonner";
 export function DemoSeed() {
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("demo") !== "1") return;
+    if (!isDemoSeedRequest(window.location.search)) return;
 
     let cancelled = false;
     (async () => {
@@ -72,20 +72,24 @@ export function DemoSeed() {
           return;
         }
 
-        const today = todayKey();
+        // One instant for the whole dataset: the profile's running fast
+        // is derived from which of today's meals are already eaten, so
+        // both must be built against the same `now`.
+        const now = Date.now();
+        const today = dateKey(new Date(now));
         // `saveDemoProfile` (not `saveProfile`) sets an `_demoSeeded`
         // flag on the IDB profile row — a durable signal so a private
         // window or quota-exceeded localStorage write doesn't drop the
         // `DEMO_FLAG_KEY` and let demo data leak into the signed-in
         // user's account on the next sync.
-        await saveDemoProfile(getDemoProfile());
-        for (const log of getDemoMealLogs(today)) {
+        await saveDemoProfile(getDemoProfile(now));
+        for (const log of getDemoMealLogs(today, now)) {
           await saveDailyLog(log.date, log.meals);
         }
-        for (const w of getDemoWeightHistory(today)) {
+        for (const w of getDemoWeightHistory(today, now)) {
           await saveWeightEntry(w.date, w.kg);
         }
-        for (const wi of getDemoWaterLogs(today)) {
+        for (const wi of getDemoWaterLogs(today, now)) {
           await setWaterTotal(wi.date, wi.ml);
         }
 
@@ -96,9 +100,11 @@ export function DemoSeed() {
           // Storage disabled — fine; the flag is informational
           // for future features, not load-bearing.
         }
-        // Tell the profile-driven hooks (sidebar UserMenu,
-        // useProfile) to re-fetch so the UI populates without
-        // a manual refresh.
+        // `saveDemoProfile` already woke the data-bus readers
+        // (`useProfile`, the fasting status). The profile-bus is a
+        // separate channel for the readers that load the profile on
+        // their own (sidebar UserMenu, `useDisplayName`) — tell them
+        // too so the "Sample" name shows without a manual refresh.
         notifyProfileChanged();
         toast.success(
           "Sample data loaded — explore freely, then start over from Settings.",

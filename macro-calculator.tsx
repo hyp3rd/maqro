@@ -84,7 +84,8 @@ import {
   type MealTemplate,
   type PantryItem,
 } from "./lib/db";
-import { dietBreakNudge } from "./lib/goal-phases";
+import { isDemoSeedRequest } from "./lib/demo-data";
+import { dietBreakNudge, effectiveGoal } from "./lib/goal-phases";
 import { haptic } from "./lib/haptics";
 import { waterGoalMl } from "./lib/hydration";
 import { addFoodBasis, scaleFoodToItem } from "./lib/log-food";
@@ -296,25 +297,47 @@ const MacroCalculator = () => {
   // hydrated profile is still the default. The latter check avoids
   // re-onboarding users whose data synced from another device before
   // they got a chance to dismiss it.
+  //
+  // A "Try with sample data" visit (`?demo=1`) is never onboarded: the
+  // visitor asked to explore a seeded dataset, not to set up a profile, and
+  // the profile check alone can't keep the wizard out — it reads the default
+  // profile until the seed lands (past the 1.5 s gate on a slow device) and
+  // for the render between the seed's data-bus bump and `useProfile`'s
+  // re-load. Either way the wizard would mount and count the visit in the
+  // anonymous onboarding funnel. Not marked done, so a reload after "start
+  // over" still onboards normally.
+  //
+  // The flag comes from the router's `useSearchParams`, not
+  // `window.location`: the landing page reaches `/app?demo=1` through a
+  // `<Link>` soft navigation, and Next renders the new route with its params
+  // but writes the address bar only in the commit phase (`HistoryUpdater`'s
+  // insertion effect), so during this first render `window.location` can
+  // still be the landing page's. Read once, in the lazy initializer: the
+  // wizard state is decided at mount, and `DemoSeed`'s later strip of the
+  // param must not reopen it.
+  const searchParams = useSearchParams();
   const [onboardingOpen, setOnboardingOpen] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
-    return !hasCompletedOnboarding();
+    return (
+      !hasCompletedOnboarding() && !isDemoSeedRequest(searchParams.toString())
+    );
   });
   // Grace window so the wizard doesn't FLASH for a fraction of a
   // second on devices where IDB hydrates as default (empty cache,
   // signed-in user on a wiped device, hard refresh) BEFORE the
-  // initial sync pulls the real profile in. We open the gate when
-  // EITHER: (a) sync has touched the profile store (profileRev > 0),
-  // OR (b) the 1.5s safety timeout fired AND no initial sync is still
-  // in flight. The sync guard is what actually closes the flash: a
-  // returning user on a fresh device whose pull runs longer than the
-  // timeout used to see the wizard for a frame before the synced
-  // (non-default) profile arrived and shut it. Gating (b) on
-  // `syncStatus` holds the gate closed until the pull settles, after
-  // which (a) or (b) opens it. The OR is derived directly from state -
-  // the timeout only updates `gateTimeoutFired` inside its callback,
-  // never synchronously in an effect body (would violate the
-  // set-state-in-effect rule).
+  // initial sync pulls the real profile in. We open the gate when no
+  // sync is in flight AND EITHER: (a) something has written the profile
+  // store (profileRev > 0), OR (b) the 1.5s safety timeout fired. The
+  // sync guard is what actually closes the flash: a returning user on a
+  // fresh device whose pull runs longer than the timeout used to see the
+  // wizard for a frame before the synced (non-default) profile arrived
+  // and shut it. It holds for (a) too, because not every profile write
+  // is a pull: signing in after "Try with sample data" clears the
+  // sample profile (a data-bus bump that leaves the default on screen)
+  // right before the pull that may bring the account's real one. The
+  // condition is derived directly from state - the timeout only updates
+  // `gateTimeoutFired` inside its callback, never synchronously in an
+  // effect body (would violate the set-state-in-effect rule).
   const profileRev = useDataRev("profile");
   const syncStatus = useSyncStatus();
   const [gateTimeoutFired, setGateTimeoutFired] = useState(false);
@@ -323,7 +346,7 @@ const MacroCalculator = () => {
     return () => window.clearTimeout(t);
   }, []);
   const onboardingGateOpen =
-    profileRev > 0 || (gateTimeoutFired && syncStatus.state !== "syncing");
+    syncStatus.state !== "syncing" && (profileRev > 0 || gateTimeoutFired);
 
   // Mirror the synced home market into the food-search market resolver, so the
   // search defaults to the user's chosen market across devices (a per-device
@@ -457,8 +480,7 @@ const MacroCalculator = () => {
   // "undefined"` → returns null) and client hydration would reuse
   // that null forever. `useSearchParams` returns the real URL params
   // on both server and client, so the value is correct from the
-  // first render.
-  const searchParams = useSearchParams();
+  // first render. (`searchParams` is read above, for the onboarding gate.)
   const urlUpgradeParam = searchParams.get("upgrade");
   const urlPlan: "plus" | "pro" | null =
     urlUpgradeParam === "plus" || urlUpgradeParam === "pro"
@@ -2673,6 +2695,7 @@ const MacroCalculator = () => {
         //      user, flashing the wizard for ~1 frame before
         //      hydration replaces the profile.
         //   2. The device hasn't recorded a completion (localStorage)
+        //      and this mount isn't a `?demo=1` visit (`onboardingOpen`)
         //   3. The hydrated profile is still default (no synced data
         //      arrived to indicate this user has been here before)
         // If profile sync brings in customized values mid-session,

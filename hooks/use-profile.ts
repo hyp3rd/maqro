@@ -104,6 +104,24 @@ export function useProfile(defaultProfile: PersonalInfo): ProfileState {
           setProfileState(withUnits);
           // We loaded a real row from IDB - auto-saves are now safe.
           hasRealLocalData.current = true;
+        } else if (loadedProfile.current !== null) {
+          // The row this hook loaded is gone: deleted behind it (the sample
+          // dataset cleared on sign-in, an account wipe). What is in memory
+          // belongs to that row, so drop it and everything derived from it
+          // rather than keep it on screen and save it back as if it were
+          // the user's: back to the defaults, not saved (a pull may be about
+          // to land the account's real profile), and any edit to the old row
+          // still waiting in a debounce withdrawn.
+          const reset: PersonalInfo = {
+            ...defaultProfile,
+            units: localeDefault,
+          };
+          loadedProfile.current = reset;
+          hasRealLocalData.current = false;
+          pendingProfileRef.current = null;
+          pendingWeightRef.current = null;
+          userIntendedWeight.current = null;
+          setProfileState(reset);
         } else {
           // First-ever run — no IDB row exists. Patch the in-memory
           // state with the locale default so a US user lands on
@@ -178,6 +196,9 @@ export function useProfile(defaultProfile: PersonalInfo): ProfileState {
     }
     pendingWeightRef.current = target;
     const t = window.setTimeout(() => {
+      // A reset that left `profile.weight` unchanged keeps this timer alive;
+      // it still withdrew the edit.
+      if (userIntendedWeight.current !== target) return;
       saveWeightEntry(todayKey(), target)
         .then(() => {
           lastWeighedKg.current = target;

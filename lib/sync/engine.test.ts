@@ -1036,6 +1036,111 @@ describe("hooks showing peer updates never dirty the rows they load", () => {
   });
 });
 
+describe("signing in after exploring the sample data", () => {
+  let env: Awaited<ReturnType<typeof setup>>;
+  beforeEach(async () => {
+    env = await setup();
+  });
+
+  const DEFAULT_PROFILE: PersonalInfo = { ...PROFILE, age: 25 };
+
+  /** Outlasts useProfile's 500 ms save debounce, so any save a load
+   *  scheduled has run before the next step. */
+  const outlastSaveDebounce = () =>
+    new Promise((resolve) => setTimeout(resolve, 700));
+
+  /** A guest about to sign in: the `?demo=1` seed's profile row, loaded by a
+   *  mounted `useProfile`. */
+  async function mountOnDemoProfile() {
+    const { getDemoProfile } = await import("@/lib/demo-data");
+    await env.db.saveDemoProfile(getDemoProfile());
+    const { useProfile } = await import("@/hooks/use-profile");
+    const hook = renderHook(() => useProfile(DEFAULT_PROFILE));
+    await waitFor(() =>
+      expect(hook.result.current.profile.displayName).toBe("Sample"),
+    );
+    return hook;
+  }
+
+  /** What `useProfile` shows when there is no stored profile. */
+  async function defaults(): Promise<PersonalInfo> {
+    const { detectDefaultUnitSystem } = await import("@/lib/units");
+    return { ...DEFAULT_PROFILE, units: detectDefaultUnitSystem() };
+  }
+
+  it("clearDemoModeData notifies each store it clears exactly once", async () => {
+    const { db, bus } = env;
+    const { clearDemoModeData, getDemoProfile } =
+      await import("@/lib/demo-data");
+    const { subscribeProfileChanged } = await import("@/lib/profile-bus");
+    await db.saveDemoProfile(getDemoProfile());
+    const cleared = [
+      "profile",
+      "dailyLogs",
+      "weightHistory",
+      "waterIntake",
+      "shoppingListMeta",
+    ] as const;
+    const before = cleared.map((t) => bus.getDataVersion(t));
+    let profileBus = 0;
+    const off = subscribeProfileChanged(() => {
+      profileBus += 1;
+    });
+
+    await clearDemoModeData();
+    off();
+
+    expect(cleared.map((t) => bus.getDataVersion(t))).toEqual(
+      before.map((v) => v + 1),
+    );
+    expect(profileBus).toBe(1);
+  });
+
+  it("useProfile drops the cleared demo profile, and no sync pushes it", async () => {
+    const { db, sync, server, sb } = env;
+    // A new account: only the placeholder row created with it.
+    server.seed("profiles", { user_id: USER_ID, payload: {} });
+    const { result, unmount } = await mountOnDemoProfile();
+    await outlastSaveDebounce();
+
+    // SyncManager's sign-in chain.
+    const { clearDemoModeData } = await import("@/lib/demo-data");
+    await act(() => clearDemoModeData());
+    await sync.triggerSync(sb, USER_ID);
+
+    const empty = await defaults();
+    await waitFor(() => expect(result.current.profile).toEqual(empty));
+    await outlastSaveDebounce();
+    expect(await db.getProfileRecord()).toBeNull();
+    await sync.triggerSync(sb, USER_ID);
+    expect(server.find("profiles", { user_id: USER_ID })?.payload).toEqual({});
+
+    // The first real edit builds on the defaults, not on the sample.
+    act(() => result.current.patchProfile("age", 40));
+    await waitFor(async () => expect((await db.getProfile())?.age).toBe(40));
+    expect(await db.getProfile()).toEqual({ ...empty, age: 40 });
+    unmount();
+  });
+
+  it("drops a demo edit still waiting in the save debounce", async () => {
+    const { db } = env;
+    const { result, unmount } = await mountOnDemoProfile();
+    // An edit to the sample's weight (68 kg) that lands on the default's, so
+    // the reset to the defaults leaves `profile.weight` unchanged.
+    act(() => result.current.patchProfile("weight", DEFAULT_PROFILE.weight));
+
+    const { clearDemoModeData } = await import("@/lib/demo-data");
+    await act(() => clearDemoModeData());
+    const empty = await defaults();
+    await waitFor(() => expect(result.current.profile).toEqual(empty));
+    await outlastSaveDebounce();
+    unmount();
+
+    expect(await db.getProfileRecord()).toBeNull();
+    expect(await db.listWeightEntries()).toEqual([]);
+  });
+});
+
 describe("error isolation", () => {
   let env: Awaited<ReturnType<typeof setup>>;
   beforeEach(async () => {
