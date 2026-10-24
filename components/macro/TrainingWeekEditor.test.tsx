@@ -438,6 +438,63 @@ describe("TrainingWeekEditor: protein", () => {
     proteinSetting: setting,
   });
 
+  it("takes a typed g/kg in one go, either decimal mark, inside the safe range", () => {
+    const onProtein = vi.fn();
+    renderEditor({
+      initial: withSetting({ basis: "bodyweight", gPerKg: 1.2 }),
+      onProtein,
+    });
+    const field = screen.getByRole<HTMLInputElement>("textbox", {
+      name: "Grams per kg",
+    });
+    expect(field.value).toBe("1.2");
+    expect(field.getAttribute("inputmode")).toBe("decimal");
+    // 1.2 → 3.4 without 22 taps: type it, Enter.
+    fireEvent.focus(field);
+    fireEvent.change(field, { target: { value: "3.4" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(onProtein).toHaveBeenLastCalledWith({
+      basis: "bodyweight",
+      gPerKg: 3.4,
+    });
+    expect(field.value).toBe("3.4");
+    expect(
+      screen.getByRole("heading", { name: /Protein: 270 g/ }),
+    ).toBeTruthy();
+    // A comma works as the decimal mark; leaving the field commits.
+    fireEvent.change(field, { target: { value: "2,6" } });
+    fireEvent.blur(field);
+    expect(onProtein).toHaveBeenLastCalledWith({
+      basis: "bodyweight",
+      gPerKg: 2.6,
+    });
+    // Outside the range, the nearest bound; to a tenth.
+    fireEvent.change(field, { target: { value: "9" } });
+    fireEvent.blur(field);
+    expect(onProtein).toHaveBeenLastCalledWith({
+      basis: "bodyweight",
+      gPerKg: 3.4,
+    });
+    fireEvent.change(field, { target: { value: "1.84" } });
+    fireEvent.blur(field);
+    expect(onProtein).toHaveBeenLastCalledWith({
+      basis: "bodyweight",
+      gPerKg: 1.8,
+    });
+    // Not a number: nothing is written and the setting shows again.
+    const calls = onProtein.mock.calls.length;
+    fireEvent.change(field, { target: { value: "lots" } });
+    fireEvent.blur(field);
+    expect(onProtein).toHaveBeenCalledTimes(calls);
+    expect(field.value).toBe("1.8");
+    // Escape drops a half-typed value.
+    fireEvent.change(field, { target: { value: "3" } });
+    fireEvent.keyDown(field, { key: "Escape" });
+    expect(field.value).toBe("1.8");
+    fireEvent.blur(field);
+    expect(onProtein).toHaveBeenCalledTimes(calls);
+  });
+
   it("steps g/kg by 0.1 and shows the resulting grams", () => {
     const onProtein = vi.fn();
     renderEditor({

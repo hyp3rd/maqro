@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { Card, CardBody } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Switch } from "@/components/ui/switch";
 import { haptic } from "@/lib/haptics";
@@ -56,6 +57,14 @@ const CYCLING_LABEL: Record<CyclingPreset, string> = {
 };
 
 const PROTEIN_STEP = 0.1;
+
+/** A typed g/kg: digits with an optional "." or "," decimal mark (either
+ *  locale's), else `null`. Grouping never occurs at this scale. */
+function parseGramsPerKg(text: string): number | null {
+  const match = /^\s*(\d{1,3})(?:[.,](\d{1,3}))?\s*$/.exec(text);
+  if (!match) return null;
+  return Number(`${match[1]}.${match[2] ?? "0"}`);
+}
 
 /** A stepper button at its bound: looks disabled, ignores the pointer, and
  *  keeps keyboard focus. */
@@ -562,6 +571,21 @@ function ProteinCard({
       gPerKg: Math.round((setting.gPerKg + dir * PROTEIN_STEP) * 10) / 10,
     });
   };
+  const shown = formatNumber(setting.gPerKg, locale, 1);
+  // The field's text while it is being typed in (`null` = show the
+  // setting), so a half-typed value never jumps around.
+  const [typed, setTyped] = useState<string | null>(null);
+  const commitTyped = () => {
+    if (typed === null) return;
+    setTyped(null);
+    const value = parseGramsPerKg(typed);
+    if (value === null) return;
+    const next = Math.min(
+      max,
+      Math.max(PROTEIN_G_PER_KG_MIN, Math.round(value * 10) / 10),
+    );
+    if (next !== setting.gPerKg) onChange({ ...setting, gPerKg: next });
+  };
   return (
     <Card asChild>
       <section aria-labelledby={`${id}-protein`}>
@@ -619,12 +643,48 @@ function ProteinCard({
               >
                 <Minus aria-hidden />
               </Button>
-              <output
-                aria-live="polite"
-                className="w-20 text-center font-mono text-base font-medium tabular-nums text-foreground"
-              >
-                {formatNumber(setting.gPerKg, locale, 1)} g/kg
-              </output>
+              {/* Tap to type (one-handed 1.2 → 3.4 in one go), or step. */}
+              <span className="flex items-baseline gap-1">
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  enterKeyHint="done"
+                  autoComplete="off"
+                  aria-labelledby={`${id}-gkg`}
+                  aria-describedby={`${id}-range`}
+                  value={typed ?? shown}
+                  onFocus={(event) => {
+                    setTyped(shown);
+                    event.currentTarget.select();
+                  }}
+                  onChange={(event) => setTyped(event.target.value)}
+                  onBlur={commitTyped}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      commitTyped();
+                    } else if (event.key === "Escape" && typed !== null) {
+                      event.preventDefault();
+                      setTyped(null);
+                    }
+                  }}
+                  className="h-touch-9 w-14 px-1 text-center font-mono text-base font-medium tabular-nums md:text-base"
+                />
+                <span
+                  aria-hidden
+                  className="text-label text-muted-foreground"
+                >
+                  g/kg
+                </span>
+                {/* The stepped value, announced (a field's value change
+                    isn't). */}
+                <span
+                  aria-live="polite"
+                  className="sr-only"
+                >
+                  {shown} g/kg
+                </span>
+              </span>
               <Button
                 type="button"
                 variant="outline"
@@ -639,8 +699,10 @@ function ProteinCard({
             </div>
           </div>
           <p className="text-label text-muted-foreground">
-            {formatNumber(PROTEIN_G_PER_KG_MIN, locale, 1)} to{" "}
-            {formatNumber(max, locale, 1)} g/kg.{" "}
+            <span id={`${id}-range`}>
+              {formatNumber(PROTEIN_G_PER_KG_MIN, locale, 1)} to{" "}
+              {formatNumber(max, locale, 1)} g/kg.
+            </span>{" "}
             {proteinGrams < requestedGrams
               ? `Protein is planned at ${kcal(proteinGrams)} g a day for now, under the ${kcal(requestedGrams)} g your setting asks for, so the fat and carb minimums fit.`
               : sameEveryDay
