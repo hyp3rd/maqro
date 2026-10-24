@@ -42,11 +42,15 @@ type GetSessionResult = {
 type AuthListener = (event: AuthChangeEvent, session: Session | null) => void;
 
 /** A stand-in for the browser auth client. INITIAL_SESSION fires first with
- *  `initial`; the first `getUser()` settles only when the test releases it,
- *  later ones answer `nextGetUser`; `emit` fires any later auth event. */
+ *  `initial` — preceded, with `initChain`, by the SIGNED_IN auth-js flushes
+ *  from `_recoverAndRefresh` once it has initialized (the real order on a
+ *  cold start); the first `getUser()` settles only when the test releases
+ *  it, later ones answer `nextGetUser`; `emit` fires any later auth event to
+ *  every subscriber. */
 function fakeAuthClient(
   initial: Session | null,
   getSession: GetSessionResult = { data: { session: initial }, error: null },
+  { initChain = false }: { initChain?: boolean } = {},
 ) {
   let releaseGetUser: (result: GetUserResult) => void = () => {};
   let failGetUser: (err: Error) => void = () => {};
@@ -56,21 +60,33 @@ function fakeAuthClient(
   });
   const state = {
     nextGetUser: null as GetUserResult | null,
-    listener: null as AuthListener | null,
+    held: null as Promise<GetUserResult> | null,
+    listeners: new Set<AuthListener>(),
   };
-  const getUser = vi.fn(() =>
-    state.nextGetUser === null
-      ? getUserSettled
-      : Promise.resolve(state.nextGetUser),
+  const getUser = vi.fn(
+    () =>
+      state.held ??
+      (state.nextGetUser === null
+        ? getUserSettled
+        : Promise.resolve(state.nextGetUser)),
   );
   const client = {
     auth: {
       getUser,
       getSession: () => Promise.resolve(getSession),
       onAuthStateChange: (callback: AuthListener) => {
-        state.listener = callback;
-        queueMicrotask(() => callback("INITIAL_SESSION", initial));
-        return { data: { subscription: { unsubscribe: () => {} } } };
+        state.listeners.add(callback);
+        queueMicrotask(() => {
+          if (initChain && initial !== null) callback("SIGNED_IN", initial);
+          callback("INITIAL_SESSION", initial);
+        });
+        return {
+          data: {
+            subscription: {
+              unsubscribe: () => state.listeners.delete(callback),
+            },
+          },
+        };
       },
     },
   };
@@ -84,8 +100,23 @@ function fakeAuthClient(
     answerGetUserWith: (result: GetUserResult) => {
       state.nextGetUser = result;
     },
+    /** Hold every later `getUser()` until the returned function answers
+     *  them all with `result`. */
+    holdGetUser: () => {
+      let answer: (result: GetUserResult) => void = () => {};
+      state.held = new Promise<GetUserResult>((resolve) => {
+        answer = resolve;
+      });
+      return (result: GetUserResult) =>
+        act(async () => {
+          state.held = null;
+          answer(result);
+        });
+    },
     emit: (event: AuthChangeEvent, session: Session | null) =>
-      act(() => state.listener?.(event, session)),
+      act(() => {
+        for (const listener of [...state.listeners]) listener(event, session);
+      }),
   };
 }
 
@@ -154,6 +185,24 @@ async function startWith(
     expect(hook.result.current.user).toBe(persisted?.user ?? null),
   );
   expect(hook.result.current.isLoaded).toBe(false);
+  return { ...hook, ...fake };
+}
+
+/** Renders two mounted `useUser` instances sharing one fake client (the app
+ *  mounts ~15), with the real cold-start order of auth events, and waits
+ *  for INITIAL_SESSION. */
+async function startTwoInstances(
+  persisted: Session,
+  getSession?: GetSessionResult,
+) {
+  const fake = fakeAuthClient(persisted, getSession, { initChain: true });
+  supabase.client = fake.client;
+  const hook = renderHook(() => [useUser(), useUser()]);
+  await waitFor(() =>
+    expect(hook.result.current.every((s) => s.user === persisted.user)).toBe(
+      true,
+    ),
+  );
   return { ...hook, ...fake };
 }
 
@@ -404,7 +453,7 @@ describe("useUser — SIGNED_IN from storage is still checked with the server", 
 
   it("a rejected session ends signed out and forgotten although SIGNED_IN came first", async () => {
     writeLastKnownUserId("u1");
-    const { result, releaseGetUser, emit } = await startWith(SESSION);
+    const { result, releaseGetUser, emit, getUser } = await startWith(SESSION);
     emit("SIGNED_IN", SESSION);
 
     await act(async () => releaseGetUser(bannedGetUser));
@@ -412,6 +461,8 @@ describe("useUser — SIGNED_IN from storage is still checked with the server", 
     expect(result.current.user).toBeNull();
     expect(result.current.localUserId).toBeNull();
     expect(readLastKnownUserId()).toBeNull();
+    // The check in flight was for that same session, so it decided alone.
+    expect(getUser).toHaveBeenCalledTimes(1);
   });
 
   it("offline cold start with an unexpired token stays unverified, and 'online' verifies it", async () => {
@@ -421,13 +472,28 @@ describe("useUser — SIGNED_IN from storage is still checked with the server", 
     await act(async () => releaseGetUser(offlineGetUser));
     await waitFor(() => expect(result.current.isLoaded).toBe(true));
     expect(result.current.user).toBe(USER);
-    const callsWhileOffline = getUser.mock.calls.length;
+    expect(getUser).toHaveBeenCalledTimes(1);
 
     const verified = { id: "u1", email: "a@example.com" } as User;
     answerGetUserWith({ data: { user: verified }, error: null });
     await goOnline();
     await waitFor(() => expect(result.current.user).toBe(verified));
-    expect(getUser).toHaveBeenCalledTimes(callsWhileOffline + 1);
+    expect(getUser).toHaveBeenCalledTimes(2);
+  });
+
+  it("offline cold start with an unexpired token is verified when the tab becomes visible", async () => {
+    const { result, releaseGetUser, emit, answerGetUserWith, getUser } =
+      await startWith(SESSION);
+    emit("SIGNED_IN", SESSION);
+    await act(async () => releaseGetUser(offlineGetUser));
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+
+    const verified = { id: "u1", email: "a@example.com" } as User;
+    answerGetUserWith({ data: { user: verified }, error: null });
+    await becomeVisible();
+    await waitFor(() => expect(result.current.user).toBe(verified));
+    expect(getUser).toHaveBeenCalledTimes(2);
+    expect(readLastKnownUserId()).toBe("u1");
   });
 
   it("a session the server refused is checked again when SIGNED_IN re-delivers it", async () => {
@@ -444,22 +510,8 @@ describe("useUser — SIGNED_IN from storage is still checked with the server", 
     expect(readLastKnownUserId()).toBeNull();
   });
 
-  it("a SIGNED_IN before the first answer shows the session but does not record it", async () => {
-    const { result, releaseGetUser, emit } = await startWith(SESSION);
-    emit("SIGNED_IN", SESSION);
-    // Provisional: shown at once, but nothing the server confirmed yet, so
-    // the last-known record (the offline fallback) is not written from it.
-    expect(result.current.user).toBe(USER);
-    expect(readLastKnownUserId()).toBeNull();
-
-    await act(async () => releaseGetUser(bannedGetUser));
-    await waitFor(() => expect(result.current.isLoaded).toBe(true));
-    expect(result.current.user).toBeNull();
-    expect(readLastKnownUserId()).toBeNull();
-  });
-
-  it("a repeated SIGNED_IN that discards the check of a new account checks it again", async () => {
-    const { result, releaseGetUser, emit, answerGetUserWith, getUser } =
+  it("a repeated SIGNED_IN for the account being checked leaves the verdict to that check", async () => {
+    const { result, releaseGetUser, emit, getUser, holdGetUser } =
       await startWith(SESSION);
     await act(async () =>
       releaseGetUser({ data: { user: USER }, error: null }),
@@ -468,30 +520,38 @@ describe("useUser — SIGNED_IN from storage is still checked with the server", 
 
     // Signing in as u2 starts a check of u2 that has not answered yet …
     const other = { id: "u2" } as User;
-    let answerFirstCheck: (result: GetUserResult) => void = () => {};
-    getUser.mockImplementationOnce(
-      () =>
-        new Promise<GetUserResult>((resolve) => {
-          answerFirstCheck = resolve;
-        }),
-    );
+    const answer = holdGetUser();
     emit("SIGNED_IN", { user: other } as Session);
     expect(getUser).toHaveBeenCalledTimes(2);
 
-    // … when u2's session is delivered again (tab focus). That discards the
-    // pending check, so u2 must be checked once more — here, refused.
-    answerGetUserWith(bannedGetUser);
+    // … when u2's session is delivered again (tab focus). The check in
+    // flight already asks about it: no second request, and its answer —
+    // here, refused — is not thrown away.
     emit("SIGNED_IN", { user: other } as Session);
-    await waitFor(() => expect(getUser).toHaveBeenCalledTimes(3));
-    await waitFor(() => expect(result.current.user).toBeNull());
-    expect(readLastKnownUserId()).toBeNull();
+    expect(getUser).toHaveBeenCalledTimes(2);
+    expect(result.current.user).toBe(other);
 
-    // The discarded check's late answer does not restore u2.
-    await act(async () =>
-      answerFirstCheck({ data: { user: other }, error: null }),
-    );
+    await answer(bannedGetUser);
     expect(result.current.user).toBeNull();
     expect(readLastKnownUserId()).toBeNull();
+    expect(getUser).toHaveBeenCalledTimes(2);
+  });
+
+  it("an answer about another account than the session being checked is asked again", async () => {
+    // The check read the stored session at a moment this hook can't see:
+    // an answer naming another account than the session it was told about
+    // may be the older one, so it is never applied as is.
+    const { result, releaseGetUser, answerGetUserWith, getUser } =
+      await startWith(SESSION);
+    const other = { id: "u2" } as User;
+    answerGetUserWith({ data: { user: USER }, error: null });
+    await act(async () =>
+      releaseGetUser({ data: { user: other }, error: null }),
+    );
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+    expect(getUser).toHaveBeenCalledTimes(2);
+    expect(result.current.user).toBe(USER);
+    expect(readLastKnownUserId()).toBe("u1");
   });
 
   it("an unverified session re-delivered by SIGNED_IN is checked with the server", async () => {
@@ -621,6 +681,108 @@ describe("useUser — account switch", () => {
     expect(result.current.user).toBe(other);
     expect(readLastKnownUserId()).toBe("u2");
     await waitFor(() => expect(result.current.user).toBe(other));
+  });
+});
+
+/** Every mounted `useUser` checks the identity on its own (~15 of them in
+ *  the app), and auth-js's init-chain SIGNED_IN reaches each one while that
+ *  check is in flight. A check costs a `/auth/v1/user` round trip, so each
+ *  instance asks once per cold start or re-check. */
+describe("useUser — one identity check per instance", () => {
+  it("a normal cold start asks the server once per instance", async () => {
+    const { result, releaseGetUser, getUser } =
+      await startTwoInstances(SESSION);
+    await act(async () =>
+      releaseGetUser({ data: { user: USER }, error: null }),
+    );
+    await waitFor(() =>
+      expect(result.current.every((s) => s.isLoaded)).toBe(true),
+    );
+    expect(getUser).toHaveBeenCalledTimes(2);
+    expect(result.current.map((s) => s.user)).toEqual([USER, USER]);
+    expect(readLastKnownUserId()).toBe("u1");
+  });
+
+  it("a banned user's cold start asks once per instance and ends signed out", async () => {
+    writeLastKnownUserId("u1");
+    const { result, releaseGetUser, getUser } =
+      await startTwoInstances(SESSION);
+    await act(async () =>
+      releaseGetUser({
+        data: { user: null },
+        error: new AuthApiError("User is banned", 403, "user_banned"),
+      }),
+    );
+    await waitFor(() =>
+      expect(result.current.every((s) => s.isLoaded)).toBe(true),
+    );
+    expect(getUser).toHaveBeenCalledTimes(2);
+    expect(result.current.map((s) => s.user)).toEqual([null, null]);
+    expect(readLastKnownUserId()).toBeNull();
+  });
+
+  it.each([
+    ["before", true],
+    ["after", false],
+  ] as const)(
+    "a tab-visible re-check asks once per instance (SIGNED_IN %s the visibility handler)",
+    async (_order, signedInFirst) => {
+      const { result, releaseGetUser, emit, holdGetUser, getUser } =
+        await startTwoInstances(SESSION);
+      await act(async () => releaseGetUser(offlineGetUser));
+      await waitFor(() =>
+        expect(result.current.every((s) => s.isLoaded)).toBe(true),
+      );
+      expect(getUser).toHaveBeenCalledTimes(2);
+
+      // On focus auth-js re-emits the stored session (_recoverAndRefresh)
+      // while each instance re-checks its unverified identity.
+      const answer = holdGetUser();
+      if (signedInFirst) emit("SIGNED_IN", SESSION);
+      await becomeVisible();
+      if (!signedInFirst) emit("SIGNED_IN", SESSION);
+      expect(getUser).toHaveBeenCalledTimes(4);
+
+      const verified = { id: "u1", email: "a@example.com" } as User;
+      await answer({ data: { user: verified }, error: null });
+      expect(result.current.map((s) => s.user)).toEqual([verified, verified]);
+      expect(getUser).toHaveBeenCalledTimes(4);
+    },
+  );
+
+  it("an 'online' event during a re-check that then fails offline checks again", async () => {
+    const { result, releaseGetUser, holdGetUser, answerGetUserWith, getUser } =
+      await startWith(SESSION);
+    await act(async () => releaseGetUser(offlineGetUser));
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+
+    const answer = holdGetUser();
+    await becomeVisible();
+    expect(getUser).toHaveBeenCalledTimes(2);
+    // The network returns while that check is still out; it is not asked
+    // twice at once, but its failure does not swallow the 'online' event.
+    await goOnline();
+    expect(getUser).toHaveBeenCalledTimes(2);
+    answerGetUserWith({ data: { user: USER }, error: null });
+    await answer(offlineGetUser);
+    await waitFor(() => expect(getUser).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(readLastKnownUserId()).toBe("u1"));
+    expect(result.current.user).toBe(USER);
+  });
+
+  it("another tab's sign-out during a re-check is not undone by its answer", async () => {
+    const { result, releaseGetUser, emit, holdGetUser } =
+      await startWith(SESSION);
+    await act(async () => releaseGetUser(offlineGetUser));
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+
+    const answer = holdGetUser();
+    await becomeVisible();
+    emit("SIGNED_IN", SESSION);
+    emit("SIGNED_OUT", null);
+    await answer({ data: { user: USER }, error: null });
+    expect(result.current.user).toBeNull();
+    expect(readLastKnownUserId()).toBeNull();
   });
 });
 

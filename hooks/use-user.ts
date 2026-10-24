@@ -52,6 +52,18 @@ type Resolution = Identity & {
 
 const SIGNED_OUT: Identity = { user: null, offlineUserId: null };
 
+/** An identity check in flight. */
+type Check = {
+  /** The user id of the session it asks about, as far as the hook knows:
+   *  the identity it re-checks, or the session the first session event
+   *  delivers (`null` until then). A session event for another account
+   *  discards the check; one for this account leaves the verdict to it. */
+  subject: string | null;
+  /** A re-check was requested while it was in flight: repeat it once if it
+   *  fails for lack of network again. */
+  retry: boolean;
+};
+
 /** The signed-in user per the auth server, or — when the server can't be
  *  reached — per the locally persisted session, or failing that the
  *  last-known user.
@@ -154,16 +166,17 @@ export function useUser(): UserState {
     // Whether the current identity came from a failure (no network, or a
     // thrown check) and so must be re-verified once that could succeed.
     let unverified = false;
-    // Whether a `verify()` is in flight whose answer would still apply.
-    let checking = false;
-    // The user id the hook currently reports (`null` when none).
+    // The user id the hook currently reports, or — offline-unverified — the
+    // last-known one (`null` when none).
     let shownUserId: string | null = null;
-    // Only the latest resolution may apply: an `online` re-check can overlap
-    // the initial one, and an auth event supersedes any still in flight.
-    let latestResolution = 0;
+    // The identity check in flight whose answer would still apply, if any.
+    // Only that one may apply: an auth event that replaces the session it
+    // was checking discards it (`inFlight = null`), so a late answer never
+    // restores the identity the event replaced.
+    let inFlight: Check | null = null;
 
     const show = (next: Identity) => {
-      shownUserId = next.user?.id ?? null;
+      shownUserId = next.user?.id ?? next.offlineUserId;
       setIdentity(next);
     };
 
@@ -172,18 +185,35 @@ export function useUser(): UserState {
       show(next);
     };
 
-    const verify = () => {
-      const run = ++latestResolution;
-      checking = true;
-      const isCurrent = () => !cancelled && run === latestResolution;
+    /** Ask the server about the session auth-js holds, as the session of
+     *  `subject` (`null` while that is not known yet: the first session
+     *  event names it). */
+    const verify = (subject: string | null) => {
+      const check: Check = { subject, retry: false };
+      inFlight = check;
+      const isCurrent = () => !cancelled && inFlight === check;
       void resolveUser(supabase).then(
         ({ unverified: stale, ...next }) => {
           if (!isCurrent()) return;
-          checking = false;
+          const answered = next.user?.id ?? null;
+          if (
+            answered !== null &&
+            check.subject !== null &&
+            answered !== check.subject
+          ) {
+            // The answer is about another account than the session this
+            // check was told about. The check read the stored session at a
+            // moment the hook can't see, so either may be the newer one:
+            // ask once more, about whatever auth-js holds by then.
+            verify(null);
+            return;
+          }
+          inFlight = null;
           resolved = true;
           unverified = stale;
           apply(next);
           setAuthResolved(true);
+          if (stale && check.retry) verify(check.subject);
         },
         (err: unknown) => {
           // getUser()/getSession() threw instead of returning an error
@@ -197,71 +227,87 @@ export function useUser(): UserState {
             context: { source: "useUser.resolveUser" },
           });
           if (!isCurrent()) return;
-          checking = false;
+          inFlight = null;
           resolved = true;
           unverified = true;
           show(SIGNED_OUT);
           setAuthResolved(true);
+          if (check.retry) verify(check.subject);
         },
       );
     };
 
-    verify();
+    verify(null);
 
     const { data: subscription } = supabase.auth.onAuthStateChange(
       (event, session) => {
+        const user = session?.user ?? null;
         if (event === "INITIAL_SESSION") {
+          // A read of the stored session: the one a check still waiting for
+          // its subject is asking about.
+          if (user !== null && inFlight?.subject === null) {
+            inFlight.subject = user.id;
+          }
           // Provisional only. Offline with an expired token it is `null`
           // although nothing signed the user out, so once `verify()` has
           // answered it must not override that answer.
-          if (!resolved)
-            show({ user: session?.user ?? null, offlineUserId: null });
+          if (!resolved) show({ user, offlineUserId: null });
           return;
         }
         // Any other event reflects the session auth-js holds now (sign-in,
         // refresh, sign-out — including a refresh the server rejected once
-        // the network returned, or another tab signing out). It is newer
-        // than any `verify()` still in flight, whose answer must then never
-        // apply (it would restore the identity this event replaced), so it
-        // takes the next generation.
-        latestResolution++;
-        const superseded = checking;
-        checking = false;
-        const next: Identity = {
-          user: session?.user ?? null,
-          offlineUserId: null,
-        };
-        if (next.user === null || SERVER_ISSUED_EVENTS.has(event)) {
-          // Signed out, or a session the server has just issued: final.
+        // the network returned, or another tab signing out).
+        const next: Identity = { user, offlineUserId: null };
+        if (user === null || SERVER_ISSUED_EVENTS.has(event)) {
+          // Signed out, or a session the server has just issued: final,
+          // and newer than any check in flight, whose answer must then
+          // never apply (it would restore the identity this replaced).
+          inFlight = null;
           resolved = true;
           unverified = false;
           apply(next);
           setAuthResolved(true);
           return;
         }
-        // A session that may come straight from storage. It is the current
-        // one, so it shows at once (provisionally until the first answer),
-        // but it says nothing about whether the server still accepts it
-        // (a banned or deleted user's token stays valid until it expires).
-        // So whenever the server's verdict on it is not already known — a
-        // check was in flight, the identity is unverified, or the session
-        // is not the user the hook reports — the current session is
-        // verified again.
+        // A session that may come straight from storage: auth-js emits
+        // SIGNED_IN from `_recoverAndRefresh` while it initializes — so on
+        // every cold start, while the first check is in flight — and on
+        // every tab focus, without asking the server. It is the current
+        // session, so it shows at once (provisionally until an answer), but
+        // it says nothing about whether the server still accepts it (a
+        // banned or deleted user's token stays valid until it expires).
+        if (
+          inFlight !== null &&
+          (inFlight.subject === null || inFlight.subject === user.id)
+        ) {
+          // The check in flight is already asking about this session: it
+          // decides. Asking again would only double the round trip.
+          inFlight.subject = user.id;
+          if (resolved) apply(next);
+          else show(next);
+          return;
+        }
+        // Otherwise the server's verdict on it is known only when nothing
+        // is in flight, the identity is verified and it is the user the
+        // hook reports. A session of another account than the one being
+        // checked discards that check, and is checked in turn.
         const known =
-          resolved &&
-          !superseded &&
-          !unverified &&
-          next.user.id === shownUserId;
+          inFlight === null && !unverified && user.id === shownUserId;
         if (resolved) apply(next);
         else show(next);
-        if (!known) verify();
+        if (!known) verify(user.id);
       },
     );
 
     // Re-check an identity resolved from a failure once it could succeed.
-    // Each runs once per browser event, so it cannot loop.
+    // Each runs once per browser event, so it cannot loop. While a check is
+    // in flight (the tab's focus and auth-js's SIGNED_IN arrive together)
+    // that check answers instead; should it fail again, it is repeated
+    // once, so the event that may have restored the network isn't lost.
     const recheck = () => {
-      if (unverified) verify();
+      if (!unverified) return;
+      if (inFlight !== null) inFlight.retry = true;
+      else verify(shownUserId);
     };
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") recheck();
