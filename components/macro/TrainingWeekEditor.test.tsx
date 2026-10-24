@@ -374,24 +374,42 @@ describe("TrainingWeekEditor: protein", () => {
     ).toBeTruthy();
   });
 
-  it("stays inside the engine's safe range", () => {
-    const { unmount } = renderEditor({
-      initial: withSetting({ basis: "bodyweight", gPerKg: 3.4 }),
-    });
-    expect(
-      screen
-        .getByRole("button", { name: "More protein" })
-        .hasAttribute("disabled"),
-    ).toBe(true);
-    unmount();
+  it("stays inside the engine's safe range, keeping focus at each bound", () => {
+    const onProtein = vi.fn();
     renderEditor({
-      initial: withSetting({ basis: "bodyweight", gPerKg: 1.2 }),
+      initial: withSetting({ basis: "bodyweight", gPerKg: 3.2 }),
+      onProtein,
     });
-    expect(
-      screen
-        .getByRole("button", { name: "Less protein" })
-        .hasAttribute("disabled"),
-    ).toBe(true);
+    const more = screen.getByRole("button", { name: "More protein" });
+    more.focus();
+    fireEvent.click(more);
+    fireEvent.click(more);
+    expect(screen.getByText("3.4 g/kg")).toBeTruthy();
+    // At the maximum the focused button stays focusable and in place
+    // (a native `disabled` would drop focus to <body>), and does nothing.
+    expect(more.getAttribute("aria-disabled")).toBe("true");
+    expect(more.hasAttribute("disabled")).toBe(false);
+    expect(document.activeElement).toBe(more);
+    fireEvent.click(more);
+    expect(onProtein).toHaveBeenCalledTimes(2);
+    expect(onProtein).toHaveBeenLastCalledWith({
+      basis: "bodyweight",
+      gPerKg: 3.4,
+    });
+
+    const less = screen.getByRole("button", { name: "Less protein" });
+    expect(less.getAttribute("aria-disabled")).toBe("false");
+    less.focus();
+    Array.from({ length: 25 }).forEach(() => fireEvent.click(less));
+    expect(screen.getByText("1.2 g/kg")).toBeTruthy();
+    expect(less.getAttribute("aria-disabled")).toBe("true");
+    expect(less.hasAttribute("disabled")).toBe(false);
+    expect(document.activeElement).toBe(less);
+    expect(onProtein).toHaveBeenLastCalledWith({
+      basis: "bodyweight",
+      gPerKg: 1.2,
+    });
+    expect(more.getAttribute("aria-disabled")).toBe("false");
   });
 
   it("switching to lean mass caps g/kg at the lean-mass maximum", () => {

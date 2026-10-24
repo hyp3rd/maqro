@@ -54,6 +54,11 @@ const CYCLING_LABEL: Record<CyclingPreset, string> = {
 
 const PROTEIN_STEP = 0.1;
 
+/** A stepper button at its bound: looks disabled, ignores the pointer, and
+ *  keeps keyboard focus. */
+const STEPPER_BOUND =
+  "aria-disabled:pointer-events-none aria-disabled:opacity-50";
+
 type Props = {
   profile: PersonalInfo;
   /** Local `YYYY-MM-DD` — marks today's row. */
@@ -487,11 +492,18 @@ function ProteinCard({
   const id = useId();
   const locale = useLocale();
   const max = PROTEIN_G_PER_KG_MAX[setting.basis];
-  const step = (dir: 1 | -1) =>
+  const atMin = setting.gPerKg <= PROTEIN_G_PER_KG_MIN;
+  const atMax = setting.gPerKg >= max;
+  const step = (dir: 1 | -1) => {
+    // At a bound the button stays focusable (`aria-disabled`, not
+    // `disabled`, which would drop keyboard focus to <body>) and does
+    // nothing.
+    if (dir === 1 ? atMax : atMin) return;
     onChange({
       ...setting,
       gPerKg: Math.round((setting.gPerKg + dir * PROTEIN_STEP) * 10) / 10,
     });
+  };
   return (
     <Card asChild>
       <section aria-labelledby={`${id}-protein`}>
@@ -543,7 +555,8 @@ function ProteinCard({
                 variant="outline"
                 size="icon-sm"
                 aria-label="Less protein"
-                disabled={setting.gPerKg <= PROTEIN_G_PER_KG_MIN}
+                aria-disabled={atMin}
+                className={STEPPER_BOUND}
                 onClick={() => step(-1)}
               >
                 <Minus aria-hidden />
@@ -559,7 +572,8 @@ function ProteinCard({
                 variant="outline"
                 size="icon-sm"
                 aria-label="More protein"
-                disabled={setting.gPerKg >= max}
+                aria-disabled={atMax}
+                className={STEPPER_BOUND}
                 onClick={() => step(1)}
               >
                 <Plus aria-hidden />
