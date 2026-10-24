@@ -63,6 +63,11 @@ describe("parseBundle", () => {
     expect(parseBundle(bundle).version).toBe(3);
   });
 
+  it("accepts a well-formed v4 bundle", async () => {
+    const { parseBundle } = await import("./import");
+    expect(parseBundle({ version: 4, data: {} }).version).toBe(4);
+  });
+
   it("rejects an object with no version", async () => {
     const { parseBundle } = await import("./import");
     expect(() => parseBundle({ data: {} })).toThrow(/version/);
@@ -222,6 +227,123 @@ describe("importBundle - happy path round-trips", () => {
     expect(await db.listBloodPressure()).toMatchObject([
       { systolic: 122, diastolic: 78, pulse: 64 },
     ]);
+  });
+
+  it("imports a v4 bundle's training day overrides; skips malformed ones", async () => {
+    const db = await freshDb();
+    const { importBundle } = await import("./import");
+
+    const result = await importBundle({
+      version: 4,
+      data: {
+        trainingDayOverrides: [
+          {
+            date: "2026-10-22",
+            day: { type: "lower", intensity: "hard", extra: "dropped" },
+            recordedAt: 1_700_000_000_000,
+          },
+          { date: "2026-10-23", day: { type: "yoga" }, recordedAt: 1 },
+          { date: "23/10/2026", day: { type: "rest" }, recordedAt: 1 },
+          { date: "2026-10-24", day: { type: "rest" } },
+        ],
+      },
+    });
+
+    expect(result.imported.trainingDayOverrides).toBe(1);
+    expect(result.skipped).toEqual([
+      { table: "trainingDayOverrides", reason: "malformed" },
+      { table: "trainingDayOverrides", reason: "malformed" },
+      { table: "trainingDayOverrides", reason: "malformed" },
+    ]);
+    // Validated at the boundary: stored as the session it describes.
+    expect((await db.getDayOverride("2026-10-22"))?.day).toEqual({
+      type: "lower",
+      intensity: "hard",
+    });
+    expect(await db.listDayOverrides()).toHaveLength(1);
+  });
+
+  it("exports overrides in a v4 bundle that imports back unchanged", async () => {
+    const db = await freshDb();
+    const { buildExport, EXPORT_VERSION } = await import("./export");
+    const { planImport } = await import("./import");
+    await db.saveDayOverride("2026-10-22", { type: "rest" });
+
+    const bundle = await buildExport(null);
+
+    expect(EXPORT_VERSION).toBe(4);
+    expect(bundle.version).toBe(4);
+    expect(bundle.data.trainingDayOverrides).toMatchObject([
+      { date: "2026-10-22", day: { type: "rest" } },
+    ]);
+    const plan = await planImport(JSON.parse(JSON.stringify(bundle)));
+    expect(plan.tables.trainingDayOverrides).toEqual({
+      new: 0,
+      updated: 0,
+      unchanged: 1,
+      skipped: 0,
+    });
+  });
+
+  it("plans a pulled override in jsonb key order as unchanged", async () => {
+    const db = await freshDb();
+    const { planImport } = await import("./import");
+    // Postgres jsonb stores keys shortest first, so a pulled row's `day`
+    // comes back in a different order than the canonical one.
+    await db.applyServerDayOverride(
+      "2026-10-22",
+      { time: "07:30", type: "lower", intensity: "hard", durationMin: 75 },
+      "2026-10-22T08:00:00.000+00:00",
+    );
+
+    const plan = await planImport({
+      version: 4,
+      data: {
+        trainingDayOverrides: [
+          {
+            date: "2026-10-22",
+            day: {
+              type: "lower",
+              intensity: "hard",
+              time: "07:30",
+              durationMin: 75,
+            },
+            recordedAt: 1,
+          },
+        ],
+      },
+    });
+
+    expect(plan.tables.trainingDayOverrides).toEqual({
+      new: 0,
+      updated: 0,
+      unchanged: 1,
+      skipped: 0,
+    });
+  });
+
+  it("plans a changed override as updated and a new date as new", async () => {
+    const db = await freshDb();
+    const { planImport } = await import("./import");
+    await db.saveDayOverride("2026-10-22", { type: "rest" });
+
+    const plan = await planImport({
+      version: 4,
+      data: {
+        trainingDayOverrides: [
+          { date: "2026-10-22", day: { type: "upper" }, recordedAt: 1 },
+          { date: "2026-10-23", day: { type: "rest" }, recordedAt: 1 },
+          { date: "2026-10-24", day: "rest", recordedAt: 1 },
+        ],
+      },
+    });
+
+    expect(plan.tables.trainingDayOverrides).toEqual({
+      new: 1,
+      updated: 1,
+      unchanged: 0,
+      skipped: 1,
+    });
   });
 
   it("imports a v1 bundle (no recipes field) without error", async () => {
@@ -462,6 +584,7 @@ describe("importBundle - progress callback", () => {
     expect(unique).toContain("customFoods");
     expect(unique).toContain("mealTemplates");
     expect(unique).toContain("recipes");
+    expect(unique).toContain("trainingDayOverrides");
     expect(events[events.length - 1]).toBe("done");
   });
 });

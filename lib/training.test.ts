@@ -5,6 +5,7 @@ import {
   type MacroFloorInput,
   type TrainingDayClass,
   classifyTrainingDay,
+  dayKcalForClass,
   distributeWeekCalories,
   explicitFatChoice,
   fatFloorGrams,
@@ -12,6 +13,7 @@ import {
   floorsExceedMeanCause,
   normalizeProteinSetting,
   normalizeTrainingSchedule,
+  parseTrainingDay,
   partitionDayMacros,
   proteinCeilingGrams,
   minDayKcal,
@@ -240,6 +242,46 @@ describe("normalizeTrainingSchedule", () => {
     const before = JSON.stringify(raw);
     normalizeTrainingSchedule(raw);
     expect(JSON.stringify(raw)).toBe(before);
+  });
+});
+
+describe("parseTrainingDay (a per-date override's session)", () => {
+  it("keeps a valid session as stored", () => {
+    for (const day of MOCKUP_WEEK) expect(parseTrainingDay(day)).toEqual(day);
+  });
+
+  for (const raw of [
+    undefined,
+    null,
+    "rest",
+    42,
+    [],
+    {},
+    { type: "yoga" },
+    { type: 3 },
+    { intensity: "hard" },
+  ]) {
+    it(`a payload with no valid session type (${JSON.stringify(raw)}) → null, not rest`, () => {
+      expect(parseTrainingDay(raw)).toBeNull();
+    });
+  }
+
+  it("drops malformed optional fields and unknown keys, like the template", () => {
+    expect(
+      parseTrainingDay({
+        type: "upper",
+        intensity: "extreme",
+        time: "7:00",
+        durationMin: 0,
+        extra: "stripped",
+      }),
+    ).toEqual({ type: "upper" });
+  });
+
+  it("never mutates the stored payload", () => {
+    const raw = Object.freeze({ type: "lower", intensity: "nope" });
+    parseTrainingDay(raw);
+    expect(raw).toEqual({ type: "lower", intensity: "nope" });
   });
 });
 
@@ -640,6 +682,73 @@ describe("distributeWeekCalories", () => {
       floorKcal: 0,
     });
     expect(Math.min(...days)).toBeGreaterThanOrEqual(800);
+  });
+});
+
+describe("dayKcalForClass (an override day under the template week's scale)", () => {
+  const MOCKUP = {
+    meanKcal: 2200,
+    classes: MOCKUP_CLASSES,
+    cycling: "modest" as const,
+    floorKcal: 1780,
+  };
+
+  it("the mockup week: each class gets its template day's planned kcal", () => {
+    // Sun Mon Tue Wed Thu Fri Sat = 1950 2300 1950 2500 1950 2250 2500.
+    expect(dayKcalForClass(MOCKUP, "rest")).toBe(1950);
+    expect(dayKcalForClass(MOCKUP, "heavy")).toBe(2500);
+    expect(dayKcalForClass(MOCKUP, "endurance")).toBe(2500);
+    // T × w / mean(w) = 2,200 × 1.05 / (7.1 / 7) ≈ 2,277 → the nearest 50.
+    expect(dayKcalForClass(MOCKUP, "training")).toBe(2300);
+  });
+
+  it("a class the template doesn't use rides the same scale", () => {
+    // 2,200 × 1.0 / (7.1 / 7) ≈ 2,169 → 2,150.
+    expect(dayKcalForClass(MOCKUP, "light")).toBe(2150);
+  });
+
+  it("uses the template's narrowed spread", () => {
+    // A 2,000 floor narrows the mockup spread: rest days sit on it, so a
+    // rest override does too, and a heavy override gets the same shrunken
+    // lift the template's heavy days get.
+    const narrowed = { ...MOCKUP, floorKcal: 2000 };
+    const week = distributeWeekCalories(narrowed);
+    expect(week[2]).toBe(2000);
+    expect(dayKcalForClass(narrowed, "rest")).toBe(2000);
+    expect(dayKcalForClass(narrowed, "heavy")).toBe(week[3]);
+  });
+
+  it("stays inside the day bounds for a class beyond the template's range", () => {
+    // An all-rest template: a heavy override's raw 2,200 × 1.25 / 0.8 is
+    // capped at 1.25 × the mean.
+    const allRest = {
+      meanKcal: 2200,
+      classes: Array<TrainingDayClass>(7).fill("rest"),
+      cycling: "pronounced" as const,
+      floorKcal: 1780,
+    };
+    expect(distributeWeekCalories(allRest)).toEqual(Array(7).fill(2200));
+    expect(dayKcalForClass(allRest, "heavy")).toBe(2750);
+    // An all-heavy template: a rest override is held at the floor.
+    expect(
+      dayKcalForClass(
+        {
+          ...allRest,
+          classes: Array<TrainingDayClass>(7).fill("heavy"),
+          floorKcal: 1900,
+        },
+        "rest",
+      ),
+    ).toBe(1900);
+  });
+
+  it("is the mean when the week has no spread to give", () => {
+    expect(dayKcalForClass({ ...MOCKUP, cycling: "off" }, "heavy")).toBe(2200);
+    // The floor leaves the mean no room (every template day is the mean).
+    const pinned = { ...MOCKUP, meanKcal: 1800, floorKcal: 1850 };
+    expect(distributeWeekCalories(pinned)).toEqual(Array(7).fill(1800));
+    expect(dayKcalForClass(pinned, "rest")).toBe(1800);
+    expect(dayKcalForClass(pinned, "heavy")).toBe(1800);
   });
 });
 

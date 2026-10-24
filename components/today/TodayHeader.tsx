@@ -17,9 +17,19 @@ function dayTitle(date: string, today: string, locale: string): string {
   );
 }
 
+/** "Change today’s session" / "Change Wednesday’s session" — the chip's
+ *  action, worded like the day-type sheet's title. */
+function editSessionLabel(date: string, today: string, locale: string) {
+  if (date === today) return "Change today’s session";
+  const weekday = new Intl.DateTimeFormat(locale, { weekday: "long" }).format(
+    localDate(date),
+  );
+  return `Change ${weekday}’s session`;
+}
+
 /** The Today screen's header: the day (relative when it can be) under its
- *  full date, the planned session chip (training on), and — on any other
- *  day — a way back to today. The page's `h2` (the shell's top bar holds the
+ *  full date, the session chip (training on; with `onEditDayType` it opens
+ *  the day-type sheet), and — on any other day — a way back to today. The page's `h2` (the shell's top bar holds the
  *  `h1`). Before hydration the date key is empty: the header then reads
  *  "Today" with no date line. */
 export function TodayHeader({
@@ -28,12 +38,17 @@ export function TodayHeader({
   training,
   titleId,
   onSelectDate,
+  onEditDayType,
 }: {
   date: string;
   today: string;
-  training: Pick<TrainingDayTargets, "day" | "dayClass"> | undefined;
+  training:
+    Pick<TrainingDayTargets, "day" | "dayClass" | "overridden"> | undefined;
   titleId: string;
   onSelectDate: (date: string) => void;
+  /** Change the shown day's session (the day-type sheet), given the chip
+   *  to return focus to. Without it the chip is read-only. */
+  onEditDayType?: (trigger: HTMLElement) => void;
 }) {
   const locale = useLocale();
   const known = isDateKey(date) && isDateKey(today);
@@ -75,7 +90,11 @@ export function TodayHeader({
             Today
           </Button>
         )}
-        <DayTypeChip training={training} />
+        <DayTypeChip
+          training={training}
+          onEdit={known ? onEditDayType : undefined}
+          editLabel={known ? editSessionLabel(date, today, locale) : undefined}
+        />
       </div>
     </header>
   );

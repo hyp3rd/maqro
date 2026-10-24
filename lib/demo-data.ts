@@ -599,10 +599,12 @@ export function isDemoModeActive(): boolean {
  *  window / quota-exceeded localStorage write doesn't drop the marker
  *  and let demo data leak.
  *
- *  Only the demo-seeded stores are cleared. Pantry items, recipes,
- *  custom foods, templates, favourites etc. the user added while
- *  exploring stay — they aren't demo data and the user expects them to
- *  carry over into their signed-in account on the upcoming sync. */
+ *  Only the demo-seeded stores are cleared (plus session overrides, which
+ *  only mean something against the sample profile's training week).
+ *  Pantry items, recipes, custom foods, templates, favourites etc. the
+ *  user added while exploring stay — they aren't demo data and the user
+ *  expects them to carry over into their signed-in account on the
+ *  upcoming sync. */
 export async function clearDemoModeData(): Promise<void> {
   let active = isDemoModeActive();
   if (!active) {
@@ -637,4 +639,5 @@ export async function clearDemoModeData(): Promise<void> {
   notifyDataChanged("weightHistory");
   notifyDataChanged("waterIntake");
   notifyDataChanged("shoppingListMeta");
+  notifyDataChanged("trainingDayOverrides");
 }

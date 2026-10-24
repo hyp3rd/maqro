@@ -10,6 +10,7 @@ import {
   getBloodPressure,
   getBodyMeasurement,
   getDailyLog,
+  getDayOverride,
   getProfile,
   getWaterIntake,
   getWeightEntry,
@@ -19,6 +20,7 @@ import {
   saveBloodPressure,
   saveBodyMeasurement,
   saveDailyLog,
+  saveDayOverride,
   saveProfile,
   saveWeightEntry,
   setWaterTotal,
@@ -33,8 +35,10 @@ import {
   type WaterIntake,
   type WeightEntry,
 } from "@/lib/db";
+import { parseTrainingDay } from "@maqro/core/training";
+import type { TrainingDay } from "@maqro/core/types";
 
-const SUPPORTED_VERSIONS = new Set([1, 2, 3]);
+const SUPPORTED_VERSIONS = new Set([1, 2, 3, 4]);
 
 export type ImportResult = {
   imported: {
@@ -47,6 +51,7 @@ export type ImportResult = {
     customFoods: number;
     mealTemplates: number;
     recipes: number;
+    trainingDayOverrides: number;
   };
   /** Rows the importer rejected because they failed validation. The UI
    *  uses this to show "3 daily logs skipped (malformed)". Hard
@@ -64,6 +69,7 @@ const ZERO_IMPORTED = {
   customFoods: 0,
   mealTemplates: 0,
   recipes: 0,
+  trainingDayOverrides: 0,
 };
 
 function isObj(x: unknown): x is Record<string, unknown> {
@@ -176,6 +182,28 @@ function isBloodPressure(x: unknown): x is BloodPressure {
   return true;
 }
 
+/** A bundle's override row, reduced to what is stored: its date and the
+ *  session `parseTrainingDay` reads from `day` (unknown keys and malformed
+ *  optional fields dropped), or `null` when the row is malformed — no
+ *  YYYY-MM-DD date, no `recordedAt`, or a `day` with no valid session type.
+ *  The same read the targets apply, so an import never stores a session the
+ *  app would then ignore. */
+function parseTrainingDayOverride(
+  x: unknown,
+): { date: string; day: TrainingDay } | null {
+  if (!isObj(x)) return null;
+  if (!isStr(x.date) || !/^\d{4}-\d{2}-\d{2}$/.test(x.date)) return null;
+  if (!isNum(x.recordedAt)) return null;
+  const day = parseTrainingDay(x.day);
+  return day ? { date: x.date, day } : null;
+}
+
+function isTrainingDayOverride(
+  x: unknown,
+): x is { date: string; day: unknown } {
+  return parseTrainingDayOverride(x) !== null;
+}
+
 function isCustomFood(x: unknown): x is CustomFood {
   return (
     isObj(x) &&
@@ -241,6 +269,7 @@ type ParsedBundle = {
     customFoods?: unknown;
     mealTemplates?: unknown;
     recipes?: unknown;
+    trainingDayOverrides?: unknown;
   };
 };
 
@@ -294,6 +323,7 @@ export type ImportPlan = {
     customFoods: TableDiff;
     mealTemplates: TableDiff;
     recipes: TableDiff;
+    trainingDayOverrides: TableDiff;
   };
 };
 
@@ -437,6 +467,20 @@ export async function planImport(raw: unknown): Promise<ImportPlan> {
     },
   );
 
+  const trainingDayOverrides = diffByKeyAsync(
+    bundle.data.trainingDayOverrides,
+    isTrainingDayOverride,
+    (row) => row.date,
+    async (row) => {
+      const local = await getDayOverride(row.date);
+      if (!local) return null;
+      // Both sides through the parser: a row pulled from the server holds
+      // its `day` in jsonb key order, which `eq`'s JSON.stringify would
+      // read as a change against the canonical order of the backup's row.
+      return eq(parseTrainingDay(local.day), parseTrainingDay(row.day));
+    },
+  );
+
   const customFoods = diffRows<CustomFood, CustomFood>(
     bundle.data.customFoods,
     localCustom,
@@ -499,6 +543,7 @@ export async function planImport(raw: unknown): Promise<ImportPlan> {
       customFoods,
       mealTemplates,
       recipes,
+      trainingDayOverrides: await trainingDayOverrides,
     },
   };
 }
@@ -546,6 +591,7 @@ export type ImportPhase =
   | "customFoods"
   | "mealTemplates"
   | "recipes"
+  | "trainingDayOverrides"
   | "done";
 
 export type ImportProgress = {
@@ -772,6 +818,32 @@ export async function importBundle(
     }
   }
   emit("recipes", recipes.length, recipes.length);
+  await yieldToEventLoop();
+
+  // Training day overrides (v4+; date-keyed overwrite). Each row is read the
+  // way the targets read it (`parseTrainingDayOverride`) and stored as the
+  // session it describes.
+  const overrides = Array.isArray(bundle.data.trainingDayOverrides)
+    ? bundle.data.trainingDayOverrides
+    : [];
+  emit("trainingDayOverrides", 0, overrides.length);
+  for (let i = 0; i < overrides.length; i++) {
+    const parsed = parseTrainingDayOverride(overrides[i]);
+    if (parsed) {
+      await saveDayOverride(parsed.date, parsed.day);
+      result.imported.trainingDayOverrides++;
+    } else {
+      result.skipped.push({
+        table: "trainingDayOverrides",
+        reason: "malformed",
+      });
+    }
+    if (i % YIELD_EVERY === YIELD_EVERY - 1) {
+      emit("trainingDayOverrides", i + 1, overrides.length);
+      await yieldToEventLoop();
+    }
+  }
+  emit("trainingDayOverrides", overrides.length, overrides.length);
   emit("done", 0, 0);
 
   return result;

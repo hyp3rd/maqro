@@ -61,6 +61,7 @@ vi.mock("@/lib/db", () => ({
   // Same default-empty rationale as listWaterIntake: most tests don't
   // exercise supplement-intake sync.
   listSupplementIntake: vi.fn().mockResolvedValue([]),
+  listDayOverrides: vi.fn().mockResolvedValue([]),
   // Same default-empty rationale as listBodyMeasurements: most tests
   // don't exercise pantry sync, so prime it with [] so the engine's
   // `await listPantryItems()` + `.map` doesn't blow up.
@@ -93,6 +94,7 @@ vi.mock("@/lib/db", () => ({
   applyServerMealSchedule: vi.fn(),
   applyServerSupplement: vi.fn(),
   applyServerSupplementIntake: vi.fn(),
+  applyServerDayOverride: vi.fn(),
   applyServerWeightEntry: vi.fn(),
   applyServerWaterIntake: vi.fn(),
   markProfileSynced: vi.fn(),
@@ -143,6 +145,7 @@ function newResult(): SyncResult {
       weightEntries: 0,
       waterIntake: 0,
       supplementIntake: 0,
+      trainingDayOverrides: 0,
       bodyMeasurements: 0,
       bloodPressure: 0,
       fastSessions: 0,
@@ -163,6 +166,7 @@ function newResult(): SyncResult {
       weightEntries: 0,
       waterIntake: 0,
       supplementIntake: 0,
+      trainingDayOverrides: 0,
       bodyMeasurements: 0,
       bloodPressure: 0,
       fastSessions: 0,

@@ -1,17 +1,19 @@
 "use client";
 
 import { useTier } from "@/hooks/use-ai-usage";
+import { useDayOverrides } from "@/hooks/use-day-overrides";
 import { useLatestBodyFatPct } from "@/hooks/use-latest-body-fat";
 import { FEATURES } from "@/lib/billing/tiers";
 import { useCallback, useMemo } from "react";
 import {
   type DateTargets,
   type TargetContext,
+  dayOverrideResolver,
   targetsForDate,
   type WeekTargets,
   weekTargets,
 } from "@maqro/core/targets";
-import type { GoalPhase, PersonalInfo } from "@maqro/core/types";
+import type { GoalPhase, PersonalInfo, TrainingDay } from "@maqro/core/types";
 
 export type AppTargets = {
   /** Whether goal phases drive targets (Pro, from the shared cached tier). */
@@ -28,24 +30,30 @@ export type AppTargets = {
   /** Any date's own calorie target, through the same resolver and tier
    *  decision — the weekly recap scores each day against it. */
   targetCaloriesForDate: (date: string) => number;
-  /** The Monday-first week containing today, planned for `profile` (the
-   *  current one, or an unsaved edit of it) with the same context — the
-   *  training-week editor and its live preview. */
+  /** The Monday-first TEMPLATE week containing today, planned for `profile`
+   *  (the current one, or an unsaved edit of it) with the same tier and
+   *  body-fat context but no per-date overrides — the training-week editor
+   *  and its live preview edit the template, not one week's exceptions. */
   planWeek: (profile: PersonalInfo) => WeekTargets | null;
   /** The Monday-to-Sunday week containing the displayed day, each day its
-   *  own `targetsForDate` result (a cycled training week plans every day
-   *  differently) — the Today week strip. `null` while the date key is not
-   *  a calendar date (before hydration). The one place a week of day
-   *  targets is resolved, so a per-date session override plugs in here
-   *  for the strip and the day view alike. */
+   *  own `targetsForDate` result with the stored per-date overrides (a
+   *  cycled training week plans every day differently) — the Today week
+   *  strip. `null` while the date key is not a calendar date (before
+   *  hydration). Same context as `dayTargets`, so the strip's day and the
+   *  day view always agree. */
   selectedWeek: WeekTargets | null;
+  /** `date`'s targets if its session were `day` (`null` = back to plan, the
+   *  template day), with every other stored override and the same context —
+   *  the day-type sheet's live preview. */
+  previewDayTargets: (date: string, day: TrainingDay | null) => DateTargets;
 };
 
 /** The app's calorie/macro targets, all from `targetsForDate` with one tier
- *  decision and one body-fat estimate (`useLatestBodyFatPct`, the same
- *  derivation /report and the crons use), so today's and the selected
- *  day's numbers can't drift apart from each other or from /report and the
- *  emails. */
+ *  decision, one body-fat estimate (`useLatestBodyFatPct`, the same
+ *  derivation /report and the crons use) and this device's per-date session
+ *  overrides (`useDayOverrides`, the rows /report and the weekly email read
+ *  too), so today's and the selected day's numbers can't drift apart from
+ *  each other or from /report and the emails. */
 export function useTargets(
   profile: PersonalInfo,
   today: string,
@@ -54,9 +62,14 @@ export function useTargets(
   const { tier } = useTier();
   const phasesEnabled = tier !== null && FEATURES.canUseGoalPhases(tier);
   const bodyFatPct = useLatestBodyFatPct(profile);
-  const ctx = useMemo<TargetContext>(
+  const { overrides } = useDayOverrides();
+  const templateCtx = useMemo<TargetContext>(
     () => ({ phasesEnabled, bodyFatPct }),
     [phasesEnabled, bodyFatPct],
+  );
+  const ctx = useMemo<TargetContext>(
+    () => ({ ...templateCtx, overrideFor: dayOverrideResolver(overrides) }),
+    [templateCtx, overrides],
   );
 
   const todayTargets = useMemo(
@@ -81,8 +94,16 @@ export function useTargets(
     [profile, ctx],
   );
   const planWeek = useCallback(
-    (planned: PersonalInfo) => weekTargets(planned, today, ctx),
-    [today, ctx],
+    (planned: PersonalInfo) => weekTargets(planned, today, templateCtx),
+    [today, templateCtx],
+  );
+  const previewDayTargets = useCallback(
+    (date: string, day: TrainingDay | null) =>
+      targetsForDate(profile, date, {
+        ...templateCtx,
+        overrideFor: (d) => (d === date ? day : ctx.overrideFor?.(d)),
+      }),
+    [profile, templateCtx, ctx],
   );
   const selectedWeek = useMemo(
     () => weekTargets(profile, selectedDate, ctx),
@@ -97,5 +118,6 @@ export function useTargets(
     targetCaloriesForDate,
     planWeek,
     selectedWeek,
+    previewDayTargets,
   };
 }

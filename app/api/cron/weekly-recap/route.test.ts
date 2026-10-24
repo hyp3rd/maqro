@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { PersonalInfo } from "@maqro/core/types";
 
 /** GET /api/cron/weekly-recap — the email map must cover the WHOLE auth user
  *  base. `auth.admin.listUsers()` without params returns only GoTrue's default
@@ -15,6 +16,7 @@ const {
   mockComputeWeeklyRecap,
   mockLoadUserTier,
   mockLoadBodyFat,
+  mockLoadOverrides,
   optedInRows,
   profileRow,
   gteCalls,
@@ -44,6 +46,16 @@ const {
       | { ok: false; error: { message: string } }
     >
   >(async () => ({ ok: true, bodyFatPct: null })),
+  mockLoadOverrides: vi.fn<
+    (
+      admin: unknown,
+      userId: string,
+      range: { from: string; to: string },
+    ) => Promise<
+      | { ok: true; rows: { date: string; day: unknown }[] }
+      | { ok: false; error: { message: string } }
+    >
+  >(async () => ({ ok: true, rows: [] })),
   optedInRows: [] as { user_id: string; timezone?: string | null }[],
   /** The `profiles` row the fake returns (`null` = no profile yet). */
   profileRow: { value: null as { payload: unknown } | null },
@@ -64,6 +76,9 @@ vi.mock("@/lib/weekly-recap", () => ({
 vi.mock("@/lib/billing/usage", () => ({ loadUserTier: mockLoadUserTier }));
 vi.mock("@/lib/latest-body-fat", () => ({
   loadLatestBodyFatPct: mockLoadBodyFat,
+}));
+vi.mock("@/lib/day-overrides-server", () => ({
+  loadDayOverrides: mockLoadOverrides,
 }));
 // The real resolver, observed: every call's context is asserted below.
 vi.mock("@maqro/core/targets", async (importOriginal) => {
@@ -107,6 +122,7 @@ beforeEach(() => {
   gteCalls.splice(0, gteCalls.length);
   mockLoadUserTier.mockResolvedValue("free");
   mockLoadBodyFat.mockResolvedValue({ ok: true, bodyFatPct: null });
+  mockLoadOverrides.mockResolvedValue({ ok: true, rows: [] });
   vi.stubEnv("CRON_SECRET", "cron-secret");
   vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://app.test");
   optedInRows.splice(0, optedInRows.length, { user_id: userId(TARGET_INDEX) });
@@ -323,7 +339,7 @@ describe("GET /api/cron/weekly-recap — body fat", () => {
     targetFor?.("2026-06-10");
     expect(resolver.mock.calls.length).toBeGreaterThanOrEqual(2);
     for (const [, , ctx] of resolver.mock.calls) {
-      expect(ctx).toEqual({ phasesEnabled: false, bodyFatPct: 18.4 });
+      expect(ctx).toMatchObject({ phasesEnabled: false, bodyFatPct: 18.4 });
     }
   });
 
@@ -359,5 +375,105 @@ describe("GET /api/cron/weekly-recap — body fat", () => {
     profileRow.value = null;
     await callRoute();
     expect(mockLoadBodyFat).not.toHaveBeenCalled();
+  });
+});
+
+/** A per-date session override changes that day's target in the email
+ *  exactly as in the app: the same rows (owner-scoped, the recap window),
+ *  the same resolver. */
+describe("GET /api/cron/weekly-recap — training day overrides", () => {
+  /** Training days on; Wednesday 2026-06-10 is a hard lower-body day. */
+  const PROFILE: PersonalInfo = {
+    gender: "male",
+    age: 30,
+    weight: 80,
+    height: 180,
+    activityLevel: "moderate",
+    goal: "maintain",
+    dietType: "balanced",
+    dietPreference: "omnivore",
+    cuisinePreferences: [],
+    allergies: [],
+    dislikedFoods: [],
+    weeklyRateKg: 0,
+    manualTdee: 2600,
+    units: "metric",
+    training: {
+      enabled: true,
+      cycling: "modest",
+      days: [
+        { type: "rest" },
+        { type: "upper", intensity: "moderate" },
+        { type: "rest" },
+        { type: "lower", intensity: "hard" },
+        { type: "rest" },
+        { type: "fullBody", intensity: "moderate" },
+        { type: "rest" },
+      ],
+    },
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-06-14T09:00:00Z")); // Sunday
+    profileRow.value = { payload: PROFILE };
+  });
+
+  it("scores an overridden day against the override's target", async () => {
+    const { targetsForDate, dayOverrideResolver } =
+      await import("@maqro/core/targets");
+    const rows = [{ date: "2026-06-10", day: { type: "rest" } }];
+    mockLoadOverrides.mockResolvedValue({ ok: true, rows });
+
+    await callRoute();
+
+    // Read for the recap window, for this user only.
+    expect(mockLoadOverrides).toHaveBeenCalledWith(
+      expect.anything(),
+      userId(TARGET_INDEX),
+      { from: "2026-06-08", to: "2026-06-14" },
+    );
+    const ctx = { phasesEnabled: false, bodyFatPct: null };
+    const planned = targetsForDate(PROFILE, "2026-06-10", ctx).targetCalories;
+    const rest = targetsForDate(PROFILE, "2026-06-10", {
+      ...ctx,
+      overrideFor: dayOverrideResolver(rows),
+    }).targetCalories;
+    expect(rest).toBeLessThan(planned);
+    const [, , targetFor] = mockComputeWeeklyRecap.mock.calls.at(-1) ?? [];
+    expect(targetFor?.("2026-06-10")).toBe(rest);
+    // Other days keep their planned targets.
+    expect(targetFor?.("2026-06-09")).toBe(
+      targetsForDate(PROFILE, "2026-06-09", ctx).targetCalories,
+    );
+  });
+
+  it("skips the user (an error, no email) when the overrides can't be read", async () => {
+    mockLoadOverrides.mockResolvedValue({
+      ok: false,
+      error: { message: "db down" },
+    });
+    const res = await callRoute();
+    expect(await res.json()).toEqual({ sent: 0, skipped: 0, errors: 1 });
+    expect(mockSendEmail).not.toHaveBeenCalled();
+    expect(mockComputeWeeklyRecap).not.toHaveBeenCalled();
+  });
+
+  it("makes no override read while training is off (nothing it could change)", async () => {
+    profileRow.value = { payload: { ...PROFILE, training: undefined } };
+    mockLoadOverrides.mockResolvedValue({
+      ok: false,
+      error: { message: "db down" },
+    });
+    const res = await callRoute();
+    expect(mockLoadOverrides).not.toHaveBeenCalled();
+    expect(await res.json()).toMatchObject({ errors: 0 });
+    expect(mockComputeWeeklyRecap).toHaveBeenCalled();
+  });
+
+  it("makes no override read for a user without a profile", async () => {
+    profileRow.value = null;
+    await callRoute();
+    expect(mockLoadOverrides).not.toHaveBeenCalled();
   });
 });

@@ -23,6 +23,7 @@ import {
   applyServerRecipe,
   applyServerSupplement,
   applyServerSupplementIntake,
+  applyServerDayOverride,
   applyServerWaterIntake,
   applyServerWeightEntry,
   clearAllStores,
@@ -33,6 +34,7 @@ import {
   listBodyMeasurements,
   listCustomFoods,
   listDailyLogs,
+  listDayOverrides,
   listDeletions,
   listFastSessions,
   listFavoriteFoods,
@@ -97,6 +99,8 @@ import {
   supplementIntakeFromRow,
   supplementIntakeToRow,
   supplementToRow,
+  trainingDayOverrideFromRow,
+  trainingDayOverrideToRow,
   waterFromRow,
   waterToRow,
   weightFromRow,
@@ -121,6 +125,7 @@ import {
   type RecipeRow,
   type SupplementIntakeRow,
   type SupplementRow,
+  type TrainingDayOverrideRow,
   type WaterRow,
   type WeightRow,
 } from "./mappers";
@@ -132,6 +137,7 @@ export type SyncResult = {
     weightEntries: number;
     waterIntake: number;
     supplementIntake: number;
+    trainingDayOverrides: number;
     bodyMeasurements: number;
     bloodPressure: number;
     fastSessions: number;
@@ -152,6 +158,7 @@ export type SyncResult = {
     weightEntries: number;
     waterIntake: number;
     supplementIntake: number;
+    trainingDayOverrides: number;
     bodyMeasurements: number;
     bloodPressure: number;
     fastSessions: number;
@@ -186,6 +193,7 @@ const ZERO_COUNTS = {
   weightEntries: 0,
   waterIntake: 0,
   supplementIntake: 0,
+  trainingDayOverrides: 0,
   bodyMeasurements: 0,
   bloodPressure: 0,
   fastSessions: 0,
@@ -632,6 +640,7 @@ const DELETE_TARGET: Record<
   bodyMeasurements: { table: "body_measurements", pk: "date" },
   bloodPressure: { table: "blood_pressure", pk: "date" },
   fastSessions: { table: "fast_sessions", pk: "id" },
+  trainingDayOverrides: { table: "training_day_overrides", pk: "date" },
   pantryItems: { table: "pantry_items", pk: "id" },
   pantryNotifications: { table: "pantry_notifications", pk: "id" },
   favoriteStores: { table: "favorite_stores", pk: "id" },
@@ -1198,6 +1207,32 @@ const SYNC_TABLES: readonly SyncTable[] = [
     },
     push: {
       toRow: supplementIntakeToRow,
+      pk: (userId, l) => ({ user_id: userId, date: l.date }),
+      create: "insert",
+    },
+  }),
+  defineTable({
+    table: "training_day_overrides",
+    store: "trainingDayOverrides",
+    countKey: "trainingDayOverrides",
+    noun: "training day override",
+    keyColumn: "date",
+    columns: columnsOf<TrainingDayOverrideRow>()([
+      "user_id",
+      "date",
+      "day",
+      "recorded_at",
+      "updated_at",
+    ]),
+    rowKey: (r: TrainingDayOverrideRow) => r.date,
+    localKey: (l) => l.date,
+    list: listDayOverrides,
+    apply: (r) => {
+      const entry = trainingDayOverrideFromRow(r);
+      return applyServerDayOverride(entry.date, entry.day, r.updated_at);
+    },
+    push: {
+      toRow: trainingDayOverrideToRow,
       pk: (userId, l) => ({ user_id: userId, date: l.date }),
       create: "insert",
     },

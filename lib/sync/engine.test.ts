@@ -32,6 +32,7 @@ const KEY_COLUMNS: Record<string, string[]> = {
   weight_history: ["user_id", "date"],
   water_intake: ["user_id", "date"],
   supplement_intake: ["user_id", "date"],
+  training_day_overrides: ["user_id", "date"],
   body_measurements: ["user_id", "date"],
   blood_pressure: ["user_id", "date"],
   fast_sessions: ["user_id", "id"],
@@ -795,6 +796,7 @@ describe("the echo of our own push is a no-op", () => {
     await db.saveWeightEntry(DAY, 80.4);
     await db.setWaterTotal(DAY, 1500);
     await db.saveSupplementIntake(DAY, [{ supplementId: "s", doses: 1 }]);
+    await db.saveDayOverride(DAY, { type: "rest" });
     await db.saveBodyMeasurement(DAY, { waistCm: 82 });
     await db.saveBloodPressure(DAY, { systolic: 120, diastolic: 80 });
     await db.saveFastSession({
@@ -1080,6 +1082,7 @@ describe("signing in after exploring the sample data", () => {
       "weightHistory",
       "waterIntake",
       "shoppingListMeta",
+      "trainingDayOverrides",
     ] as const;
     const before = cleared.map((t) => bus.getDataVersion(t));
     let profileBus = 0;
@@ -1138,6 +1141,66 @@ describe("signing in after exploring the sample data", () => {
 
     expect(await db.getProfileRecord()).toBeNull();
     expect(await db.listWeightEntries()).toEqual([]);
+  });
+
+  it("a demo 'back to plan' never deletes the account's real override", async () => {
+    const { db, sync, server, sb } = env;
+    // Set on another device: the account's real session for DAY.
+    server.seed("training_day_overrides", {
+      user_id: USER_ID,
+      date: DAY,
+      day: { type: "rest" },
+      recorded_at: "2026-05-16T07:00:00.000+00:00",
+    });
+    // The guest changes DAY on the sample week, then goes back to plan.
+    const { getDemoProfile } = await import("@/lib/demo-data");
+    await db.saveDemoProfile(getDemoProfile());
+    await db.saveDayOverride(DAY, { type: "upper", intensity: "hard" });
+    await db.deleteDayOverride(DAY);
+
+    // SyncManager's sign-in chain.
+    const { clearDemoModeData } = await import("@/lib/demo-data");
+    await clearDemoModeData();
+    const result = await sync.triggerSync(sb, USER_ID);
+
+    expect(result?.deletionsPushed).toBe(0);
+    expect(
+      server.find("training_day_overrides", { user_id: USER_ID, date: DAY })
+        ?.day,
+    ).toEqual({ type: "rest" });
+    expect((await db.getDayOverride(DAY))?.day).toEqual({ type: "rest" });
+  });
+
+  it("deleting a sample log or weigh-in never deletes the account's", async () => {
+    const { db, sync, server, sb } = env;
+    server.seed("daily_logs", {
+      user_id: USER_ID,
+      date: DAY,
+      meals: meals("eggs"),
+    });
+    server.seed("weight_history", { user_id: USER_ID, date: DAY, kg: 80 });
+    const { getDemoProfile } = await import("@/lib/demo-data");
+    await db.saveDemoProfile(getDemoProfile());
+    await db.saveDailyLog(DAY, meals("sample"));
+    await db.deleteDailyLog(DAY);
+    await db.saveWeightEntry(DAY, 68);
+    await db.deleteWeightEntry(DAY);
+
+    const { clearDemoModeData } = await import("@/lib/demo-data");
+    await clearDemoModeData();
+    const result = await sync.triggerSync(sb, USER_ID);
+
+    expect(result?.deletionsPushed).toBe(0);
+    expect(
+      mealNames(
+        server.find("daily_logs", { user_id: USER_ID, date: DAY }) as {
+          meals: Meal[];
+        },
+      ),
+    ).toEqual(["eggs"]);
+    expect(
+      server.find("weight_history", { user_id: USER_ID, date: DAY })?.kg,
+    ).toBe(80);
   });
 });
 
@@ -1390,6 +1453,119 @@ describe("remote delete reconciliation", () => {
   });
 });
 
+// A per-date session override is date-keyed like daily_logs but, unlike the
+// other day rows, the user deletes it ("back to plan") — so its tombstone
+// must reach the server and a peer's delete must reach this device.
+describe("training day overrides sync", () => {
+  let env: Awaited<ReturnType<typeof setup>>;
+  beforeEach(async () => {
+    env = await setup();
+  });
+  const LEGS = { type: "lower", intensity: "hard", durationMin: 75 } as const;
+
+  it("pushes a new override and leaves it clean", async () => {
+    const { db, sync, server, sb } = env;
+    await db.saveDayOverride(DAY, LEGS);
+
+    const result = await sync.triggerSync(sb, USER_ID);
+
+    expect(result?.pushed.trainingDayOverrides).toBe(1);
+    const row = server.find("training_day_overrides", {
+      user_id: USER_ID,
+      date: DAY,
+    });
+    expect(row?.day).toEqual(LEGS);
+    const local = await db.getDayOverride(DAY);
+    expect(local?.serverUpdatedAt).toBe(row?.updated_at);
+    expect(local?.localUpdatedAt).toBe(row?.updated_at);
+  });
+
+  it("pulls a peer's override", async () => {
+    const { db, sync, server, sb } = env;
+    server.seed("training_day_overrides", {
+      user_id: USER_ID,
+      date: DAY,
+      day: { type: "rest" },
+      recorded_at: "2026-05-16T07:00:00.000+00:00",
+    });
+
+    const result = await sync.triggerSync(sb, USER_ID);
+
+    expect(result?.pulled.trainingDayOverrides).toBe(1);
+    expect((await db.getDayOverride(DAY))?.day).toEqual({ type: "rest" });
+  });
+
+  it("an edit after a sync is a versioned update of the same row", async () => {
+    const { db, sync, server, sb } = env;
+    await db.saveDayOverride(DAY, LEGS);
+    await sync.triggerSync(sb, USER_ID);
+    await db.saveDayOverride(DAY, { type: "rest" });
+
+    const result = await sync.triggerSync(sb, USER_ID);
+
+    expect(result?.conflicts).toEqual([]);
+    expect(server.rows("training_day_overrides")).toHaveLength(1);
+    expect(
+      server.find("training_day_overrides", { user_id: USER_ID, date: DAY })
+        ?.day,
+    ).toEqual({ type: "rest" });
+  });
+
+  it("back to plan deletes the server row and drains the tombstone", async () => {
+    const { db, sync, server, sb } = env;
+    await db.saveDayOverride(DAY, LEGS);
+    await sync.triggerSync(sb, USER_ID);
+    await db.deleteDayOverride(DAY);
+
+    const result = await sync.triggerSync(sb, USER_ID);
+
+    expect(result?.deletionsPushed).toBe(1);
+    expect(server.rows("training_day_overrides")).toHaveLength(0);
+    expect(await db.listDeletions()).toEqual([]);
+    expect(await db.getDayOverride(DAY)).toBeNull();
+  });
+
+  it("a peer's back to plan reaches this device on the next pull", async () => {
+    const { db, sync, server, sb } = env;
+    server.seed("training_day_overrides", {
+      user_id: USER_ID,
+      date: DAY,
+      day: LEGS,
+      recorded_at: "2026-05-16T07:00:00.000+00:00",
+    });
+    await sync.triggerSync(sb, USER_ID);
+    server.tables.training_day_overrides = []; // deleted on the phone
+
+    await sync.triggerSync(sb, USER_ID);
+
+    expect(await db.getDayOverride(DAY)).toBeNull();
+  });
+
+  it("realtime: applies the owner's DELETE, ignores another user's for the same date", async () => {
+    const { db, realtime, server, sb } = env;
+    await db.applyServerDayOverride(DAY, LEGS, server.nextTimestamp());
+    await db.applyServerDayOverride("2026-05-17", LEGS, server.nextTimestamp());
+    const handle = realtime.startRealtimeSubscription(sb, USER_ID);
+
+    server.emit("training_day_overrides", {
+      eventType: "DELETE",
+      new: {},
+      old: { user_id: OTHER_USER_ID, date: DAY },
+    });
+    server.emit("training_day_overrides", {
+      eventType: "DELETE",
+      new: {},
+      old: { user_id: USER_ID, date: "2026-05-17" },
+    });
+    await vi.waitFor(async () => {
+      expect(await db.getDayOverride("2026-05-17")).toBeNull();
+    });
+
+    expect((await db.getDayOverride(DAY))?.day).toEqual(LEGS);
+    handle.unsubscribe();
+  });
+});
+
 // favorite_stores ids are shared OSM keys; since migration 0077 the server
 // key is (user_id, id), so many users can hold the same id, and within one
 // user it is a natural key two devices can create independently.
@@ -1590,6 +1766,11 @@ describe("pulls select every column their push writes", () => {
       supplement_intake: m.supplementIntakeToRow(USER_ID, {
         date: DAY,
         taken: [],
+        recordedAt: at,
+      }),
+      training_day_overrides: m.trainingDayOverrideToRow(USER_ID, {
+        date: DAY,
+        day: { type: "rest" },
         recordedAt: at,
       }),
       body_measurements: m.bodyMeasurementToRow(USER_ID, {

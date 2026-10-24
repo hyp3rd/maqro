@@ -37,7 +37,10 @@ ships with privacy-respecting operational logging.
   never under your safety floor. Protein becomes a fixed g/kg of
   bodyweight or lean mass (default 2.0) while it's on, and the latest
   body-fat estimate from your measurements feeds the app, the report
-  and the emails alike.
+  and the emails alike. Plans change: tap Today's session chip to switch
+  one day's session ("today is a rest day", "legs moved to Thursday") and
+  only that day's target follows it - the rest of the week stays as
+  planned, and "Back to plan" undoes it. Synced across devices.
 - **Goal phases (Pro)** - sequence a cut → diet break → maintenance →
   lean bulk and let your calorie + macro target follow whichever phase
   is active today. Applying a phase that would _raise_ today's target

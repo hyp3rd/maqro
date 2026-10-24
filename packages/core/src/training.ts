@@ -127,10 +127,16 @@ function isOneOf<T extends string>(v: unknown, options: readonly T[]): v is T {
   return typeof v === "string" && (options as readonly string[]).includes(v);
 }
 
-function normalizeTrainingDay(raw: unknown): TrainingDay {
-  if (!isRecord(raw) || !isOneOf(raw.type, TRAINING_TYPES)) {
-    return { type: "rest" };
-  }
+/** Validate one stored session at read time: `null` unless it is an object
+ *  with a known `type`; malformed optional fields (`intensity`, a
+ *  non-`HH:MM` `time`, a non-positive / over-24 h `durationMin`) are dropped
+ *  and unknown keys stripped. Returns a fresh object (never persisted back).
+ *
+ *  This is how a per-date override's `day` is read (`targetsForDate`): a
+ *  malformed override is IGNORED — the day keeps its template session —
+ *  rather than turned into a rest day the user never chose. */
+export function parseTrainingDay(raw: unknown): TrainingDay | null {
+  if (!isRecord(raw) || !isOneOf(raw.type, TRAINING_TYPES)) return null;
   const day: TrainingDay = { type: raw.type };
   if (isOneOf(raw.intensity, TRAINING_INTENSITIES)) {
     day.intensity = raw.intensity;
@@ -148,6 +154,12 @@ function normalizeTrainingDay(raw: unknown): TrainingDay {
     day.durationMin = d;
   }
   return day;
+}
+
+/** A template weekday: a malformed entry is a rest day (the week always has
+ *  seven). */
+function normalizeTrainingDay(raw: unknown): TrainingDay {
+  return parseTrainingDay(raw) ?? { type: "rest" };
 }
 
 /** Validate the profile's `training` payload at read time. `profiles.payload`
@@ -274,30 +286,13 @@ const clean = (x: number) => Math.round(x * 1e6) / 1e6;
  *  Every remainder is < 50, so n never exceeds the days that have one, and
  *  |remainder sum − 50n| ≤ 25.) */
 export function distributeWeekCalories(input: WeekCaloriesInput): number[] {
-  const { meanKcal: mean, classes, cycling } = input;
+  const { meanKcal: mean, classes } = input;
   const flat = () => classes.map(() => mean);
-  if (cycling === "off") return flat();
-
-  const table = CYCLING_WEIGHTS[cycling];
-  const weights = classes.map((c) => table[c]);
+  const scale = weekCalorieScale(input);
+  if (!scale) return flat();
+  const weights = classes.map((c) => scale.weights[c]);
   if (weights.every((w) => w === weights[0])) return flat();
-  const meanWeight = weights.reduce((s, w) => s + w, 0) / weights.length;
-  const raw = weights.map((w) => (mean * w) / meanWeight);
-
-  const lo = ceilStep(
-    Math.max(input.floorKcal, DAY_MIN_OF_MEAN * mean, ABSOLUTE_MIN_DAY_KCAL),
-    DAY_KCAL_STEP,
-  );
-  const hi = floorStep(DAY_MAX_OF_MEAN * mean, DAY_KCAL_STEP);
-  if (lo > mean || hi < mean) return flat();
-
-  let alpha = 1;
-  for (const r of raw) {
-    if (r < mean) alpha = Math.min(alpha, (mean - lo) / (mean - r));
-    else if (r > mean) alpha = Math.min(alpha, (hi - mean) / (r - mean));
-  }
-  if (alpha <= 0) return flat();
-  const spread = raw.map((r) => clean(mean + alpha * (r - mean)));
+  const spread = classes.map((c) => scaledDay(scale, c));
 
   const out = spread.map((x) => floorStep(x, DAY_KCAL_STEP));
   const remainders = spread.map((x, i) => x - out[i]);
@@ -309,6 +304,72 @@ export function distributeWeekCalories(input: WeekCaloriesInput): number[] {
   );
   for (const i of order.slice(0, units)) out[i] += DAY_KCAL_STEP;
   return out;
+}
+
+/** A template week's calorie scale (`distributeWeekCalories` steps 2–4):
+ *  the class weights, their mean over the template, the day bounds and the
+ *  narrowing factor α. `null` when every day is the mean (cycling off, or
+ *  bounds / narrowing that leave the mean no room). */
+type WeekCalorieScale = {
+  mean: number;
+  weights: Record<TrainingDayClass, number>;
+  meanWeight: number;
+  lo: number;
+  hi: number;
+  alpha: number;
+};
+
+function weekCalorieScale(input: WeekCaloriesInput): WeekCalorieScale | null {
+  const { meanKcal: mean, classes, cycling } = input;
+  if (cycling === "off") return null;
+
+  const table = CYCLING_WEIGHTS[cycling];
+  const weights = classes.map((c) => table[c]);
+  const meanWeight = weights.reduce((s, w) => s + w, 0) / weights.length;
+  const raw = weights.map((w) => (mean * w) / meanWeight);
+
+  const lo = ceilStep(
+    Math.max(input.floorKcal, DAY_MIN_OF_MEAN * mean, ABSOLUTE_MIN_DAY_KCAL),
+    DAY_KCAL_STEP,
+  );
+  const hi = floorStep(DAY_MAX_OF_MEAN * mean, DAY_KCAL_STEP);
+  if (lo > mean || hi < mean) return null;
+
+  let alpha = 1;
+  for (const r of raw) {
+    if (r < mean) alpha = Math.min(alpha, (mean - lo) / (mean - r));
+    else if (r > mean) alpha = Math.min(alpha, (hi - mean) / (r - mean));
+  }
+  if (alpha <= 0) return null;
+  return { mean, weights: table, meanWeight, lo, hi, alpha };
+}
+
+/** A day of `dayClass` on the scale, before rounding: T + α(raw − T). */
+function scaledDay(scale: WeekCalorieScale, dayClass: TrainingDayClass) {
+  const { mean, alpha } = scale;
+  const raw = (mean * scale.weights[dayClass]) / scale.meanWeight;
+  return clean(mean + alpha * (raw - mean));
+}
+
+/** The planned kcal for ONE day of `dayClass` under the template week's
+ *  scale — a per-date session override (`targetsForDate`): the same
+ *  weights, normalized to the TEMPLATE's mean weight, and the template's
+ *  narrowing α, rounded to the nearest 50 kcal and held inside the day
+ *  bounds [max(floor, 0.80T, 800), 1.25T] (a class the template doesn't use
+ *  can fall outside the range α was fitted to). The mean itself when the
+ *  week has no spread (cycling off, or no room above the floor).
+ *
+ *  Only that day changes — nothing is rebalanced across the rest of the
+ *  week (no calorie banking), so the overridden week sums to 7T plus this
+ *  day's difference from its template day. */
+export function dayKcalForClass(
+  input: WeekCaloriesInput,
+  dayClass: TrainingDayClass,
+): number {
+  const scale = weekCalorieScale(input);
+  if (!scale) return input.meanKcal;
+  const day = roundStep(scaledDay(scale, dayClass), DAY_KCAL_STEP);
+  return Math.min(scale.hi, Math.max(scale.lo, day));
 }
 
 /** Above this BMI, with no body-fat estimate, protein g/kg tapers off total

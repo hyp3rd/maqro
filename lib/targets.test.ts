@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import { effectiveGoal } from "@maqro/core/goal-phases";
 import { computeMacros } from "@maqro/core/macros";
 import {
+  dayOverrideResolver,
   targetsForDate,
   targetsUseBodyFat,
+  targetsUseOverrides,
   weekTargets,
 } from "@maqro/core/targets";
 import type {
@@ -1143,5 +1145,167 @@ describe("targetsForDate — training days", () => {
     const t = targetsForDate(mockupProfile(), "", FREE);
     expect(t.training).toBeUndefined();
     expect(t.targetCalories).toBe(2200);
+  });
+});
+
+describe("targetsForDate — per-date session overrides", () => {
+  const WED = "2026-10-21"; // template: lower body, hard (heavy, 2,500)
+  const TUE = "2026-10-20"; // template: rest (1,950)
+  const FRI = "2026-10-23"; // template: full body, moderate (2,250)
+  /** The app's context with one override row. */
+  const withOverride = (date: string, day: unknown) => ({
+    ...FREE,
+    overrideFor: dayOverrideResolver([{ date, day }]),
+  });
+  const calories = (days: { targetCalories: number }[] | undefined) =>
+    days?.map((d) => d.targetCalories);
+
+  it("today is a rest day: that day only takes a rest day's target", () => {
+    const p = mockupProfile();
+    expect(targetsUseOverrides(p)).toBe(true);
+    const plan = weekTargets(p, WED, FREE);
+    const week = weekTargets(p, WED, withOverride(WED, { type: "rest" }));
+    if (!plan || !week) throw new Error("expected both weeks");
+    // Mon Tue Wed Thu Fri Sat Sun: Wednesday 2,500 → 1,950, nothing else
+    // moves (no rebalancing), so the week sums to 15,400 − 550.
+    expect(calories(week.days)).toEqual([
+      2300, 1950, 1950, 1950, 2250, 2500, 1950,
+    ]);
+    expect(week.totalCalories).toBe(plan.totalCalories - 550);
+    week.days.forEach((d, i) => {
+      if (d.date !== WED) expect(d).toStrictEqual(plan.days[i]);
+    });
+    const wed = week.days[2];
+    // The same macro rules as a planned rest day: protein fixed, the
+    // week's one fat level, carbs take the rest.
+    expect([wed.protein, wed.carbs, wed.fat]).toEqual([160, 135, 85]);
+    expect(wed.training).toMatchObject({
+      day: { type: "rest" },
+      plannedDay: MOCKUP_WEEK[3],
+      overridden: true,
+      dayClass: "rest",
+      meanCalories: 2200,
+    });
+    expect(plan.days[2].training).toMatchObject({
+      day: MOCKUP_WEEK[3],
+      plannedDay: MOCKUP_WEEK[3],
+      overridden: false,
+    });
+  });
+
+  it("legs moved to a rest day: it takes a heavy day's target", () => {
+    const t = targetsForDate(
+      mockupProfile(),
+      TUE,
+      withOverride(TUE, { type: "lower", intensity: "hard", durationMin: 75 }),
+    );
+    expect(t.targetCalories).toBe(2500);
+    expect([t.protein, t.carbs, t.fat]).toEqual([160, 275, 85]);
+    expect(t.training?.dayClass).toBe("heavy");
+  });
+
+  it("a session of the planned day's own class keeps its planned target", () => {
+    // Friday's template day rounds to 2,250 (the week's largest-remainder
+    // rounding); a different moderate session is still a training day.
+    const t = targetsForDate(
+      mockupProfile(),
+      FRI,
+      withOverride(FRI, { type: "upper", intensity: "moderate" }),
+    );
+    expect(t.targetCalories).toBe(2250);
+    expect(t.training?.day).toEqual({ type: "upper", intensity: "moderate" });
+  });
+
+  it("never changes the weekly energy balance (what auto-adapt reads)", () => {
+    const p = mockupProfile();
+    const plan = targetsForDate(p, WED, FREE);
+    const t = targetsForDate(p, WED, withOverride(WED, { type: "rest" }));
+    for (const key of [
+      "bmr",
+      "tdee",
+      "dailyDelta",
+      "requestedDelta",
+      "goal",
+      "phase",
+    ] as const) {
+      expect(t[key]).toStrictEqual(plan[key]);
+    }
+  });
+
+  it("is ignored while training is disabled or absent", () => {
+    const ctx = withOverride(WED, { type: "rest" });
+    for (const training of [
+      undefined,
+      schedule({ enabled: false }),
+      { ...schedule(), enabled: "true" },
+    ]) {
+      const p = mockupProfile({ training: training as TrainingSchedule });
+      // So a caller may skip reading the rows here.
+      expect(targetsUseOverrides(p)).toBe(false);
+      expect(targetsForDate(p, WED, ctx)).toStrictEqual(
+        targetsForDate(p, WED, FREE),
+      );
+    }
+  });
+
+  it("a malformed override is ignored: the day keeps its plan", () => {
+    const p = mockupProfile();
+    const plan = targetsForDate(p, WED, FREE);
+    for (const day of [
+      null,
+      undefined,
+      "rest",
+      { type: "yoga" },
+      { intensity: "hard" },
+      [],
+    ]) {
+      expect(targetsForDate(p, WED, withOverride(WED, day))).toStrictEqual(
+        plan,
+      );
+    }
+  });
+
+  it("only the override's own date is affected", () => {
+    const p = mockupProfile();
+    expect(
+      targetsForDate(p, TUE, withOverride(WED, { type: "rest" })),
+    ).toStrictEqual(targetsForDate(p, TUE, FREE));
+  });
+
+  it("holds the macro floors on an override below the template's smallest day", () => {
+    // An all-training template has no rest day; a rest override is the
+    // smallest day of the week and still keeps protein, the fat floor
+    // (max(40, 15% of 2,200 / 9) → 40 g) and the 80 g carb floor.
+    const p = mockupProfile({
+      training: schedule({
+        days: Array(7).fill({
+          type: "fullBody",
+          intensity: "moderate",
+        }) as TrainingWeek,
+        cycling: "pronounced",
+      }),
+    });
+    const t = targetsForDate(p, WED, withOverride(WED, { type: "rest" }));
+    // 2,200 × 0.8 / 1.1 → 1,600, held at the 1,780 BMR floor's 50 kcal step.
+    expect(t.targetCalories).toBe(1800);
+    expect(t.protein).toBe(160);
+    expect(t.fat).toBeGreaterThanOrEqual(40);
+    expect(t.carbs).toBeGreaterThanOrEqual(80);
+    expect(
+      Math.abs(4 * t.protein + 4 * t.carbs + 9 * t.fat - t.targetCalories),
+    ).toBeLessThanOrEqual(10);
+  });
+});
+
+describe("dayOverrideResolver", () => {
+  it("returns each date's stored day and nothing for other dates", () => {
+    const resolve = dayOverrideResolver([
+      { date: "2026-10-21", day: { type: "rest" } },
+      { date: "2026-10-22", day: "garbage" },
+    ]);
+    expect(resolve("2026-10-21")).toEqual({ type: "rest" });
+    // Raw: validation happens where it's read (`targetsForDate`).
+    expect(resolve("2026-10-22")).toBe("garbage");
+    expect(resolve("2026-10-23")).toBeUndefined();
   });
 });

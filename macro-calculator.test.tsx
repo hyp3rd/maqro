@@ -3,7 +3,7 @@
  */
 import type { AiPlanRequest, AiPlanResult } from "@/lib/ai-plan";
 import { computeSlotBudget } from "@/lib/recipe-ranking";
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -233,6 +233,9 @@ vi.mock("./components/macro/SaveTemplateDialog", () => ({
 vi.mock("./components/macro/SettingsView", () => ({
   SettingsView: ui.stub("SettingsView"),
 }));
+vi.mock("./components/macro/DayTypeSheet", () => ({
+  DayTypeSheet: ui.stub("DayTypeSheet"),
+}));
 vi.mock("./components/macro/ShoppingListView", () => ({
   ShoppingListView: ui.stub("ShoppingListView"),
 }));
@@ -369,6 +372,119 @@ describe("macro-calculator: the day view gets the selected date's targets", () =
     }
     // Each successful (debited) AI call refreshes the shared usage counter.
     expect(refreshAiUsage).toHaveBeenCalledTimes(3);
+  });
+
+  it("the session chip opens the day-type sheet for the shown day", async () => {
+    await renderOnPastDay();
+    // One entry point: no interim session row next to the chip.
+    expect(ui.props.MealPlanner).not.toHaveProperty("sessionRow");
+    expect(ui.props.DayTypeSheet).toBeUndefined();
+
+    const chip = document.createElement("button");
+    await act(async () => {
+      prop<(trigger: HTMLElement) => void>(
+        "MealPlanner",
+        "onEditDayType",
+      )(chip);
+    });
+
+    expect(prop("DayTypeSheet", "targets")).toEqual(pastTargets);
+    expect(prop("DayTypeSheet", "today")).toBe(TODAY);
+    // Back to plan for the shown day: the same resolver and tier context.
+    expect(
+      prop<(d: string, day: null) => unknown>(
+        "DayTypeSheet",
+        "previewDayTargets",
+      )(PAST_DAY, null),
+    ).toEqual(pastTargets);
+    // Focus goes back to the chip that opened it.
+    expect(
+      prop<RefObject<HTMLElement | null>>("DayTypeSheet", "returnFocusTo")
+        .current,
+    ).toBe(chip);
+
+    const onOpenChange = prop<(open: boolean) => void>(
+      "DayTypeSheet",
+      "onOpenChange",
+    );
+    delete ui.props.DayTypeSheet;
+    await act(async () => onOpenChange(false));
+    expect(ui.props.DayTypeSheet).toBeUndefined();
+  });
+
+  /** Open the sheet from the chip, then forget what it rendered so far: a
+   *  later `ui.props.DayTypeSheet` means it rendered again. */
+  const openDayTypeSheet = async () => {
+    await act(async () => {
+      prop<(trigger: HTMLElement) => void>(
+        "MealPlanner",
+        "onEditDayType",
+      )(document.createElement("button"));
+    });
+    expect(ui.props.DayTypeSheet).toBeDefined();
+    delete ui.props.DayTypeSheet;
+  };
+
+  it("leaving Today closes the sheet: coming back never reopens it", async () => {
+    await renderOnPastDay();
+    await openDayTypeSheet();
+
+    await act(async () => {
+      prop<(k: string) => void>("AppShell", "onSelect")("progress");
+    });
+    expect(ui.props.DayTypeSheet).toBeUndefined();
+    // Back on Today (now on today's date, the nav resets it): no sheet
+    // popping open unprompted, for today or for the day it was opened on.
+    await act(async () => {
+      prop<(k: string) => void>("AppShell", "onSelect")("plan");
+    });
+    expect(prop("MealPlanner", "selectedDate")).toBe(TODAY);
+    expect(ui.props.DayTypeSheet).toBeUndefined();
+    await act(async () => {
+      prop<(d: string) => void>("MealPlanner", "onSelectDate")(PAST_DAY);
+    });
+    expect(ui.props.DayTypeSheet).toBeUndefined();
+  });
+
+  it.each([
+    [
+      "the date navigator",
+      () => prop<(d: string) => void>("MealPlanner", "onSelectDate")(TODAY),
+    ],
+    [
+      "the nav's Today (command palette)",
+      () => prop<(k: string) => void>("AppShell", "onSelect")("plan"),
+    ],
+  ])(
+    "the shown date changing (%s) closes the sheet opened on a past day",
+    async (_, selectToday) => {
+      await renderOnPastDay();
+      await openDayTypeSheet();
+
+      await act(async () => selectToday());
+      expect(prop("MealPlanner", "selectedDate")).toBe(TODAY);
+      // Never the past day's draft over today's targets.
+      expect(ui.props.DayTypeSheet).toBeUndefined();
+      // And it stays closed going back to the day it was opened on.
+      await act(async () => {
+        prop<(d: string) => void>("MealPlanner", "onSelectDate")(PAST_DAY);
+      });
+      expect(ui.props.DayTypeSheet).toBeUndefined();
+    },
+  );
+
+  it("midnight, while following today, closes the sheet opened for that day", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    vi.setSystemTime(new Date(2026, 5, 10, 23, 59, 0));
+    render(<MacroCalculator />);
+    await openDayTypeSheet();
+
+    // useToday's midnight timer fires: the day view follows to the new day.
+    await act(async () => {
+      vi.advanceTimersByTime(2 * 60 * 1000);
+    });
+    expect(prop("MealPlanner", "selectedDate")).toBe("2026-06-11");
+    expect(ui.props.DayTypeSheet).toBeUndefined();
   });
 
   it("an AI call that is not debited does not refresh usage", async () => {

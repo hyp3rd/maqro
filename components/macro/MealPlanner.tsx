@@ -56,12 +56,17 @@ import { WaterCounter } from "./WaterCounter";
 
 interface MealPlannerProps {
   /** The DISPLAYED day's targets (not necessarily today's), with its
-   *  planned training day when a schedule is on. */
+   *  training session when a schedule is on: the date's override when there
+   *  is one, else the template's (`training.day` vs `plannedDay`). */
   calculatedValues: DateTargets;
   /** The displayed day's Monday-to-Sunday week of day targets
    *  (`useTargets().selectedWeek`) for the week strip; `null` before the
    *  date is known. */
   week: WeekTargets | null;
+  /** Open the day-type sheet for the shown day — the header's session
+   *  chip becomes its button (training on) and is passed as the sheet's
+   *  focus-return target. */
+  onEditDayType?: (trigger: HTMLElement) => void;
   totalMacros: {
     protein: number;
     carbs: number;
@@ -215,6 +220,7 @@ function LiveDayTimeline(
 const MealPlanner: React.FC<MealPlannerProps> = ({
   calculatedValues,
   week,
+  onEditDayType,
   totalMacros,
   macroBreakdown,
   meals,
@@ -416,6 +422,7 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
           training={calculatedValues.training}
           titleId={titleId}
           onSelectDate={onSelectDate}
+          onEditDayType={onEditDayType}
         />
         {week && (
           <WeekStrip

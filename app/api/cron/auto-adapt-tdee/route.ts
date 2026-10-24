@@ -233,7 +233,11 @@ export async function GET(req: Request): Promise<NextResponse> {
 
       // Today's target through the shared resolver — the same one the app,
       // /report and the weekly email use (goal phases are Pro; auto-adapt is
-      // Pro too, but the phase gate is checked on its own terms).
+      // Pro too, but the phase gate is checked on its own terms). Only the
+      // weekly energy balance is read here (`tdee`, `phase`), which a
+      // per-date session override never changes (it moves one day's planned
+      // calories, not maintenance — pinned in lib/targets.test.ts), so the
+      // override rows aren't fetched.
       const target = targetsForDate(profile, today, {
         phasesEnabled: FEATURES.canUseGoalPhases(tier),
         bodyFatPct,

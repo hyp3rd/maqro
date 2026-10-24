@@ -31,9 +31,10 @@ const HOURS = Array.from({ length: 25 }, (_, h) => h);
 /** The Today 24-hour timing track (Instrument): hour ticks across one local
  *  day with the part that has passed drawn brighter; a tick per meal at its
  *  first logged food with the meal's kcal above it (meals without a logged
- *  time stay off the track); the planned workout as an accent block from
- *  the training template (time + duration) when training is on; and, today
- *  only, a signal-coloured "Now HH:MM" cursor.
+ *  time stay off the track); the day's session as an accent block (time +
+ *  duration: the date's override when there is one, else the training
+ *  template's) when training is on; and, today only, a signal-coloured
+ *  "Now HH:MM" cursor.
  *
  *  `now` is injected (the caller's minute clock, `useNow`), so the cursor
  *  moves once a minute and tests pin the time; 0 = not known yet (server

@@ -48,6 +48,7 @@ const PHASE_LABELS: Record<PhaseLabel, string> = {
   customFoods: "Custom foods",
   mealTemplates: "Meal templates",
   recipes: "Recipes",
+  trainingDayOverrides: "Training day changes",
 };
 const PHASE_ORDER: readonly PhaseLabel[] = [
   "profile",
@@ -59,7 +60,21 @@ const PHASE_ORDER: readonly PhaseLabel[] = [
   "customFoods",
   "mealTemplates",
   "recipes",
+  "trainingDayOverrides",
 ];
+
+/** Every counted (non-profile) table of an import plan. */
+const COUNTED_TABLES = [
+  "dailyLogs",
+  "weightEntries",
+  "bodyMeasurements",
+  "waterIntake",
+  "bloodPressure",
+  "customFoods",
+  "mealTemplates",
+  "recipes",
+  "trainingDayOverrides",
+] as const;
 
 function totalChanges(plan: ImportPlan): number {
   let n = 0;
@@ -69,16 +84,7 @@ function totalChanges(plan: ImportPlan): number {
   ) {
     n++;
   }
-  for (const key of [
-    "dailyLogs",
-    "weightEntries",
-    "bodyMeasurements",
-    "waterIntake",
-    "bloodPressure",
-    "customFoods",
-    "mealTemplates",
-    "recipes",
-  ] as const) {
+  for (const key of COUNTED_TABLES) {
     n += plan.tables[key].new + plan.tables[key].updated;
   }
   return n;
@@ -86,16 +92,7 @@ function totalChanges(plan: ImportPlan): number {
 
 function totalSkipped(plan: ImportPlan): number {
   let n = plan.tables.profile.kind === "skipped" ? 1 : 0;
-  for (const key of [
-    "dailyLogs",
-    "weightEntries",
-    "bodyMeasurements",
-    "waterIntake",
-    "bloodPressure",
-    "customFoods",
-    "mealTemplates",
-    "recipes",
-  ] as const) {
+  for (const key of COUNTED_TABLES) {
     n += plan.tables[key].skipped;
   }
   return n;
@@ -168,6 +165,7 @@ function ImportPreviewBody({
           customFoods: { ...plan.tables.customFoods },
           mealTemplates: { ...plan.tables.mealTemplates },
           recipes: { ...plan.tables.recipes },
+          trainingDayOverrides: { ...plan.tables.trainingDayOverrides },
         },
         durationMs,
       });

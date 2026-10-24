@@ -26,6 +26,7 @@ import type {
   SupplementIntake,
   SupplementIntakeEntry,
   SupplementSchedule,
+  TrainingDayOverride,
   WaterIntake,
   WeightEntry,
 } from "@/lib/db";
@@ -34,6 +35,7 @@ import type {
   MicronutrientProfile,
   MicronutrientValues,
 } from "@/lib/micronutrients/types";
+import type { TrainingDay } from "@maqro/core/types";
 
 // ─── Profile ───────────────────────────────────────────────────────────────
 
@@ -191,6 +193,40 @@ export function supplementIntakeFromRow(
   return {
     date: row.date,
     taken: row.taken,
+    recordedAt: Date.parse(row.recorded_at),
+  };
+}
+
+// ─── Training day overrides ────────────────────────────────────────────────
+
+export type TrainingDayOverrideRow = {
+  user_id: string;
+  date: string;
+  /** The session as written (jsonb). Read through `parseTrainingDay`, which
+   *  ignores a malformed one — never trusted here. */
+  day: TrainingDay;
+  recorded_at: string;
+  updated_at: string;
+};
+
+export function trainingDayOverrideToRow(
+  userId: string,
+  entry: TrainingDayOverride,
+): Pick<TrainingDayOverrideRow, "user_id" | "date" | "day" | "recorded_at"> {
+  return {
+    user_id: userId,
+    date: entry.date,
+    day: entry.day,
+    recorded_at: new Date(entry.recordedAt).toISOString(),
+  };
+}
+
+export function trainingDayOverrideFromRow(
+  row: TrainingDayOverrideRow,
+): TrainingDayOverride {
+  return {
+    date: row.date,
+    day: row.day,
     recordedAt: Date.parse(row.recorded_at),
   };
 }

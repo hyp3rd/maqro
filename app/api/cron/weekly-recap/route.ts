@@ -3,6 +3,7 @@ import { getAppUrl } from "@/lib/app-url";
 import { assertCronSecret } from "@/lib/auth/cron-secret";
 import { FEATURES } from "@/lib/billing/tiers";
 import { loadUserTier } from "@/lib/billing/usage";
+import { loadDayOverrides } from "@/lib/day-overrides-server";
 import type { DailyLog, WeightEntry } from "@/lib/db";
 import { sendEmail } from "@/lib/email/resend";
 import { weeklyRecapEmail } from "@/lib/email/templates";
@@ -13,7 +14,12 @@ import { getSupabaseSecretConfig } from "@/lib/supabase/env";
 import { personalInfoFromPayload } from "@/lib/sync/mappers";
 import { computeWeeklyRecap } from "@/lib/weekly-recap";
 import { NextResponse } from "next/server";
-import { targetsForDate, targetsUseBodyFat } from "@maqro/core/targets";
+import {
+  dayOverrideResolver,
+  targetsForDate,
+  targetsUseBodyFat,
+  targetsUseOverrides,
+} from "@maqro/core/targets";
 import { createClient } from "@supabase/supabase-js";
 
 /** Vercel cron handler — Monday-morning "your week in macros"
@@ -123,12 +129,37 @@ export async function GET(req: Request): Promise<NextResponse> {
       }
       bodyFatPct = bodyFat.bodyFatPct;
     }
-    // Each logged day is scored against its OWN target (a phase change or a
-    // planned training day inside the window); the email shows today's.
+    // The user's per-date session overrides inside the window — the same
+    // rows the app reads — so an overridden day is scored against the
+    // target the app showed for it. A failed read skips this user like the
+    // body-fat read does, and likewise only an enabled training schedule
+    // reads them (the resolver ignores every override otherwise).
+    let overrideFor: ((date: string) => unknown) | undefined;
+    if (personalInfo && targetsUseOverrides(personalInfo)) {
+      const overrides = await loadDayOverrides(admin, userId, {
+        from: weekStart,
+        to: today,
+      });
+      if (!overrides.ok) {
+        console.error(
+          "[cron/weekly-recap] training day overrides read failed:",
+          overrides.error,
+        );
+        errors++;
+        continue;
+      }
+      overrideFor = dayOverrideResolver(overrides.rows);
+    }
+    // Each logged day is scored against its OWN target (a phase change, a
+    // planned training day or a session override inside the window); the
+    // email shows today's.
     const targetCaloriesFor = (date: string) =>
       personalInfo
-        ? targetsForDate(personalInfo, date, { phasesEnabled, bodyFatPct })
-            .targetCalories
+        ? targetsForDate(personalInfo, date, {
+            phasesEnabled,
+            bodyFatPct,
+            overrideFor,
+          }).targetCalories
         : 0;
     const targetCalories = targetCaloriesFor(today);
 

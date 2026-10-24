@@ -11,6 +11,7 @@ import type {
   MealTemplate,
   PantryItem,
   PantryNotification,
+  TrainingDayOverride,
   WaterIntake,
   WeightEntry,
 } from "@/lib/db";
@@ -43,6 +44,8 @@ import {
   profileToRow,
   recipeFromRow,
   recipeToRow,
+  trainingDayOverrideFromRow,
+  trainingDayOverrideToRow,
   waterFromRow,
   waterToRow,
   weightFromRow,
@@ -200,6 +203,43 @@ describe("water intake mappers", () => {
       updated_at: "2026-05-13T08:30:00.000Z",
     });
     expect(back).toEqual(ENTRY);
+  });
+});
+
+describe("training day override mappers", () => {
+  const ENTRY: TrainingDayOverride = {
+    date: "2026-10-22",
+    day: { type: "lower", intensity: "hard", time: "18:00", durationMin: 75 },
+    recordedAt: Date.parse("2026-10-22T07:30:00Z"),
+  };
+
+  it("round-trips an override", () => {
+    const row = trainingDayOverrideToRow(USER, ENTRY);
+    expect(row).toEqual({
+      user_id: USER,
+      date: "2026-10-22",
+      day: ENTRY.day,
+      recorded_at: "2026-10-22T07:30:00.000Z",
+    });
+    const back = trainingDayOverrideFromRow({
+      ...row,
+      updated_at: "2026-10-22T07:30:00.000Z",
+    });
+    expect(back).toEqual(ENTRY);
+  });
+
+  it("drops the sync bookkeeping a local row carries", () => {
+    const row = trainingDayOverrideToRow(USER, {
+      ...ENTRY,
+      localUpdatedAt: "x",
+      serverUpdatedAt: null,
+    });
+    expect(Object.keys(row).sort()).toEqual([
+      "date",
+      "day",
+      "recorded_at",
+      "user_id",
+    ]);
   });
 });
 
