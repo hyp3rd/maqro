@@ -71,4 +71,16 @@ describe("Profile as the You hub", () => {
       screen.getByRole("button", { name: /My measurements/ }),
     ).toBeTruthy();
   });
+
+  it("while the tab bar has a More tab, the hub doesn't repeat it", () => {
+    render(
+      <ProfileView
+        personalInfo={PROFILE}
+        onPersonalInfoChange={() => {}}
+        today="2026-06-10"
+        onSelectView={() => {}}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /^More/ })).toBeNull();
+  });
 });

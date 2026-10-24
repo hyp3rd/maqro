@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { offCodeFromFoodId } from "@maqro/core/off";
+import { quickAddMealId } from "@maqro/core/quick-add";
 import type { ResolvedMealPhoto } from "./app/api/identify-meal/route";
 import { SignInPromptDialog } from "./components/auth/SignInPromptDialog";
 import { AdvancedSettingsSection } from "./components/macro/AdvancedSettingsSection";
@@ -529,6 +530,36 @@ const MacroCalculator = () => {
   const [view, setView] = useState<ViewKey>(() =>
     viewFromParam(searchParams.get("view")),
   );
+
+  // Quick add (the mobile tab bar's centre [+]): log something now, into
+  // TODAY — never into a day the user can't see. From another tab or a past
+  // day it first switches to Today on today's date; the launcher then opens
+  // once that day has loaded, pre-targeted to the meal for the local time
+  // of the tap (`quickAddMealId`; `null` = the time maps to none of the
+  // day's slots, so the launcher asks which meal). Holds the tap's minute
+  // of the day while the switch is pending.
+  const [quickAddAt, setQuickAddAt] = useState<number | null>(null);
+  const handleQuickAdd = () => {
+    const now = new Date();
+    setView("plan");
+    setExplicitDate(null);
+    setQuickAddAt(now.getHours() * 60 + now.getMinutes());
+  };
+  // Open the launcher as soon as Today's log is the one on screen —
+  // adjusted during render (React's "storing information from previous
+  // renders" pattern, as useDailyLog does) rather than in an effect, so the
+  // switch and the open land in one commit. `logFlowMealId` is what seeds
+  // the launcher's meal step (and a tool's "Back" to it).
+  if (
+    quickAddAt !== null &&
+    view === "plan" &&
+    explicitDate === null &&
+    dayHydrated
+  ) {
+    setQuickAddAt(null);
+    setLogFlowMealId(quickAddMealId(meals, quickAddAt));
+    setLogMealOpen(true);
+  }
 
   const search = useFoodSearch(foodSearch, customFoodsRev);
   const foodSuggestions = search.results;
@@ -2165,6 +2196,7 @@ const MacroCalculator = () => {
     <AppShell
       current={view}
       onSelect={setView}
+      onQuickAdd={handleQuickAdd}
     >
       {view === "calculator" && (
         <div className="space-y-6">
@@ -2317,25 +2349,6 @@ const MacroCalculator = () => {
             setMealDetailId(mealId);
             setMealHubIntent(intent ?? "add");
           }}
-          onOpenLogMeal={() => {
-            // Fresh entry from the FAB / "Log meal" button always starts
-            // at the meal step, never a stale method step.
-            setLogFlowMealId(null);
-            setLogMealOpen(true);
-          }}
-          onOpenPhoto={
-            user
-              ? () => {
-                  // Mealless capture from the FAB satellite: the photo
-                  // review step picks the meal, so clear any guided target
-                  // (and the "Back to method" affordance with it).
-                  setLogTargetMealId(null);
-                  setLogFlowMealId(null);
-                  setCameraMode("photo");
-                  setCameraSheetOpen(true);
-                }
-              : undefined
-          }
         />
       )}
 
@@ -2434,9 +2447,9 @@ const MacroCalculator = () => {
         onOpenChange={setCameraSheetOpen}
         aiAvailable={!!user}
         initialMode={cameraMode}
-        // The mealless Photo quick-capture (FAB) is the only path that opens
-        // photo mode with no target meal; lock out the Barcode tab there, as a
-        // scan would have no meal to log to. Every other path sets a target.
+        // Photo mode with no target meal would leave a barcode scan with no
+        // meal to log to, so the Barcode tab is locked out there. Today's
+        // paths (the guided launcher, desktop's inline Scan) never open it.
         lockMode={cameraMode === "photo" && logTargetMealId === null}
         dietPreference={personalInfo.dietPreference}
         pairPhoneAvailable={!!user && !isMobile}
@@ -2636,6 +2649,15 @@ const MacroCalculator = () => {
           if (!o) setLogFlowMealId(null);
         }}
         meals={meals}
+        // The launcher names the day it logs into ("Lunch · Today").
+        dayLabel={
+          selectedDate === today
+            ? "Today"
+            : new Date(`${selectedDate}T00:00:00`).toLocaleDateString(
+                undefined,
+                { weekday: "short", month: "short", day: "numeric" },
+              )
+        }
         aiAvailable={!!user}
         initialMealId={logFlowMealId}
         onMethod={handleLogMethod}

@@ -83,6 +83,8 @@ const SIGNED_IN = {
   isUnconfigured: false,
 };
 const auth = vi.hoisted(() => ({ state: null as unknown }));
+/** The day's meal slots `useDailyLog` reports, when a test renames them. */
+const dayMeals = vi.hoisted(() => ({ override: null as Meal[] | null }));
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(nav.search),
@@ -103,7 +105,7 @@ vi.mock("./hooks/use-profile", () => ({
 vi.mock("./hooks/use-daily-log", () => ({
   useDailyLog: (date: string) => ({
     date,
-    meals: MEALS,
+    meals: dayMeals.override ?? MEALS,
     setMeals: vi.fn(),
     isHydrated: true,
     day: { date, epoch: 0 },
@@ -128,7 +130,13 @@ vi.mock("./lib/db", async (importOriginal) => ({
 }));
 
 vi.mock("./components/shell/AppShell", () => ({
-  AppShell: ({ children }: { children: ReactNode }) => children,
+  AppShell: ({
+    children,
+    ...props
+  }: { children: ReactNode } & Record<string, unknown>) => {
+    ui.props.AppShell = props;
+    return children;
+  },
 }));
 vi.mock("./components/auth/SignInPromptDialog", () => ({
   SignInPromptDialog: ui.stub("SignInPromptDialog"),
@@ -249,6 +257,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date(2026, 5, 10, 12, 0, 0));
   nav.search = "view=plan";
   auth.state = SIGNED_IN;
+  dayMeals.override = null;
   for (const key of Object.keys(ui.props)) delete ui.props[key];
   refreshAiUsage.mockReset();
   requestAiMealPlan.mockReset();
@@ -392,6 +401,100 @@ describe("macro-calculator: Today-first landing", () => {
       )({ profile: PROFILE, skipped: false });
     });
     expect(rendered().today).toBe(true);
+  });
+});
+
+describe("macro-calculator: quick add (the tab bar's centre [+])", () => {
+  const quickAdd = async () => {
+    await act(async () => {
+      prop<() => void>("AppShell", "onQuickAdd")();
+    });
+  };
+  const launcher = () => ({
+    open: prop<boolean>("LogMealSheet", "open"),
+    mealId: prop<number | null>("LogMealSheet", "initialMealId"),
+    dayLabel: prop<string>("LogMealSheet", "dayLabel"),
+  });
+
+  it("at noon on Today opens the launcher at Lunch · Today", async () => {
+    nav.search = "";
+    render(<MacroCalculator />);
+    expect(launcher().open).toBe(false);
+    await quickAdd();
+    expect(launcher()).toEqual({ open: true, mealId: 2, dayLabel: "Today" });
+  });
+
+  it.each([
+    [8, 0, 1],
+    [19, 30, 3],
+    [23, 30, 4],
+    [1, 0, 4],
+  ])("at %i:%i targets meal %i", async (h, m, mealId) => {
+    vi.setSystemTime(new Date(2026, 5, 10, h, m, 0));
+    render(<MacroCalculator />);
+    await quickAdd();
+    expect(launcher().mealId).toBe(mealId);
+  });
+
+  it("slots whose names don't map start at the meal step", async () => {
+    dayMeals.override = [
+      { id: 1, name: "Meal 1", foods: [] },
+      { id: 2, name: "Meal 2", foods: [] },
+    ];
+    render(<MacroCalculator />);
+    await quickAdd();
+    expect(launcher()).toEqual({ open: true, mealId: null, dayLabel: "Today" });
+  });
+
+  it("from another tab, switches to Today first", async () => {
+    nav.search = "view=progress";
+    render(<MacroCalculator />);
+    expect("MealPlanner" in ui.props).toBe(false);
+    await quickAdd();
+    expect(prop("AppShell", "current")).toBe("plan");
+    expect(prop("MealPlanner", "selectedDate")).toBe(TODAY);
+    expect(launcher()).toEqual({ open: true, mealId: 2, dayLabel: "Today" });
+  });
+
+  it("from a past day, comes back to today before logging", async () => {
+    await renderOnPastDay();
+    await quickAdd();
+    expect(prop("MealPlanner", "selectedDate")).toBe(TODAY);
+    expect(launcher()).toEqual({ open: true, mealId: 2, dayLabel: "Today" });
+  });
+
+  it("a method hands off to its tool, whose Back returns to the method step", async () => {
+    render(<MacroCalculator />);
+    await quickAdd();
+    await act(async () => {
+      prop<(m: string, id: number) => void>("LogMealSheet", "onMethod")(
+        "search",
+        2,
+      );
+    });
+    expect(launcher().open).toBe(false);
+    expect(prop("FoodSearchSheet", "open")).toBe(true);
+    expect(prop("FoodSearchSheet", "mealId")).toBe(2);
+    await act(async () => {
+      prop<() => void>("FoodSearchSheet", "onBack")();
+    });
+    expect(launcher()).toEqual({ open: true, mealId: 2, dayLabel: "Today" });
+  });
+
+  it("dismissing the launcher ends the quick add", async () => {
+    render(<MacroCalculator />);
+    await quickAdd();
+    await act(async () => {
+      prop<(o: boolean) => void>("LogMealSheet", "onOpenChange")(false);
+    });
+    expect(launcher().open).toBe(false);
+    expect(launcher().mealId).toBeNull();
+  });
+
+  it("the day view has no floating add button of its own any more", () => {
+    render(<MacroCalculator />);
+    expect(prop("MealPlanner", "onOpenLogMeal")).toBeUndefined();
+    expect(prop("MealPlanner", "onOpenPhoto")).toBeUndefined();
   });
 });
 

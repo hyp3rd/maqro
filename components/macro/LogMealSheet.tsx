@@ -33,6 +33,9 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   meals: Meal[];
+  /** The day the launcher logs into, as the user reads it ("Today"); the
+   *  title names it next to the meal ("Add to Lunch · Today"). */
+  dayLabel: string;
   /** Whether AI features (photo identify, voice log) are wired. Gates
    *  the Photo + Voice methods so they don't appear when they'd 503. */
   aiAvailable: boolean;
@@ -94,6 +97,7 @@ export function LogMealSheet({
   open,
   onOpenChange,
   meals,
+  dayLabel,
   aiAvailable,
   initialMealId,
   onMethod,
@@ -107,6 +111,7 @@ export function LogMealSheet({
       <DialogContent className="gap-3">
         <LogMealFlow
           meals={meals}
+          dayLabel={dayLabel}
           aiAvailable={aiAvailable}
           initialMealId={initialMealId ?? null}
           onMethod={onMethod}
@@ -119,12 +124,14 @@ export function LogMealSheet({
 
 function LogMealFlow({
   meals,
+  dayLabel,
   aiAvailable,
   initialMealId,
   onMethod,
   onQuickLog,
 }: {
   meals: Meal[];
+  dayLabel: string;
   aiAvailable: boolean;
   initialMealId: number | null;
   onMethod: (method: LogMethod, mealId: number) => void;
@@ -141,8 +148,8 @@ function LogMealFlow({
       <DialogHeader>
         <DialogTitle className="text-left">
           {mealId === null
-            ? "Log a meal"
-            : `Add to ${targetMeal?.name ?? "meal"}`}
+            ? `Log a meal · ${dayLabel}`
+            : `Add to ${targetMeal?.name ?? "meal"} · ${dayLabel}`}
         </DialogTitle>
         <DialogDescription className="text-left">
           {mealId === null

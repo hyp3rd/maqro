@@ -3,10 +3,17 @@
 import { useUser } from "@/hooks/use-user";
 import { OFFLINE_UNVERIFIED_HINT } from "@/lib/auth/offline-unverified-copy";
 import React, { useState } from "react";
-import { ArrowLeft, CreditCard, FolderOpen, HeartPulse } from "lucide-react";
+import {
+  ArrowLeft,
+  CreditCard,
+  Ellipsis,
+  FolderOpen,
+  HeartPulse,
+} from "lucide-react";
 import type { PersonalInfo } from "../../components/macro/types";
 import { ageFromBirthDate } from "../../lib/age";
-import { NAV, type ViewKey, YOU_HUB } from "../shell/nav";
+import { MoreSheet } from "../shell/MoreSheet";
+import { MORE_IN_TAB_BAR, NAV, type ViewKey, YOU_HUB } from "../shell/nav";
 import { Input } from "../ui/input";
 import {
   Select,
@@ -300,6 +307,20 @@ function ProfileHome({
               onClick={() => onSelectView(key)}
             />
           ))}
+        {/* Once the tab bar no longer has a More tab (nav registry:
+            `TAB_BAR`), the More sheet's destinations are reached from here. */}
+        {onSelectView && !MORE_IN_TAB_BAR && (
+          <MoreSheet
+            current="profile"
+            onSelect={onSelectView}
+          >
+            <ProfileTile
+              icon={Ellipsis}
+              title="More"
+              hint="Foods, recipes, kitchen & settings"
+            />
+          </MoreSheet>
+        )}
         <ProfileTile
           icon={HeartPulse}
           title="My measurements"
@@ -345,21 +366,22 @@ function SubHeader({ title, onBack }: { title: string; onBack: () => void }) {
   );
 }
 
+/** A square hub tile. Extra button props (and, in React 19, `ref`) pass
+ *  through, so a tile can also be a Radix trigger (the More tile). */
 function ProfileTile({
   icon: Icon,
   title,
   hint,
-  onClick,
-}: {
+  ...buttonProps
+}: Omit<React.ComponentPropsWithRef<"button">, "children" | "title"> & {
   icon: React.ComponentType<{ className?: string }>;
   title: string;
   hint: string;
-  onClick: () => void;
 }) {
   return (
     <button
       type="button"
-      onClick={onClick}
+      {...buttonProps}
       className="group flex aspect-square flex-col items-start justify-between rounded-xl border border-border/60 bg-card p-5 text-left transition-colors hover:border-brand/40 hover:bg-accent/40"
     >
       <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand/10 text-brand">

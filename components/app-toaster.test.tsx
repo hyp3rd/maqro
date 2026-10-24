@@ -119,6 +119,7 @@ describe("AppToaster", () => {
       <MobileBottomNav
         current="plan"
         onSelect={() => undefined}
+        onQuickAdd={() => undefined}
       />,
     );
     expect(

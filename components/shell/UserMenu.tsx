@@ -23,34 +23,21 @@ import { subscribeProfileChanged } from "@/lib/profile-bus";
 import { getSupabaseBrowser } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { useEffect, useState } from "react";
-import {
-  Bell,
-  CloudOff,
-  Home,
-  Hourglass,
-  LayoutGrid,
-  LogIn,
-  LogOut,
-  Package,
-  Settings as SettingsIcon,
-  ShieldCheck,
-  UserCircle,
-} from "lucide-react";
+import { Bell, CloudOff, Home, LogIn, LogOut, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { NotificationsSheet } from "./NotificationsSheet";
-import type { ViewKey } from "./nav";
 import { ThemeMenuItem } from "./ThemeMenuItem";
+import type { ViewKey } from "./nav";
 
 type UserMenuProps = {
   /** Compact mode: render just the avatar (no name text), suitable for
    * the mobile topbar where horizontal space is tight. The full name +
    * email still appear inside the dropdown content. */
   compact?: boolean;
-  /** When provided (mobile topbar only), the dropdown surfaces
-   *  Settings + Templates entries that were removed from the bottom
-   *  tab bar to declutter it. Desktop sidebar already has those
-   *  views directly, so the desktop instance passes nothing here
-   *  and the items don't render. */
+  /** Passed by the mobile topbar only: the menu then also hosts the
+   *  notifications (whose entries open the view they point at) and the
+   *  theme, moved out of the cramped topbar. Navigation itself lives in
+   *  the tab bar and its More sheet, not here. */
   onSelectView?: (key: ViewKey) => void;
 };
 
@@ -104,11 +91,9 @@ export function UserMenu({
 
   // Signed-out branch. When the menu is in `compact` mode AND the
   // caller wires `onSelectView` (i.e. the mobile top bar) we still
-  // need to render a dropdown — otherwise the guest user can't
-  // reach Settings or Templates at all, because those were moved
-  // out of the bottom tab bar to declutter it and currently live
-  // only behind this menu. Skip to the signed-out dropdown
-  // immediately; the signed-in path below builds the same shape.
+  // render a dropdown: it hosts the guest's notifications and theme,
+  // which have no other home on a phone. The signed-in path below
+  // builds the same shape.
   if (!user && compact && onSelectView) {
     return (
       <SignedOutMenu
@@ -227,54 +212,6 @@ export function UserMenu({
             )}
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
-          {/* Mobile-only: Settings + Templates moved out of the bottom
-            tab bar (8 → 6 items) so the primary nav reads cleaner.
-            Both are still one tap away from anywhere via the avatar
-            chip. Skipped when `onSelectView` isn't passed (desktop
-            sidebar surfaces both views directly). */}
-          {onSelectView && (
-            <>
-              <DropdownMenuItem
-                onSelect={() => onSelectView("profile")}
-                className="gap-2"
-              >
-                <UserCircle className="h-3.5 w-3.5 text-muted-foreground" />
-                Profile
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() => onSelectView("settings")}
-                className="gap-2"
-              >
-                <SettingsIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                Settings
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() => onSelectView("templates")}
-                className="gap-2"
-              >
-                <LayoutGrid className="h-3.5 w-3.5 text-muted-foreground" />
-                Templates
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() => onSelectView("pantry")}
-                className="gap-2"
-              >
-                <Package className="h-3.5 w-3.5 text-muted-foreground" />
-                Pantry
-              </DropdownMenuItem>
-              {/* Fasting has no bottom-tab entry and its Topbar chip is
-                desktop-only and only appears once a fast is running — so this
-                is the only way to reach (and first enable) it on a phone. */}
-              <DropdownMenuItem
-                onSelect={() => onSelectView("health")}
-                className="gap-2"
-              >
-                <Hourglass className="h-3.5 w-3.5 text-muted-foreground" />
-                Health
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-            </>
-          )}
           {/* Mobile-only: notifications + theme, relocated from the topbar.
             The bell's unread count also surfaces on the avatar badge
             above; opening the drawer (openDrawer) clears it. */}
@@ -357,15 +294,12 @@ export function UserMenu({
 /** Guest-mode equivalent of the signed-in dropdown. Mirrors the same
  *  affordances minus account-only items (no Sign-out, no Admin) and
  *  swaps in a "Sign in" call to action. We render this exclusively
- *  in the mobile top-bar context — desktop guests have the sidebar
- *  nav for Settings / Templates, so the sidebar's `<UserMenu />`
- *  still resolves to the plain "Sign in" Link via the branch above.
+ *  in the mobile top-bar context — desktop guests have the bell and
+ *  theme toggle in the topbar, so the sidebar's `<UserMenu />` still
+ *  resolves to the plain "Sign in" Link via the branch above.
  *
- *  Why a dropdown for a guest at all: the previous version
- *  collapsed straight to a "Sign in" link. After Settings + Templates
- *  moved out of the bottom tab bar, that left a signed-out mobile
- *  user with no path to either view — they could see the app's
- *  data but not change anything.
+ *  Why a dropdown for a guest at all: on a phone the notifications
+ *  and the theme live only here.
  *
  *  Offline-unverified uses the same menu, labelled with the offline-
  *  unverified explanation and without "Sign in": the account is still on
@@ -426,28 +360,6 @@ function SignedOutMenu({
           <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
             {isOfflineUnverified ? OFFLINE_UNVERIFIED_HINT : "Guest mode"}
           </DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onSelect={() => onSelectView("settings")}
-            className="gap-2"
-          >
-            <SettingsIcon className="h-3.5 w-3.5 text-muted-foreground" />
-            Settings
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={() => onSelectView("templates")}
-            className="gap-2"
-          >
-            <LayoutGrid className="h-3.5 w-3.5 text-muted-foreground" />
-            Templates
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onSelect={() => onSelectView("health")}
-            className="gap-2"
-          >
-            <Hourglass className="h-3.5 w-3.5 text-muted-foreground" />
-            Health
-          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onSelect={drawer.openDrawer}

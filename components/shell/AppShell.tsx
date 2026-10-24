@@ -11,17 +11,19 @@ import { MobileBottomNav } from "./MobileBottomNav";
 import { PastDueBanner } from "./PastDueBanner";
 import { PullToSync } from "./PullToSync";
 import { ServiceWorkerProvider } from "./ServiceWorkerProvider";
-import type { ViewKey } from "./nav";
 import { Sidebar } from "./Sidebar";
 import { StorageBanner } from "./StorageBanner";
 import { SyncManager } from "./SyncManager";
 import { SyncModeController } from "./SyncModeController";
 import { Topbar } from "./Topbar";
 import { UpdateBanner } from "./UpdateBanner";
+import type { ViewKey } from "./nav";
 
 type Props = {
   current: ViewKey;
   onSelect: (key: ViewKey) => void;
+  /** The mobile tab bar's centre [+] (see MobileBottomNav). */
+  onQuickAdd: () => void;
   children: React.ReactNode;
 };
 
@@ -33,7 +35,7 @@ type Props = {
  * the sidebar footer (UserMenu) pinned to the bottom and the mobile bottom
  * nav above the keyboard. The animated wrapper keys off `current` so
  * switching nav items produces a soft fade/translate transition. */
-export function AppShell({ current, onSelect, children }: Props) {
+export function AppShell({ current, onSelect, onQuickAdd, children }: Props) {
   return (
     <div className="flex h-screen bg-background text-foreground">
       <DemoSeed />
@@ -101,6 +103,7 @@ export function AppShell({ current, onSelect, children }: Props) {
       <MobileBottomNav
         current={current}
         onSelect={onSelect}
+        onQuickAdd={onQuickAdd}
       />
       <InstallPrompt />
       <UpdateBanner />
