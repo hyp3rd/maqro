@@ -679,6 +679,51 @@ describe("clearDemoSeededStores", () => {
     // and weigh-in for that date.
     expect(await db.listDeletions()).toEqual([]);
   });
+
+  it("wipes every demo-seeded store and drops the tombstones of exactly the deletable ones", async () => {
+    const db = await freshDb();
+    await db.listCustomFoods(); // opens the connection (runs the upgrades)
+    const raw = await openDB("maqro");
+    try {
+      // A row in every demo-seeded store, and a pending tombstone for EVERY
+      // deletable store, written the way `recordDeletion` keys them.
+      for (const name of db.DEMO_SEEDED_STORES) {
+        const store = raw.transaction(name, "readwrite").store;
+        const { keyPath } = store;
+        if (typeof keyPath !== "string") throw new Error(`keyPath of ${name}`);
+        await store.put({ [keyPath]: `seed-${name}` });
+      }
+      for (const storeName of db.DELETABLE_STORES) {
+        await raw.put("deletions", {
+          _key: `${storeName}:2026-10-22`,
+          storeName,
+          rowKey: "2026-10-22",
+          deletedAt: 0,
+        });
+      }
+
+      await db.clearDemoSeededStores();
+
+      for (const name of db.DEMO_SEEDED_STORES) {
+        expect(await raw.count(name)).toBe(0);
+      }
+      const demoDeletable = db.DELETABLE_STORES.filter((s) =>
+        (db.DEMO_SEEDED_STORES as readonly string[]).includes(s),
+      );
+      // The demo stores that are deletable lose their tombstones: the rule
+      // is derived from the one list, so none can be forgotten.
+      expect(demoDeletable).toEqual([
+        "dailyLogs",
+        "weightHistory",
+        "trainingDayOverrides",
+      ]);
+      expect((await db.listDeletions()).map((d) => d.storeName).sort()).toEqual(
+        db.DELETABLE_STORES.filter((s) => !demoDeletable.includes(s)).sort(),
+      );
+    } finally {
+      raw.close();
+    }
+  });
 });
 
 describe("clearAllStores", () => {

@@ -7,7 +7,7 @@ import type {
 import { pickWinnerProfile } from "@/lib/micronutrients/merge";
 import type { MicronutrientProfile } from "@/lib/micronutrients/types";
 import type { ShoppingAisle } from "@/lib/shopping/categorize";
-import { notifyDataChanged } from "@/lib/sync/data-bus";
+import { type SyncedTable, notifyDataChanged } from "@/lib/sync/data-bus";
 import { type DBSchema, type IDBPDatabase, openDB } from "idb";
 import type { FastSession, FastSessionInput } from "@maqro/core/fasting";
 import type {
@@ -119,23 +119,31 @@ export type {
 
 /** Stores that the sync engine can push DELETEs to. Profile is
  *  excluded (single-row per user; the only deletion is "delete
- *  account" which goes through its own server route). */
-export type DeletableStore =
-  | "customFoods"
-  | "mealTemplates"
-  | "recipes"
-  | "mealSchedules"
-  | "supplements"
-  | "dailyLogs"
-  | "weightHistory"
-  | "bodyMeasurements"
-  | "bloodPressure"
-  | "fastSessions"
-  | "trainingDayOverrides"
-  | "pantryItems"
-  | "pantryNotifications"
-  | "favoriteStores"
-  | "favoriteFoods";
+ *  account" which goes through its own server route). The runtime list is
+ *  the source of the `DeletableStore` type, so the two can't drift. */
+export const DELETABLE_STORES = [
+  "customFoods",
+  "mealTemplates",
+  "recipes",
+  "mealSchedules",
+  "supplements",
+  "dailyLogs",
+  "weightHistory",
+  "bodyMeasurements",
+  "bloodPressure",
+  "fastSessions",
+  "trainingDayOverrides",
+  "pantryItems",
+  "pantryNotifications",
+  "favoriteStores",
+  "favoriteFoods",
+] as const;
+export type DeletableStore = (typeof DELETABLE_STORES)[number];
+
+/** Whether `store` is one the sync engine pushes DELETEs (tombstones) for. */
+export function isDeletableStore(store: string): store is DeletableStore {
+  return (DELETABLE_STORES as readonly string[]).includes(store);
+}
 
 /** A tombstone - "delete this row on the server next sync." Composite
  *  key `<store>:<rowKey>` so the same row id across different stores
@@ -773,16 +781,31 @@ export async function isProfileMarkedAsDemo(): Promise<boolean> {
   return row?._demoSeeded === true;
 }
 
-/** Deletable stores `clearDemoSeededStores` wipes. A tombstone for one of
- *  them was written against demo rows, and its row key (a date) is shared
- *  with whatever account signs in next: replayed by the first sync, it
- *  would delete that account's real row for the same date. The wipe drops
- *  those tombstones with the rows. */
-const DEMO_WIPED_DELETABLE_STORES: readonly DeletableStore[] = [
-  "dailyLogs",
-  "weightHistory",
-  "trainingDayOverrides",
-];
+/** The stores `clearDemoSeededStores` wipes — the ONE list everything the
+ *  demo clear does is derived from (the stores cleared, the tombstones
+ *  dropped), so a store added here can't be cleared without its tombstones
+ *  going:
+ *
+ *  - `profile`, `dailyLogs`, `weightHistory`, `waterIntake`: what the
+ *    `?demo=1` seed populates (DemoSeed).
+ *  - `shoppingListMeta`: local-only for v1, but a guest can populate it
+ *    while exploring the demo (drag-to-reorder aisles, notes, manual
+ *    restocks); it would otherwise survive the demo to real transition.
+ *  - `trainingDayOverrides`: session overrides change days of the sample
+ *    profile's training week; they belong to the demo plan, not to the
+ *    account signing in.
+ *
+ *  Pantry items, recipes, custom foods, templates, favourites etc. the user
+ *  added in guest mode are deliberately NOT here: they aren't demo data, and
+ *  neither are their pending tombstones. */
+export const DEMO_SEEDED_STORES = [
+  STORE_PROFILE,
+  STORE_DAILY_LOGS,
+  STORE_WEIGHT_HISTORY,
+  STORE_WATER_INTAKE,
+  STORE_SHOPPING_LIST_META,
+  STORE_TRAINING_DAY_OVERRIDES,
+] as const satisfies readonly SyncedTable[];
 
 /** Every tombstone key of `store`: the keys are `<store>:<rowKey>`, and the
  *  strings from `<store>:` up to (excluding) `<store>;` — `;` is the code
@@ -791,45 +814,24 @@ function tombstoneKeysOf(store: DeletableStore): IDBKeyRange {
   return IDBKeyRange.bound(`${store}:`, `${store};`, false, true);
 }
 
-/** Wipe only the IDB stores the demo seed actually populates
- *  (`profile` / `dailyLogs` / `weightHistory`, …) or that only make sense
- *  against the sample profile (session overrides of its training week).
- *  Pantry items, recipes,
- *  custom foods, templates, favourites etc. the user added in guest
- *  mode are deliberately preserved — they aren't demo data, and neither
- *  are their pending tombstones. The tombstones of the wiped stores go
- *  (see `DEMO_WIPED_DELETABLE_STORES`). Used by `clearDemoModeData`
- *  before the first post-sign-in sync. */
+/** Wipe the demo dataset: every store in `DEMO_SEEDED_STORES`, in one
+ *  transaction, together with the pending tombstones of those of them that
+ *  are deletable. A tombstone written against a demo row has a row key (a
+ *  date) shared with whatever account signs in next: replayed by the first
+ *  sync it would delete that account's real row for the same date. Used by
+ *  `clearDemoModeData` before the first post-sign-in sync. */
 export async function clearDemoSeededStores(): Promise<void> {
   const db = await getDB();
   const tx = db.transaction(
-    [
-      STORE_PROFILE,
-      STORE_DAILY_LOGS,
-      STORE_WEIGHT_HISTORY,
-      STORE_WATER_INTAKE,
-      // shoppingListMeta is local-only-for-v1 but a guest user can
-      // populate it during demo exploration (drag-to-reorder aisles,
-      // notes, manual restocks). Without this clear it would survive
-      // the demo→real transition and the user would see their demo
-      // shopping-list preferences on their real account.
-      STORE_SHOPPING_LIST_META,
-      // Session overrides change days of the sample profile's training
-      // week: they belong to the demo plan, not to the account signing in.
-      STORE_TRAINING_DAY_OVERRIDES,
-      STORE_DELETIONS,
-    ],
+    [...DEMO_SEEDED_STORES, STORE_DELETIONS],
     "readwrite",
   );
   await Promise.all([
-    tx.objectStore(STORE_PROFILE).clear(),
-    tx.objectStore(STORE_DAILY_LOGS).clear(),
-    tx.objectStore(STORE_WEIGHT_HISTORY).clear(),
-    tx.objectStore(STORE_WATER_INTAKE).clear(),
-    tx.objectStore(STORE_SHOPPING_LIST_META).clear(),
-    tx.objectStore(STORE_TRAINING_DAY_OVERRIDES).clear(),
-    ...DEMO_WIPED_DELETABLE_STORES.map((store) =>
-      tx.objectStore(STORE_DELETIONS).delete(tombstoneKeysOf(store)),
+    ...DEMO_SEEDED_STORES.map((store) => tx.objectStore(store).clear()),
+    ...DEMO_SEEDED_STORES.flatMap((store) =>
+      isDeletableStore(store)
+        ? [tx.objectStore(STORE_DELETIONS).delete(tombstoneKeysOf(store))]
+        : [],
     ),
     tx.done,
   ]);
