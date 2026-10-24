@@ -192,7 +192,13 @@ export function TrainingWeekEditor({
           fold; off, its card explains what turning it on does. One wrapper
           either way, restyled rather than replaced, so the Switch is never
           remounted and keeps keyboard focus when toggled. */}
-      <Card className={cn(enabled && "border-transparent bg-transparent")}>
+      <Card
+        className={cn(
+          // On, the row is only as tall as the switch: no clipping, so the
+          // switch's focus ring (drawn outside it) shows whole.
+          enabled && "overflow-visible border-transparent bg-transparent",
+        )}
+      >
         <CardBody
           className={cn(
             "flex items-center justify-between gap-4",

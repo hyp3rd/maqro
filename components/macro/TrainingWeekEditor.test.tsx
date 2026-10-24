@@ -185,6 +185,19 @@ describe("TrainingWeekEditor: enable / disable", () => {
     expect(control.isConnected).toBe(true);
     expect(document.activeElement).toBe(control);
   });
+
+  it("never clips the switch's focus ring in the compact row", () => {
+    renderEditor({ initial: { ...BASE, training: SCHEDULE } });
+    // On, the wrapper is only as tall as the switch, and the ring is drawn
+    // outside it (ring-offset): the wrapper must not clip its overflow.
+    const wrapper = () => switchControl().parentElement?.parentElement;
+    expect(wrapper()?.classList.contains("overflow-visible")).toBe(true);
+    expect(wrapper()?.classList.contains("overflow-hidden")).toBe(false);
+    // Off, the explaining card has room around the switch and keeps its
+    // rounded clip.
+    fireEvent.click(switchControl());
+    expect(wrapper()?.classList.contains("overflow-hidden")).toBe(true);
+  });
 });
 
 describe("TrainingWeekEditor: the week", () => {
