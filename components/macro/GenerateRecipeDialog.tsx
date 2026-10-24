@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useRefreshAiUsage } from "@/hooks/use-ai-usage";
 import {
   toAiCustomFoods,
   toAiPantryBias,
@@ -85,6 +86,7 @@ function GenerateRecipeDialogBody({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<GenerateError | null>(null);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const refreshAiUsage = useRefreshAiUsage();
 
   async function handleGenerate() {
     setBusy(true);
@@ -176,6 +178,8 @@ function GenerateRecipeDialogBody({
         return;
       }
 
+      // The server debited this call — bring the shared counter up to date.
+      refreshAiUsage();
       const data = (await res.json()) as { recipe?: RecipeDraft };
       if (!data.recipe) throw new Error("AI returned no recipe.");
       onDraft(data.recipe);

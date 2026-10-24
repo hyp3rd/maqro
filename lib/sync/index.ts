@@ -345,12 +345,19 @@ function settleSyncStatus(result: SyncResult): void {
  *  longer resolves) mean the session can't recover on its own — and
  *  continuing to accept local edits would just pile up dirty rows that
  *  never push. Tear the local state down so the next render sees `!user`
- *  and prompts a clean re-sign-in. Fire-and-forget: the caller still
- *  rethrows so its promise rejects with the original error shape. */
-function surfaceSyncFailure(supabase: SupabaseClient, err: unknown): void {
+ *  and prompts a clean re-sign-in. The failure is scoped to `userId`'s
+ *  session, so it is that account's records that are forgotten — not
+ *  whichever account a possibly stale last-known record names. Fire-and-
+ *  forget: the caller still rethrows so its promise rejects with the
+ *  original error shape. */
+function surfaceSyncFailure(
+  supabase: SupabaseClient,
+  userId: string,
+  err: unknown,
+): void {
   setSyncError(err);
   if (isAuthError(err)) {
-    void signOutAndClearLocal(supabase);
+    void signOutAndClearLocal(supabase, userId);
   }
 }
 
@@ -372,7 +379,7 @@ export async function triggerSync(
     settleSyncStatus(result);
     return result;
   } catch (err) {
-    surfaceSyncFailure(supabase, err);
+    surfaceSyncFailure(supabase, userId, err);
     throw err;
   }
 }
@@ -434,7 +441,7 @@ export async function resolveConflictsKeepingLocal(
     settleSyncStatus(result);
     return result;
   } catch (err) {
-    surfaceSyncFailure(supabase, err);
+    surfaceSyncFailure(supabase, userId, err);
     throw err;
   }
 }

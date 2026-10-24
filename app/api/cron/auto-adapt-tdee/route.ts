@@ -5,13 +5,12 @@ import { FEATURES } from "@/lib/billing/tiers";
 import { loadUserTier } from "@/lib/billing/usage";
 import { sendEmail } from "@/lib/email/resend";
 import { autoAdaptEmail } from "@/lib/email/templates";
-import { activePhase } from "@/lib/goal-phases";
-import { computeMacros } from "@/lib/macros";
 import { sendPush } from "@/lib/push/send";
 import { emailsById, listAllAuthUsers } from "@/lib/supabase/admin-users";
 import { getSupabaseSecretConfig } from "@/lib/supabase/env";
 import { decideAutoAdapt, inferAdaptiveTdee } from "@/lib/trends";
 import { NextResponse } from "next/server";
+import { targetsForDate } from "@maqro/core/targets";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 /** Notification opt-in flags read for the auto-adapt dispatch. */
@@ -211,12 +210,19 @@ export async function GET(req: Request): Promise<NextResponse> {
         continue;
       }
 
+      // Today's target through the shared resolver — the same one the app,
+      // /report and the weekly email use (goal phases are Pro; auto-adapt is
+      // Pro too, but the phase gate is checked on its own terms).
+      const target = targetsForDate(profile, today, {
+        phasesEnabled: FEATURES.canUseGoalPhases(tier),
+      });
+
       // If the active goal phase carries its own (manually-pinned) TDEE
       // override, auto-adapt leaves it alone — the user calibrated this phase
       // deliberately, and a global manualTdee write would be shadowed by the
       // phase override anyway. The two calibration modes stay distinct.
-      const phase = activePhase(profile.goalPhases, today);
-      if (phase?.tdeeOverride && phase.tdeeOverride > 0) {
+      const phaseOverride = target.phase?.tdeeOverride;
+      if (phaseOverride && phaseOverride > 0) {
         skipped++;
         continue;
       }
@@ -248,9 +254,10 @@ export async function GET(req: Request): Promise<NextResponse> {
       }));
 
       const observed = inferAdaptiveTdee({ weights, intake });
-      // computeMacros already applies any existing manualTdee override, so this
-      // is the exact TDEE the user's targets currently use.
-      const currentTdee = computeMacros(profile).tdee;
+      // The resolver already applies any manualTdee override (and a phase
+      // override would have skipped above), so this is the exact TDEE the
+      // user's targets currently use.
+      const currentTdee = target.tdee;
       const decision = decideAutoAdapt({ observed, currentTdee });
       if (decision.action === "skip" || decision.newTdee === null) {
         skipped++;

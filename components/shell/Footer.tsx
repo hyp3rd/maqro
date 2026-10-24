@@ -54,7 +54,7 @@ export function Footer() {
             />
             <span>{t("tagline")}</span>
             <span
-              className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground/80"
+              className="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10px] text-faint-foreground"
               title={t("appVersionTitle")}
             >
               v{APP_VERSION}

@@ -1,12 +1,16 @@
+import { PALETTE } from "@/lib/design/palette";
 import { describe, expect, it } from "vitest";
 import {
   accountDeletedEmail,
+  accountRecoveryEmail,
+  dailyReminderEmail,
   paymentFailedFinalEmail,
   subscriptionCancelledEmail,
   subscriptionConfirmedEmail,
   supportRequestConfirmationEmail,
   supportRequestEmail,
   trialEndingEmail,
+  welcomeEmail,
 } from "./templates";
 
 describe("trialEndingEmail", () => {
@@ -234,5 +238,40 @@ describe("supportRequestConfirmationEmail", () => {
   it("sets expectation that a real person responds", () => {
     const { html } = supportRequestConfirmationEmail(baseOpts);
     expect(html.toLowerCase()).toContain("real person");
+  });
+});
+
+describe("email palette", () => {
+  const appUrl = "https://maqro.app";
+  const rendered = [
+    dailyReminderEmail({ appUrl, streakDays: 3 }).html,
+    welcomeEmail({ appUrl, dailyReminder: true, weeklyRecap: true }).html,
+    accountRecoveryEmail({
+      appUrl,
+      magicLink: "https://maqro.app/auth/recovery?t=x",
+      primaryEmailMasked: "u***@example.com",
+    }).html,
+    supportRequestEmail({
+      appUrl,
+      subject: "Hi",
+      body: "Body",
+      fromEmail: "user@example.com",
+      authState: "anonymous",
+      userAgent: null,
+      receivedAt: "2026-05-23T10:00:00Z",
+    }).html,
+  ];
+
+  it("uses only light Instrument palette colours", () => {
+    const allowed = new Set(Object.values(PALETTE.light));
+    for (const html of rendered) {
+      const used = html.match(/#[0-9a-f]{6}\b/gi) ?? [];
+      expect(used.length).toBeGreaterThan(0);
+      expect(used.filter((hex) => !allowed.has(hex))).toEqual([]);
+    }
+  });
+
+  it("leaves no unrendered template holes", () => {
+    for (const html of rendered) expect(html).not.toContain("${");
   });
 });

@@ -130,6 +130,7 @@ class FakeSupabase {
             data: { user: { id: USER_ID, factors: [] } },
             error: null,
           }),
+        signOut: () => Promise.resolve({ error: null }),
       },
     } as unknown as SupabaseClient;
   }
@@ -1242,6 +1243,42 @@ describe("error isolation", () => {
     expect(local).toHaveLength(1);
     expect(local[0]?.id).not.toBe(originalId);
     expect(local[0]?.name).toBe("Tofu");
+  });
+});
+
+describe("sign-out leaves nothing for the next account to push", () => {
+  let env: Awaited<ReturnType<typeof setup>>;
+  beforeEach(async () => {
+    env = await setup();
+  });
+
+  it("an unpushed meal schedule never reaches the account that signs in next", async () => {
+    const { db, sync, server, sb } = env;
+    // Imported after setup() so it binds the same `@/lib/db` instance.
+    const { signOutAndClearLocal } = await import("@/lib/auth/sign-out");
+    // The first user plans a meal while offline: both rows are dirty.
+    const recipeId = await db.addRecipe({ name: "Chili", ingredients: [] });
+    await db.addMealSchedule({
+      recipeId,
+      recipeName: "Chili",
+      mealNames: ["Dinner"],
+      startDate: DAY,
+      endDate: DAY,
+      daysOfWeek: [1],
+      scale: 1,
+    });
+
+    await signOutAndClearLocal(sb);
+    const result = await sync.triggerSync(sb, OTHER_USER_ID);
+
+    expect(await db.listMealSchedules()).toEqual([]);
+    expect(result?.pushed.mealSchedules).toBe(0);
+    expect(server.rows("meal_schedules")).toEqual([]);
+    expect(
+      server.attempts.filter(
+        (a) => a.table === "meal_schedules" && a.op !== "select",
+      ),
+    ).toEqual([]);
   });
 });
 

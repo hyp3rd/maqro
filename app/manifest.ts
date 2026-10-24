@@ -1,3 +1,4 @@
+import { THEME_COLOR } from "@/lib/design/palette";
 import type { MetadataRoute } from "next";
 
 /** Web app manifest. Next.js renders this at `/manifest.webmanifest`
@@ -24,8 +25,11 @@ export default function manifest(): MetadataRoute.Manifest {
     id: "/app",
     scope: "/",
     display: "standalone",
-    background_color: "#0a0a0c",
-    theme_color: "#0a0a0c",
+    // The manifest has one colour per field (no media variants), so the
+    // splash and title bar use the dark ground: the Instrument look is
+    // dark-first. In-page, ThemeColorSync follows the active theme.
+    background_color: THEME_COLOR.dark,
+    theme_color: THEME_COLOR.dark,
     orientation: "portrait",
     icons: [
       // Static PNGs in `public/` — the reliable install path. These replace

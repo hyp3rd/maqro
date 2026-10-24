@@ -8,7 +8,10 @@ import type { ReportPdfModel } from "@/components/macro/ReportPdfDocument";
 import type { PersonalInfo } from "@/components/macro/types";
 import { MiniLineChart } from "@/components/shell/MiniLineChart";
 import { Button } from "@/components/ui/button";
+import { AiUsageProvider, useTier } from "@/hooks/use-ai-usage";
+import { useToday } from "@/hooks/use-today";
 import { effectiveAge } from "@/lib/age";
+import { FEATURES } from "@/lib/billing/tiers";
 import {
   BLOOD_PRESSURE_LABELS,
   bloodPressureCategory,
@@ -37,7 +40,6 @@ import {
   protocolHours,
 } from "@/lib/fasting";
 import { waterGoalMl } from "@/lib/hydration";
-import { computeMacros } from "@/lib/macros";
 import {
   averageMicronutrientsDetailed,
   computeMicronutrientWindow,
@@ -67,6 +69,8 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, CloudUpload, FileDown, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { addDays } from "@maqro/core/date";
+import { targetsForDate } from "@maqro/core/targets";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /** Dedicated print-optimised progress report.
@@ -86,9 +90,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  *  without touching app state. */
 export default function ReportPage() {
   return (
-    <Suspense fallback={<ReportLoading />}>
-      <ReportClient />
-    </Suspense>
+    // The tier decides whether goal phases drive the target (Pro), exactly
+    // as in the app — same provider, same cached last-known tier.
+    <AiUsageProvider>
+      <Suspense fallback={<ReportLoading />}>
+        <ReportClient />
+      </Suspense>
+    </AiUsageProvider>
   );
 }
 
@@ -224,8 +232,13 @@ function ReportBody({
   water: WaterIntake[];
   micronutrientProfiles: MicronutrientProfile[];
 }) {
-  const today = todayKey();
-  const cutoffDate = cutoffDateString(days);
+  // The user's LOCAL today — the same day key the app's day view, the
+  // target below and every window (recap, streak, micronutrients, range
+  // cutoff) use, so they can never straddle two days near midnight.
+  // `useToday` re-renders at local midnight, so a report left open
+  // overnight rolls over with the calendar.
+  const today = useToday();
+  const cutoffDate = addDays(today, -days);
 
   // Filter every store to the chosen date range before any
   // computation. Keeps derived numbers (delta, adherence,
@@ -267,10 +280,14 @@ function ReportBody({
 
   // Derived stats. Skipped when there's no profile yet — guest-
   // mode users without a saved profile can still print a chart-
-  // only report.
+  // only report. The target comes from the same `targetsForDate` resolver
+  // and tier gate as the app, so a Pro user's active phase (and its TDEE
+  // override) shows here exactly as in-app, for the same local `today`.
+  const { tier } = useTier();
+  const phasesEnabled = tier !== null && FEATURES.canUseGoalPhases(tier);
   const calc = useMemo(
-    () => (profile ? computeMacros(profile) : null),
-    [profile],
+    () => (profile ? targetsForDate(profile, today, { phasesEnabled }) : null),
+    [profile, today, phasesEnabled],
   );
   const targetCalories = calc?.targetCalories ?? 0;
   const streak = useMemo<StreakState>(
@@ -281,9 +298,11 @@ function ReportBody({
     () => computeWeeklyRecap(logsWindow, weightsWindow, targetCalories, today),
     [logsWindow, weightsWindow, targetCalories, today],
   );
+  // The goal actually driving the target (a phase's, when one covers today).
+  const effectiveGoal = calc?.goal ?? "maintain";
   const plateau = useMemo(
-    () => detectPlateau(weightsWindow, profile?.goal ?? "maintain"),
-    [weightsWindow, profile?.goal],
+    () => detectPlateau(weightsWindow, effectiveGoal),
+    [weightsWindow, effectiveGoal],
   );
   const tdeeReco = useMemo(
     () =>
@@ -603,7 +622,12 @@ function ReportBody({
             {
               label: "TDEE",
               value: `${calc.tdee} kcal`,
-              sub: profile?.manualTdee ? "manual override" : "BMR × activity",
+              sub:
+                calc.phase?.tdeeOverride && calc.phase.tdeeOverride > 0
+                  ? "phase override"
+                  : profile?.manualTdee
+                    ? "manual override"
+                    : "BMR × activity",
             },
             {
               label: "Target",
@@ -1672,17 +1696,6 @@ const GOAL_LABEL: Record<string, string> = {
 function clampDays(n: number): number {
   if (!Number.isFinite(n) || n <= 0) return 60;
   return Math.min(365, Math.round(n));
-}
-
-function todayKey(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-/** Hoisted out of the component body to sidestep `react-hooks/purity`
- *  (Date.now is impure-by-rule even in client components). Returns
- *  the lower-bound date string for filtering window-scoped data. */
-function cutoffDateString(days: number): string {
-  return new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
 }
 
 function shortDateLabel(d: string): string {

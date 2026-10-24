@@ -1,3 +1,4 @@
+import { PALETTE, tint } from "@/lib/design/palette";
 import { APP_VERSION } from "@/lib/version";
 import "server-only";
 import {
@@ -68,14 +69,18 @@ type MicroRow = {
   hasValue: boolean;
 };
 
+// Paper is the light Instrument palette (lib/design/palette.ts): react-pdf
+// cannot read CSS custom properties. Tints are pre-blended over white.
+const LIGHT = PALETTE.light;
 const C = {
-  ink: "#18181b",
-  muted: "#6b7280",
-  faint: "#9ca3af",
-  line: "#e5e7eb",
-  track: "#f1f1f4",
-  brand: "#7c3aed",
-  brandSoft: "#ede9fe",
+  ink: LIGHT.foreground,
+  muted: LIGHT.mutedForeground,
+  faint: LIGHT.faintForeground,
+  line: LIGHT.border,
+  track: LIGHT.muted,
+  brand: LIGHT.brand,
+  brandSoft: tint(LIGHT.brand, 0.12, LIGHT.background),
+  noteFill: tint(LIGHT.brand, 0.04, LIGHT.background),
 };
 
 const styles = StyleSheet.create({
@@ -112,7 +117,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderLeftWidth: 2,
     borderLeftColor: C.brand,
-    backgroundColor: "#faf5ff",
+    backgroundColor: C.noteFill,
     fontSize: 10,
     lineHeight: 1.45,
   },
