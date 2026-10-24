@@ -146,6 +146,30 @@ describe("mealTicks", () => {
       ["Dinner", 0],
     ]);
   });
+
+  it("gives wider labels more room and leaves off one that has no lane", () => {
+    // Three 1,340 kcal meals 40 minutes apart: lane 0, lane 1, then no
+    // lane clear of both (the old placement printed it over the first).
+    const crowded: Meal[] = [
+      { id: 1, name: "Breakfast", foods: [food(1340, at(12, 0))] },
+      { id: 2, name: "Lunch", foods: [food(1340, at(12, 40))] },
+      { id: 3, name: "Dinner", foods: [food(1340, at(13, 20))] },
+      { id: 4, name: "Snacks", foods: [food(1340, at(15, 0))] },
+    ];
+    expect(mealTicks(crowded, DAY).map((t) => [t.name, t.lane])).toEqual([
+      ["Breakfast", 0],
+      ["Lunch", 1],
+      ["Dinner", null],
+      ["Snacks", 0],
+    ]);
+    // 100 minutes clears two 3-digit labels but not two 5-character ones.
+    const apart = (kcal: number): Meal[] => [
+      { id: 1, name: "Breakfast", foods: [food(kcal, at(8, 0))] },
+      { id: 2, name: "Lunch", foods: [food(kcal, at(9, 40))] },
+    ];
+    expect(mealTicks(apart(720), DAY).map((t) => t.lane)).toEqual([0, 0]);
+    expect(mealTicks(apart(1340), DAY).map((t) => t.lane)).toEqual([0, 1]);
+  });
 });
 
 describe("workoutSpan", () => {

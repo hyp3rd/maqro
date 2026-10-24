@@ -92,42 +92,64 @@ export function mealStartMinute(meal: Meal, date: string): number | null {
 
 /** One meal on the track: at its first logged food, labelled with the
  *  whole meal's kcal. `lane` 1 lifts a label that would overlap the
- *  previous one in lane 0. */
+ *  previous one in lane 0; `null` = no label, because both lanes are
+ *  taken there (the tick stays, and the meal's kcal is in the track's
+ *  summary and on the rail). */
 export type MealTick = {
   mealId: number;
   name: string;
   minutes: number;
   kcal: number;
-  lane: 0 | 1;
+  lane: 0 | 1 | null;
 };
 
-/** Minutes two kcal labels need between them to sit side by side (a
- *  "720" label is about 1.5 h of a phone-width track). */
-const LABEL_GAP_MIN = 100;
+/** Track minutes one label character takes on a phone-width track (a 12px
+ *  mono glyph is ~7px of a ~358px day), and the clear gap kept between
+ *  two labels. A "720" label is then about 1.5 h. */
+const MIN_PER_LABEL_CHAR = 29;
+const LABEL_PAD_MIN = 12;
+
+/** Characters in a kcal label at most: its digits plus a grouping mark
+ *  per thousand (the locale may print fewer, never more). */
+function labelChars(kcal: number): number {
+  const digits = String(Math.max(0, Math.round(kcal))).length;
+  return digits + Math.floor((digits - 1) / 3);
+}
+
+/** Minutes two centred labels need between their ticks not to touch. */
+function labelGap(charsA: number, charsB: number): number {
+  return ((charsA + charsB) / 2) * MIN_PER_LABEL_CHAR + LABEL_PAD_MIN;
+}
 
 export function mealTicks(meals: readonly Meal[], date: string): MealTick[] {
   const timed = meals
     .map((meal) => ({ meal, minutes: mealStartMinute(meal, date) }))
     .filter((t): t is { meal: Meal; minutes: number } => t.minutes !== null)
     .sort((a, b) => a.minutes - b.minutes);
-  const lastInLane: [number, number] = [-Infinity, -Infinity];
+  // The last label placed in each lane: its tick and its width.
+  const lastInLane: [
+    { minutes: number; chars: number } | null,
+    { minutes: number; chars: number } | null,
+  ] = [null, null];
+  const fits = (lane: 0 | 1, minutes: number, chars: number) => {
+    const last = lastInLane[lane];
+    return (
+      last === null || minutes - last.minutes >= labelGap(last.chars, chars)
+    );
+  };
   return timed.map(({ meal, minutes }) => {
+    const kcal = Math.round(meal.foods.reduce((sum, f) => sum + f.calories, 0));
+    const chars = labelChars(kcal);
     // Lane 0 when it has room, else lane 1 when that has room; with both
-    // taken (three meals within ~1.5 h) the label shares lane 0.
-    const lane: 0 | 1 =
-      minutes - lastInLane[0] >= LABEL_GAP_MIN
-        ? 0
-        : minutes - lastInLane[1] >= LABEL_GAP_MIN
-          ? 1
-          : 0;
-    lastInLane[lane] = minutes;
-    return {
-      mealId: meal.id,
-      name: meal.name,
-      minutes,
-      kcal: Math.round(meal.foods.reduce((sum, f) => sum + f.calories, 0)),
-      lane,
-    };
+    // taken (three meals close together) the label is left off rather
+    // than printed over another.
+    const lane = fits(0, minutes, chars)
+      ? 0
+      : fits(1, minutes, chars)
+        ? 1
+        : null;
+    if (lane !== null) lastInLane[lane] = { minutes, chars };
+    return { mealId: meal.id, name: meal.name, minutes, kcal, lane };
   });
 }
 

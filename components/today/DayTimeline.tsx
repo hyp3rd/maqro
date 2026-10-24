@@ -84,19 +84,22 @@ export function DayTimeline({
           ticks.some((t) => t.lane === 1) ? "h-8" : "h-4",
         )}
       >
-        {ticks.map((t) => (
-          <span
-            key={t.mealId}
-            className={cn(
-              "absolute whitespace-nowrap font-mono text-xs leading-4 tabular-nums text-muted-foreground",
-              t.lane === 1 ? "bottom-4" : "bottom-0",
-              ANCHOR[labelAnchor(t.minutes)],
-            )}
-            style={{ left: `${trackPercent(t.minutes)}%` }}
-          >
-            {formatKcal(t.kcal)}
-          </span>
-        ))}
+        {ticks.map((t) =>
+          // No clear lane: the tick stands without a label.
+          t.lane === null ? null : (
+            <span
+              key={t.mealId}
+              className={cn(
+                "absolute whitespace-nowrap font-mono text-xs leading-4 tabular-nums text-muted-foreground",
+                t.lane === 1 ? "bottom-4" : "bottom-0",
+                ANCHOR[labelAnchor(t.minutes)],
+              )}
+              style={{ left: `${trackPercent(t.minutes)}%` }}
+            >
+              {formatKcal(t.kcal)}
+            </span>
+          ),
+        )}
       </div>
 
       <div className="relative h-4">

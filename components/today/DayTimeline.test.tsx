@@ -43,6 +43,29 @@ const width = (el: Element | null) =>
   Number.parseFloat((el as HTMLElement | null)?.style.width ?? "NaN");
 
 describe("DayTimeline", () => {
+  it("never prints a crowded kcal label over another", () => {
+    const crowded: Meal[] = [
+      { id: 1, name: "Breakfast", foods: [food(1, 1340, at(12, 0))] },
+      { id: 2, name: "Lunch", foods: [food(2, 1340, at(12, 40))] },
+      { id: 3, name: "Dinner", foods: [food(3, 1340, at(13, 20))] },
+    ];
+    const { container } = render(
+      <DayTimeline
+        meals={crowded}
+        date={DAY}
+        today={DAY}
+        now={at(15, 10)}
+      />,
+      { wrapper: intlWrapper() },
+    );
+    // Three ticks, two labels; the summary still names all three.
+    expect(container.querySelectorAll("[data-part=meal-tick]")).toHaveLength(3);
+    expect(screen.getAllByText("1,340")).toHaveLength(2);
+    expect(
+      screen.getByRole("img").getAttribute("aria-label")?.match(/1,340/g),
+    ).toHaveLength(3);
+  });
+
   it("prints the meal kcal for the app locale", () => {
     const heavy: Meal[] = [
       { id: 1, name: "Lunch", foods: [food(1, 1050, at(12, 45))] },
