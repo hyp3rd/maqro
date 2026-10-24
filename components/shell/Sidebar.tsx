@@ -170,7 +170,8 @@ export function Sidebar({ current, onSelect }: Props) {
 
       {/* Grouped from the nav registry (./nav.ts). Each section is a
           labelled list; collapsed, the labels give way to a hairline so the
-          grouping still reads in the 56 px rail. */}
+          grouping still reads in the 56 px rail. An unlabelled section after
+          the first is set off by the same hairline. */}
       <nav className="flex-1 space-y-3 overflow-y-auto p-2">
         {SIDEBAR_GROUPS.map((group, i) => {
           const headingId = `sidebar-group-${group.id}`;
@@ -180,7 +181,9 @@ export function Sidebar({ current, onSelect }: Props) {
               role={group.label ? "group" : undefined}
               aria-labelledby={group.label ? headingId : undefined}
               className={cn(
-                i > 0 && collapsed && "border-t border-border/60 pt-3",
+                i > 0 &&
+                  (collapsed || !group.label) &&
+                  "border-t border-border/60 pt-3",
               )}
             >
               {group.label && !collapsed && (

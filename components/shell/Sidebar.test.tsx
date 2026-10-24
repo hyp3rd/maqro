@@ -55,8 +55,26 @@ describe("Sidebar", () => {
       within(screen.getByRole("group", { name: "You" }))
         .getAllByRole("button")
         .map((b) => b.textContent),
-    ).toEqual(["Profile", "Targets", "Health & fasting", "Settings"]);
+    ).toEqual(["Profile", "Targets"]);
     expect(screen.getByRole("group", { name: "Kitchen" })).toBeTruthy();
+  });
+
+  it("an unlabelled section after the first is set off by a hairline", () => {
+    render(
+      <Sidebar
+        current="plan"
+        onSelect={() => {}}
+      />,
+    );
+    const section = screen
+      .getByRole("button", { name: "Settings" })
+      .closest("ul")?.parentElement;
+    expect(section?.className).toContain("border-t");
+    // The first (unlabelled) section starts the list: no hairline above it.
+    const first = screen
+      .getByRole("button", { name: "Today" })
+      .closest("ul")?.parentElement;
+    expect(first?.className).not.toContain("border-t");
   });
 
   it("marks only the current view with aria-current=page", () => {

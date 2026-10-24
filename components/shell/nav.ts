@@ -34,8 +34,11 @@ export type ViewKey =
   | "health"
   | "settings";
 
-/** Desktop sidebar section. */
-export type NavGroup = "main" | "library" | "kitchen" | "you";
+/** Desktop sidebar section. "you" holds exactly what the phone's You tab
+ *  holds (the tab's own view and its hub tiles), so the two places named
+ *  "You" list the same things; "other" is the rest of the phone's More
+ *  sheet (Health & fasting, Settings), unlabelled. */
+export type NavGroup = "main" | "library" | "kitchen" | "you" | "other";
 
 /** Where the destination lives on a phone: its own tab, the More sheet, or
  *  a tile in the You hub (the Profile view), which shows `hint` under it. */
@@ -158,7 +161,7 @@ export const NAV = {
     shortLabel: "Health",
     title: "Health & fasting",
     icon: HeartPulse,
-    group: "you",
+    group: "other",
     mobile: "more",
     keywords: [
       "fasting",
@@ -179,7 +182,7 @@ export const NAV = {
     shortLabel: "Settings",
     title: "Settings",
     icon: Settings,
-    group: "you",
+    group: "other",
     mobile: "more",
     keywords: [
       "account",
@@ -241,10 +244,12 @@ const GROUP_LABELS: Record<NavGroup, string | null> = {
   library: "Library",
   kitchen: "Kitchen",
   you: "You",
+  other: null,
 };
 
 /** The desktop sidebar's sections, in order, each listing its destinations
- *  in registry order. `label` is null for the unlabelled first section. */
+ *  in registry order. `label` is null for an unlabelled section (the first,
+ *  and the last). */
 export const SIDEBAR_GROUPS: readonly {
   id: NavGroup;
   label: string | null;

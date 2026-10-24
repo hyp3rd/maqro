@@ -55,9 +55,9 @@ describe("nav registry", () => {
       ].map((m) => m[1]);
     expect(radii(NAV.plan.icon)).toEqual(["8.5", "3.5"]);
     expect(radii(NAV.calculator.icon)).toEqual([]);
-    expect(renderToStaticMarkup(createElement(NAV.calculator.icon))).not.toMatch(
-      /\sa[\d.]+ [\d.]+ 0 1 [01]/,
-    );
+    expect(
+      renderToStaticMarkup(createElement(NAV.calculator.icon)),
+    ).not.toMatch(/\sa[\d.]+ [\d.]+ 0 1 [01]/);
   });
 
   it("the day view is 'plan', labelled Today, and is the default", () => {
@@ -74,8 +74,14 @@ describe("nav registry", () => {
       [null, ["plan", "progress"]],
       ["Library", ["foods", "recipes", "templates"]],
       ["Kitchen", ["shopping", "pantry"]],
-      ["You", ["profile", "calculator", "health", "settings"]],
+      ["You", ["profile", "calculator"]],
+      [null, ["health", "settings"]],
     ]);
+  });
+
+  it("the sidebar's You group is the phone's You tab: its view and its hub tiles", () => {
+    const you = SIDEBAR_GROUPS.find((g) => g.label === "You");
+    expect(you?.items).toEqual([YOU_TAB, ...YOU_HUB.map((t) => t.key)]);
   });
 
   it("the You tab's screen is headed You, as the tab reads", () => {
