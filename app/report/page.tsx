@@ -76,8 +76,9 @@ import {
 import { ArrowLeft, CloudUpload, FileDown, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { latestBodyFatPct } from "@maqro/core/body-fat";
 import { addDays } from "@maqro/core/date";
-import { targetsForDate } from "@maqro/core/targets";
+import { type TargetContext, targetsForDate } from "@maqro/core/targets";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /** Dedicated print-optimised progress report.
@@ -292,19 +293,32 @@ function ReportBody({
   // override) shows here exactly as in-app, for the same local `today`.
   const { tier } = useTier();
   const phasesEnabled = tier !== null && FEATURES.canUseGoalPhases(tier);
+  // The body-fat estimate the app and the emails use: the latest usable
+  // reading in the WHOLE history (not this report's window), so a training
+  // day's protein here matches theirs.
+  const ctx = useMemo<TargetContext>(
+    () => ({
+      phasesEnabled,
+      bodyFatPct: profile
+        ? latestBodyFatPct(measurements, {
+            gender: profile.gender,
+            heightCm: profile.height,
+          })
+        : null,
+    }),
+    [phasesEnabled, profile, measurements],
+  );
   const calc = useMemo(
-    () => (profile ? targetsForDate(profile, today, { phasesEnabled }) : null),
-    [profile, today, phasesEnabled],
+    () => (profile ? targetsForDate(profile, today, ctx) : null),
+    [profile, today, ctx],
   );
   const targetCalories = calc?.targetCalories ?? 0;
   // Each recap day is scored against its OWN target (same resolver + tier),
   // so a phase change or a planned training day in the window counts right.
   const targetCaloriesFor = useCallback(
     (date: string) =>
-      profile
-        ? targetsForDate(profile, date, { phasesEnabled }).targetCalories
-        : 0,
-    [profile, phasesEnabled],
+      profile ? targetsForDate(profile, date, ctx).targetCalories : 0,
+    [profile, ctx],
   );
   const streak = useMemo<StreakState>(
     () => computeStreak(logsWindow, today),

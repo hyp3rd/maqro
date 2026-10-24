@@ -2,7 +2,8 @@
  * @vitest-environment jsdom
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { PersonalInfo } from "@maqro/core/types";
+import { targetsForDate, weekTargets } from "@maqro/core/targets";
+import type { PersonalInfo, TrainingSchedule } from "@maqro/core/types";
 import { renderHook } from "@testing-library/react";
 import { useTargets } from "./use-targets";
 
@@ -15,6 +16,10 @@ const tierState = vi.hoisted(() => ({
 }));
 vi.mock("@/hooks/use-ai-usage", () => ({
   useTier: () => ({ tier: tierState.tier, resolved: tierState.resolved }),
+}));
+const bodyFat = vi.hoisted(() => ({ pct: null as number | null }));
+vi.mock("@/hooks/use-latest-body-fat", () => ({
+  useLatestBodyFatPct: () => bodyFat.pct,
 }));
 
 const TODAY = "2026-06-10";
@@ -52,6 +57,7 @@ const PROFILE: PersonalInfo = {
 beforeEach(() => {
   tierState.tier = "pro";
   tierState.resolved = true;
+  bodyFat.pct = null;
 });
 
 describe("useTargets", () => {
@@ -100,67 +106,74 @@ describe("useTargets", () => {
   });
 });
 
-/** The Today week strip: the Monday-to-Sunday week of the displayed day,
- *  every day through the same resolver (and tier decision) as `dayTargets`,
- *  so a cycled training week shows each day's OWN planned target. */
-describe("useTargets selectedWeek", () => {
+/** Every target the app resolves reads the SAME body-fat estimate the
+ *  report and the crons use (`useLatestBodyFatPct` → `latestBodyFatPct`):
+ *  a lean-mass protein setting is the visible difference. */
+describe("useTargets — body fat", () => {
+  const SCHEDULE: TrainingSchedule = {
+    enabled: true,
+    cycling: "modest",
+    days: [
+      { type: "rest" },
+      { type: "upper", intensity: "moderate" },
+      { type: "rest" },
+      { type: "lower", intensity: "hard" },
+      { type: "rest" },
+      { type: "fullBody", intensity: "moderate" },
+      { type: "rest" },
+    ],
+  };
   const TRAINING: PersonalInfo = {
     ...PROFILE,
-    training: {
-      enabled: true,
-      cycling: "modest",
-      days: [
-        { type: "rest" },
-        { type: "upper", intensity: "moderate" },
-        { type: "rest" },
-        { type: "lower", intensity: "hard", time: "18:00", durationMin: 75 },
-        { type: "rest" },
-        { type: "fullBody", intensity: "moderate" },
-        { type: "endurance", durationMin: 90 },
-      ],
-    },
+    goalPhases: [],
+    training: SCHEDULE,
+    proteinSetting: { basis: "leanMass", gPerKg: 2.6 },
   };
-
-  it("is the Monday-first week of the selected day, each day its own target", () => {
-    const { result } = renderHook(() => useTargets(TRAINING, TODAY, TODAY));
-    const week = result.current.selectedWeek;
-    expect(week?.weekStart).toBe("2026-06-08");
-    expect(week?.days.map((d) => d.date)).toEqual([
-      "2026-06-08",
-      "2026-06-09",
-      "2026-06-10",
-      "2026-06-11",
-      "2026-06-12",
-      "2026-06-13",
-      "2026-06-14",
-    ]);
-    // The selected day's entry is exactly the day view's target.
-    expect(week?.days[2]).toEqual(result.current.dayTargets);
-    // Cycled: Wednesday's hard lower day > Monday's upper day > Tuesday's
-    // rest day, and the planned days still sum to seven weekly-mean days
-    // (no banking, no top-up).
-    const kcal = week?.days.map((d) => d.targetCalories) ?? [];
-    expect(kcal[2]).toBeGreaterThan(kcal[0] ?? Infinity);
-    expect(kcal[0]).toBeGreaterThan(kcal[1] ?? Infinity);
-    expect(week?.totalCalories).toBe(7 * 1900);
-    expect(week?.days[3]?.training?.dayClass).toBe("rest");
+  const ctx = (bodyFatPct: number | null) => ({
+    phasesEnabled: true,
+    bodyFatPct,
   });
 
-  it("follows a past selected day into its own week and tier decision", () => {
-    tierState.tier = "free";
+  it("passes the latest estimate to today's, the shown day's and any day's target", () => {
+    bodyFat.pct = 20;
     const { result } = renderHook(() =>
       useTargets(TRAINING, TODAY, BEFORE_CUT),
     );
-    const week = result.current.selectedWeek;
-    expect(week?.weekStart).toBe("2026-05-25");
-    expect(week?.days.find((d) => d.date === BEFORE_CUT)).toEqual(
-      result.current.dayTargets,
+    const today = targetsForDate(TRAINING, TODAY, ctx(20));
+    // 2.6 g/kg × 64 kg lean mass, not the 2.0 g/kg bodyweight fallback.
+    expect(today.protein).not.toBe(
+      targetsForDate(TRAINING, TODAY, ctx(null)).protein,
     );
-    expect(week?.totalCalories).toBe(7 * 2600);
+    expect(result.current.todayTargets).toEqual(today);
+    expect(result.current.dayTargets).toEqual(
+      targetsForDate(TRAINING, BEFORE_CUT, ctx(20)),
+    );
+    expect(result.current.targetCaloriesForDate(BEFORE_CUT)).toBe(
+      targetsForDate(TRAINING, BEFORE_CUT, ctx(20)).targetCalories,
+    );
   });
 
-  it("is null before the date is known (pre-hydration empty key)", () => {
-    const { result } = renderHook(() => useTargets(TRAINING, "", ""));
-    expect(result.current.selectedWeek).toBeNull();
+  it("planWeek plans this week through the same resolver and context", () => {
+    bodyFat.pct = 20;
+    const { result } = renderHook(() => useTargets(TRAINING, TODAY, TODAY));
+    expect(result.current.planWeek(TRAINING)).toEqual(
+      weekTargets(TRAINING, TODAY, ctx(20)),
+    );
+    // A hypothetical edit (the editor's preview) uses the same context.
+    const off: PersonalInfo = {
+      ...TRAINING,
+      training: { ...SCHEDULE, cycling: "off" },
+    };
+    expect(result.current.planWeek(off)).toEqual(
+      weekTargets(off, TODAY, ctx(20)),
+    );
+  });
+
+  it("without an estimate the targets are the plain resolver's", () => {
+    bodyFat.pct = null;
+    const { result } = renderHook(() => useTargets(TRAINING, TODAY, TODAY));
+    expect(result.current.todayTargets).toEqual(
+      targetsForDate(TRAINING, TODAY, ctx(null)),
+    );
   });
 });

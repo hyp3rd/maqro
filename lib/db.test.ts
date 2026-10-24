@@ -507,6 +507,19 @@ describe("body measurements", () => {
     expect(row?.notes).toBe("quick");
   });
 
+  // The app's targets read the latest body-fat estimate from this store
+  // (`useLatestBodyFatPct`), which re-loads only on the data-bus rev: a
+  // measurement saved or deleted here must reach them without a reload.
+  it("saving or deleting a measurement bumps the bodyMeasurements rev", async () => {
+    const { saveBodyMeasurement, deleteBodyMeasurement } = await freshDb();
+    const { getDataVersion } = await import("./sync/data-bus");
+    expect(getDataVersion("bodyMeasurements")).toBe(0);
+    await saveBodyMeasurement("2026-05-13", { waistCm: 82, neckCm: 38 });
+    expect(getDataVersion("bodyMeasurements")).toBe(1);
+    await deleteBodyMeasurement("2026-05-13");
+    expect(getDataVersion("bodyMeasurements")).toBe(2);
+  });
+
   it("overwrites on same-day save (latest wins)", async () => {
     const { saveBodyMeasurement, getBodyMeasurement, listBodyMeasurements } =
       await freshDb();
