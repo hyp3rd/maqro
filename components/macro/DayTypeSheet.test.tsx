@@ -282,6 +282,23 @@ describe("DayTypeSheet", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("saving an unchanged override writes nothing", async () => {
+    const { targetsFor, previewDayTargets } = app([
+      { date: WED, day: { type: "rest" } },
+    ]);
+    renderRow(targetsFor(WED), previewDayTargets);
+    const sheet = await openSheet();
+
+    await act(async () => {
+      fireEvent.click(within(sheet).getByRole("button", { name: "Save" }));
+    });
+
+    // A rewrite of the same row would count as a pending change.
+    expect(writes.setOverride).not.toHaveBeenCalled();
+    expect(writes.clearOverride).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("holds Save while the duration is invalid, never dropping it", async () => {
     const { targetsFor, previewDayTargets } = app();
     renderRow(targetsFor(THU), previewDayTargets);

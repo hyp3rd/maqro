@@ -206,6 +206,12 @@ export function DayTypeSheet({
       else close();
       return;
     }
+    // Re-saving the stored override changes nothing, but the write would
+    // still count as a pending change until the next sync.
+    if (training.overridden && sameSession(next, training.day)) {
+      close();
+      return;
+    }
     void commit(() => setOverride(date, next));
   };
 
