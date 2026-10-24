@@ -3,6 +3,7 @@
 import { DayTimeline } from "@/components/today/DayTimeline";
 import { MealRail } from "@/components/today/MealRail";
 import { TodayHeader } from "@/components/today/TodayHeader";
+import { TrainingContext } from "@/components/today/TrainingContext";
 import { WeekStrip } from "@/components/today/WeekStrip";
 import { useNow } from "@/hooks/use-now";
 import { useWeekIntake } from "@/hooks/use-week-intake";
@@ -437,6 +438,11 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
           totalMacros={totalMacros}
           breakdown={macroBreakdown}
           selectedDate={selectedDate}
+          today={today}
+        />
+        <TrainingContext
+          day={calculatedValues}
+          week={week}
           today={today}
         />
         <LiveDayTimeline
