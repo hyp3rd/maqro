@@ -103,11 +103,21 @@ export type MealTick = {
   lane: 0 | 1 | null;
 };
 
-/** Track minutes one label character takes on the narrowest track the day
- *  view lays out: a 12px mono glyph (~7.2px) of a 288px day (a 320px
- *  viewport less its 16px gutters, 0.2px a minute). A wider track only
- *  leaves more room. A "720" label is then about 1.8 h. */
-const MIN_PER_LABEL_CHAR = 36;
+/** The narrowest track the day view lays out: a 320px viewport less its
+ *  16px gutters. */
+export const NARROWEST_TRACK_PX = 288;
+/** The advance of one 12px mono glyph (Geist Mono: 0.6em). */
+const LABEL_CHAR_PX = 7.2;
+
+/** Track minutes one label character takes on a track `trackPx` wide. */
+function minutesPerChar(trackPx: number): number {
+  return (LABEL_CHAR_PX * DAY_MINUTES) / trackPx;
+}
+
+/** Track minutes one label character takes on the narrowest track (0.2px
+ *  a minute). A wider track only leaves more room. A "720" label is then
+ *  about 1.8 h. */
+const MIN_PER_LABEL_CHAR = minutesPerChar(NARROWEST_TRACK_PX);
 /** The clear gap kept between two labels in a lane: one character, so
  *  two figures never read as one ("1,821 437"). */
 const LABEL_PAD_MIN = MIN_PER_LABEL_CHAR;
@@ -124,8 +134,9 @@ function labelChars(kcal: number): number {
 function labelExtent(
   minutes: number,
   chars: number,
+  perChar: number = MIN_PER_LABEL_CHAR,
 ): { from: number; to: number } {
-  const width = chars * MIN_PER_LABEL_CHAR;
+  const width = chars * perChar;
   switch (labelAnchor(minutes)) {
     case "start":
       return { from: minutes, to: minutes + width };
@@ -195,16 +206,32 @@ export function workoutSpan(
 /** The hour marks labelled under the track. */
 export const HOUR_MARKS = [0, 6, 12, 18, 24] as const;
 
-/** Minutes either side of "now" an hour label would collide with the
- *  "Now HH:MM" flag on a phone-width track. */
-const NOW_LABEL_CLEAR_MIN = 200;
+/** Characters in the "Now HH:MM" flag and in an hour label ("18"). */
+const NOW_LABEL_CHARS = 9;
+const HOUR_LABEL_CHARS = 2;
+/** The clear gap kept between the now flag and an hour label: half a
+ *  character, so "18" never touches "Now 15:00". */
+const NOW_LABEL_PAD_CHARS = 0.5;
 
-/** The hour marks to label, leaving room for the now flag. */
-export function hourLabels(nowMinute: number | null): number[] {
-  return HOUR_MARKS.filter(
-    (h) =>
-      nowMinute === null || Math.abs(h * 60 - nowMinute) >= NOW_LABEL_CLEAR_MIN,
+/** The hour marks to label: every one except those the "Now HH:MM" flag
+ *  actually overlaps on a track `trackPx` wide, both placed as
+ *  `labelAnchor` places them (at 15:00 on a 358px phone track, 12 and 18
+ *  both stay). The width is measured; until it is (the server, the first
+ *  render) the narrowest track keeps the flag clear everywhere. */
+export function hourLabels(
+  nowMinute: number | null,
+  trackPx: number = NARROWEST_TRACK_PX,
+): number[] {
+  if (nowMinute === null) return [...HOUR_MARKS];
+  const perChar = minutesPerChar(
+    Number.isFinite(trackPx) && trackPx > 0 ? trackPx : NARROWEST_TRACK_PX,
   );
+  const pad = NOW_LABEL_PAD_CHARS * perChar;
+  const now = labelExtent(nowMinute, NOW_LABEL_CHARS, perChar);
+  return HOUR_MARKS.filter((h) => {
+    const label = labelExtent(h * 60, HOUR_LABEL_CHARS, perChar);
+    return label.to + pad <= now.from || label.from - pad >= now.to;
+  });
 }
 
 /** Minutes from either end of the track within which a label anchors to

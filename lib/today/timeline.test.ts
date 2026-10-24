@@ -228,11 +228,27 @@ describe("workoutSpan", () => {
 });
 
 describe("labels", () => {
-  it("keeps the hour marks clear of the now flag", () => {
+  it("keeps the hour marks clear of the now flag on the narrowest track", () => {
     expect(hourLabels(null)).toEqual([0, 6, 12, 18, 24]);
-    // 15:10: 12 and 18 would sit under "Now 15:10".
+    // 15:10 on a 288px track: "Now 15:10" (65px) covers 12 and 18.
     expect(hourLabels(910)).toEqual([0, 6, 24]);
-    expect(hourLabels(60)).toEqual([6, 12, 18, 24]);
+    // 01:00: the flag runs inwards from its tick, over 00 and 06.
+    expect(hourLabels(60)).toEqual([12, 18, 24]);
+  });
+
+  it("clears only the hour labels the now flag actually overlaps", () => {
+    // A 390px phone's 358px track at 15:00: the flag sits between 12 and
+    // 18, and both stay readable.
+    expect(hourLabels(900, 358)).toEqual([0, 6, 12, 18, 24]);
+    // 11:40: only 12 is under the flag.
+    expect(hourLabels(700, 358)).toEqual([0, 6, 18, 24]);
+    // 23:30: the flag runs inwards from the end, over 24 only.
+    expect(hourLabels(1410, 358)).toEqual([0, 6, 12, 18]);
+  });
+
+  it("falls back to the narrowest track for a width that isn't known", () => {
+    expect(hourLabels(910, 0)).toEqual(hourLabels(910));
+    expect(hourLabels(910, Number.NaN)).toEqual(hourLabels(910));
   });
 
   it("anchors a label inside the track near its ends", () => {

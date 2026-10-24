@@ -1,5 +1,6 @@
 "use client";
 
+import { useElementWidth } from "@/hooks/use-element-width";
 import { formatNumber } from "@/lib/i18n/number";
 import { dayTypeLabel } from "@/lib/today/day-type";
 import {
@@ -59,6 +60,9 @@ export function DayTimeline({
   training?: Pick<TrainingDayTargets, "day" | "dayClass">;
   className?: string;
 }) {
+  // The track's measured width, so only the hour labels the now flag
+  // really covers give way (until measured, the narrowest track's).
+  const [trackRef, trackWidth] = useElementWidth<HTMLDivElement>();
   const isToday = relativeDay(date, today) === "today";
   const nowMinute = isToday && now > 0 ? minuteOfDay(now, date) : null;
   const elapsed = elapsedMinutes(date, today, now);
@@ -73,6 +77,7 @@ export function DayTimeline({
 
   return (
     <div
+      ref={trackRef}
       role="img"
       aria-label={`Day timeline: ${summary}`}
       className={cn("relative select-none", className)}
@@ -160,7 +165,7 @@ export function DayTimeline({
 
       {/* Hour labels, kept clear of the "Now" flag. */}
       <div className="relative mt-1 h-4 font-mono text-xs leading-4 tabular-nums">
-        {hourLabels(nowMinute).map((h) => (
+        {hourLabels(nowMinute, trackWidth ?? undefined).map((h) => (
           <span
             key={h}
             className={cn(
