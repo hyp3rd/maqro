@@ -101,16 +101,19 @@ function fakeAuthClient(
       state.nextGetUser = result;
     },
     /** Hold every later `getUser()` until the returned function answers
-     *  them all with `result`. */
+     *  them all with `result` — or, given an `Error`, makes them throw. */
     holdGetUser: () => {
       let answer: (result: GetUserResult) => void = () => {};
-      state.held = new Promise<GetUserResult>((resolve) => {
+      let fail: (err: Error) => void = () => {};
+      state.held = new Promise<GetUserResult>((resolve, reject) => {
         answer = resolve;
+        fail = reject;
       });
-      return (result: GetUserResult) =>
+      return (result: GetUserResult | Error) =>
         act(async () => {
           state.held = null;
-          answer(result);
+          if (result instanceof Error) fail(result);
+          else answer(result);
         });
     },
     emit: (event: AuthChangeEvent, session: Session | null) =>
@@ -656,6 +659,27 @@ describe("useUser — SIGNED_IN from storage is still checked with the server", 
     expect(readLastKnownUserId()).toBeNull();
   });
 
+  it("a refused session the server accepts is no longer held back later", async () => {
+    const { result, releaseGetUser, emit, holdGetUser } =
+      await startWith(SESSION);
+    await act(async () => releaseGetUser(bannedGetUser));
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+
+    const accepted = holdGetUser();
+    emit("SIGNED_IN", SESSION);
+    await accepted({ data: { user: USER }, error: null });
+    expect(result.current.user).toBe(USER);
+
+    // Switching to u2 and back: u1's session is shown provisionally again
+    // while it is checked, like any session the server has not refused.
+    const other = { id: "u2" } as User;
+    holdGetUser();
+    emit("SIGNED_IN", { user: other } as Session);
+    expect(result.current.user).toBe(other);
+    emit("SIGNED_IN", SESSION);
+    expect(result.current.user).toBe(USER);
+  });
+
   it("a SIGNED_IN before the first answer shows the session but does not record it", async () => {
     const { result, releaseGetUser, emit } = await startWith(SESSION);
     emit("SIGNED_IN", SESSION);
@@ -800,6 +824,25 @@ describe("useUser — the identity check throws", () => {
     answerGetUserWith({ data: { user: USER }, error: null });
     await becomeVisible();
     await waitFor(() => expect(result.current.user).toBe(USER));
+  });
+
+  it("a re-check that throws after an 'online' event arrived checks again", async () => {
+    const { result, releaseGetUser, holdGetUser, answerGetUserWith, getUser } =
+      await startWith(SESSION);
+    await act(async () => releaseGetUser(offlineGetUser));
+    await waitFor(() => expect(result.current.isLoaded).toBe(true));
+
+    const answer = holdGetUser();
+    await becomeVisible();
+    await goOnline();
+    expect(getUser).toHaveBeenCalledTimes(2);
+    // The check the 'online' event was folded into throws: the event must
+    // not be lost with it.
+    answerGetUserWith({ data: { user: USER }, error: null });
+    await answer(new Error("storage failed"));
+    await waitFor(() => expect(getUser).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(result.current.user).toBe(USER));
+    expect(readLastKnownUserId()).toBe("u1");
   });
 
   it("a tab turning hidden does not check again", async () => {
