@@ -345,6 +345,12 @@ const MacroCalculator = () => {
   // the log launcher names the day it logs into with it, so nothing claims
   // "Today" while another day is on screen.
   const dayLabel = formatDayLabel(selectedDate, today);
+  // When food logged right now was eaten: now, on today. Logging to any other
+  // day (back-filling a past one, planning ahead) has no true hour, so it gets
+  // no time. Every path the UI presents as logging stamps its foods with this;
+  // only genuine planning (the Meals card's AI Auto-fill) leaves it unset, so
+  // the rail, the timeline and the fasting window can tell eaten from planned.
+  const eatenAt = (now: number) => (selectedDate === today ? now : undefined);
 
   // `day` + `commitToDay` serve the deferred writers (Undo toasts, AI plan
   // results) that resolve seconds after the render that started them,
@@ -1018,8 +1024,14 @@ const MacroCalculator = () => {
    *  scaled per-100g × user-adjusted grams), so we only need to
    *  re-mint ids to avoid collisions with other meal foods. */
   const handleBulkAddToMeal = (targetId: number, foods: FoodItem[]) => {
-    let nextId = Date.now();
-    const cloned = foods.map((f) => ({ ...f, id: nextId++ }));
+    const now = Date.now();
+    let nextId = now;
+    // Confirming the photo's foods logs them: eaten now, on today.
+    const cloned = foods.map((f) => ({
+      ...f,
+      id: nextId++,
+      loggedAt: eatenAt(now),
+    }));
     setMeals(
       meals.map((m) =>
         m.id === targetId ? { ...m, foods: [...m.foods, ...cloned] } : m,
@@ -1033,9 +1045,13 @@ const MacroCalculator = () => {
     if (templateDialog?.kind !== "apply") return;
     const targetId = templateDialog.mealId;
     let nextId = freshIdSeed();
+    const loggedAt = eatenAt(Date.now());
+    // The template's saved foods carry no time of their own; applying it
+    // logs them (eaten now, on today).
     const cloned: FoodItem[] = template.foods.map((f) => ({
       ...f,
       id: nextId++,
+      loggedAt,
     }));
 
     // Same per-food attribution recipe Apply uses: each cloned food gets
@@ -1108,10 +1124,12 @@ const MacroCalculator = () => {
     const targetSlot = meals.find((m) => m.id === targetId);
     if (!targetSlot) return;
 
-    let nextId = Date.now();
-    const foods = recipe.ingredients.map((ing) =>
-      recipeIngredientToFood(ing, nextId++),
-    );
+    const now = Date.now();
+    let nextId = now;
+    const foods = recipe.ingredients.map((ing) => ({
+      ...recipeIngredientToFood(ing, nextId++),
+      loggedAt: eatenAt(now),
+    }));
 
     // Draw the recipe's ingredients down from the pantry, stamping each food's
     // source so a later remove/edit can restore it.
@@ -1162,8 +1180,12 @@ const MacroCalculator = () => {
       return;
     }
     const scaled = scaleRecipeIngredients(recipe.ingredients, schedule.scale);
-    let nextId = Date.now();
-    const foods = scaled.map((ing) => recipeIngredientToFood(ing, nextId++));
+    const now = Date.now();
+    let nextId = now;
+    const foods = scaled.map((ing) => ({
+      ...recipeIngredientToFood(ing, nextId++),
+      loggedAt: eatenAt(now),
+    }));
     const balance = new Map(
       pantryItems.map((i) => [i.id, i.quantity] as const),
     );
@@ -1196,16 +1218,18 @@ const MacroCalculator = () => {
   // today in ONE meals update (a per-pick setMeals would clobber the prior).
   // Pantry draws accumulate across the picks against a single running balance.
   const logSuggestedDay = (picks: { recipe: Recipe; mealId: number }[]) => {
-    let nextId = Date.now();
+    const now = Date.now();
+    let nextId = now;
     const balance = new Map(
       pantryItems.map((i) => [i.id, i.quantity] as const),
     );
     const drawByItem = new Map<string, number>();
     let updated = meals;
     for (const { recipe, mealId } of picks) {
-      const foods = recipe.ingredients.map((ing) =>
-        recipeIngredientToFood(ing, nextId++),
-      );
+      const foods = recipe.ingredients.map((ing) => ({
+        ...recipeIngredientToFood(ing, nextId++),
+        loggedAt: eatenAt(now),
+      }));
       const draws = planPerFoodConsumptionAgainstBalance(
         foods.map((f) => ({ name: f.name, grams: f.portionSize })),
         pantryItems,
@@ -1303,9 +1327,8 @@ const MacroCalculator = () => {
       id: Date.now(),
       ...scaleFoodToItem(food, grams),
       pantrySource: drawDown ?? undefined,
-      // Real eating event → stamp the time, but only when logging to today
-      // (back-filling a past day would record a wrong hour).
-      loggedAt: selectedDate === today ? Date.now() : undefined,
+      // Real eating event → stamp the time (today only, see `eatenAt`).
+      loggedAt: eatenAt(Date.now()),
     };
     setMeals(
       meals.map((meal) =>
@@ -1386,7 +1409,7 @@ const MacroCalculator = () => {
         pantrySource: drawDown ?? undefined,
         // Copying a past meal into today is a real "I'm eating this" action
         // → stamp now (overwriting the source's loggedAt). Gated to today.
-        loggedAt: selectedDate === today ? now : undefined,
+        loggedAt: eatenAt(now),
       };
     });
     setMeals(
@@ -1830,6 +1853,9 @@ const MacroCalculator = () => {
       // sub-macro breakdown.
       ...scaleSubMacros(newFood, ratio),
       pantrySource: newDrawDown ?? undefined,
+      // A swap corrects what was eaten, not when: the replacement keeps the
+      // outgoing food's time (none when that one was planned).
+      loggedAt: outgoing?.loggedAt,
       // Carry per-100g micronutrients onto the replacement (unscaled —
       // the aggregator scales). `newFood` here is the replacement Food.
       micronutrients: newFood.micronutrients,

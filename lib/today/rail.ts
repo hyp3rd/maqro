@@ -7,8 +7,11 @@ import type { RelativeDay } from "./timeline";
  *
  *  - `logged`: the slot has food that was logged as eaten (a filled node).
  *  - `planned`: the slot's food is intent, not a record — on today or a
- *    future day, none of its foods carries a `loggedAt` (an AI auto-fill,
- *    a template or recipe, the demo's later meals). A distinct node, and
+ *    future day, none of its foods carries a `loggedAt`. Every path the UI
+ *    presents as logging stamps one on today (search, recipe, template,
+ *    a scheduled recipe, "Log this day", a photo), so this is the Meals
+ *    card's AI Auto-fill, the demo's later meals, or anything put on a
+ *    future day. A distinct node, and
  *    no time on the rail or the track. A past day can't tell the two apart
  *    (logging to another day never stamps a time), so its food reads as
  *    logged.
