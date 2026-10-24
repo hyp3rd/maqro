@@ -449,8 +449,10 @@ describe("targetsForDate — training days", () => {
     expect(week.weekStart).toBe("2026-10-19");
     expect(week.days.map((d) => d.date)).toEqual(MOCKUP_DATES);
     // Mon Tue Wed Thu Fri Sat Sun
+    // Equal weights plan equal days: both training days 2,250, the heavy
+    // Wednesday and the long-endurance Saturday 2,450, every rest day 2,000.
     expect(week.days.map((d) => d.targetCalories)).toEqual([
-      2300, 1950, 2500, 1950, 2250, 2500, 1950,
+      2250, 2000, 2450, 2000, 2250, 2450, 2000,
     ]);
     expect(week.totalCalories).toBe(15400); // 7 × 2,200, nothing added on top
     expect(week.days.map((d) => d.training?.dayClass)).toEqual([
@@ -463,13 +465,13 @@ describe("targetsForDate — training days", () => {
       "rest",
     ]);
     // Protein fixed at 2.0 g/kg; fat is ONE level for the week, the cut
-    // split's 86 g → 85: the smallest planned day (1,950) keeps it beside
-    // 160 g protein and the 80 g carb floor (room for 110 g), so nothing is
+    // split's 86 g → 85: the smallest planned day (2,000) keeps it beside
+    // 160 g protein and the 80 g carb floor (room for 115 g), so nothing is
     // lowered. Carbs carry every cycled calorie: (day − 640 − 765) / 4.
     expect(week.days.map((d) => d.protein)).toEqual(Array(7).fill(160));
     expect(week.days.map((d) => d.fat)).toEqual(Array(7).fill(85));
     expect(week.days.map((d) => d.carbs)).toEqual([
-      225, 135, 275, 135, 210, 275, 135,
+      210, 150, 260, 150, 210, 260, 150,
     ]);
     for (const d of week.days) {
       // The weekly energy balance is untouched.
@@ -514,7 +516,7 @@ describe("targetsForDate — training days", () => {
 
   it("a heavy day's extra carbs come only from its cycled calories", () => {
     // A high-fat custom split (30/25/45 → 110 g fat at 2,200): heavy
-    // Wednesday (2,500) gets 2,500 − 2,200 = 300 kcal more carbs than the
+    // Wednesday (2,450) gets 2,450 − 2,200 = 250 kcal more carbs than the
     // mean day, under the 3 g/kg aim (240 g), and fat stays at 110.
     const days =
       weekTargets(
@@ -525,8 +527,8 @@ describe("targetsForDate — training days", () => {
     expect(days).toHaveLength(7);
     const wed = days[2];
     expect(wed.training?.dayClass).toBe("heavy");
-    expect(wed.targetCalories).toBe(2500);
-    expect([wed.protein, wed.carbs, wed.fat]).toEqual([160, 220, 110]);
+    expect(wed.targetCalories).toBe(2450);
+    expect([wed.protein, wed.carbs, wed.fat]).toEqual([160, 205, 110]);
     for (const d of days) expect(d.fat).toBe(110);
   });
 
@@ -550,9 +552,11 @@ describe("targetsForDate — training days", () => {
       const week = weekTargets(heavyCut(), "2026-10-19", FREE);
       const days = week?.days ?? [];
       expect(days).toHaveLength(7);
-      // Mon Tue Wed Thu Fri Sat Sun — the day calories are unchanged.
+      // Mon Tue Wed Thu Fri Sat Sun. The long-endurance Saturday weighs as
+      // much as the heavy Wednesday, so it plans the same 3,050 (the
+      // per-day rounding used to leave it at 3,000).
       expect(days.map((d) => d.targetCalories)).toEqual([
-        2750, 2250, 3050, 2250, 2750, 3000, 2250,
+        2750, 2250, 3050, 2250, 2750, 3050, 2250,
       ]);
       expect(days[0].training?.meanCalories).toBe(2616);
       // The cut split's 102 g fat can't stay: the 2,250 rest days need
@@ -563,7 +567,7 @@ describe("targetsForDate — training days", () => {
       expect(days.map((d) => d.fat)).toEqual(Array(7).fill(50));
       expect(days.map((d) => d.protein)).toEqual(Array(7).fill(340));
       expect(days.map((d) => d.carbs)).toEqual([
-        235, 110, 310, 110, 235, 300, 110,
+        235, 110, 310, 110, 235, 310, 110,
       ]);
       expect(days.every((d) => d.training?.floorsExceedMean === false)).toBe(
         true,
@@ -700,7 +704,7 @@ describe("targetsForDate — training days", () => {
 
   it("low-carb with a 10%-fat split: flagged only when the floor bit", () => {
     // 50/40/10 at 2,200: 220 g carbs, 24 g fat. With protein fixed at 160 g
-    // fat is what's left — 50 g on the rest days up to 110 g — so the 40 g
+    // fat is what's left — 55 g on the rest days up to 105 g — so the 40 g
     // floor never touched it and there is nothing to say.
     const split = { protein: 50, carbs: 40, fat: 10 };
     const modest =
@@ -710,8 +714,8 @@ describe("targetsForDate — training days", () => {
         FREE,
       )?.days ?? [];
     expect(modest).toHaveLength(7);
-    expect(Math.min(...modest.map((d) => d.fat))).toBe(50);
-    expect(Math.max(...modest.map((d) => d.fat))).toBe(110);
+    expect(Math.min(...modest.map((d) => d.fat))).toBe(55);
+    expect(Math.max(...modest.map((d) => d.fat))).toBe(105);
     for (const d of modest) {
       expect(d.carbs).toBe(220);
       expect(d.training?.fatFloorLifted).toBe(false);
@@ -739,14 +743,14 @@ describe("targetsForDate — training days", () => {
 
   it("low-carb with a high-fat split: never flagged, though the floor lowers carbs", () => {
     // 20/30/50 at 2,200: 165 g carbs, 122 g fat. At 3.4 g/kg (272 g → 270)
-    // the 1,950 rest days can't hold 165 g carbs beside the 40 g fat floor,
-    // so the week's carbs drop to (1,950 − 1,080 − 360) / 4 = 127.5 → 125.
-    // Fat still sits under the 122 g the user chose (40 g to 100 g): the
+    // the 2,000 rest days can't hold 165 g carbs beside the 40 g fat floor,
+    // so the week's carbs drop to (2,000 − 1,080 − 360) / 4 = 140.
+    // Fat still sits under the 122 g the user chose (40 g to 90 g): the
     // floor raised nothing above their choice, so there is nothing to say.
     // Pronounced (1,800 rest days) is the same: carbs 90, fat 40 to 135.
     const split = { protein: 20, carbs: 30, fat: 50 };
     const cases = [
-      { cycling: "modest", carbs: 125, fat: [40, 100] },
+      { cycling: "modest", carbs: 140, fat: [40, 90] },
       { cycling: "pronounced", carbs: 90, fat: [40, 135] },
     ] as const;
     for (const c of cases) {
@@ -1149,8 +1153,8 @@ describe("targetsForDate — training days", () => {
 });
 
 describe("targetsForDate — per-date session overrides", () => {
-  const WED = "2026-10-21"; // template: lower body, hard (heavy, 2,500)
-  const TUE = "2026-10-20"; // template: rest (1,950)
+  const WED = "2026-10-21"; // template: lower body, hard (heavy, 2,450)
+  const TUE = "2026-10-20"; // template: rest (2,000)
   const FRI = "2026-10-23"; // template: full body, moderate (2,250)
   /** The app's context with one override row. */
   const withOverride = (date: string, day: unknown) => ({
@@ -1166,19 +1170,19 @@ describe("targetsForDate — per-date session overrides", () => {
     const plan = weekTargets(p, WED, FREE);
     const week = weekTargets(p, WED, withOverride(WED, { type: "rest" }));
     if (!plan || !week) throw new Error("expected both weeks");
-    // Mon Tue Wed Thu Fri Sat Sun: Wednesday 2,500 → 1,950, nothing else
-    // moves (no rebalancing), so the week sums to 15,400 − 550.
+    // Mon Tue Wed Thu Fri Sat Sun: Wednesday 2,450 → 2,000, nothing else
+    // moves (no rebalancing), so the week sums to 15,400 − 450.
     expect(calories(week.days)).toEqual([
-      2300, 1950, 1950, 1950, 2250, 2500, 1950,
+      2250, 2000, 2000, 2000, 2250, 2450, 2000,
     ]);
-    expect(week.totalCalories).toBe(plan.totalCalories - 550);
+    expect(week.totalCalories).toBe(plan.totalCalories - 450);
     week.days.forEach((d, i) => {
       if (d.date !== WED) expect(d).toStrictEqual(plan.days[i]);
     });
     const wed = week.days[2];
     // The same macro rules as a planned rest day: protein fixed, the
     // week's one fat level, carbs take the rest.
-    expect([wed.protein, wed.carbs, wed.fat]).toEqual([160, 135, 85]);
+    expect([wed.protein, wed.carbs, wed.fat]).toEqual([160, 150, 85]);
     expect(wed.training).toMatchObject({
       day: { type: "rest" },
       plannedDay: MOCKUP_WEEK[3],
@@ -1199,13 +1203,13 @@ describe("targetsForDate — per-date session overrides", () => {
       TUE,
       withOverride(TUE, { type: "lower", intensity: "hard", durationMin: 75 }),
     );
-    expect(t.targetCalories).toBe(2500);
-    expect([t.protein, t.carbs, t.fat]).toEqual([160, 275, 85]);
+    expect(t.targetCalories).toBe(2450);
+    expect([t.protein, t.carbs, t.fat]).toEqual([160, 260, 85]);
     expect(t.training?.dayClass).toBe("heavy");
   });
 
   it("a session of the planned day's own class keeps its planned target", () => {
-    // Friday's template day rounds to 2,250 (the week's largest-remainder
+    // Friday's template day rounds to 2,250 (the week's per-weight-group
     // rounding); a different moderate session is still a training day.
     const t = targetsForDate(
       mockupProfile(),

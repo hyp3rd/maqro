@@ -309,7 +309,9 @@ export type WeekTargets = {
    *  (with the context's overrides, if any). */
   days: DateTargets[];
   /** Sum of the seven `targetCalories`: 7 × the weekly mean for the template
-   *  week (within the 50 kcal rounding). A per-date override changes only
+   *  week, within the per-weight-group rounding's tolerance (25 kcal per day
+   *  of the largest group off the 50 grid, at most 150 kcal a week —
+   *  `distributeWeekCalories`). A per-date override changes only
    *  its own day — nothing is rebalanced — so a week with one differs from
    *  that by exactly the overridden days' changes. */
   totalCalories: number;

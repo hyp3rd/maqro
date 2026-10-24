@@ -41,7 +41,7 @@ const WED = "2026-10-21";
 const THU = "2026-10-22";
 
 /** The mockup: 80 kg cutting to a 2,200 kcal weekly mean; Wednesday plans
- *  2,500 kcal, a rest day 1,950 (lib/targets.test.ts). */
+ *  2,450 kcal, a rest day 2,000 (lib/targets.test.ts). */
 const PROFILE: PersonalInfo = {
   gender: "male",
   age: 30,
@@ -202,15 +202,15 @@ describe("DayTypeSheet", () => {
     expect(sheet.textContent).toContain(
       "Planned: Lower body · Hard · 18:00 · 75\u00a0min",
     );
-    expect(sheet.textContent).toContain("2,500 kcal");
+    expect(sheet.textContent).toContain("2,450 kcal");
 
     fireEvent.click(within(sheet).getByRole("radio", { name: "Rest" }));
 
     // The SAME resolver the app uses, for this date and session.
     expect(previewDayTargets).toHaveBeenLastCalledWith(WED, { type: "rest" });
     const target = within(sheet).getByRole("group", { name: "Calorie target" });
-    expect(target.textContent).toContain("2,500");
-    expect(target.textContent).toContain("1,950 kcal");
+    expect(target.textContent).toContain("2,450");
+    expect(target.textContent).toContain("2,000 kcal");
     expect(target.textContent).toContain("Rest day");
     expect(target.textContent).toContain("160 g protein");
     expect(sheet.textContent).toContain("Changes this day only.");
@@ -246,7 +246,7 @@ describe("DayTypeSheet", () => {
     });
     expect(
       within(sheet).getByRole("group", { name: "Calorie target" }).textContent,
-    ).toContain("1,950");
+    ).toContain("2,000");
     await act(async () => {
       fireEvent.click(within(sheet).getByRole("button", { name: "Save" }));
     });
@@ -265,7 +265,7 @@ describe("DayTypeSheet", () => {
     ]);
     renderRow(targetsFor(WED), previewDayTargets);
     const sheet = await openSheet();
-    expect(sheet.textContent).toContain("1,950 kcal");
+    expect(sheet.textContent).toContain("2,000 kcal");
 
     await act(async () => {
       fireEvent.click(

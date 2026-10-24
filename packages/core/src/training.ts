@@ -115,10 +115,6 @@ const BODY_FAT_MAX_PCT = 60;
 const MAX_DURATION_MIN = 24 * 60;
 const HH_MM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
-/** ISO weekday order (Mon → Sun) as `getDay()` indices — the tie-break order
- *  for the rounding remainder, so equal days are resolved Monday-first. */
-const ISO_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
-
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
@@ -277,14 +273,23 @@ const clean = (x: number) => Math.round(x * 1e6) / 1e6;
  *     is scaled down — day_i = T + α(raw_i − T), the largest α ≤ 1 that
  *     fits — so the sum stays 7T and the days keep their order and
  *     proportions.
- *  5. Rounding to 50 kcal by largest remainder (ties Monday-first).
+ *  5. Rounding to 50 kcal PER WEIGHT GROUP (`roundWeightGroups`): every day
+ *     of the same cycling weight gets the same kcal (a long-endurance day
+ *     and a heavy day weigh the same, so they plan the same), each group
+ *     rounded down or up to the 50 kcal grid, choosing the combination
+ *     whose weekly sum is closest to 7T.
  *
  *  Guarantee (when a spread exists): every day is a multiple of 50 within
- *  the bounds, and the week's sum is within 25 kcal of 7T — exactly 7T
- *  whenever 7T is itself a multiple of 50. (Each day rounds to its 50-step
- *  floor; the n = round(remainder sum / 50) largest remainders round up.
- *  Every remainder is < 50, so n never exceeds the days that have one, and
- *  |remainder sum − 50n| ≤ 25.) */
+ *  the bounds; equal weights ⇒ equal kcal; a heavier day is never planned
+ *  below a lighter one; and the week's sum is within 25 × n kcal of 7T,
+ *  where n is the size of the largest group whose raw day is off the grid —
+ *  so within 25 kcal when every such group is a single day, and never more
+ *  than 150 kcal a week (≈ 21 kcal a day: a group has at most 6 days, as a
+ *  week with a spread has two weights at least). Rounding whole groups is
+ *  what costs the exactness of a per-day rounding: a 3-day group can only
+ *  move the week in 150 kcal steps. (Proof of the bound: rounding the groups
+ *  up one at a time, heaviest first, walks the sum from ≤ 7T to ≥ 7T in
+ *  steps of 50 × (group size), and every prefix keeps the order.) */
 export function distributeWeekCalories(input: WeekCaloriesInput): number[] {
   const { meanKcal: mean, classes } = input;
   const flat = () => classes.map(() => mean);
@@ -292,18 +297,76 @@ export function distributeWeekCalories(input: WeekCaloriesInput): number[] {
   if (!scale) return flat();
   const weights = classes.map((c) => scale.weights[c]);
   if (weights.every((w) => w === weights[0])) return flat();
-  const spread = classes.map((c) => scaledDay(scale, c));
+  const byWeight = roundedDaysByWeight(scale, classes);
+  return weights.map((w) => byWeight.get(w) ?? mean);
+}
 
-  const out = spread.map((x) => floorStep(x, DAY_KCAL_STEP));
-  const remainders = spread.map((x, i) => x - out[i]);
-  const units = Math.round(
-    remainders.reduce((s, r) => s + r, 0) / DAY_KCAL_STEP,
+/** The template's planned kcal for each cycling weight it uses: its days
+ *  grouped by weight (`classes` → the scale's weights), each group's
+ *  `scaledDay` rounded together by `roundWeightGroups`. */
+function roundedDaysByWeight(
+  scale: WeekCalorieScale,
+  classes: readonly TrainingDayClass[],
+): Map<number, number> {
+  const groups = new Map<number, { x: number; n: number }>();
+  for (const c of classes) {
+    const w = scale.weights[c];
+    const group = groups.get(w);
+    if (group) group.n += 1;
+    else groups.set(w, { x: scaledDay(scale, c), n: 1 });
+  }
+  const weightsDesc = [...groups.keys()].sort((a, b) => b - a);
+  const rounded = roundWeightGroups(
+    weightsDesc.map((w) => groups.get(w) ?? { x: scale.mean, n: 0 }),
+    classes.length * scale.mean,
   );
-  const order = ISO_ORDER.filter((i) => i < classes.length).sort(
-    (a, b) => remainders[b] - remainders[a],
-  );
-  for (const i of order.slice(0, units)) out[i] += DAY_KCAL_STEP;
-  return out;
+  return new Map(weightsDesc.map((w, i) => [w, rounded[i]]));
+}
+
+/** Round each group's day `x` (the same for its `n` days) down or up to the
+ *  50 kcal grid. `groups` come heaviest first (strictly decreasing `x`);
+ *  returns the rounded day per group, in that order. Of the 2^G
+ *  combinations (G ≤ 5 weights) that keep the order — a heavier group never
+ *  rounds below a lighter one — it takes the one whose weekly sum
+ *  Σ n × day is closest to `target` (7T); on a tie the one closest to the
+ *  raw days (least Σ n × |day − x|), then the lower week (never plan more
+ *  than the goal when equally close), then the one rounding the heavier
+ *  groups up (the training days get the extra step). */
+function roundWeightGroups(
+  groups: readonly { x: number; n: number }[],
+  target: number,
+): number[] {
+  const EPS = 1e-9;
+  const G = groups.length;
+  let best: { days: number[]; err: number; dev: number; sum: number } | null =
+    null;
+  // Bit (G − 1 − i) of `mask` rounds group i up. Counting down visits the
+  // combinations with the heavier groups up first, so a full tie keeps the
+  // first one seen.
+  for (let mask = (1 << G) - 1; mask >= 0; mask--) {
+    const days = groups.map(({ x }, i) =>
+      (mask >> (G - 1 - i)) & 1
+        ? ceilStep(x, DAY_KCAL_STEP)
+        : floorStep(x, DAY_KCAL_STEP),
+    );
+    if (days.some((d, i) => i > 0 && d > days[i - 1])) continue;
+    const sum = groups.reduce((s, { n }, i) => s + n * days[i], 0);
+    const err = Math.abs(sum - target);
+    const dev = groups.reduce(
+      (s, { x, n }, i) => s + n * Math.abs(days[i] - x),
+      0,
+    );
+    if (
+      best === null ||
+      err < best.err - EPS ||
+      (err < best.err + EPS &&
+        (dev < best.dev - EPS || (dev < best.dev + EPS && sum < best.sum)))
+    ) {
+      best = { days, err, dev, sum };
+    }
+  }
+  // The all-down combination always keeps the order, so `best` is set.
+  return best?.days ?? groups.map(({ x }) => floorStep(x, DAY_KCAL_STEP));
 }
 
 /** A template week's calorie scale (`distributeWeekCalories` steps 2–4):
@@ -354,20 +417,29 @@ function scaledDay(scale: WeekCalorieScale, dayClass: TrainingDayClass) {
 /** The planned kcal for ONE day of `dayClass` under the template week's
  *  scale — a per-date session override (`targetsForDate`): the same
  *  weights, normalized to the TEMPLATE's mean weight, and the template's
- *  narrowing α, rounded to the nearest 50 kcal and held inside the day
- *  bounds [max(floor, 0.80T, 800), 1.25T] (a class the template doesn't use
- *  can fall outside the range α was fitted to). The mean itself when the
- *  week has no spread (cycling off, or no room above the floor).
+ *  narrowing α. A weight the template uses plans exactly what the
+ *  template's days of that weight plan (equal weights ⇒ equal kcal, the
+ *  group rounding included); any other is rounded to the nearest 50 kcal
+ *  and held inside the day bounds [max(floor, 0.80T, 800), 1.25T] (a class
+ *  the template doesn't use can fall outside the range α was fitted to).
+ *  The mean itself when the week has no spread (cycling off, or no room
+ *  above the floor).
  *
  *  Only that day changes — nothing is rebalanced across the rest of the
- *  week (no calorie banking), so the overridden week sums to 7T plus this
- *  day's difference from its template day. */
+ *  week (no calorie banking), so the overridden week sums to the template
+ *  week plus this day's difference from its template day. */
 export function dayKcalForClass(
   input: WeekCaloriesInput,
   dayClass: TrainingDayClass,
 ): number {
   const scale = weekCalorieScale(input);
   if (!scale) return input.meanKcal;
+  const weight = scale.weights[dayClass];
+  const template = distributeWeekCalories(input);
+  const sameWeight = input.classes.findIndex(
+    (c) => scale.weights[c] === weight,
+  );
+  if (sameWeight !== -1) return template[sameWeight];
   const day = roundStep(scaledDay(scale, dayClass), DAY_KCAL_STEP);
   return Math.min(scale.hi, Math.max(scale.lo, day));
 }
