@@ -19,10 +19,12 @@ import { ProgressView } from "./ProgressView";
 // code path that reads `goalPhases[].startDate`.
 vi.mock("@/hooks/use-ai-usage", () => ({
   useAiUsage: () => ({ state: { status: "ok", data: { tier: "pro" } } }),
+  useTier: () => ({ tier: "pro", resolved: true }),
 }));
 
 const BASE = {
   targetCalories: 2000,
+  targetCaloriesForDate: () => 2000,
   formulaTdee: 2400,
   dailyDelta: -400,
   goal: "lose" as const,

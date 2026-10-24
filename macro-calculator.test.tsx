@@ -4,6 +4,7 @@
 import type { AiPlanRequest, AiPlanResult } from "@/lib/ai-plan";
 import { computeSlotBudget } from "@/lib/recipe-ranking";
 import type { ReactNode } from "react";
+import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { targetsForDate } from "@maqro/core/targets";
 import type { Meal, PersonalInfo } from "@maqro/core/types";
@@ -71,20 +72,26 @@ const requestAiMealPlan = vi.hoisted(() =>
   vi.fn<(req: AiPlanRequest) => Promise<AiPlanResult>>(),
 );
 
+/** The URL's query string, and the auth state `useUser` reports (signed in
+ *  as u1 unless a test changes it). */
+const nav = vi.hoisted(() => ({ search: "view=plan" }));
+const SIGNED_IN = {
+  user: { id: "u1" } as User,
+  localUserId: "u1",
+  isOfflineUnverified: false,
+  isLoaded: true,
+  isUnconfigured: false,
+};
+const auth = vi.hoisted(() => ({ state: null as unknown }));
+
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams("view=plan"),
+  useSearchParams: () => new URLSearchParams(nav.search),
 }));
 vi.mock("./hooks/use-ai-usage", () => ({
   useTier: () => ({ tier: "pro", resolved: true }),
   useRefreshAiUsage: () => refreshAiUsage,
 }));
-vi.mock("./hooks/use-user", () => ({
-  useUser: () => ({
-    user: { id: "u1" } as User,
-    isLoaded: true,
-    isUnconfigured: false,
-  }),
-}));
+vi.mock("./hooks/use-user", () => ({ useUser: () => auth.state }));
 vi.mock("./hooks/use-profile", () => ({
   useProfile: () => ({
     profile: PROFILE,
@@ -240,6 +247,8 @@ const macros = (t: typeof pastTargets) => ({
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date(2026, 5, 10, 12, 0, 0));
+  nav.search = "view=plan";
+  auth.state = SIGNED_IN;
   for (const key of Object.keys(ui.props)) delete ui.props[key];
   refreshAiUsage.mockReset();
   requestAiMealPlan.mockReset();
@@ -252,6 +261,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 async function renderOnPastDay() {
@@ -338,5 +349,45 @@ describe("macro-calculator: the day view gets the selected date's targets", () =
     });
     expect(requestAiMealPlan).toHaveBeenCalledTimes(1);
     expect(refreshAiUsage).not.toHaveBeenCalled();
+  });
+});
+
+describe("macro-calculator: ?upgrade=<plan>", () => {
+  const APP_URL = "http://localhost:3000/app?upgrade=pro";
+
+  /** Renders with `?upgrade=pro` and returns the (stubbed) location, whose
+   *  `href` a redirect would overwrite. */
+  function renderWithUpgradeParam() {
+    nav.search = "upgrade=pro";
+    const location = { ...window.location, href: APP_URL };
+    vi.stubGlobal("location", location);
+    render(<MacroCalculator />);
+    return location;
+  }
+
+  it("offline-unverified: stays on the page and explains, no /login bounce", () => {
+    auth.state = { ...SIGNED_IN, user: null, isOfflineUnverified: true };
+    const info = vi.spyOn(toast, "info");
+    const location = renderWithUpgradeParam();
+
+    expect(location.href).toBe(APP_URL);
+    expect(info).toHaveBeenCalledWith(
+      "Can't reach the account server — your data stays on this device. The upgrade opens once it can be reached.",
+    );
+  });
+
+  it("signed out: bounces to /login and back to the upgrade", () => {
+    auth.state = { ...SIGNED_IN, user: null, localUserId: null };
+    const location = renderWithUpgradeParam();
+    expect(location.href).toBe(
+      `/login?next=${encodeURIComponent("/app?upgrade=pro")}`,
+    );
+  });
+
+  it("signed in: no redirect (the upgrade dialog opens in place)", () => {
+    const info = vi.spyOn(toast, "info");
+    const location = renderWithUpgradeParam();
+    expect(location.href).toBe(APP_URL);
+    expect(info).not.toHaveBeenCalled();
   });
 });

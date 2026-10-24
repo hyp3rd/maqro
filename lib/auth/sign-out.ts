@@ -1,4 +1,8 @@
-import { clearCachedTier } from "@/lib/billing/tier-cache";
+import {
+  clearLastKnownUser,
+  readLastKnownUserId,
+} from "@/lib/auth/last-known-user";
+import { clearCachedTier, forgetCachedTier } from "@/lib/billing/tier-cache";
 import { clearAllStores } from "@/lib/db";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -49,8 +53,8 @@ export async function signOutAndClearLocal(
   userId?: string,
 ): Promise<void> {
   await clearAllStores().catch(() => {});
-  // The last-known tier is per-account state too: the next user on this
-  // device must never be gated on it.
-  clearCachedTier();
+  // Cleared here rather than left to the SIGNED_OUT event, which never
+  // fires when `signOut()` can't load an expired session offline.
+  clearAccountRecords(userId);
   await supabase.auth.signOut();
 }

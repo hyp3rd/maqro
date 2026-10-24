@@ -64,7 +64,10 @@
 
     /* System status (saved, synced, failed). Each DEFAULT is text-safe on
        every surface and carries its -foreground as a fill. Not for
-       over/under-target judgement: intake stays neutral. */
+       over/under-target judgement: intake stays neutral.
+       Destructive splits like brand: `--destructive` is the text red,
+       `--destructive-strong` the fill behind a `--destructive-foreground`
+       label (white in both themes). */
     --success: 142.7 73% 27.6%;
     --success-foreground: 0 0% 100%;
     --warning: 25.8 88.8% 34.9%;
@@ -73,6 +76,7 @@
     --info-foreground: 0 0% 100%;
     --destructive: 0 73.7% 41.8%;
     --destructive-foreground: 0 0% 100%;
+    --destructive-strong: 0 73.7% 41.8%;
 
     /* Hairline; usually consumed at /60. `--input` is the form-control
        boundary and keeps 3:1 against every surface. */
@@ -105,6 +109,10 @@
     --micro-vitamin-b12: 320 55% 55%;
 
     --radius: 0.75rem;
+
+    /* Smallest control size; raised to 44px on coarse pointers below.
+       Read by the `touch-*` spacing sizes (tailwind.config.mjs). */
+    --touch-target-min: 0px;
 
     /* Geist carries both body and display; next/font only sets
        --font-sans and --font-mono (app/layout.tsx). */
@@ -152,7 +160,8 @@
       --info: 213.1 93.9% 67.8%;
       --info-foreground: 240 17.6% 3.3%;
       --destructive: 0 90.6% 70.8%;
-      --destructive-foreground: 240 17.6% 3.3%;
+      --destructive-foreground: 0 0% 100%;
+      --destructive-strong: 0 72.2% 50.6%;
 
       --border: 240 3.7% 15.9%;
       --input: 240 4.5% 43.9%;
@@ -273,6 +282,14 @@
     .text-\[11px\],
     .text-2xs {
       font-size: 12px !important;
+    }
+  }
+  /* Touch-target floor. On a finger-driven device every `touch-*` size
+     (`h-touch-9`, `size-touch-8`, ...) grows to the 44px Apple-HIG /
+     WCAG 2.5.5 minimum; a precise pointer keeps the dense desktop size. */
+  @media (pointer: coarse) {
+    :root {
+      --touch-target-min: 2.75rem;
     }
   }
   /* Keyboard focus is always visible. Primitives that draw their own

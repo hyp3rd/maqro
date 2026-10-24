@@ -1,6 +1,6 @@
 import manifest from "@/app/manifest";
 import tailwindConfig from "@/tailwind.config.mjs";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -193,9 +193,10 @@ describe("WCAG AA contrast", () => {
     ["successForeground", "success"],
     ["warningForeground", "warning"],
     ["infoForeground", "info"],
-    ["destructiveForeground", "destructive"],
+    ["destructiveForeground", "destructiveStrong"],
   ];
-  /** Graphics and control boundaries (WCAG 1.4.11): >= 3:1 on any surface. */
+  /** Graphics, control boundaries and filled-control fills (WCAG 1.4.11):
+   *  >= 3:1 on any surface. */
   const GRAPHICS_ON_SURFACES = [
     "brand",
     "ring",
@@ -204,6 +205,7 @@ describe("WCAG AA contrast", () => {
     "macroProtein",
     "macroCarbs",
     "macroFat",
+    "destructiveStrong",
   ] as const;
 
   for (const theme of THEMES) {
@@ -244,6 +246,62 @@ describe("WCAG AA contrast", () => {
       expect(failures).toEqual([]);
     });
   }
+
+  it("destructive buttons carry a white label in both themes", () => {
+    // Owner decision: white text on a deeper red, never dark text on a light
+    // red. The contrast floor itself is in the foreground/fill pairs above.
+    for (const theme of THEMES) {
+      expect(PALETTE[theme].destructiveForeground).toBe("#FFFFFF");
+    }
+  });
+});
+
+describe("destructive fills", () => {
+  /** Source files that render DOM classes. */
+  const SOURCES = ["app", "components", "hooks", "lib"].flatMap((dir) => {
+    const files: string[] = [];
+    const walk = (at: string): void => {
+      for (const entry of readdirSync(at, { withFileTypes: true })) {
+        const full = path.join(at, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (
+          /\.tsx?$/.test(entry.name) &&
+          !/\.test\.tsx?$/.test(entry.name)
+        )
+          files.push(full);
+      }
+    };
+    walk(path.join(ROOT, dir));
+    return files;
+  });
+
+  /** `destructive` is the text-safe red; in dark mode it is too light to
+   *  carry the white `destructive-foreground` label. Solid fills must use
+   *  `destructive-strong`; `destructive` may only appear as a faint tint
+   *  (<= /20) behind `text-destructive`. */
+  it("solid destructive fills use destructive-strong", () => {
+    const offenders: string[] = [];
+    for (const file of SOURCES) {
+      const lines = readFileSync(file, "utf8").split("\n");
+      lines.forEach((line, i) => {
+        const where = `${path.relative(ROOT, file)}:${i + 1}`;
+        for (const m of line.matchAll(
+          /\bbg-destructive(?:\/(\d+))?(?![-\w])/g,
+        )) {
+          if (m[1] === undefined || Number(m[1]) > 20) {
+            offenders.push(`${where} ${m[0]}`);
+          }
+        }
+        if (
+          line.includes("text-destructive-foreground") &&
+          !line.includes("bg-destructive-strong")
+        ) {
+          offenders.push(`${where} destructive-foreground off its fill`);
+        }
+      });
+    }
+    expect(offenders).toEqual([]);
+  });
 });
 
 describe("tailwind.config.mjs", () => {
@@ -290,6 +348,28 @@ describe("tailwind.config.mjs", () => {
       expect(literal).toBeDefined();
       expect(floor.get(`.text-${name}`)).toBe(literal);
     }
+  });
+
+  it("floors every touch size at 44px on coarse pointers only", () => {
+    const spacing = extend.spacing as Record<string, string>;
+    const touch = Object.entries(spacing).filter(([k]) =>
+      k.startsWith("touch-"),
+    );
+    expect(touch.length).toBeGreaterThan(0);
+    for (const [key, value] of touch) {
+      // `touch-9` keeps the 2.25rem of `h-9` on a fine pointer.
+      const rem = Number(key.slice("touch-".length)) / 4;
+      expect(value).toBe(`max(${rem}rem, var(--touch-target-min))`);
+    }
+    expect(declarations(block(CSS, ":root")).get("touch-target-min")).toBe(
+      "0px",
+    );
+    const coarse = CSS.indexOf("Touch-target floor");
+    expect(coarse).toBeGreaterThan(-1);
+    const media = block(CSS, "@media (pointer: coarse)", coarse);
+    expect(declarations(block(media, ":root")).get("touch-target-min")).toBe(
+      "2.75rem",
+    );
   });
 });
 

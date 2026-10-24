@@ -59,8 +59,13 @@ export type Palette = {
   warningForeground: string;
   info: string;
   infoForeground: string;
+  /** Destructive-red text on any surface (and faint tints behind it). */
   destructive: string;
+  /** Label on `destructiveStrong`. */
   destructiveForeground: string;
+  /** Fill behind a `destructiveForeground` label (destructive buttons):
+   *  >= 3:1 against every surface. */
+  destructiveStrong: string;
   /** Hairlines. Mostly consumed at `/60`, which lands on the artboards'
    *  8 % hairline; full strength is the stronger divider. */
   border: string;
@@ -116,6 +121,7 @@ const LIGHT: Palette = {
   infoForeground: "#FFFFFF",
   destructive: "#B91C1C",
   destructiveForeground: "#FFFFFF",
+  destructiveStrong: "#B91C1C",
   border: "#DDDDDE",
   input: "#85858E",
   ring: "#7C3AED",
@@ -168,7 +174,10 @@ const DARK: Palette = {
   info: "#60A5FA",
   infoForeground: "#07070A",
   destructive: "#F87171",
-  destructiveForeground: "#07070A",
+  destructiveForeground: "#FFFFFF",
+  // Deeper than the text red so a white label clears 4.5:1 (owner decision:
+  // white on red, never dark text on a light red).
+  destructiveStrong: "#DC2626",
   border: "#27272A",
   input: "#6B6B75",
   ring: "#8B5CF6",
