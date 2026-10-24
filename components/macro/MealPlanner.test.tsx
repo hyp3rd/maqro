@@ -296,6 +296,19 @@ describe("MealPlanner as Instrument Today", () => {
     expect(within(rail).getByText("Next to log")).toBeTruthy();
   });
 
+  it("keeps one-tap water and fasting ahead of the meal list", () => {
+    renderPlanner();
+    const meals = screen.getByRole("list", { name: "Meals" });
+    for (const extra of [
+      screen.getByText("Water"),
+      screen.getByText("Fasting"),
+    ]) {
+      expect(
+        extra.compareDocumentPosition(meals) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+  });
+
   it("words a future day 'to plan' and draws no now cursor there", () => {
     renderPlanner({
       selectedDate: "2026-10-23",

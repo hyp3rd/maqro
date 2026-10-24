@@ -386,11 +386,15 @@ const MealItem: React.FC<MealItemProps> = ({
           items={sortableIds}
           strategy={verticalListSortingStrategy}
         >
-          {/* Mobile: card list. The 7-column dense table below is
-              illegible at < 640px even with horizontal scroll; the
-              card layout puts the food name + macros front-and-centre
-              with full-size touch targets for replace / edit / delete. */}
-          <ul className="divide-y divide-border/60 rounded-md border border-border/60 bg-background sm:hidden">
+          {/* Narrow: card list. The 7-column dense table below needs about
+              36rem of card; narrower it scrolls sideways and hides each
+              row's actions. Keyed off the meal list's width (the `@container`
+              MealPlanner puts on the MealRail: 42rem = 36rem of card + the
+              rail's gutter), not the viewport, since the sidebar and the
+              Today columns take their share first. The card layout puts the
+              food name + macros front-and-centre with full-size touch
+              targets for replace / edit / delete. */}
+          <ul className="divide-y divide-border/60 rounded-md border border-border/60 bg-background @min-[42rem]:hidden">
             {meal.foods.map((food) => (
               <FoodMobileCard
                 key={food.id}
@@ -413,8 +417,8 @@ const MealItem: React.FC<MealItemProps> = ({
             ))}
           </ul>
 
-          {/* Desktop: keep the dense table for at-a-glance comparison. */}
-          <div className="hidden overflow-x-auto rounded-md border border-border/60 sm:block">
+          {/* Wide: keep the dense table for at-a-glance comparison. */}
+          <div className="hidden overflow-x-auto rounded-md border border-border/60 @min-[42rem]:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border/60 bg-muted/30 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">

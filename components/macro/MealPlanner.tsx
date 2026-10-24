@@ -375,17 +375,25 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
   }
 
   return (
-    // Instrument Today. Phone (390 × 844 first): the instrument — header,
-    // week strip, gauge + readout, 24-hour track — sits above the fold, the
-    // meals follow, then water / fasting / the phase banner. Desktop: two
-    // columns, the instrument and the day's extras on the left, logging on
-    // the right. One DOM order (reading order = phone order); the grid
-    // places the three groups. `auto 1fr` rows keep the left column packed
-    // while the log column grows.
-    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] lg:grid-rows-[auto_1fr] lg:gap-x-8">
+    // Instrument Today. One DOM order (reading order = phone order):
+    // the instrument, the day's extras (phase banner, water, fasting), then
+    // logging. Phone (390 × 844 first): the instrument — header, week strip,
+    // gauge + readout, 24-hour track — sits above the fold and one-tap water
+    // follows it, ahead of the meal list. Wider, the grid places the groups.
+    // The breakpoints assume the expanded 240 px sidebar plus the shell's
+    // padding (18rem), so each tier has room for its columns whatever the
+    // sidebar's state (a container query here would also contain the
+    // fixed-position QuickAddFab and DragOverlay):
+    //  - 66rem (≥ 48rem of content): the instrument and the extras side by
+    //    side, logging below at full width;
+    //  - 84rem (≥ 66rem of content): two columns, the instrument and the
+    //    extras on the left, logging on the right with a 40rem floor so the
+    //    add form and the meal tables keep their full width. `auto 1fr` rows
+    //    keep the left column packed while the log column grows.
+    <div className="grid grid-cols-1 gap-6 min-[66rem]:grid-cols-[24rem_minmax(0,1fr)] min-[84rem]:grid-cols-[24rem_minmax(40rem,1fr)] min-[84rem]:grid-rows-[auto_1fr]">
       <section
         aria-labelledby={titleId}
-        className="min-w-0 space-y-4 lg:col-start-1 lg:row-start-1 lg:self-start"
+        className="min-w-0 space-y-4 min-[66rem]:col-[1] min-[66rem]:row-[1] min-[66rem]:self-start"
       >
         <TodayHeader
           date={selectedDate}
@@ -419,7 +427,44 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
         />
       </section>
 
-      <div className="min-w-0 space-y-4 sm:space-y-6 lg:col-start-2 lg:row-span-2 lg:row-start-1">
+      <div className="min-w-0 space-y-4 sm:space-y-6 min-[66rem]:col-[2] min-[66rem]:row-[1] min-[66rem]:self-start min-[84rem]:col-[1] min-[84rem]:row-[2]">
+        {/* Active goal phase (Pro) driving today's target. "Now" surface —
+            only on today, like the fasting card. */}
+        {selectedDate === today && goalPhase && (
+          <section className="overflow-hidden rounded-lg border border-brand/30 bg-card">
+            <div className="px-3 py-3 sm:px-5 sm:py-4">
+              <ActivePhaseBanner
+                phase={goalPhase}
+                today={today}
+                units={units}
+                nudge={goalPhaseNudge}
+              />
+            </div>
+          </section>
+        )}
+
+        <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
+          <div className="px-3 py-3 sm:px-5 sm:py-4">
+            <WaterCounter
+              date={selectedDate}
+              goalMl={waterGoalMl}
+              units={units}
+            />
+          </div>
+        </section>
+
+        {/* The live fast timer is a "right now" surface — only meaningful
+            on today, never on a past/future planned day. */}
+        {selectedDate === today && (
+          <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
+            <div className="px-3 py-3 sm:px-5 sm:py-4">
+              <FastingCard onSelectView={onSelectView} />
+            </div>
+          </section>
+        )}
+      </div>
+
+      <div className="min-w-0 space-y-4 sm:space-y-6 min-[66rem]:col-[1/-1] min-[66rem]:row-[2] min-[84rem]:col-[2] min-[84rem]:row-[1/3]">
         {/* "Don't know what to eat today?" — an AI day-suggester that picks a
             breakfast/lunch/dinner combo from the user's saved recipes to fit
             the remaining macro targets. Today-only (it logs into today's
@@ -626,7 +671,8 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
               meals={meals}
               date={selectedDate}
               today={today}
-              className="px-2 py-1 sm:px-4"
+              // The size container MealItem's table ↔ card switch reads.
+              className="@container px-2 py-1"
               renderMeal={(meal) => (
                 <MealItem
                   meal={meal}
@@ -662,43 +708,6 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
             />
           </DndContext>
         </section>
-      </div>
-
-      <div className="min-w-0 space-y-4 sm:space-y-6 lg:col-start-1 lg:row-start-2 lg:self-start">
-        {/* Active goal phase (Pro) driving today's target. "Now" surface —
-            only on today, like the fasting card. */}
-        {selectedDate === today && goalPhase && (
-          <section className="overflow-hidden rounded-lg border border-brand/30 bg-card">
-            <div className="px-3 py-3 sm:px-5 sm:py-4">
-              <ActivePhaseBanner
-                phase={goalPhase}
-                today={today}
-                units={units}
-                nudge={goalPhaseNudge}
-              />
-            </div>
-          </section>
-        )}
-
-        <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
-          <div className="px-3 py-3 sm:px-5 sm:py-4">
-            <WaterCounter
-              date={selectedDate}
-              goalMl={waterGoalMl}
-              units={units}
-            />
-          </div>
-        </section>
-
-        {/* The live fast timer is a "right now" surface — only meaningful
-            on today, never on a past/future planned day. */}
-        {selectedDate === today && (
-          <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
-            <div className="px-3 py-3 sm:px-5 sm:py-4">
-              <FastingCard onSelectView={onSelectView} />
-            </div>
-          </section>
-        )}
       </div>
 
       <PreDiabeticDisclaimerDialog
