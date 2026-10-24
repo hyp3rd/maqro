@@ -1,5 +1,11 @@
 "use client";
 
+import { DayTimeline } from "@/components/today/DayTimeline";
+import { MealRail } from "@/components/today/MealRail";
+import { TodayHeader } from "@/components/today/TodayHeader";
+import { WeekStrip } from "@/components/today/WeekStrip";
+import { useNow } from "@/hooks/use-now";
+import { useWeekIntake } from "@/hooks/use-week-intake";
 import type { CoherenceIssue } from "@/lib/ai/plan-coherence";
 import { REFINERS } from "@/lib/ai/refiners";
 import type { MealSchedule, PantryItem } from "@/lib/db";
@@ -25,8 +31,8 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
+import type { DateTargets, WeekTargets } from "@maqro/core/targets";
 import {
-  CalculatedValues,
   Food,
   FoodItem,
   type GoalPhase,
@@ -49,8 +55,13 @@ import {
 import { WaterCounter } from "./WaterCounter";
 
 interface MealPlannerProps {
-  /** The DISPLAYED day's targets (not necessarily today's). */
-  calculatedValues: CalculatedValues;
+  /** The DISPLAYED day's targets (not necessarily today's), with its
+   *  planned training day when a schedule is on. */
+  calculatedValues: DateTargets;
+  /** The displayed day's Monday-to-Sunday week of day targets
+   *  (`useTargets().selectedWeek`) for the week strip; `null` before the
+   *  date is known. */
+  week: WeekTargets | null;
   totalMacros: {
     protein: number;
     carbs: number;
@@ -186,8 +197,24 @@ interface MealPlannerProps {
   onOpenMealDetail: (mealId: number, intent?: MealHubIntent) => void;
 }
 
+/** The timing track on the minute clock (0 until hydrated) for its "Now"
+ *  cursor. Reading the clock here, not in MealPlanner, keeps the minute
+ *  tick to the track instead of re-rendering the whole day view. */
+function LiveDayTimeline(
+  props: Omit<React.ComponentProps<typeof DayTimeline>, "now">,
+) {
+  const now = useNow();
+  return (
+    <DayTimeline
+      {...props}
+      now={now}
+    />
+  );
+}
+
 const MealPlanner: React.FC<MealPlannerProps> = ({
   calculatedValues,
+  week,
   totalMacros,
   macroBreakdown,
   meals,
@@ -254,6 +281,21 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
 }) => {
   const isError = mealPlanMessage.toLowerCase().includes("error");
   const dayIsEmpty = meals.every((m) => m.foods.length === 0);
+  const titleId = React.useId();
+
+  // The week strip: that week's logged kcal from IndexedDB, with the shown
+  // day's live total over its stored one (the day log saves behind edits).
+  // Only once that day has loaded: until then `meals` (and so `totalMacros`)
+  // are still the previous day's or the empty default, and the stored value
+  // is the better reading.
+  const weekIntake = useWeekIntake(week?.weekStart ?? null);
+  const eatenByDate = React.useMemo(
+    () =>
+      dayHydrated
+        ? new Map(weekIntake).set(selectedDate, totalMacros.calories)
+        : weekIntake,
+    [dayHydrated, weekIntake, selectedDate, totalMacros.calories],
+  );
 
   // Schedules that fall on the displayed day — but only surface the "log it"
   // offer when viewing TODAY (the day view is gated to today; you don't log
@@ -346,312 +388,357 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6">
-      {/* Active goal phase (Pro) driving today's target. "Now" surface — only
-          on today, like the fasting card. */}
-      {selectedDate === today && goalPhase && (
-        <section className="overflow-hidden rounded-lg border border-brand/30 bg-card">
+    // Instrument Today. One DOM order (reading order = phone order):
+    // the instrument, the day's extras (phase banner, water, fasting), then
+    // logging. Phone (390 × 844 first): the instrument — header, week strip,
+    // gauge + readout, 24-hour track — sits above the fold and one-tap water
+    // follows it, ahead of the meal list. In one column the instrument
+    // keeps an instrument's width (36rem) rather than stretching its
+    // readout across a tablet. Wider, the grid places the groups.
+    // The breakpoints assume the expanded 240 px sidebar plus the shell's
+    // padding (18rem), so each tier has room for its columns whatever the
+    // sidebar's state (a container query here would also contain the
+    // fixed-position DragOverlay):
+    //  - 66rem (≥ 48rem of content): the instrument and the extras side by
+    //    side, logging below at full width;
+    //  - 84rem (≥ 66rem of content): two columns, the instrument and the
+    //    extras on the left, logging on the right with a 40rem floor so the
+    //    add form and the meal tables keep their full width. `auto 1fr` rows
+    //    keep the left column packed while the log column grows.
+    <div className="grid grid-cols-1 gap-6 min-[66rem]:grid-cols-[24rem_minmax(0,1fr)] min-[84rem]:grid-cols-[24rem_minmax(40rem,1fr)] min-[84rem]:grid-rows-[auto_1fr]">
+      <section
+        aria-labelledby={titleId}
+        className="min-w-0 max-w-xl space-y-4 min-[66rem]:col-[1] min-[66rem]:row-[1] min-[66rem]:self-start"
+      >
+        <TodayHeader
+          date={selectedDate}
+          today={today}
+          training={calculatedValues.training}
+          titleId={titleId}
+          onSelectDate={onSelectDate}
+        />
+        {week && (
+          <WeekStrip
+            days={week.days}
+            eatenByDate={eatenByDate}
+            today={today}
+            selectedDate={selectedDate}
+            onSelect={onSelectDate}
+          />
+        )}
+        <DailyTotals
+          calculatedValues={calculatedValues}
+          totalMacros={totalMacros}
+          breakdown={macroBreakdown}
+          selectedDate={selectedDate}
+          today={today}
+        />
+        <LiveDayTimeline
+          meals={meals}
+          date={selectedDate}
+          today={today}
+          training={calculatedValues.training}
+        />
+      </section>
+
+      <div className="min-w-0 space-y-4 sm:space-y-6 min-[66rem]:col-[2] min-[66rem]:row-[1] min-[66rem]:self-start min-[84rem]:col-[1] min-[84rem]:row-[2]">
+        {/* Active goal phase (Pro) driving today's target. "Now" surface —
+            only on today, like the fasting card. */}
+        {selectedDate === today && goalPhase && (
+          <section className="overflow-hidden rounded-lg border border-brand/30 bg-card">
+            <div className="px-3 py-3 sm:px-5 sm:py-4">
+              <ActivePhaseBanner
+                phase={goalPhase}
+                today={today}
+                units={units}
+                nudge={goalPhaseNudge}
+              />
+            </div>
+          </section>
+        )}
+
+        <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
           <div className="px-3 py-3 sm:px-5 sm:py-4">
-            <ActivePhaseBanner
-              phase={goalPhase}
-              today={today}
+            <WaterCounter
+              date={selectedDate}
+              goalMl={waterGoalMl}
               units={units}
-              nudge={goalPhaseNudge}
             />
           </div>
         </section>
-      )}
 
-      <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
-        <div className="px-3 py-3 sm:px-5 sm:py-4">
-          <DailyTotals
-            calculatedValues={calculatedValues}
-            totalMacros={totalMacros}
-            breakdown={macroBreakdown}
-            selectedDate={selectedDate}
-            today={today}
-          />
-        </div>
-      </section>
-
-      <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
-        <div className="px-3 py-3 sm:px-5 sm:py-4">
-          <WaterCounter
-            date={selectedDate}
-            goalMl={waterGoalMl}
-            units={units}
-          />
-        </div>
-      </section>
-
-      {/* The live fast timer is a "right now" surface — only meaningful on
-          today, never on a past/future planned day. */}
-      {selectedDate === today && (
-        <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
-          <div className="px-3 py-3 sm:px-5 sm:py-4">
-            <FastingCard onSelectView={onSelectView} />
-          </div>
-        </section>
-      )}
-
-      {/* "Don't know what to eat today?" — an AI day-suggester that picks a
-          breakfast/lunch/dinner combo from the user's saved recipes to fit the
-          remaining macro targets. Today-only (it logs into today's slots). */}
-      {selectedDate === today && (
-        <Button
-          type="button"
-          variant="outline"
-          onClick={onOpenSuggestDay}
-          className="h-10 w-full gap-1.5"
-        >
-          <Sparkles className="h-4 w-4 text-primary" />
-          Don&apos;t know what to eat today?
-        </Button>
-      )}
-
-      {/* Mobile's add-food entry point is the tab bar's centre [+] quick add
-          (MobileBottomNav), reachable from every view. The dense inline form
-          below is desktop-only. */}
-      <div className="hidden md:block">
-        <AddFoodForm
-          meals={meals}
-          newFood={newFood}
-          foodSearch={foodSearch}
-          foodSuggestions={foodSuggestions}
-          pantryItems={pantryItems}
-          showSuggestions={showSuggestions}
-          isSearchingRemote={isSearchingRemote}
-          portionSize={portionSize}
-          suggestionsRef={suggestionsRef}
-          setNewFood={setNewFood}
-          handleFoodSearch={handleFoodSearch}
-          handleFoodSelect={handleFoodSelect}
-          handlePortionChange={handlePortionChange}
-          handleFoodChange={handleFoodChange}
-          addFood={addFood}
-          onQuickLog={onQuickLog}
-          setFoodSearch={setFoodSearch}
-          setShowSuggestions={() => {}}
-          setPortionSize={setPortionSize}
-          onSaveOffToCustom={onSaveOffToCustom}
-          onOpenCustomFoodForm={onOpenCustomFoodForm}
-          onOpenCamera={onOpenCamera}
-          onOpenVoice={onOpenVoice}
-        />
+        {/* The live fast timer is a "right now" surface — only meaningful
+            on today, never on a past/future planned day. */}
+        {selectedDate === today && (
+          <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
+            <div className="px-3 py-3 sm:px-5 sm:py-4">
+              <FastingCard onSelectView={onSelectView} />
+            </div>
+          </section>
+        )}
       </div>
 
-      <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
-        {/* Header stays single-row at every breakpoint. On mobile the
+      <div className="min-w-0 space-y-4 sm:space-y-6 min-[66rem]:col-[1/-1] min-[66rem]:row-[2] min-[84rem]:col-[2] min-[84rem]:row-[1/3]">
+        {/* "Don't know what to eat today?" — an AI day-suggester that picks a
+            breakfast/lunch/dinner combo from the user's saved recipes to fit
+            the remaining macro targets. Today-only (it logs into today's
+            slots). */}
+        {selectedDate === today && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onOpenSuggestDay}
+            className="h-touch-10 w-full gap-1.5"
+          >
+            <Sparkles className="h-4 w-4 text-brand-text" />
+            Don&apos;t know what to eat today?
+          </Button>
+        )}
+
+        {/* Mobile's add-food entry point is the tab bar's centre [+] quick
+            add (MobileBottomNav), reachable from every view. The dense
+            inline form below is desktop-only. */}
+        <div className="hidden md:block">
+          <AddFoodForm
+            meals={meals}
+            newFood={newFood}
+            foodSearch={foodSearch}
+            foodSuggestions={foodSuggestions}
+            pantryItems={pantryItems}
+            showSuggestions={showSuggestions}
+            isSearchingRemote={isSearchingRemote}
+            portionSize={portionSize}
+            suggestionsRef={suggestionsRef}
+            setNewFood={setNewFood}
+            handleFoodSearch={handleFoodSearch}
+            handleFoodSelect={handleFoodSelect}
+            handlePortionChange={handlePortionChange}
+            handleFoodChange={handleFoodChange}
+            addFood={addFood}
+            onQuickLog={onQuickLog}
+            setFoodSearch={setFoodSearch}
+            setShowSuggestions={() => {}}
+            setPortionSize={setPortionSize}
+            onSaveOffToCustom={onSaveOffToCustom}
+            onOpenCustomFoodForm={onOpenCustomFoodForm}
+            onOpenCamera={onOpenCamera}
+            onOpenVoice={onOpenVoice}
+          />
+        </div>
+
+        <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
+          {/* Header stays single-row at every breakpoint. On mobile the
             DateNavigator (prev / date pill / next / Today button)
             takes the left side and Auto-fill collapses to icon-only
             on the right — the label expands at sm+ where there's
             room. Keeping date + action on the same row removes the
             empty-strip gap users were reading as misalignment. */}
-        <header className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-2.5 sm:gap-3 sm:px-5 sm:py-3">
-          <DateNavigator
-            date={selectedDate}
-            today={today}
-            onSelect={onSelectDate}
-          />
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={generateMealPlan}
-            disabled={isGeneratingMealPlan}
-            aria-label={isGeneratingMealPlan ? "Generating" : "Auto-fill"}
-            className="h-9 shrink-0 gap-2 px-2.5 sm:h-8 sm:px-3"
-          >
-            {isGeneratingMealPlan ? (
-              <Loader2 className="h-4 w-4 animate-spin sm:h-3.5 sm:w-3.5" />
-            ) : (
-              <RefreshCw className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-            )}
-            <span className="hidden sm:inline">
-              {isGeneratingMealPlan ? "Generating…" : "Auto-fill"}
-            </span>
-          </Button>
-        </header>
-
-        <AnimatePresence>
-          {mealPlanMessage && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.18 }}
-              className={`overflow-hidden whitespace-pre-line border-b border-border/60 px-3 py-2.5 text-xs sm:px-5 ${
-                isError
-                  ? "text-rose-700 dark:text-rose-400"
-                  : "text-muted-foreground"
-              }`}
+          <header className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-2.5 sm:gap-3 sm:px-5 sm:py-3">
+            <DateNavigator
+              date={selectedDate}
+              today={today}
+              onSelect={onSelectDate}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={generateMealPlan}
+              disabled={isGeneratingMealPlan}
+              aria-label={isGeneratingMealPlan ? "Generating" : "Auto-fill"}
+              className="h-9 shrink-0 gap-2 px-2.5 sm:h-8 sm:px-3"
             >
-              {mealPlanMessage}
-            </motion.div>
-          )}
-        </AnimatePresence>
+              {isGeneratingMealPlan ? (
+                <Loader2 className="h-4 w-4 animate-spin sm:h-3.5 sm:w-3.5" />
+              ) : (
+                <RefreshCw className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+              )}
+              <span className="hidden sm:inline">
+                {isGeneratingMealPlan ? "Generating…" : "Auto-fill"}
+              </span>
+            </Button>
+          </header>
 
-        {/* Refiner pills - only rendered when there's at least one food
+          <AnimatePresence>
+            {mealPlanMessage && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.18 }}
+                className={`overflow-hidden whitespace-pre-line border-b border-border/60 px-3 py-2.5 text-xs sm:px-5 ${
+                  isError ? "text-destructive" : "text-muted-foreground"
+                }`}
+              >
+                {mealPlanMessage}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Refiner pills - only rendered when there's at least one food
             anywhere in the day's meals (no point asking the AI to
             "lower the sugars" of an empty plan). Each pill is a single
             tap; the busy state is shared with the Auto-fill button via
             `isGeneratingMealPlan`. */}
-        {!dayIsEmpty && (
-          /* Refiner pills. Mobile wraps into three cramped rows with
+          {!dayIsEmpty && (
+            /* Refiner pills. Mobile wraps into three cramped rows with
              flex-wrap; instead, scroll horizontally on narrow
              viewports so the user sees one neat strip and swipes
              through the chips. Desktop keeps wrap behaviour where
              vertical space is cheaper than the friction of a hidden
              scroll target. `-mx-` + `px-` is the classic "scrollable
              strip flush to card edges but pads its content" trick. */
-          <div className="-mx-3 flex items-center gap-1.5 overflow-x-auto border-b border-border/60 bg-muted/20 px-3 py-2 [mask-image:linear-gradient(to_right,black_calc(100%_-_1.75rem),transparent)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-0 sm:flex-wrap sm:overflow-x-visible sm:px-5 sm:py-2.5 sm:[mask-image:none]">
-            <span className="mr-1 flex shrink-0 items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-              <Sparkles className="h-3 w-3" />
-              Refine
-            </span>
-            {REFINERS.map((r) => (
-              <button
-                key={r.id}
-                type="button"
-                onClick={() => handleRefinerClick(r.id, r.text)}
-                disabled={isGeneratingMealPlan}
-                className="h-8 shrink-0 rounded-full border border-border/60 bg-background px-3 text-[11px] font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 sm:h-7"
-                title={r.text}
-              >
-                {r.label}
-              </button>
-            ))}
-          </div>
-        )}
+            <div className="-mx-3 flex items-center gap-1.5 overflow-x-auto border-b border-border/60 bg-muted/20 px-3 py-2 [mask-image:linear-gradient(to_right,black_calc(100%_-_1.75rem),transparent)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-0 sm:flex-wrap sm:overflow-x-visible sm:px-5 sm:py-2.5 sm:[mask-image:none]">
+              <span className="mr-1 flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground">
+                <Sparkles className="h-3.5 w-3.5" />
+                Refine
+              </span>
+              {REFINERS.map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => handleRefinerClick(r.id, r.text)}
+                  disabled={isGeneratingMealPlan}
+                  className="h-touch-8 shrink-0 rounded-full border border-border/60 bg-background px-3 text-xs font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                  title={r.text}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+          )}
 
-        {dayHydrated && dayIsEmpty && (
-          <div className="border-b border-border/60 bg-muted/20 px-3 py-3 text-xs text-muted-foreground sm:px-5">
-            <span className="font-medium text-foreground">
-              No meals logged for this day.
-            </span>{" "}
-            {/* Name the add that exists at each breakpoint: the search
-                (AddFoodForm) is desktop-only; a phone has each meal's
-                "Add food" and, on today only, the tab bar's [+] (which
-                always logs into today, so a past day doesn't offer it). */}
-            <span className="md:hidden">
-              {selectedDate === today && (
-                <>
-                  Tap <span className="font-medium text-foreground">+</span>{" "}
-                  below to log a meal,{" "}
-                </>
-              )}
-              {selectedDate === today ? "use" : "Use"}{" "}
-              <span className="font-medium text-foreground">Add food</span> on
-              any meal,
-            </span>
-            <span className="hidden md:inline">
-              Use the search above to add foods to any meal,
-            </span>{" "}
-            apply a saved template from a meal&apos;s menu, or hit{" "}
-            <span className="font-medium text-foreground">Auto-fill</span> to
-            generate a plan that matches your macros.
-          </div>
-        )}
+          {dayHydrated && dayIsEmpty && (
+            <div className="border-b border-border/60 bg-muted/20 px-3 py-3 text-xs text-muted-foreground sm:px-5">
+              <span className="font-medium text-foreground">
+                No meals logged for this day.
+              </span>{" "}
+              {/* Name the add that exists at each breakpoint: the search
+                  (AddFoodForm) is desktop-only; a phone has each meal's
+                  "Add food" and, on today only, the tab bar's [+] (which
+                  always logs into today, so a past day doesn't offer it). */}
+              <span className="md:hidden">
+                {selectedDate === today && (
+                  <>
+                    Tap <span className="font-medium text-foreground">+</span>{" "}
+                    below to log a meal,{" "}
+                  </>
+                )}
+                {selectedDate === today ? "use" : "Use"}{" "}
+                <span className="font-medium text-foreground">Add food</span> on
+                any meal,
+              </span>
+              <span className="hidden md:inline">
+                Use the search above to add foods to any meal,
+              </span>{" "}
+              apply a saved template from a meal&apos;s menu, or hit{" "}
+              <span className="font-medium text-foreground">Auto-fill</span> to
+              generate a plan that matches your macros.
+            </div>
+          )}
 
-        {/* Day-level coherence warnings (e.g. low-day-protein). Shown
+          {/* Day-level coherence warnings (e.g. low-day-protein). Shown
             above the meals as a banner because they apply to the whole
             plan, not a single slot. The "Try refining" button fires
             the matching refiner pill text directly; if the issue isn't
             one we have a canned refiner for, the button falls back to a
             generic refinement using the issue message verbatim. */}
-        {dayLevelIssues.length > 0 && (
-          <div className="space-y-2 border-b border-amber-500/30 bg-amber-500/10 px-3 py-3 text-xs sm:px-5">
-            {dayLevelIssues.map((issue, idx) => (
-              <div
-                key={`${issue.code}-${idx}`}
-                className="flex items-start gap-2"
-              >
-                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
-                <div className="flex flex-col gap-1.5">
-                  <p className="text-amber-900 dark:text-amber-100">
-                    {issue.message}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onRefineMealPlan(
-                        issue.code === "low-day-protein"
-                          ? "Add more protein across the day"
-                          : issue.message,
-                      )
-                    }
-                    disabled={isGeneratingMealPlan}
-                    className="self-start rounded-full border border-amber-600/40 bg-background px-2.5 py-0.5 text-[11px] font-medium text-amber-900 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-amber-100 dark:hover:bg-amber-900/30"
-                  >
-                    Try refining
-                  </button>
+          {dayLevelIssues.length > 0 && (
+            <div className="space-y-2 border-b border-warning/40 bg-warning/10 px-3 py-3 text-xs sm:px-5">
+              {dayLevelIssues.map((issue, idx) => (
+                <div
+                  key={`${issue.code}-${idx}`}
+                  className="flex items-start gap-2"
+                >
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+                  <div className="flex flex-col gap-1.5">
+                    <p className="text-foreground">{issue.message}</p>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onRefineMealPlan(
+                          issue.code === "low-day-protein"
+                            ? "Add more protein across the day"
+                            : issue.message,
+                        )
+                      }
+                      disabled={isGeneratingMealPlan}
+                      className="inline-flex h-touch-7 items-center self-start rounded-full border border-warning/40 bg-background px-2.5 text-xs font-medium text-foreground hover:bg-warning/10 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Try refining
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
 
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-          onDragCancel={() => setActiveFood(null)}
-        >
-          <DragOverlay dropAnimation={null}>
-            {activeFoodItem ? (
-              <div className="pointer-events-none flex items-center gap-2 rounded-md border border-border/60 bg-card px-3 py-2 shadow-lg ring-1 ring-foreground/5">
-                <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-sm font-medium text-foreground">
-                  {activeFoodItem.name}
-                </span>
-                <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-                  {activeFoodItem.portionSize
-                    ? `${activeFoodItem.portionSize} g · `
-                    : ""}
-                  {activeFoodItem.calories} kcal
-                </span>
-              </div>
-            ) : null}
-          </DragOverlay>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDragCancel={() => setActiveFood(null)}
+          >
+            <DragOverlay dropAnimation={null}>
+              {activeFoodItem ? (
+                <div className="pointer-events-none flex items-center gap-2 rounded-md border border-border/60 bg-card px-3 py-2 shadow-lg ring-1 ring-foreground/5">
+                  <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="text-sm font-medium text-foreground">
+                    {activeFoodItem.name}
+                  </span>
+                  <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                    {activeFoodItem.portionSize
+                      ? `${activeFoodItem.portionSize} g · `
+                      : ""}
+                    {activeFoodItem.calories} kcal
+                  </span>
+                </div>
+              ) : null}
+            </DragOverlay>
 
-          <div className="divide-y divide-border/60">
-            {meals.map((meal) => (
-              <MealItem
-                key={meal.id}
-                meal={meal}
-                editingFood={editingFood}
-                replacingFood={replacingFood}
-                replacementSuggestionsRef={replacementSuggestionsRef}
-                startEditingFood={startEditingFood}
-                cancelEditing={cancelEditing}
-                handleEditPortionChange={handleEditPortionChange}
-                saveEditedPortion={saveEditedPortion}
-                startReplacingFood={startReplacingFood}
-                cancelReplacing={cancelReplacing}
-                handleReplacementSearch={handleReplacementSearch}
-                replaceFood={replaceFood}
-                removeFood={removeFood}
-                duplicateFood={duplicateFood}
-                onSaveAsTemplate={onSaveAsTemplate}
-                onAddFromTemplate={onAddFromTemplate}
-                onApplyRecipe={onApplyRecipe}
-                onClearMeal={onClearMeal}
-                loggedSignal={loggedMealSignal}
-                scheduledForSlot={daySchedules.find((s) =>
-                  scheduleTargetsSlot(s, meal.name),
-                )}
-                onLogScheduled={onLogScheduled}
-                onOpenDetail={onOpenMealDetail}
-                onRegenerate={onRegenerateMeal}
-                regenerating={isGeneratingMealPlan}
-                regeneratingThisMeal={generatingMealId === meal.id}
-                issues={issuesByMeal.get(meal.name) ?? []}
-              />
-            ))}
-          </div>
-        </DndContext>
-      </section>
+            <MealRail
+              meals={meals}
+              date={selectedDate}
+              today={today}
+              // The size container MealItem's table ↔ card switch reads.
+              className="@container px-2 py-1"
+              renderMeal={(meal) => (
+                <MealItem
+                  meal={meal}
+                  editingFood={editingFood}
+                  replacingFood={replacingFood}
+                  replacementSuggestionsRef={replacementSuggestionsRef}
+                  startEditingFood={startEditingFood}
+                  cancelEditing={cancelEditing}
+                  handleEditPortionChange={handleEditPortionChange}
+                  saveEditedPortion={saveEditedPortion}
+                  startReplacingFood={startReplacingFood}
+                  cancelReplacing={cancelReplacing}
+                  handleReplacementSearch={handleReplacementSearch}
+                  replaceFood={replaceFood}
+                  removeFood={removeFood}
+                  duplicateFood={duplicateFood}
+                  onSaveAsTemplate={onSaveAsTemplate}
+                  onAddFromTemplate={onAddFromTemplate}
+                  onApplyRecipe={onApplyRecipe}
+                  onClearMeal={onClearMeal}
+                  loggedSignal={loggedMealSignal}
+                  scheduledForSlot={daySchedules.find((s) =>
+                    scheduleTargetsSlot(s, meal.name),
+                  )}
+                  onLogScheduled={onLogScheduled}
+                  onOpenDetail={onOpenMealDetail}
+                  onRegenerate={onRegenerateMeal}
+                  regenerating={isGeneratingMealPlan}
+                  regeneratingThisMeal={generatingMealId === meal.id}
+                  issues={issuesByMeal.get(meal.name) ?? []}
+                />
+              )}
+            />
+          </DndContext>
+        </section>
+      </div>
 
       <PreDiabeticDisclaimerDialog
         open={pendingPreDiabeticRefinement !== null}

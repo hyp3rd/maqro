@@ -182,19 +182,25 @@ test.describe("maqro happy path", () => {
     await page.goto("/app");
     await openToday(page);
 
-    // Start on today. The date label (not the "Today" heading or nav).
+    // Start on today. The shell's page heading (h1) and the Today header
+    // (h2) both name the shown day; the navigator's date label too.
+    const heading = page.getByRole("heading", { level: 1 });
+    const dayHeading = (name: string) =>
+      page.getByRole("heading", { level: 2, name, exact: true });
     const dateLabel = page.locator("label", { hasText: /^(Today|Yesterday)/ });
+    await expect(dayHeading("Today")).toBeVisible();
     await expect(dateLabel).toHaveText("Today");
 
     // Click "Previous day" to go to yesterday.
     await page.getByRole("button", { name: "Previous day" }).click();
+    await expect(dayHeading("Yesterday")).toBeVisible();
     // (Off today the label also carries the ISO date on wide screens.)
     await expect(dateLabel).toHaveText(/^Yesterday/);
     // The page heading names the shown day too, never "Today" off today.
-    const heading = page.getByRole("heading", { level: 1 });
     await expect(heading).toHaveText("Yesterday");
-    // The "Today" snap-back button appears when off today (in the day view,
-    // not the sidebar's "Today").
+    // The navigator's "Today" snap-back button appears when off today (in
+    // the day view, not the sidebar's "Today"; exact: the header's "Back to
+    // today" and the week strip's day buttons also mention today).
     const snapBack = page
       .getByRole("main")
       .getByRole("button", { name: "Today", exact: true });
@@ -202,6 +208,7 @@ test.describe("maqro happy path", () => {
 
     // Snap back to today.
     await snapBack.click();
+    await expect(dayHeading("Today")).toBeVisible();
     await expect(dateLabel).toHaveText("Today");
     await expect(heading).toHaveText("Today");
   });

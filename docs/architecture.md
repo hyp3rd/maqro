@@ -149,6 +149,9 @@ components/
                                     #   MicronutrientsSection, MealDetailSheet,
                                     #   LogMealSheet + FoodSearchSheet (guided mobile
                                     #   add-food), SheetAction (shared sheet primitives)
+  today/                            # Instrument Today day view: TodayGauge (ring gauge),
+                                    #   MacroReadout, DayTimeline (24-h track), WeekStrip,
+                                    #   DayTypeChip, MealRail, TodayHeader
   icons/                            # In-tree SVGs (e.g. GoogleLogo for OAuth button)
   marketing/                        # StructuredData (JSON-LD for landing SEO)
   ui/                               # shadcn primitives
@@ -159,6 +162,8 @@ hooks/
   use-daily-log.ts                  # IDB-hydrated day log state
   use-food-search.ts                # Debounced merged search
   use-today.ts                      # Live today-date (rolls at midnight)
+  use-targets.ts                    # Day / today / selected-week targets via core targetsForDate
+  use-week-intake.ts                # One week of logged kcal (ranged IDB read, data-bus refresh)
   use-ai-usage.tsx                  # Shared AI usage + cached last-known tier (provider)
   use-subscription-status.ts        # Billing-tier + past-due state polling (drives PastDueBanner)
   use-notification-prefs.ts         # Email + browser-push subscription toggles
@@ -171,6 +176,7 @@ lib/
   meal-planner.ts                   # 3×3 Cramer-based portion solver
   trends.ts                         # Smoothing, plateau detection, TDEE recalibration
   streaks.ts                        # Consecutive-logged-days computation
+  today/                            # Pure Today geometry: gauge arcs, 24-h timeline, week strip, rail
   weekly-recap.ts                   # 7-day rollup for Progress + email
   shopping-list.ts                  # Aggregate foods across a date range
   meal-insights.ts                  # Deterministic per-meal balance + goal-fit flags

@@ -39,7 +39,12 @@ ships with privacy-respecting operational logging.
   the Template editor). Auto-fill a day that hits your macro targets
   via a 3×3 linear solve over a protein/carb/fat triplet; portions
   snap to 5 g. Per-meal regenerate to refresh a single slot without
-  blowing away the rest.
+  blowing away the rest. The day opens as **Today**: a calorie ring gauge
+  with concentric protein / carbs / fat arcs against that day's own
+  target (over is shown calmly, never in red), a 24-hour timing track
+  with your meals, planned workout and a live "now" cursor, a Monday-to-
+  Sunday strip of per-day target bars, the day's training session, and
+  the meals on a rail that marks what to log next.
 - **AI auto-fill (opt-in)** - Claude Sonnet 4.6 generates a coherent
   day (breakfasts that look like breakfasts), then a **programmatic
   coherence validator** rejects standalone-fat meals, multi-fish

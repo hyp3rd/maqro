@@ -21,11 +21,12 @@ import { toast } from "sonner";
 const CELEBRATION_KEY = "maqro:streak:last-celebrated";
 
 /** Compact streak indicator surfaced on the daily-use surfaces
- *  (DailyTotals header) so the user sees their current run every
+ *  (under the Today gauge) so the user sees their current run every
  *  time they open the app — not only when they navigate to
  *  Progress. Doubles as the milestone celebrator: the first time
  *  the current streak crosses a `STREAK_MILESTONES` threshold,
- *  fires a one-shot toast.
+ *  fires a one-shot toast. Quiet by design: neutral colours, and a
+ *  lapsed run simply goes away — no loss framing.
  *
  *  Loads logs directly from IDB (subscribed to the dailyLogs
  *  data-bus revision so the chip refreshes when a meal is added,
@@ -59,10 +60,10 @@ export function StreakChip() {
             // benefits from announcement. `polite` so it queues
             // behind any user-initiated speech.
             aria-live="polite"
-            className="inline-flex h-8 items-center gap-1 rounded-full border border-border/60 bg-card px-2.5 text-[11px] font-medium text-foreground"
+            className="inline-flex h-8 items-center gap-1 rounded-full border border-border/60 bg-card px-2.5 text-xs font-medium text-foreground"
           >
             <Flame
-              className="h-3 w-3 text-amber-500"
+              className="h-3.5 w-3.5 text-muted-foreground"
               aria-hidden
             />
             <span className="font-mono tabular-nums">
@@ -162,7 +163,7 @@ function useMilestoneCelebration(state: StreakState | null): void {
     } catch {
       // See above.
     }
-    toast.success(`🔥 ${reached}-day streak!`, {
+    toast(`${reached}-day logging streak`, {
       description:
         reached <= 7
           ? "Habit forming. Keep showing up."

@@ -192,35 +192,42 @@ const MealItem: React.FC<MealItemProps> = ({
         setNodeRef(node);
         cardRef.current = node;
       }}
-      className={`px-3 py-3 transition-colors duration-500 sm:px-5 sm:py-4 ${
+      // The rail (MealRail) draws the left edge, so the card pads only the
+      // right; the flash / drop tint rounds into the rail's column.
+      className={`rounded-lg py-3 pl-2 pr-1 transition-colors duration-500 sm:py-4 sm:pr-2 ${
         flash ? "bg-primary/10" : isOver ? "bg-accent/40" : ""
       }`}
     >
-      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
-        <h4 className="text-sm font-semibold tracking-tight text-foreground">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+        <h3 className="text-[0.9375rem] font-medium leading-5 tracking-tight text-foreground">
           {meal.name}
-        </h4>
+        </h3>
         <div className="flex items-center gap-1.5">
           {meal.foods.length > 0 && !regeneratingThisMeal && (
             <button
               type="button"
               onClick={() => onOpenDetail(meal.id, "insights")}
               aria-label={`${meal.name} insights`}
-              className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 transition-colors hover:bg-amber-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-amber-300"
+              className="inline-flex h-touch-7 items-center gap-1 rounded-full border border-brand/40 bg-brand/10 px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-brand/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <Sparkles className="h-3 w-3" />
+              <Sparkles className="h-3.5 w-3.5 text-brand-text" />
               Insights
             </button>
           )}
           {regeneratingThisMeal ? (
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground sm:text-xs">
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
               <Loader2 className="h-3 w-3 animate-spin" />
               {aiVerbProgressive}…
             </span>
           ) : (
-            <span className="font-mono text-[11px] tabular-nums text-muted-foreground sm:text-xs">
-              {totalCalories} kcal · P{totalProtein} · C{totalCarbs} · F
-              {totalFat}
+            // Phone width keeps the header on one row: kcal only (each food
+            // row below shows its own P/C/F); the split joins from sm up.
+            <span className="font-mono text-xs tabular-nums text-muted-foreground">
+              {totalCalories} kcal
+              <span className="hidden sm:inline">
+                {" "}
+                · P{totalProtein} · C{totalCarbs} · F{totalFat}
+              </span>
             </span>
           )}
           <DropdownMenu>
@@ -304,13 +311,13 @@ const MealItem: React.FC<MealItemProps> = ({
       </div>
 
       {issues.length > 0 && (
-        <div className="mb-3 space-y-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+        <div className="mb-3 space-y-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2">
           {issues.map((issue, idx) => (
             <div
               key={`${issue.code}-${idx}`}
-              className="flex items-start gap-2 text-[11px] text-amber-900 dark:text-amber-100 sm:text-xs"
+              className="flex items-start gap-2 text-xs text-foreground"
             >
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
               <p className="flex-1">{issue.message}</p>
             </div>
           ))}
@@ -318,7 +325,7 @@ const MealItem: React.FC<MealItemProps> = ({
             type="button"
             onClick={() => onRegenerate(meal.id)}
             disabled={regenerating}
-            className="inline-flex h-7 items-center gap-1.5 rounded-full border border-amber-600/40 bg-background px-2.5 text-[11px] font-medium text-amber-900 transition-colors hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50 coarse:h-10 dark:text-amber-100 dark:hover:bg-amber-900/30"
+            className="inline-flex h-touch-7 items-center gap-1.5 rounded-full border border-warning/40 bg-background px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-warning/10 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {regeneratingThisMeal ? (
               <>
@@ -336,8 +343,10 @@ const MealItem: React.FC<MealItemProps> = ({
       )}
 
       {meal.foods.length === 0 ? (
+        // Compact on the rail: one row with the tinted Add (the rail's "still
+        // to come" look). Still a drop target for a dragged food.
         <div
-          className={`rounded-md border border-dashed px-4 py-4 text-center ${
+          className={`rounded-md border border-dashed px-3 py-2 ${
             isOver ? "border-foreground/40" : "border-border/60"
           }`}
         >
@@ -345,43 +354,47 @@ const MealItem: React.FC<MealItemProps> = ({
             <button
               type="button"
               onClick={() => onLogScheduled(scheduledForSlot, meal.id)}
-              className="mb-3 inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-foreground/40 bg-foreground px-3 py-2 text-[11px] font-medium text-background transition-colors hover:bg-foreground/90"
+              className="mb-2 inline-flex min-h-touch-9 w-full items-center justify-center gap-1.5 rounded-md border border-foreground/40 bg-foreground px-3 py-2 text-xs font-medium text-background transition-colors hover:bg-foreground/90"
             >
               <CalendarCheck className="h-3.5 w-3.5" />
               Scheduled: {scheduledForSlot.recipeName} — Log it
             </button>
           )}
-          <p className="text-xs text-muted-foreground">
-            {isOver ? "Drop here" : "No foods added yet"}
-          </p>
-          {/* One add affordance. Tapping it opens the per-meal hub, which leads
-              with "Log this again" (slot recents, one tap) and carries the
-              search + template / recipe / AI-generate actions — so the empty
-              slot no longer duplicates that whole menu inline (it used to mirror
-              the row's ⋮ menu, which is one tap away anyway). */}
-          {!isOver && (
-            <div className="mt-3 flex justify-center">
+          <div className="flex min-h-touch-9 items-center justify-between gap-2">
+            <p className="text-label text-muted-foreground">
+              {isOver ? "Drop here" : "No foods added yet"}
+            </p>
+            {/* One add affordance. Tapping it opens the per-meal hub, which
+                leads with "Log this again" (slot recents, one tap) and
+                carries the search + template / recipe / AI-generate actions
+                — the row's ⋮ menu is one tap away too. */}
+            {!isOver && (
               <button
                 type="button"
                 onClick={() => onOpenDetail(meal.id, "add")}
-                className="inline-flex h-9 items-center gap-1.5 rounded-full border border-foreground/30 bg-background px-4 text-xs font-medium text-foreground transition-colors hover:bg-accent/40 coarse:h-11"
+                aria-label={`Add food to ${meal.name}`}
+                className="inline-flex h-touch-9 shrink-0 items-center gap-1.5 rounded-full border border-brand/40 bg-brand/10 px-3.5 text-sm font-medium text-foreground transition-colors hover:bg-brand/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <Plus className="h-4 w-4" />
-                Add food
+                <Plus className="h-4 w-4 text-brand-text" />
+                Add
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       ) : (
         <SortableContext
           items={sortableIds}
           strategy={verticalListSortingStrategy}
         >
-          {/* Mobile: card list. The 7-column dense table below is
-              illegible at < 640px even with horizontal scroll; the
-              card layout puts the food name + macros front-and-centre
-              with full-size touch targets for replace / edit / delete. */}
-          <ul className="divide-y divide-border/60 rounded-md border border-border/60 bg-background sm:hidden">
+          {/* Narrow: card list. The 7-column dense table below needs about
+              36rem of card; narrower it scrolls sideways and hides each
+              row's actions. Keyed off the meal list's width (the `@container`
+              MealPlanner puts on the MealRail: 42rem = 36rem of card + the
+              rail's gutter), not the viewport, since the sidebar and the
+              Today columns take their share first. The card layout puts the
+              food name + macros front-and-centre with full-size touch
+              targets for replace / edit / delete. */}
+          <ul className="divide-y divide-border/60 rounded-md border border-border/60 bg-background @min-[42rem]:hidden">
             {meal.foods.map((food) => (
               <FoodMobileCard
                 key={food.id}
@@ -404,8 +417,8 @@ const MealItem: React.FC<MealItemProps> = ({
             ))}
           </ul>
 
-          {/* Desktop: keep the dense table for at-a-glance comparison. */}
-          <div className="hidden overflow-x-auto rounded-md border border-border/60 sm:block">
+          {/* Wide: keep the dense table for at-a-glance comparison. */}
+          <div className="hidden overflow-x-auto rounded-md border border-border/60 @min-[42rem]:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border/60 bg-muted/30 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">

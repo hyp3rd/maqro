@@ -1,8 +1,9 @@
 "use client";
 
 import { StreakChip } from "@/components/macro/StreakChip";
-import { NumberTicker } from "@/components/shell/NumberTicker";
-import { type MacroKey, MacroStat } from "@/components/ui/macro-stat";
+import { MacroReadout } from "@/components/today/MacroReadout";
+import { TodayGauge } from "@/components/today/TodayGauge";
+import { relativeDay } from "@/lib/today/timeline";
 import React, { useEffect, useState } from "react";
 import { Loader2, Share2 } from "lucide-react";
 import { toast } from "sonner";
@@ -16,28 +17,29 @@ interface DailyTotalsProps {
   calculatedValues: CalculatedValues;
   totalMacros: TotalMacros;
   /** Optional per-day sub-macro totals - sugars / fiber / fat subtypes.
-   *  Rendered as a collapsible breakdown below the main P/C/F/kcal
-   *  tiles. Only rows whose value the aggregator populated render
-   *  (others were never seen in today's foods, so showing "0g" would
-   *  mislead). When the whole object is empty, the breakdown row is
-   *  hidden entirely. */
+   *  Rendered as a collapsible breakdown below the gauge. Only rows whose
+   *  value the aggregator populated render (others were never seen in
+   *  today's foods, so showing "0g" would mislead). When the whole object
+   *  is empty, the breakdown is hidden entirely. */
   breakdown?: MacroBreakdown;
-  /** Displayed day + today's key. Used to fire the one-shot "calorie
-   *  target met" celebration only while viewing today — never when
-   *  scrolling back to a past day that already crossed its target — and
-   *  to word the remaining-kcal line ("left today" only makes sense for
-   *  today; a past day came in "under target"; a future day has kcal "to
-   *  plan"). `calculatedValues` is the DISPLAYED day's own target. */
+  /** Displayed day + today's key. Used to note "calorie target reached"
+   *  only while viewing today — never when scrolling back to a past day
+   *  that already crossed its target — and to word the gauge's centre
+   *  ("left today" only makes sense for today; a past day came in "under
+   *  target"; a future day has kcal "to plan"). `calculatedValues` is the
+   *  DISPLAYED day's own target. */
   selectedDate: string;
   today: string;
 }
 
 const GOAL_CELEBRATION_PREFIX = "maqro:goal:reached:";
 
-/** One-shot "you hit today's calorie target" celebration, keyed by day in
+/** One-shot "today's calorie target reached" note, keyed by day in
  *  localStorage so it fires exactly once — not on every subsequent add, and
  *  not again after a reload. Mirrors the streak-milestone guard in
- *  StreakChip. Gated to today so reviewing a past day never re-fires it. */
+ *  StreakChip. Gated to today so reviewing a past day never re-fires it.
+ *  A plain (neutral) toast stating the fact: reaching or passing the target
+ *  is neither a success nor a failure (wellbeing rule). */
 function useGoalReachedCelebration(
   reached: boolean,
   isToday: boolean,
@@ -54,9 +56,7 @@ function useGoalReachedCelebration(
       // would re-fire on every render with no flag to suppress it.
       return;
     }
-    toast.success("🎯 Today's calorie target met", {
-      description: "Nice work staying on plan.",
-    });
+    toast("Today's calorie target reached");
   }, [reached, isToday, dayKey]);
 }
 
@@ -70,12 +70,12 @@ const SUB_MACRO_LABELS: Record<keyof MacroBreakdown, string> = {
   polyFat: "Poly-unsat. fat",
 };
 
-/** Whole numbers without grouping, matching the animated NumberTicker
- *  figure so "/ 2200 kcal" and "1240" read alike. */
-function wholeNumber(n: number): string {
-  return String(Math.round(n));
-}
-
+/** The Today energy panel (Instrument): the ring gauge (eaten vs the
+ *  displayed day's own target, with the three macro arcs) beside its mono
+ *  readout, then the sub-macro breakdown, the logging streak and Share. The
+ *  gauge's centre is the headline — how many kcal are left, worded for the
+ *  day — and a polite live region, so logging food is announced. Over and
+ *  under are stated, never judged. */
 const DailyTotals: React.FC<DailyTotalsProps> = ({
   calculatedValues,
   totalMacros,
@@ -83,112 +83,41 @@ const DailyTotals: React.FC<DailyTotalsProps> = ({
   selectedDate,
   today,
 }) => {
-  // The single most actionable number on the page: how many calories are
-  // left against the displayed day's target. The tiles show consumed/target, which
-  // forces the user to do the subtraction in their head — this does it for
-  // them. Held back until the first food is logged so a brand-new day shows
-  // the cold-start guidance below, not a lone "2,100 kcal left".
   const targetCalories = Math.round(calculatedValues.targetCalories);
   const consumedCalories = Math.round(totalMacros.calories);
-  const remainingCalories = targetCalories - consumedCalories;
-  const showRemaining = targetCalories > 0 && consumedCalories > 0;
-
   const isToday = selectedDate === today;
-  // `YYYY-MM-DD` keys order lexicographically.
-  const isFuture = selectedDate > today;
   const goalReached = targetCalories > 0 && consumedCalories >= targetCalories;
   useGoalReachedCelebration(goalReached, isToday, today);
-
-  // Each meter runs against the day's target and keeps going past it: over
-  // and under are shown (a same-hue overshoot and a neutral "+N"), never
-  // clamped at 100% and never judged.
-  const rows: { macro: MacroKey; target: number }[] = [
-    { macro: "protein", target: calculatedValues.protein },
-    { macro: "carbs", target: calculatedValues.carbs },
-    { macro: "fat", target: calculatedValues.fat },
-    { macro: "calories", target: calculatedValues.targetCalories },
-  ];
+  const breakdownKeys = (
+    Object.keys(SUB_MACRO_LABELS) as Array<keyof MacroBreakdown>
+  ).filter((k) => typeof breakdown?.[k] === "number");
 
   return (
-    <div>
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          Daily Totals
-        </p>
-        {/* Streak chip + Share button. The chip self-hides when
-            the user has no active streak (current === 0), so the
-            row stays clean for first-time and lapsed users. */}
-        <div className="flex items-center gap-2">
-          <StreakChip />
-          <ShareTodayButton
-            totalMacros={totalMacros}
-            calculatedValues={calculatedValues}
-          />
-        </div>
+    <section aria-label="Energy and macros">
+      <div className="flex items-center gap-4 sm:gap-6">
+        <TodayGauge
+          eaten={totalMacros}
+          targets={calculatedValues}
+          when={relativeDay(selectedDate, today)}
+          className="w-[10.5rem] sm:w-44"
+        />
+        <MacroReadout
+          eaten={totalMacros}
+          targets={calculatedValues}
+          className="min-w-0 flex-1"
+        />
       </div>
-      {showRemaining && (
-        // Announce the running total to screen readers as food is logged — this
-        // is the headline number on the most-used screen.
-        <p
-          className="mb-3 text-sm"
-          role="status"
-          aria-live="polite"
-        >
-          {remainingCalories > 0 ? (
-            <>
-              <span className="font-semibold tabular-nums text-foreground">
-                {remainingCalories.toLocaleString()}
-              </span>{" "}
-              <span className="text-muted-foreground">
-                {/* Today has calories "left"; a past day is closed (it came
-                    in under); a future day is being planned ahead. */}
-                {isToday
-                  ? "kcal left today"
-                  : isFuture
-                    ? "kcal to plan"
-                    : "kcal under target"}
-              </span>
-            </>
-          ) : remainingCalories === 0 ? (
-            <span className="font-medium text-foreground">
-              Daily target reached
-            </span>
-          ) : (
-            // Over is stated, not judged: same neutral styling as "left".
-            <>
-              <span className="font-semibold tabular-nums text-foreground">
-                {Math.abs(remainingCalories).toLocaleString()}
-              </span>{" "}
-              <span className="text-muted-foreground">kcal above target</span>
-            </>
-          )}
-        </p>
-      )}
-      <dl className="grid grid-cols-2 gap-x-3 gap-y-4 sm:grid-cols-4 sm:gap-x-4">
-        {rows.map(({ macro, target }) => (
-          <MacroStat
-            key={macro}
-            macro={macro}
-            value={totalMacros[macro]}
-            target={target}
-            format={wholeNumber}
-            size="lg"
-          >
-            <NumberTicker value={totalMacros[macro]} />
-          </MacroStat>
-        ))}
-      </dl>
-
-      {breakdown && Object.keys(breakdown).length > 0 && (
-        <details className="mt-3 text-xs">
-          <summary className="cursor-pointer select-none text-muted-foreground hover:text-foreground">
-            Breakdown ({Object.keys(breakdown).length} sub-macro
-            {Object.keys(breakdown).length === 1 ? "" : "s"})
-          </summary>
-          <dl className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 font-mono tabular-nums sm:grid-cols-2">
-            {(Object.keys(SUB_MACRO_LABELS) as Array<keyof MacroBreakdown>)
-              .filter((k) => typeof breakdown[k] === "number")
-              .map((k) => (
+      {/* Always laid out at touch height, so Share arriving with the first
+          logged food never shifts the timeline below. */}
+      <div className="mt-2 flex min-h-touch-9 items-start justify-between gap-2">
+        {breakdown && breakdownKeys.length > 0 ? (
+          <details className="min-w-0 flex-1 text-label">
+            <summary className="flex min-h-touch-9 cursor-pointer select-none items-center text-muted-foreground hover:text-foreground">
+              Breakdown ({breakdownKeys.length} sub-macro
+              {breakdownKeys.length === 1 ? "" : "s"})
+            </summary>
+            <dl className="mt-1 grid grid-cols-1 gap-x-4 gap-y-1 font-mono text-xs tabular-nums sm:grid-cols-2">
+              {breakdownKeys.map((k) => (
                 <div
                   key={k}
                   className="flex items-baseline justify-between gap-2"
@@ -199,10 +128,22 @@ const DailyTotals: React.FC<DailyTotalsProps> = ({
                   <dd className="text-foreground">{breakdown[k]} g</dd>
                 </div>
               ))}
-          </dl>
-        </details>
-      )}
-    </div>
+            </dl>
+          </details>
+        ) : (
+          <span />
+        )}
+        {/* The streak chip self-hides with no active streak, so the row
+            stays clean for first-time and lapsed users. */}
+        <div className="flex shrink-0 items-center gap-2">
+          <StreakChip />
+          <ShareTodayButton
+            totalMacros={totalMacros}
+            calculatedValues={calculatedValues}
+          />
+        </div>
+      </div>
+    </section>
   );
 };
 
@@ -366,7 +307,7 @@ function ShareTodayButton({
       type="button"
       onClick={() => void share()}
       disabled={busy}
-      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-border/60 bg-background text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 coarse:h-10 coarse:w-10"
+      className="inline-flex size-touch-9 items-center justify-center rounded-full border border-border/60 bg-background text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
       aria-label="Share today's macros"
       title="Share today's macros"
     >
