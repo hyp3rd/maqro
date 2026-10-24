@@ -12,14 +12,19 @@ import type { Meal } from "@maqro/core/types";
 
 const NODE = {
   logged: "bg-foreground",
+  // Food on the plan, not logged as eaten: a dashed ring, between the
+  // filled "logged" and the faint hollow "open".
+  planned: "border-[1.5px] border-dashed border-foreground/70 bg-background",
   now: "bg-signal ring-4 ring-signal/20",
   open: "border-2 border-foreground/30 bg-background",
 } as const;
 
 /** The Today meal list on a rail that echoes the timing track: a filled
  *  node per logged meal (with the time its first food was logged), a
- *  highlighted node for today's next slot to log, hollow nodes for the
- *  rest. The time column is there only when some meal has a time, so an
+ *  dashed node for a planned one (food with no logged time — an AI
+ *  auto-fill, a template; no time either), a highlighted node for today's
+ *  next slot to log, hollow nodes for the rest. The time column is there
+ *  only when some meal has a time, so an
  *  untimed day gives its width back to the cards. The meal cards
  *  themselves are the caller's (`renderMeal`), so every existing card
  *  action keeps working unchanged. */
@@ -101,6 +106,9 @@ export function MealRail({
             <div className="min-w-0">
               {entry.node === "now" && (
                 <span className="sr-only">Next to log</span>
+              )}
+              {entry.node === "planned" && (
+                <span className="sr-only">Planned, not logged yet</span>
               )}
               {renderMeal(meal)}
             </div>

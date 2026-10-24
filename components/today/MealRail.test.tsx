@@ -48,24 +48,39 @@ describe("MealRail", () => {
     ).toEqual(["Breakfast", "Lunch", "Dinner", "Snacks"]);
   });
 
-  it("fills logged meals, highlights the next slot today, leaves the rest hollow", () => {
+  it("fills logged meals, marks planned ones, highlights the next slot today", () => {
     const { container } = renderRail();
     const nodes = [...container.querySelectorAll("[data-node]")].map((n) =>
       n.getAttribute("data-node"),
     );
-    expect(nodes).toEqual(["logged", "logged", "now", "open"]);
+    // Lunch's food has no logged time (an auto-fill): planned, not logged.
+    expect(nodes).toEqual(["logged", "planned", "now", "open"]);
     expect(
       container.querySelector("[data-node=now]")?.getAttribute("class"),
     ).toContain("bg-signal");
+    const plannedNode = container.querySelector("[data-node=planned]");
+    expect(plannedNode?.getAttribute("class")).toContain("border-dashed");
+    expect(plannedNode?.getAttribute("class")).not.toContain("bg-foreground ");
     expect(screen.getByText("Next to log")).toBeTruthy();
+    const lunch = screen.getAllByRole("listitem")[1] as HTMLElement;
+    expect(within(lunch).getByText("Planned, not logged yet")).toBeTruthy();
   });
 
-  it("shows when a meal was first logged, and nothing for an untimed one", () => {
+  it("shows when a meal was first logged, and no time for a planned one", () => {
     const { container } = renderRail();
     const times = [...container.querySelectorAll("[data-part=time]")].map(
       (t) => t.textContent,
     );
     expect(times).toEqual(["07:30", "", "", ""]);
+  });
+
+  it("reads a past day's untimed food as logged", () => {
+    const { container } = renderRail("2026-10-23");
+    const nodes = [...container.querySelectorAll("[data-node]")].map((n) =>
+      n.getAttribute("data-node"),
+    );
+    expect(nodes).toEqual(["logged", "logged", "open", "open"]);
+    expect(screen.queryByText("Planned, not logged yet")).toBeNull();
   });
 
   it("gives the time column back to the cards when no meal has a time", () => {
