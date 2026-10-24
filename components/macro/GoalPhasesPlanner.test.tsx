@@ -8,7 +8,7 @@ import type { GoalPhase } from "./types";
 // Pro tier so the planner renders its full UI rather than the upgrade card.
 // `FEATURES.canUseGoalPhases` stays real ("pro" clears the bar).
 vi.mock("@/hooks/use-ai-usage", () => ({
-  useAiUsage: () => ({ state: { status: "ok", data: { tier: "pro" } } }),
+  useTier: () => ({ tier: "pro", resolved: true }),
 }));
 
 afterEach(() => {

@@ -345,11 +345,11 @@
   /* Absolute-`top` offset that clears the safe-area inset — for elements
    * pinned to the top edge of a top/left/right-anchored overlay (e.g. a
    * Sheet's close button), which would otherwise sit under the notch /
-   * status bar on mobile. `top-4` equivalent (1rem) on non-notched
+   * status bar on mobile. `top-2` equivalent (0.5rem) on non-notched
    * screens. NOT for bottom-anchored panels: the inset is the device's
    * top notch regardless of the element's position. */
-  .top-safe-4 {
-    top: calc(env(safe-area-inset-top) + 1rem);
+  .top-safe-2 {
+    top: calc(env(safe-area-inset-top) + 0.5rem);
   }
   /* Add to existing padding rather than replacing it. */
   .pt-safe-plus-2 {

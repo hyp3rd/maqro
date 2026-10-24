@@ -12,7 +12,7 @@ import { NumberTicker } from "@/components/shell/NumberTicker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useAiUsage } from "@/hooks/use-ai-usage";
+import { useTier } from "@/hooks/use-ai-usage";
 import { useToday } from "@/hooks/use-today";
 import { FEATURES } from "@/lib/billing/tiers";
 import { bodyFatCategory, estimateBodyFat } from "@/lib/body-fat";
@@ -105,7 +105,8 @@ type Props = {
    *  positive = bulk, 0 = maintain). Read from
    *  `calculatedValues.dailyDelta`. */
   dailyDelta: number;
-  /** Goal label - drives the plateau advisory's wording. */
+  /** The goal driving today's target (the covering phase's when one
+   *  applies, else the linear goal) - drives the plateau advisory's wording. */
   goal: "lose" | "maintain" | "gain";
   /** Gender from the profile - used to pick the body-fat formula
    *  for the Body card. `nonbinary` / `preferNotToSay` disables
@@ -313,10 +314,8 @@ export function ProgressView({
   // and the per-phase maintenance reads. Self-gated here (mirrors how
   // MicronutrientsSection gates) so the markers + the Pro section all read one
   // tier decision.
-  const { state: usageState } = useAiUsage();
-  const isProTrends =
-    usageState.status === "ok" &&
-    FEATURES.canViewTdeeHistory(usageState.data.tier);
+  const { tier } = useTier();
+  const isProTrends = tier !== null && FEATURES.canViewTdeeHistory(tier);
 
   const tdeeHistory = useMemo<TdeePoint[]>(
     () =>

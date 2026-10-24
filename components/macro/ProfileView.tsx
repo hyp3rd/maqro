@@ -1,6 +1,7 @@
 "use client";
 
 import { useUser } from "@/hooks/use-user";
+import { OFFLINE_UNVERIFIED_HINT } from "@/lib/auth/offline-unverified-copy";
 import React, { useState } from "react";
 import { ArrowLeft, CreditCard, FolderOpen, HeartPulse } from "lucide-react";
 import type { PersonalInfo } from "../../components/macro/types";
@@ -58,7 +59,7 @@ export function ProfileView({
   onSelectView,
 }: ProfileViewProps) {
   const [sub, setSub] = useState<Sub>("home");
-  const { user } = useUser();
+  const { user, isOfflineUnverified } = useUser();
 
   if (sub === "measurements") {
     return (
@@ -87,8 +88,19 @@ export function ProfileView({
           title="My documents"
           onBack={() => setSub("home")}
         />
+        {/* Offline-unverified, the account is still on this device: not
+            "Sign in", but the same explanation as Billing of why its cloud
+            data can't load (there is no session to load it with). */}
         {user ? (
           <SavedReportsList />
+        ) : isOfflineUnverified ? (
+          <p
+            role="status"
+            className="rounded-lg border border-border/60 bg-card px-5 py-4 text-sm text-muted-foreground"
+          >
+            {OFFLINE_UNVERIFIED_HINT}. Your documents load once it can be
+            reached.
+          </p>
         ) : (
           <p className="rounded-lg border border-border/60 bg-card px-5 py-4 text-sm text-muted-foreground">
             Sign in to save and access your documents — encrypted report PDFs —
@@ -106,7 +118,10 @@ export function ProfileView({
           title="Billing & subscription"
           onBack={() => setSub("home")}
         />
-        {user ? (
+        {/* Offline-unverified, the account is still on this device: not
+            "Sign in", but the usage card's explanation of why its live
+            data can't load (BillingSection renders nothing without it). */}
+        {user || isOfflineUnverified ? (
           <>
             <BillingSection />
             <AiUsageSection />

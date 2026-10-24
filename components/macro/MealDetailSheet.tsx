@@ -6,7 +6,7 @@ import type {
   Meal,
   PersonalInfo,
 } from "@/components/macro/types";
-import { useAiUsage } from "@/hooks/use-ai-usage";
+import { useRefreshAiUsage, useTier } from "@/hooks/use-ai-usage";
 import { effectiveAge } from "@/lib/age";
 import { AI_MAX_NAME_CHARS } from "@/lib/ai/request-limits";
 import { clampAiText } from "@/lib/ai/request-payload";
@@ -48,6 +48,7 @@ import {
 } from "../ui/alert-dialog";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
+import { MacroStat } from "../ui/macro-stat";
 
 export type DailyGoal = {
   calories: number;
@@ -67,10 +68,8 @@ function sexFromGender(g: PersonalInfo["gender"] | undefined): BiologicalSex {
  *  Header-less — the host (MealHubSheet) renders the meal title — and
  *  keyed by meal id at the call site so it remounts (fresh data) per open. */
 export function MealDetail({ meal, goal }: { meal: Meal; goal?: DailyGoal }) {
-  const { state } = useAiUsage();
-  const isPro =
-    state.status === "ok" && FEATURES.canTrackMicronutrients(state.data.tier);
-  const tierResolved = state.status === "ok" || state.status === "anon";
+  const { tier, resolved: tierResolved } = useTier();
+  const isPro = tier !== null && FEATURES.canTrackMicronutrients(tier);
 
   const [profiles, setProfiles] = useState<MicronutrientProfile[] | null>(null);
   const [userProfile, setUserProfile] = useState<PersonalInfo | null>(null);
@@ -211,23 +210,16 @@ export function MealDetail({ meal, goal }: { meal: Meal; goal?: DailyGoal }) {
             }}
           />
         </div>
-        <div className="grid grid-cols-3 gap-2 text-center">
-          <MacroCell
-            label="Protein"
-            grams={totals.protein}
-            cssVar="--macro-protein"
-          />
-          <MacroCell
-            label="Carbs"
-            grams={totals.carbs}
-            cssVar="--macro-carbs"
-          />
-          <MacroCell
-            label="Fat"
-            grams={totals.fat}
-            cssVar="--macro-fat"
-          />
-        </div>
+        <dl className="grid grid-cols-3 gap-2">
+          {(["protein", "carbs", "fat"] as const).map((macro) => (
+            <MacroStat
+              key={macro}
+              macro={macro}
+              value={totals[macro]}
+              className="rounded-lg border border-border/60 bg-card px-3 py-2"
+            />
+          ))}
+        </dl>
         {(fiber !== undefined ||
           sugars !== undefined ||
           addedSugars !== undefined ||
@@ -337,28 +329,6 @@ export function MealDetail({ meal, goal }: { meal: Meal; goal?: DailyGoal }) {
           </section>
         ))}
     </>
-  );
-}
-
-function MacroCell({
-  label,
-  grams,
-  cssVar,
-}: {
-  label: string;
-  grams: number;
-  cssVar: string;
-}) {
-  return (
-    <div className="rounded-lg border border-border/60 bg-card py-2">
-      <p
-        className="font-mono text-base font-semibold tabular-nums"
-        style={{ color: `hsl(var(${cssVar}))` }}
-      >
-        {Math.round(grams)}g
-      </p>
-      <p className="text-[11px] text-muted-foreground">{label}</p>
-    </div>
   );
 }
 
@@ -489,6 +459,7 @@ function AiAdvice({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [dontAsk, setDontAsk] = useState(false);
   const [capUpgradeOpen, setCapUpgradeOpen] = useState(false);
+  const refreshAiUsage = useRefreshAiUsage();
 
   const totals = meal.foods.reduce(
     (a, f) => ({
@@ -558,6 +529,8 @@ function AiAdvice({
         }
         return;
       }
+      // The server debited this call — bring the shared counter up to date.
+      refreshAiUsage();
       const { advice } = (await res.json()) as { advice: string };
       setState({ status: "done", advice });
     } catch {

@@ -1,15 +1,18 @@
 import type { Meal } from "@/components/macro/types";
 import { getAppUrl } from "@/lib/app-url";
 import { assertCronSecret } from "@/lib/auth/cron-secret";
+import { FEATURES } from "@/lib/billing/tiers";
+import { loadUserTier } from "@/lib/billing/usage";
 import type { DailyLog, WeightEntry } from "@/lib/db";
 import { sendEmail } from "@/lib/email/resend";
 import { weeklyRecapEmail } from "@/lib/email/templates";
-import { computeMacros } from "@/lib/macros";
+import { localDateInTimeZone } from "@/lib/local-time";
 import { emailsById, listAllAuthUsers } from "@/lib/supabase/admin-users";
 import { getSupabaseSecretConfig } from "@/lib/supabase/env";
 import { personalInfoFromPayload } from "@/lib/sync/mappers";
 import { computeWeeklyRecap } from "@/lib/weekly-recap";
 import { NextResponse } from "next/server";
+import { targetsForDate } from "@maqro/core/targets";
 import { createClient } from "@supabase/supabase-js";
 
 /** Vercel cron handler — Monday-morning "your week in macros"
@@ -18,8 +21,10 @@ import { createClient } from "@supabase/supabase-js";
  *
  *  Pulls last 7 days of logs + weights for each opted-in user,
  *  computes the recap with the SAME `computeWeeklyRecap` helper the
- *  Progress view uses (so the numbers in the email match what the
- *  user sees in-app), and sends.
+ *  Progress view uses, against the SAME target the app shows (the shared
+ *  `targetsForDate` resolver, with the user's tier re-checked here so an
+ *  active Pro goal phase counts exactly as in-app), and sends. "Today" is
+ *  the user's local date when they've stored a timezone, else UTC.
  *
  *  Auth + admin-client pattern matches the daily-reminder route. */
 export async function GET(req: Request): Promise<NextResponse> {
@@ -40,7 +45,7 @@ export async function GET(req: Request): Promise<NextResponse> {
   // 1. Opted-in users.
   const { data: prefRows, error: prefErr } = await admin
     .from("notification_preferences")
-    .select("user_id")
+    .select("user_id, timezone")
     .eq("weekly_recap", true);
   if (prefErr) {
     console.error("[cron/weekly-recap] prefs read failed:", prefErr);
@@ -60,8 +65,8 @@ export async function GET(req: Request): Promise<NextResponse> {
   }
   const emailById = emailsById(users);
 
-  const todayUtc = currentDateUtc();
-  const weekStart = subtractDaysUtc(todayUtc, 6);
+  const now = new Date();
+  const todayUtc = currentDateUtc(now);
   const appUrl = getAppUrl();
 
   let sent = 0;
@@ -75,6 +80,13 @@ export async function GET(req: Request): Promise<NextResponse> {
       continue;
     }
 
+    // The user's local "today" (the same day key their app uses); users
+    // who never stored a timezone keep the historical UTC day. The window
+    // is still the 7 days ending today.
+    const timeZone = (pref.timezone as string | null) ?? null;
+    const today = timeZone ? localDateInTimeZone(now, timeZone) : todayUtc;
+    const weekStart = subtractDaysUtc(today, 6);
+
     // Profile — needed for target calories used in the
     // adherence-days calculation. If the user has no profile yet
     // (no row, or the `{}` placeholder migration 0074 creates at
@@ -86,8 +98,13 @@ export async function GET(req: Request): Promise<NextResponse> {
       .eq("user_id", userId)
       .maybeSingle();
     const personalInfo = personalInfoFromPayload(profile?.payload);
+    // Goal phases are Pro: re-check the tier server-side (fail-closed to
+    // free) rather than trust anything in the payload.
+    const phasesEnabled = personalInfo
+      ? FEATURES.canUseGoalPhases(await loadUserTier(admin, userId))
+      : false;
     const targetCalories = personalInfo
-      ? Math.round(computeMacros(personalInfo).targetCalories)
+      ? targetsForDate(personalInfo, today, { phasesEnabled }).targetCalories
       : 0;
 
     // Last 7 days of logs + weights. The helper takes the full
@@ -121,7 +138,7 @@ export async function GET(req: Request): Promise<NextResponse> {
       serverUpdatedAt: row.updated_at as string,
     }));
 
-    const recap = computeWeeklyRecap(logs, weights, targetCalories, todayUtc);
+    const recap = computeWeeklyRecap(logs, weights, targetCalories, today);
 
     // Don't waste an inbox slot when the user logged nothing all
     // week — empty digests are annoying. Skip silently; they'll

@@ -7,7 +7,7 @@ import {
   setSyncConflict,
 } from "@/lib/sync-status";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { AuthApiError, type SupabaseClient } from "@supabase/supabase-js";
 import {
   discardPendingChanges,
   pushSyncTable,
@@ -725,6 +725,66 @@ describe("triggerSync — conflict status flip", () => {
     await triggerSync(sb, USER_ID);
 
     expect(getSyncStatus().state).toBe("synced");
+  });
+});
+
+describe("auth failure during a sync", () => {
+  /** A client whose session the server no longer honours: the stored
+   *  access token has expired and the refresh grant is refused (revoked
+   *  session, user deleted server-side), which is what the first auth call
+   *  of a run — the assurance check — reports. */
+  function revokedSession(): SupabaseClient {
+    const { sb } = makeSupabase({});
+    const revoked = new AuthApiError(
+      "Invalid Refresh Token: Refresh Token Not Found",
+      400,
+      "refresh_token_not_found",
+    );
+    return {
+      ...sb,
+      auth: {
+        ...fakeAuth("aal2"),
+        mfa: {
+          getAuthenticatorAssuranceLevel: async () => ({
+            data: null,
+            error: revoked,
+          }),
+        },
+      },
+    } as unknown as SupabaseClient;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    __resetSyncStatusForTests();
+  });
+  afterEach(() => {
+    __resetSyncStatusForTests();
+  });
+
+  // The failure is scoped to the syncing account's session, so that is the
+  // account signed out and forgotten — never whichever account a stale
+  // last-known record names (an older bundle may have left another one).
+  it("triggerSync signs out the syncing account by its own id", async () => {
+    const sb = revokedSession();
+
+    await expect(triggerSync(sb, USER_ID)).rejects.toBeInstanceOf(AuthApiError);
+
+    expect(vi.mocked(signOutAndClearLocal)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(signOutAndClearLocal)).toHaveBeenCalledWith(sb, USER_ID);
+    expect(getSyncStatus().state).toBe("error");
+  });
+
+  it("resolveConflictsKeepingLocal signs out the syncing account by its own id", async () => {
+    setSyncConflict([{ table: "daily_logs", key: "2026-05-16" }]);
+    const sb = revokedSession();
+
+    await expect(
+      resolveConflictsKeepingLocal(sb, USER_ID),
+    ).rejects.toBeInstanceOf(AuthApiError);
+
+    expect(vi.mocked(signOutAndClearLocal)).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(signOutAndClearLocal)).toHaveBeenCalledWith(sb, USER_ID);
   });
 });
 

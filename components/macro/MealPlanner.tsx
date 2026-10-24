@@ -50,6 +50,7 @@ import { QuickAddFab } from "./QuickAddFab";
 import { WaterCounter } from "./WaterCounter";
 
 interface MealPlannerProps {
+  /** The DISPLAYED day's targets (not necessarily today's). */
   calculatedValues: CalculatedValues;
   totalMacros: {
     protein: number;

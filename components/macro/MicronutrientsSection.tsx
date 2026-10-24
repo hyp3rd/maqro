@@ -7,7 +7,7 @@ import {
   MiniLineChart,
   type LinePoint,
 } from "@/components/shell/MiniLineChart";
-import { useAiUsage } from "@/hooks/use-ai-usage";
+import { useTier } from "@/hooks/use-ai-usage";
 import { effectiveAge } from "@/lib/age";
 import { FEATURES } from "@/lib/billing/tiers";
 import { dayIndexFromIsoDate } from "@/lib/charts/geometry";
@@ -52,7 +52,7 @@ import { ChevronDown, Sparkles } from "lucide-react";
  *  doesn't contribute, so the card honestly shows partial coverage
  *  rather than a misleading zero.
  *
- *  Gated on Pro via `useAiUsage().tier`. Free/Plus users see an
+ *  Gated on Pro via `useTier()`. Free/Plus users see an
  *  upgrade prompt in place of the data. The gate is also enforced
  *  server-side (the enqueue + cron routes), so this is UX, not
  *  security. */
@@ -63,10 +63,8 @@ export function MicronutrientsSection({
   logs: DailyLog[] | null;
   windowDays: number;
 }) {
-  const { state } = useAiUsage();
-  const isPro =
-    state.status === "ok" && FEATURES.canTrackMicronutrients(state.data.tier);
-  const tierResolved = state.status === "ok" || state.status === "anon";
+  const { tier, resolved: tierResolved } = useTier();
+  const isPro = tier !== null && FEATURES.canTrackMicronutrients(tier);
 
   const [profiles, setProfiles] = useState<MicronutrientProfile[] | null>(null);
   const [userProfile, setUserProfile] = useState<PersonalInfo | null>(null);

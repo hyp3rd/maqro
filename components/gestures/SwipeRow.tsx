@@ -52,7 +52,7 @@ const DRAG_LIMIT_PX = 120;
 type SwipeIntent = "danger" | "info" | "primary" | "success" | "neutral";
 
 const INTENT_CLASS: Record<SwipeIntent, string> = {
-  danger: "bg-destructive/90 text-destructive-foreground",
+  danger: "bg-destructive-strong/90 text-destructive-foreground",
   info: "bg-sky-600/90 text-white",
   primary: "bg-primary/90 text-primary-foreground",
   success: "bg-emerald-600/90 text-white",

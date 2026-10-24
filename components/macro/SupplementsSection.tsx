@@ -1,6 +1,6 @@
 "use client";
 
-import { useAiUsage } from "@/hooks/use-ai-usage";
+import { useTier } from "@/hooks/use-ai-usage";
 import { useNotificationPrefs } from "@/hooks/use-notification-prefs";
 import { FEATURES } from "@/lib/billing/tiers";
 import {
@@ -22,24 +22,13 @@ import {
 } from "@/lib/rda";
 import { bumpPending } from "@/lib/sync-status";
 import { useDataRev } from "@/lib/sync/data-bus";
-import { cn } from "@/lib/utils";
 import { useEffect, useMemo, useState } from "react";
 import { Info, Minus, Pill, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
-
-const WEEKDAY_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
-const WEEKDAY_FULL = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-];
+import { WeekdayPicker } from "../ui/weekday-picker";
 
 /** Per-dose sanity ceilings (in each nutrient's canonical unit). Generous
  *  enough for real high-dose supplements but block fat-fingered magnitudes /
@@ -66,9 +55,8 @@ const VITAMIN_D_IU_PER_UG = 40;
  *  nothing here — the Micronutrients upgrade card already sells the Pro micro
  *  suite, so a second prompt would be redundant. */
 export function SupplementsSection() {
-  const { state } = useAiUsage();
-  const isPro =
-    state.status === "ok" && FEATURES.canTrackMicronutrients(state.data.tier);
+  const { tier } = useTier();
+  const isPro = tier !== null && FEATURES.canTrackMicronutrients(tier);
 
   const [supplements, setSupplements] = useState<Supplement[] | null>(null);
   const [takenToday, setTakenToday] = useState<SupplementIntakeEntry[]>([]);
@@ -543,34 +531,12 @@ function SupplementForm({
               Add time
             </button>
           </div>
-          <div className="flex items-center gap-1">
-            {WEEKDAY_LABELS.map((label, i) => {
-              const on = days.includes(i);
-              return (
-                <button
-                  key={i}
-                  type="button"
-                  aria-pressed={on}
-                  aria-label={`Toggle ${WEEKDAY_FULL[i]}`}
-                  onClick={() =>
-                    setDays((d) =>
-                      d.includes(i)
-                        ? d.filter((x) => x !== i)
-                        : [...d, i].sort((a, b) => a - b),
-                    )
-                  }
-                  className={cn(
-                    "h-7 w-7 rounded-full text-xs font-medium transition-colors",
-                    on
-                      ? "bg-brand text-brand-foreground"
-                      : "border border-border/60 text-muted-foreground hover:bg-accent",
-                  )}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
+          <WeekdayPicker
+            aria-label="Reminder days"
+            value={days}
+            onValueChange={setDays}
+            className="max-w-sm"
+          />
         </div>
       )}
 
