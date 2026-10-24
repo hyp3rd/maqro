@@ -31,15 +31,15 @@ describe("DayTypeChip", () => {
 
   it("names the selected day's session and its start, read-only by default", () => {
     render(<DayTypeChip training={LOWER} />);
-    expect(screen.getByText("Lower body · heavy day")).toBeTruthy();
+    expect(screen.getByText("Lower · heavy day")).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull();
     expect(screen.queryByText("· changed")).toBeNull();
     expect(
       screen
-        .getByText("Lower body · heavy day")
+        .getByText("Lower · heavy day")
         .closest("[title]")
         ?.getAttribute("title"),
-    ).toBe("Lower body, heavy day, 18:00, 75\u00a0min");
+    ).toBe("Lower, heavy day, 18:00, 75\u00a0min");
   });
 
   it("leaves the time off a session without a start time", () => {
@@ -94,7 +94,7 @@ describe("DayTypeChip", () => {
       />,
     );
     const button = screen.getByRole("button", {
-      name: "Lower body, heavy day, 18:00, 75\u00a0min. Change Wednesday’s session",
+      name: "Lower, heavy day, 18:00, 75\u00a0min. Change Wednesday’s session",
     });
     expect(button.getAttribute("aria-haspopup")).toBe("dialog");
     fireEvent.click(button);

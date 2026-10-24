@@ -165,7 +165,7 @@ describe("Today's session chip", () => {
     renderRow(app().targetsFor(WED));
     expect(
       screen.getByRole("button", {
-        name: "Lower body, heavy day, 18:00, 75\u00a0min. Change today’s session",
+        name: "Lower, heavy day, 18:00, 75\u00a0min. Change today’s session",
       }),
     ).toBeTruthy();
   });
@@ -200,7 +200,7 @@ describe("DayTypeSheet", () => {
       "Today’s session",
     );
     expect(sheet.textContent).toContain(
-      "Planned: Lower body · Hard · 18:00 · 75\u00a0min",
+      "Planned: Lower · Hard · 18:00 · 75\u00a0min",
     );
     expect(sheet.textContent).toContain("2,450 kcal");
 
@@ -236,7 +236,7 @@ describe("DayTypeSheet", () => {
     renderRow(targetsFor(THU), previewDayTargets);
     const sheet = await openSheet(/change thursday’s session/i);
 
-    fireEvent.click(within(sheet).getByRole("radio", { name: "Lower body" }));
+    fireEvent.click(within(sheet).getByRole("radio", { name: "Lower" }));
     fireEvent.click(within(sheet).getByRole("radio", { name: "Hard" }));
     fireEvent.change(within(sheet).getByLabelText("Start time"), {
       target: { value: "18:30" },
@@ -284,7 +284,7 @@ describe("DayTypeSheet", () => {
     ]);
     renderRow(targetsFor(WED), previewDayTargets);
     const sheet = await openSheet();
-    fireEvent.click(within(sheet).getByRole("radio", { name: "Lower body" }));
+    fireEvent.click(within(sheet).getByRole("radio", { name: "Lower" }));
     fireEvent.click(within(sheet).getByRole("radio", { name: "Hard" }));
     fireEvent.change(within(sheet).getByLabelText("Start time"), {
       target: { value: "18:00" },
@@ -341,7 +341,7 @@ describe("DayTypeSheet", () => {
     const { targetsFor, previewDayTargets } = app();
     renderRow(targetsFor(THU), previewDayTargets);
     const sheet = await openSheet(/change thursday’s session/i);
-    fireEvent.click(within(sheet).getByRole("radio", { name: "Lower body" }));
+    fireEvent.click(within(sheet).getByRole("radio", { name: "Lower" }));
     const duration = within(sheet).getByLabelText("Duration (min)");
     const save = within(sheet).getByRole("button", { name: "Save" });
 

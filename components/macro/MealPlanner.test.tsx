@@ -246,7 +246,7 @@ describe("MealPlanner as Instrument Today", () => {
       screen.getByRole("heading", { level: 1, name: "Today" }),
     ).toBeTruthy();
     // Wednesday in the template: a hard lower-body session.
-    expect(screen.getByText("Lower body · heavy day")).toBeTruthy();
+    expect(screen.getByText("Lower · heavy day")).toBeTruthy();
   });
 
   it("hides the session chip while training is off", () => {
@@ -270,7 +270,7 @@ describe("MealPlanner as Instrument Today", () => {
     renderPlanner();
     expect(
       screen.getByRole("img", {
-        name: /^Day timeline: Breakfast at 07:30, 520 kcal\. Lunch at 12:45, 720 kcal\. Workout, Lower body · heavy day, 18:00 to 19:15\. Now 15:10\.$/,
+        name: /^Day timeline: Breakfast at 07:30, 520 kcal\. Lunch at 12:45, 720 kcal\. Workout, Lower · heavy day, 18:00 to 19:15\. Now 15:10\.$/,
       }),
     ).toBeTruthy();
   });
@@ -567,9 +567,9 @@ describe("Today: changing the day's session from the chip", () => {
 
     // The plan: the chip, the gauge and Wednesday's strip bar agree.
     const planChip = await screen.findByRole("button", {
-      name: "Lower body, heavy day, 18:00, 75\u00a0min. Change today’s session",
+      name: "Lower, heavy day, 18:00, 75\u00a0min. Change today’s session",
     });
-    expect(planChip.textContent).toBe("Lower body · heavy day");
+    expect(planChip.textContent).toBe("Lower · heavy day");
     expect(gaugeStatus().textContent).toBe(
       `${kcal(plannedWed - 1240)} kcal left today`,
     );
@@ -617,7 +617,7 @@ describe("Today: changing the day's session from the chip", () => {
     });
     await waitFor(() =>
       expect(chip(/change today’s session/i).textContent).toBe(
-        "Lower body · heavy day",
+        "Lower · heavy day",
       ),
     );
     expect(gaugeStatus().textContent).toBe(

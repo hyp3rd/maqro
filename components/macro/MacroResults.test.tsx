@@ -87,7 +87,7 @@ describe("MacroResults with a training schedule", () => {
     expect(values.training?.dayClass).toBe("heavy");
     const mean = values.training?.meanCalories ?? 0;
     expect(values.targetCalories).toBeGreaterThan(mean);
-    expect(screen.getByText("Lower body · heavy day")).toBeTruthy();
+    expect(screen.getByText("Lower · heavy day")).toBeTruthy();
     const summary = screen.getByTestId("planned-day");
     expect(summary.textContent).toContain(
       `${values.targetCalories.toLocaleString("en")} kcal planned today`,

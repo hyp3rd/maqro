@@ -14,10 +14,13 @@ import { formatClock, parseClock } from "./today/timeline";
  *  and timeline all read from here, so a session reads the same everywhere.
  *  Sentence case, no judgement. */
 
+/** Short names, so the longest chip ("Full body · training day · changed")
+ *  still fits beside Today's "Today" button on a 360 px phone: "Upper" and
+ *  "Lower" as in an upper/lower split, never "Upper body". */
 export const TRAINING_TYPE_LABEL: Record<TrainingType, string> = {
   rest: "Rest",
-  upper: "Upper body",
-  lower: "Lower body",
+  upper: "Upper",
+  lower: "Lower",
   fullBody: "Full body",
   endurance: "Endurance",
   hiit: "HIIT",
@@ -31,7 +34,7 @@ export const TRAINING_INTENSITY_LABEL: Record<TrainingIntensity, string> = {
 };
 
 /** The kind of day a session makes for the targets, after its type in
- *  `dayTypeLabel` ("Lower body · heavy day"). Only an endurance session
+ *  `dayTypeLabel` ("Lower · heavy day"). Only an endurance session
  *  makes an `endurance` day (`classifyTrainingDay`), so "long day" never
  *  stands without its type. */
 const DAY_CLASS_LABEL: Record<TrainingDayClass, string> = {
@@ -83,7 +86,7 @@ export function sessionDetails(day: TrainingDay): string {
   return parts.length > 0 ? parts.join(" · ") : "No details yet";
 }
 
-/** "Lower body · Hard · 18:00 · 60 min", or "Rest day". */
+/** "Lower · Hard · 18:00 · 60 min", or "Rest day". */
 export function sessionLabel(day: TrainingDay): string {
   if (day.type === "rest") return "Rest day";
   const details = sessionDetails(day);
@@ -94,7 +97,7 @@ export function sessionLabel(day: TrainingDay): string {
 
 type DayType = Pick<TrainingDayTargets, "day" | "dayClass">;
 
-/** "Lower body · heavy day", "Full body · training day", or "Rest day":
+/** "Lower · heavy day", "Full body · training day", or "Rest day":
  *  the session type and the kind of day it makes, from what
  *  `targetsForDate` resolved for it (`DateTargets.training`) or from
  *  `classifyTrainingDay` for a session being edited. */
@@ -104,7 +107,7 @@ export function dayTypeLabel({ day, dayClass }: DayType): string {
 }
 
 /** The same in full for assistive tech, with the planned start and length
- *  when the template has them: "Lower body, heavy day, 18:00, 75 min". */
+ *  when the template has them: "Lower, heavy day, 18:00, 75 min". */
 export function dayTypeDescription({ day, dayClass }: DayType): string {
   if (day.type === "rest") return "Rest day";
   const parts = [TRAINING_TYPE_LABEL[day.type], DAY_CLASS_LABEL[dayClass]];

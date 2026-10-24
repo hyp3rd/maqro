@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { TRAINING_TYPES } from "@maqro/core/training";
 import {
   TRAINING_TYPE_LABEL,
   dayTypeDescription,
@@ -14,9 +15,9 @@ describe("dayTypeLabel", () => {
         day: { type: "lower", intensity: "hard", time: "18:00" },
         dayClass: "heavy",
       }),
-    ).toBe("Lower body · heavy day");
+    ).toBe("Lower · heavy day");
     expect(dayTypeLabel({ day: { type: "upper" }, dayClass: "training" })).toBe(
-      "Upper body · training day",
+      "Upper · training day",
     );
     expect(
       dayTypeLabel({ day: { type: "fullBody" }, dayClass: "training" }),
@@ -48,6 +49,20 @@ describe("dayTypeLabel", () => {
       ).toBe(TRAINING_TYPE_LABEL[type]);
     }
   });
+
+  it("stays short enough for Today's chip beside its Today button", () => {
+    // "Full body · training day · changed" is the widest chip that fits
+    // beside "Today" on a 360 px phone; no session reads longer.
+    const classes = ["light", "training", "heavy", "endurance"] as const;
+    const longest = Math.max(
+      ...TRAINING_TYPES.flatMap((type) =>
+        classes.map(
+          (dayClass) => dayTypeLabel({ day: { type }, dayClass }).length,
+        ),
+      ),
+    );
+    expect(longest).toBeLessThanOrEqual("Full body · training day".length);
+  });
 });
 
 describe("dayTypeDescription", () => {
@@ -62,10 +77,10 @@ describe("dayTypeDescription", () => {
         },
         dayClass: "heavy",
       }),
-    ).toBe("Lower body, heavy day, 18:00, 75 min");
+    ).toBe("Lower, heavy day, 18:00, 75 min");
     expect(
       dayTypeDescription({ day: { type: "upper" }, dayClass: "training" }),
-    ).toBe("Upper body, training day");
+    ).toBe("Upper, training day");
     expect(
       dayTypeDescription({ day: { type: "rest" }, dayClass: "rest" }),
     ).toBe("Rest day");
@@ -81,7 +96,7 @@ describe("sessionDetails / sessionLabel", () => {
       durationMin: 75,
     } as const;
     expect(sessionDetails(day)).toBe("Hard · 18:00 · 75 min");
-    expect(sessionLabel(day)).toBe("Lower body · Hard · 18:00 · 75 min");
+    expect(sessionLabel(day)).toBe("Lower · Hard · 18:00 · 75 min");
   });
 
   it("a session without details is just its type; a rest day has none", () => {

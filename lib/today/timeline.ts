@@ -179,7 +179,7 @@ export type TimelineSpan = {
   kind: "workout";
   startMin: number;
   endMin: number;
-  /** The session as the day-type chip names it ("Lower body · heavy day"). */
+  /** The session as the day-type chip names it ("Lower · heavy day"). */
   label: string;
 };
 

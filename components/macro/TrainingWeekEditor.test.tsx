@@ -194,7 +194,7 @@ describe("TrainingWeekEditor: the week", () => {
   it("shows each day's session and planned kcal, today marked", () => {
     renderEditor({ initial: profile });
     const wednesday = row("Wednesday");
-    expect(wednesday.textContent).toContain("Lower body");
+    expect(wednesday.textContent).toContain("Lower");
     expect(wednesday.textContent).toContain("Hard · 18:00 · 75 min");
     expect(wednesday.textContent).toContain(
       fmt(week?.days[2]?.targetCalories ?? 0),
@@ -377,7 +377,7 @@ describe("TrainingWeekEditor: editing a day", () => {
       within(dialog).getByText("A rest day has no session details."),
     ).toBeTruthy();
     // Back to a session, the fields are live again with the draft kept.
-    fireEvent.click(within(dialog).getByRole("radio", { name: "Lower body" }));
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Lower" }));
     expect(start.matches(":disabled")).toBe(false);
     expect((start as HTMLInputElement).value).toBe("18:00");
     fireEvent.click(within(dialog).getByRole("radio", { name: "Rest" }));
@@ -389,7 +389,7 @@ describe("TrainingWeekEditor: editing a day", () => {
     // Reopening starts from the stored session, not the abandoned draft.
     expect(
       within(again)
-        .getByRole("radio", { name: "Lower body" })
+        .getByRole("radio", { name: "Lower" })
         .getAttribute("aria-checked"),
     ).toBe("true");
     fireEvent.click(within(again).getByRole("radio", { name: "Rest" }));
@@ -459,7 +459,7 @@ describe("TrainingWeekEditor: editing a day", () => {
       ).toBe("false");
     }
     expect(
-      within(dialog).getByText("Lower body · heavy day", { exact: false }),
+      within(dialog).getByText("Lower · heavy day", { exact: false }),
     ).toBeTruthy();
     await act(async () => {
       fireEvent.click(
