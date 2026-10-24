@@ -11,7 +11,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { MORE_SHEET, NAV, type ViewKey } from "./nav";
+import { MORE_SHEET, NAV, TAB_BAR, type ViewKey } from "./nav";
 
 const haptic = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/haptics", () => ({ haptic }));
@@ -90,6 +90,13 @@ describe("MobileBottomNav", () => {
     expect(onQuickAdd.mock.calls).toEqual([[plus]]);
     expect(onSelect).not.toHaveBeenCalled();
     expect(haptic).toHaveBeenCalledWith("tap");
+  });
+
+  it("lays the bar out with one column per slot", () => {
+    const { bar } = renderNav();
+    expect(bar.style.gridTemplateColumns).toBe(
+      `repeat(${TAB_BAR.length}, minmax(0, 1fr))`,
+    );
   });
 
   it("the centre button fills with brand-strong, the fill behind a brand-foreground label", () => {

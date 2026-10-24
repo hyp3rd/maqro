@@ -30,10 +30,15 @@ export function MobileBottomNav({ current, onSelect, onQuickAdd }: Props) {
       // Hook for app/globals.css: while this bar is mounted (and visible
       // below `md`) toasts are lifted above it via --toast-offset-bottom.
       data-mobile-bottom-nav=""
+      // One equal column per registry slot, so adding or dropping a slot
+      // (the Suggestions change drops More) needs no edit here.
+      style={{
+        gridTemplateColumns: `repeat(${TAB_BAR.length}, minmax(0, 1fr))`,
+      }}
       className={cn(
         // Height: 6px top padding + 52px slots + 8px (plus the home-indicator
         // inset) below, plus the 1px hairline: ~67px in a browser tab.
-        "fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 items-center border-t border-border/60 bg-background/90 px-1.5 backdrop-blur-lg",
+        "fixed inset-x-0 bottom-0 z-40 grid items-center border-t border-border/60 bg-background/90 px-1.5 backdrop-blur-lg",
         "pt-1.5 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] md:hidden",
       )}
     >
