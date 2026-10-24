@@ -5,7 +5,6 @@ import { useRef, useState } from "react";
 import {
   Camera,
   ChevronLeft,
-  ChevronRight,
   LayoutGrid,
   Mic,
   Search,
@@ -238,23 +237,26 @@ function LogMealFlow({
               onAdd={(food, portion) => onQuickLog(food, mealId, portion)}
             />
 
+            {/* One row per tile pair, icon beside the words: six methods
+                (with AI) stay above the fold of a 390×844 sheet under the
+                recents, clear of the home indicator. */}
             <div className="grid grid-cols-2 gap-2">
               {methods.map(({ key, icon: Icon, label, hint }) => (
                 <button
                   key={key}
                   type="button"
                   onClick={() => onMethod(key, mealId)}
-                  className="flex min-h-24 flex-col items-start justify-between rounded-xl border border-border/60 bg-card p-3 text-left transition-colors active:bg-muted"
+                  className="flex min-h-14 items-center gap-3 rounded-xl border border-border/60 bg-card px-3 py-2.5 text-left transition-colors active:bg-muted"
                 >
-                  <Icon className="h-6 w-6 text-foreground" />
-                  <span className="mt-2 w-full">
-                    <span className="flex items-center justify-between gap-1">
-                      <span className="text-sm font-medium text-foreground">
-                        {label}
-                      </span>
-                      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+                  <Icon
+                    aria-hidden
+                    className="size-5 shrink-0 text-foreground"
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-medium text-foreground">
+                      {label}
                     </span>
-                    <span className="block text-[11px] text-muted-foreground">
+                    <span className="block text-xs leading-snug text-muted-foreground">
                       {hint}
                     </span>
                   </span>
