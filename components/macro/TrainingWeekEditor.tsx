@@ -6,7 +6,7 @@ import { Card, CardBody } from "@/components/ui/card";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Switch } from "@/components/ui/switch";
 import { haptic } from "@/lib/haptics";
-import { formatNumber } from "@/lib/i18n/number";
+import { formatNumber, roundTo } from "@/lib/i18n/number";
 import {
   MONDAY_FIRST,
   TRAINING_TYPE_LABEL,
@@ -38,12 +38,14 @@ import {
 } from "@maqro/core/training-edit";
 import {
   type CyclingPreset,
+  KCAL_PER_KG,
   MIN_DAILY_KCAL,
   type PersonalInfo,
   type ProteinSetting,
   type TrainingDay,
   type TrainingSchedule,
 } from "@maqro/core/types";
+import { kgToDisplay } from "@maqro/core/units";
 import { TrainingDayDialog } from "./TrainingDayDialog";
 import { TrainingWeekChart } from "./TrainingWeekChart";
 
@@ -72,6 +74,25 @@ type Props = {
   /** Opens My measurements, where a body-fat estimate comes from. */
   onOpenMeasurements: () => void;
 };
+
+/** "Lose 0.4 kg/week", "Gain 0.25 lb/week" or "Maintain weight": the goal
+ *  the weekly average serves, at the rate its own balance gives
+ *  (`dailyDelta`: after any safety cap, as the Calculator projects it), in
+ *  the profile's units. One decimal unless the rate needs two (0.25). */
+function goalFragment(
+  goal: PersonalInfo["goal"],
+  dailyDelta: number,
+  units: PersonalInfo["units"],
+  locale: string,
+): string {
+  if (goal === "maintain") return "Maintain weight";
+  const rate = roundTo(
+    kgToDisplay((Math.abs(dailyDelta) * 7) / KCAL_PER_KG, units),
+    2,
+  );
+  const decimals = Math.round(rate * 100) % 10 === 0 ? 1 : 2;
+  return `${goal === "lose" ? "Lose" : "Gain"} ${formatNumber(rate, locale, decimals)} ${units === "imperial" ? "lb" : "kg"}/week`;
+}
 
 /** `weekTargets` lists Monday → Sunday; `getDay()` puts Sunday first. */
 const weekIndex = (weekday: number) => (weekday + 6) % 7;
@@ -186,6 +207,13 @@ export function TrainingWeekEditor({
               >
                 Your goal sets the weekly average; training moves calories
                 between days, never on top. Free on every plan.
+                {schedule && (
+                  <>
+                    {" "}
+                    Turn it back on and your week returns as you left it, with
+                    any days you changed on their own.
+                  </>
+                )}
               </p>
             )}
           </div>
@@ -259,6 +287,7 @@ function EnabledEditor({
   onOpenMeasurements: () => void;
 }) {
   const id = useId();
+  const locale = useLocale();
   // Today's plan sets the week-level figures (the average, the floor,
   // protein, the notes): they can step mid-week (a birthday, a goal phase
   // starting), and today's are the ones in effect.
@@ -293,9 +322,17 @@ function EnabledEditor({
             >
               <span className="font-mono text-3xl font-medium tabular-nums tracking-tight text-foreground">
                 {kcal(mean)}
-              </span>
+              </span>{" "}
               <span className="text-sm font-normal text-muted-foreground">
-                kcal daily average
+                kcal daily average{" · "}
+                <span className="font-medium text-foreground">
+                  {goalFragment(
+                    current?.goal ?? profile.goal,
+                    current?.dailyDelta ?? 0,
+                    profile.units,
+                    locale,
+                  )}
+                </span>
               </span>
             </h3>
             <TrainingWeekChart

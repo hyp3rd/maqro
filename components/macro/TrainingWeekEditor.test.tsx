@@ -137,6 +137,9 @@ describe("TrainingWeekEditor: enable / disable", () => {
       hint,
     );
 
+    // Never turned on: nothing to come back.
+    expect(screen.queryByText(/returns as you left it/)).toBeNull();
+
     fireEvent.click(switchControl());
     expect(onTraining).toHaveBeenCalledWith(defaultTrainingSchedule());
     expect(switchControl().getAttribute("aria-checked")).toBe("true");
@@ -157,6 +160,12 @@ describe("TrainingWeekEditor: enable / disable", () => {
     fireEvent.click(switchControl());
     expect(onTraining).toHaveBeenCalledWith({ ...SCHEDULE, enabled: false });
     expect(screen.queryByRole("button", { name: /^Edit / })).toBeNull();
+    // Off, the card says what turning it back on restores: the week and
+    // the single days changed on their own (their overrides apply again).
+    const describedBy = switchControl().getAttribute("aria-describedby");
+    expect(document.getElementById(describedBy ?? "")?.textContent).toContain(
+      "Turn it back on and your week returns as you left it, with any days you changed on their own.",
+    );
     fireEvent.click(switchControl());
     expect(onTraining).toHaveBeenLastCalledWith(SCHEDULE);
   });
@@ -193,6 +202,37 @@ describe("TrainingWeekEditor: the week", () => {
     expect(row("Tuesday").textContent).toContain("No session");
     expect(row("Saturday").getAttribute("aria-current")).toBe("date");
     expect(row("Friday").getAttribute("aria-current")).toBeNull();
+  });
+
+  it("names the goal and its weekly rate beside the average", () => {
+    renderEditor({ initial: profile });
+    const current = week?.days[5];
+    const mean = current?.training?.meanCalories ?? 0;
+    // The average's own balance (after any safety cap), like the
+    // Calculator's projection: 2,600 maintenance, a 0.5 kg/week ask.
+    const rate = (Math.abs(current?.dailyDelta ?? 0) * 7) / 7700;
+    expect(rate).toBeCloseTo(0.5, 1);
+    expect(
+      screen.getByRole("heading", {
+        name: `${fmt(mean)} kcal daily average · Lose ${rate.toFixed(1)} kg/week`,
+      }),
+    ).toBeTruthy();
+  });
+
+  it("words the rate in the profile's units, and maintenance without one", () => {
+    const { unmount } = renderEditor({
+      initial: { ...profile, units: "imperial" },
+    });
+    expect(
+      screen.getByRole("heading", {
+        name: /daily average · Lose 1\.1 lb\/week$/,
+      }),
+    ).toBeTruthy();
+    unmount();
+    renderEditor({ initial: { ...profile, goal: "maintain" } });
+    expect(
+      screen.getByRole("heading", { name: /daily average · Maintain weight$/ }),
+    ).toBeTruthy();
   });
 
   it("marks today like Today's week strip: a brand-outlined day tile", () => {
