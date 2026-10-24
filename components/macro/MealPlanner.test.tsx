@@ -531,9 +531,10 @@ describe("MealPlanner as Instrument Today", () => {
       expect(typed.getAttribute("aria-hidden")).toBeNull();
       expect(document.activeElement).toBe(typed);
       fireEvent.change(typed, { target: { value: "2026-10-15" } });
-      expect(props.onSelectDate).toHaveBeenCalledWith("2026-10-15");
-      // Leaving it brings the button back.
+      // Leaving it shows the typed day and brings the button back (the
+      // field's own rules are in TodayHeader.test.tsx).
       fireEvent.blur(typed);
+      expect(props.onSelectDate).toHaveBeenCalledWith("2026-10-15");
       expect(trigger().tagName).toBe("BUTTON");
     });
   });

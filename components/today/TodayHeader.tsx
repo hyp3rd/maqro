@@ -4,7 +4,7 @@ import { openDatePicker } from "@/lib/today/date-picker";
 import { localDate, relativeDay } from "@/lib/today/timeline";
 import { cn } from "@/lib/utils";
 import type * as React from "react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { useLocale } from "next-intl";
 import { addDays, isDateKey } from "@maqro/core/date";
@@ -60,7 +60,9 @@ function editSessionLabel(date: string, today: string, formats: HeaderFormats) {
  *  of the title's row. The date is a button that opens the platform's date picker
  *  for any day, past or future (a future day can be planned, as on the week
  *  strip); where the browser can't open one, it becomes a visible date
- *  field instead. On any other day the date line ends with the one way
+ *  field instead, which commits the typed day on Enter or when it loses
+ *  focus (never the years passed through while typing one; Escape keeps
+ *  the day). On any other day the date line ends with the one way
  *  back to today, which then puts focus on the heading so a keyboard or
  *  screen-reader user lands on the day they returned to. Below the title:
  *  the session chip (training on; with `onEditDayType` it opens the
@@ -91,12 +93,45 @@ export function TodayHeader({
   const locale = useLocale();
   const formats = useMemo(() => headerFormats(locale), [locale]);
   const pickerRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const typedRef = useRef<HTMLInputElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
-  // The browser couldn't open its picker: show the date field itself.
+  // The browser couldn't open its picker: show the date field itself,
+  // holding what is typed until it is committed.
   const [typingDate, setTypingDate] = useState(false);
+  const [typed, setTyped] = useState("");
+  // Where focus goes once the field closes from the keyboard (Enter,
+  // Escape): back to the date. A blur leaves focus where the user put it.
+  const refocusTrigger = useRef(false);
+  // Closed once: an Enter that removes the focused field may be followed
+  // by that field's blur, which must not commit again.
+  const fieldOpen = useRef(false);
   const selectFromField = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (isDateKey(event.target.value)) onSelectDate(event.target.value);
   };
+  const openField = () => {
+    fieldOpen.current = true;
+    setTyped(date);
+    setTypingDate(true);
+  };
+  /** Close the date field, showing `value` if it is a whole new day. */
+  const closeField = (value: string | null) => {
+    if (!fieldOpen.current) return;
+    fieldOpen.current = false;
+    setTypingDate(false);
+    if (value !== null && isDateKey(value) && value !== date)
+      onSelectDate(value);
+  };
+  // Shown only in answer to the user's own tap, so focus follows it there —
+  // once, when it appears (not on every render while typing).
+  useEffect(() => {
+    if (typingDate) {
+      typedRef.current?.focus();
+    } else if (refocusTrigger.current) {
+      refocusTrigger.current = false;
+      triggerRef.current?.focus();
+    }
+  }, [typingDate]);
   const known = isDateKey(date) && isDateKey(today);
   const isToday = !known || relativeDay(date, today) === "today";
   const fullDate = known
@@ -117,33 +152,43 @@ export function TodayHeader({
             without taking layout space. */}
           <div
             data-part="date-line"
-            className="flex h-[1.125rem] items-end gap-4"
+            className={cn(
+              "flex h-[1.125rem] items-end gap-4",
+              // The typed field is a 44 px target on a touch screen; the
+              // line grows to hold it, in answer to the user's own tap.
+              typingDate && "coarse:h-11",
+            )}
           >
             <div className="relative flex h-full min-w-0 items-end">
               {fullDate !== null &&
                 (typingDate ? (
                   <input
-                    // Shown only in answer to the user's own tap, so focus
-                    // follows it there.
-                    ref={(field) => field?.focus()}
+                    ref={typedRef}
                     type="date"
                     aria-label={`${fullDate}, choose a day`}
-                    value={date}
-                    onChange={selectFromField}
-                    onBlur={() => setTypingDate(false)}
-                    // On a touch screen it rises from the line's foot into
-                    // the shell's 16 px top padding (32 px tall), as the
-                    // buttons' hit-slop does, without moving the layout.
-                    className="h-[1.125rem] rounded-sm border border-input bg-background px-1 text-label text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:h-8"
+                    value={typed}
+                    // Typing a year passes through valid-looking ones
+                    // (0002, 0020, 0202…): held until committed.
+                    onChange={(event) => setTyped(event.target.value)}
+                    onBlur={() => closeField(typed)}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter" && event.key !== "Escape")
+                        return;
+                      event.preventDefault();
+                      refocusTrigger.current = true;
+                      closeField(event.key === "Enter" ? typed : null);
+                    }}
+                    className="h-[1.125rem] rounded-sm border border-input bg-background px-1 text-label text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:h-11"
                   />
                 ) : (
                   <>
                     <button
+                      ref={triggerRef}
                       type="button"
                       onClick={() => {
                         const field = pickerRef.current;
                         if (field && openDatePicker(field) === "unavailable")
-                          setTypingDate(true);
+                          openField();
                       }}
                       className={cn(LINE_BUTTON, "text-muted-foreground")}
                     >
