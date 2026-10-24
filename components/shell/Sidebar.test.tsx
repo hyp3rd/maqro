@@ -12,7 +12,15 @@ import {
 import { NAV, SIDEBAR_GROUPS, VIEW_KEYS } from "./nav";
 
 vi.mock("@/hooks/use-user-role", () => ({ useIsAdmin: () => false }));
-vi.mock("./UserMenu", () => ({ UserMenu: () => null }));
+const userMenu = vi.hoisted(() => ({
+  lastProps: null as { onSelectView?: unknown } | null,
+}));
+vi.mock("./UserMenu", () => ({
+  UserMenu: (p: { onSelectView?: unknown }) => {
+    userMenu.lastProps = p;
+    return null;
+  },
+}));
 
 const { Sidebar } = await import("./Sidebar");
 
@@ -88,6 +96,17 @@ describe("Sidebar", () => {
     const library = screen.getByRole("group", { name: "Library" });
     expect(library.className).toContain("border-t");
     expect(library.className).toContain("dark:border-border");
+  });
+
+  it("the footer account menu can open Settings", () => {
+    const onSelect = vi.fn();
+    render(
+      <Sidebar
+        current="plan"
+        onSelect={onSelect}
+      />,
+    );
+    expect(userMenu.lastProps?.onSelectView).toBe(onSelect);
   });
 
   it("marks only the current view with aria-current=page", () => {

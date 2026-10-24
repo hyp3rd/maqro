@@ -27,17 +27,19 @@ import { Bell, CloudOff, Home, LogIn, LogOut, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { NotificationsSheet } from "./NotificationsSheet";
 import { ThemeMenuItem } from "./ThemeMenuItem";
-import type { ViewKey } from "./nav";
+import { NAV, type ViewKey } from "./nav";
 
 type UserMenuProps = {
   /** Compact mode: render just the avatar (no name text), suitable for
    * the mobile topbar where horizontal space is tight. The full name +
    * email still appear inside the dropdown content. */
   compact?: boolean;
-  /** Passed by the mobile topbar only: the menu then also hosts the
+  /** Switches the app view. With it the menu offers Settings (its one
+   *  navigation entry, so Settings is two taps from anywhere; the rest of
+   *  the navigation lives in the tab bar, the More sheet and the sidebar).
+   *  In the mobile topbar (`compact`) the menu then also hosts the
    *  notifications (whose entries open the view they point at) and the
-   *  theme, moved out of the cramped topbar. Navigation itself lives in
-   *  the tab bar and its More sheet, not here. */
+   *  theme, moved out of the cramped topbar. */
   onSelectView?: (key: ViewKey) => void;
 };
 
@@ -212,6 +214,7 @@ export function UserMenu({
             )}
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
+          {onSelectView && <SettingsMenuItem onSelectView={onSelectView} />}
           {/* Mobile-only: notifications + theme, relocated from the topbar.
             The bell's unread count also surfaces on the avatar badge
             above; opening the drawer (openDrawer) clears it. */}
@@ -361,6 +364,7 @@ function SignedOutMenu({
             {isOfflineUnverified ? OFFLINE_UNVERIFIED_HINT : "Guest mode"}
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
+          <SettingsMenuItem onSelectView={onSelectView} />
           <DropdownMenuItem
             onSelect={drawer.openDrawer}
             className="gap-2"
@@ -408,6 +412,25 @@ function SignedOutMenu({
         onDismiss={drawer.onDismiss}
       />
     </>
+  );
+}
+
+/** The account menu's Settings entry, named and drawn from the nav registry
+ *  so it can't drift from the sidebar and the More sheet. */
+function SettingsMenuItem({
+  onSelectView,
+}: {
+  onSelectView: (key: ViewKey) => void;
+}) {
+  const { label, icon: Icon } = NAV.settings;
+  return (
+    <DropdownMenuItem
+      onSelect={() => onSelectView("settings")}
+      className="gap-2"
+    >
+      <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+      {label}
+    </DropdownMenuItem>
   );
 }
 

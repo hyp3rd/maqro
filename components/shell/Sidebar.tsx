@@ -250,7 +250,8 @@ export function Sidebar({ current, onSelect }: Props) {
 
       {!collapsed && (
         <div className="shrink-0 border-t border-border/60 p-2">
-          <UserMenu />
+          {/* Its Settings entry switches the view like the items above. */}
+          <UserMenu onSelectView={onSelect} />
         </div>
       )}
     </aside>

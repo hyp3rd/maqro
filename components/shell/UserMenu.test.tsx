@@ -234,20 +234,23 @@ describe("UserMenu while offline-unverified", () => {
     ).toBeTruthy();
   });
 
-  it("the mobile menu holds no navigation (the tab bar and More sheet do)", async () => {
+  it("the mobile menu's only navigation is Settings (the tab bar and More sheet hold the rest)", async () => {
     const { UserMenu } = await import("./UserMenu");
+    const onSelectView = vi.fn();
     renderWithIntl(
       <UserMenu
         compact
-        onSelectView={() => {}}
+        onSelectView={onSelectView}
       />,
     );
     fireEvent.keyDown(screen.getByRole("button", { name: /account menu/i }), {
       key: "Enter",
     });
     await screen.findByRole("menuitem", { name: /notifications/i });
-    for (const name of [/settings/i, /templates/i, /health/i, /profile/i]) {
+    for (const name of [/templates/i, /health/i, /profile/i, /pantry/i]) {
       expect(screen.queryByRole("menuitem", { name })).toBeNull();
     }
+    fireEvent.click(screen.getByRole("menuitem", { name: "Settings" }));
+    expect(onSelectView).toHaveBeenCalledWith("settings");
   });
 });
