@@ -724,6 +724,7 @@ const MacroCalculator = () => {
     dayTargets,
     targetForPhases,
     targetCaloriesForDate,
+    planWeek,
     selectedWeek,
   } = useTargets(personalInfo, today, selectedDate);
   const activeGoalPhase = todayTargets.phase;
@@ -2264,6 +2265,11 @@ const MacroCalculator = () => {
           onPersonalInfoChange={handlePersonalInfoChange}
           today={today}
           onSelectView={setView}
+          planWeek={planWeek}
+          onTrainingChange={(next) => patchProfile("training", next)}
+          onProteinSettingChange={(next) =>
+            patchProfile("proteinSetting", next)
+          }
         />
       )}
 
@@ -2375,6 +2381,9 @@ const MacroCalculator = () => {
         <ProgressView
           targetCalories={todayTargets.targetCalories}
           targetCaloriesForDate={targetCaloriesForDate}
+          // Averages compare with a training week's weekly average, not
+          // today's planned day.
+          weeklyAverageCalories={todayTargets.training?.meanCalories}
           formulaTdee={todayTargets.tdee}
           dailyDelta={todayTargets.dailyDelta}
           // The goal actually driving today's target (a phase's, when one

@@ -17,6 +17,7 @@ export * from "./supplements";
 export * from "./targets";
 export * from "./timing-insights";
 export * from "./training";
+export * from "./training-edit";
 export * from "./trends";
 export * from "./types";
 export * from "./weekly-recap";

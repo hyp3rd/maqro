@@ -29,6 +29,15 @@ ships with privacy-respecting operational logging.
   calories from a signed weekly weight-change rate (1 kg ≈ 7700 kcal,
   clamped at ±1%/week of bodyweight and floored at `max(BMR, 1200)`).
   Manual TDEE override for calibrating against real-world outcomes.
+- **Training week (free)** - on your Profile, set the session for each
+  weekday (rest, upper / lower / full body, endurance, HIIT, sport, with
+  intensity, start time and duration) and each day gets its own planned
+  target: calories move between training and rest days around the same
+  weekly average (off / modest / pronounced), never on top of it, and
+  never under your safety floor. Protein becomes a fixed g/kg of
+  bodyweight or lean mass (default 2.0) while it's on, and the latest
+  body-fat estimate from your measurements feeds the app, the report
+  and the emails alike.
 - **Goal phases (Pro)** - sequence a cut → diet break → maintenance →
   lean bulk and let your calorie + macro target follow whichever phase
   is active today. Applying a phase that would _raise_ today's target

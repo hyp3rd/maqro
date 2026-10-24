@@ -25,6 +25,7 @@
  *  a measurement error rather than a real value.
  *
  *  Everything in this module is pure; tests live in `./body-fat.test.ts`. */
+import type { Gender } from "./types";
 
 export type BodyFatInputs = {
   /** Body-type to apply the formula for. `nonbinary` and `prefer-not`
@@ -88,6 +89,73 @@ export function bodyFatCategory(
   if (bf < 25) return "fitness";
   if (bf < 32) return "average";
   return "obese";
+}
+
+/** The formula's body type for a profile gender, or `null` for the genders
+ *  with no published formula (no estimate is made for them). */
+export function bodyFatBodyType(gender: Gender): "male" | "female" | null {
+  return gender === "male" || gender === "female" ? gender : null;
+}
+
+/** One body-measurement reading as the estimator reads it: the app's
+ *  `BodyMeasurement` (absent fields `undefined`) or a `body_measurements`
+ *  row mapped to camelCase (absent fields `null`). */
+export type BodyFatMeasurement = {
+  /** Local `YYYY-MM-DD`. */
+  date: string;
+  waistCm?: number | null;
+  neckCm?: number | null;
+  hipsCm?: number | null;
+};
+
+/** Whether a reading has every input the body type's formula needs: a
+ *  positive waist and neck, plus hips for `female`. Server readers mirror
+ *  this predicate in their query (`waist_cm` / `neck_cm` / `hips_cm` not
+ *  null; the schema's CHECK already rejects non-positive values) so they
+ *  fetch the same row `latestBodyFatPct` picks. */
+export function hasBodyFatInputs(
+  m: BodyFatMeasurement,
+  bodyType: "male" | "female",
+): boolean {
+  return (
+    isPositive(m.waistCm ?? undefined) &&
+    isPositive(m.neckCm ?? undefined) &&
+    (bodyType === "male" || isPositive(m.hipsCm ?? undefined))
+  );
+}
+
+/** The body-fat % every target reads (`TargetContext.bodyFatPct`): the
+ *  estimate from the LATEST reading that has the formula's inputs, or
+ *  `null`. The app, /report, the weekly-recap email and the auto-adapt cron
+ *  all derive it here, so a training-day protein target can never differ
+ *  between them.
+ *
+ *  - Order-independent: the latest is picked by `date`.
+ *  - A newer reading without the inputs (a waist-only check-in) is skipped:
+ *    it says nothing about body fat.
+ *  - The latest COMPLETE reading decides: when its estimate is implausible
+ *    (a measurement error) the result is `null`, never an older estimate of
+ *    a body that has since changed.
+ *  - `null` for a gender with no published formula. */
+export function latestBodyFatPct(
+  measurements: readonly BodyFatMeasurement[],
+  body: { gender: Gender; heightCm: number },
+): number | null {
+  const bodyType = bodyFatBodyType(body.gender);
+  if (!bodyType) return null;
+  let latest: BodyFatMeasurement | null = null;
+  for (const m of measurements) {
+    if (!hasBodyFatInputs(m, bodyType)) continue;
+    if (latest === null || m.date > latest.date) latest = m;
+  }
+  if (latest === null) return null;
+  return estimateBodyFat({
+    bodyType,
+    heightCm: body.heightCm,
+    waistCm: latest.waistCm ?? 0,
+    neckCm: latest.neckCm ?? 0,
+    hipCm: latest.hipsCm ?? undefined,
+  });
 }
 
 function isPositive(n: number | undefined): n is number {

@@ -34,9 +34,12 @@ import { notifyDataChanged } from "./sync/data-bus";
 
 /** Anchored profile values for the sample dataset. */
 export function getDemoProfile(now: number = Date.now()): PersonalInfo {
-  // Birthdate ~32 years back so the derived age matches the legacy `age: 32`
-  // fallback and showcases the self-updating age on the Profile page.
+  // Birthdate ~32½ years back so the derived age matches the legacy `age: 32`
+  // fallback and showcases the self-updating age on the Profile page. Half a
+  // year off the seed day, so the birthday never falls in the seeded week:
+  // the age clock would step the training week's average mid-week.
   const dob = new Date(now);
+  dob.setMonth(dob.getMonth() - 6);
   const pad = (n: number) => String(n).padStart(2, "0");
   const birthDate = `${dob.getFullYear() - 32}-${pad(dob.getMonth() + 1)}-${pad(dob.getDate())}`;
   return {
@@ -72,6 +75,39 @@ export function getDemoProfile(now: number = Date.now()): PersonalInfo {
     // break. Drives the calorie target + active-phase banner for the Pro
     // (mocked) verification; free users see the planner's upgrade prompt.
     goalPhases: demoGoalPhases(now),
+    // A realistic training week (FREE), so the landing funnel shows the
+    // Training week editor and planned per-day targets populated: three
+    // strength sessions (Wednesday's leg day hard) and a long Saturday run
+    // around three rest days, on the default modest cycling. Indexed by
+    // `getDay()` (0 = Sunday). Protein keeps the 2.0 g/kg default.
+    training: {
+      enabled: true,
+      cycling: "modest",
+      days: [
+        { type: "rest" },
+        {
+          type: "upper",
+          intensity: "moderate",
+          time: "18:00",
+          durationMin: 60,
+        },
+        { type: "rest" },
+        { type: "lower", intensity: "hard", time: "18:00", durationMin: 75 },
+        { type: "rest" },
+        {
+          type: "fullBody",
+          intensity: "moderate",
+          time: "07:00",
+          durationMin: 60,
+        },
+        {
+          type: "endurance",
+          intensity: "moderate",
+          time: "09:00",
+          durationMin: 90,
+        },
+      ],
+    },
   };
 }
 

@@ -1,6 +1,8 @@
 import { CUISINES } from "@/components/macro/types";
 import { computeFastStatus, protocolHours } from "@/lib/fasting";
 import { describe, expect, it } from "vitest";
+import { weekTargets } from "@maqro/core/targets";
+import { normalizeTrainingSchedule } from "@maqro/core/training";
 import {
   getDemoMealLogs,
   getDemoProfile,
@@ -131,6 +133,49 @@ describe("getDemoWeightHistory", () => {
     for (let i = 1; i < w.length; i++) {
       expect(w[i].date > w[i - 1].date).toBe(true);
     }
+  });
+});
+
+/** The landing funnel's sample user plans her week by training day (FREE),
+ *  so the Training week editor, the Calculator's planned day and the
+ *  day-to-day targets all show populated. */
+describe("getDemoProfile training week", () => {
+  it("is an enabled, valid template with sessions and rest days", () => {
+    const p = getDemoProfile(NOW);
+    const schedule = normalizeTrainingSchedule(p.training);
+    // Stored exactly as the engine reads it: nothing for a read to fix.
+    expect(schedule).toEqual(p.training);
+    expect(schedule?.enabled).toBe(true);
+    expect(schedule?.cycling).toBe("modest");
+    const sessions = schedule?.days.filter((d) => d.type !== "rest") ?? [];
+    expect(sessions.length).toBe(4);
+    for (const s of sessions) {
+      expect(s.time).toMatch(/^\d{2}:\d{2}$/);
+      expect(s.durationMin).toBeGreaterThan(0);
+    }
+  });
+
+  it("plans a week that moves calories between days around the same average", () => {
+    const p = getDemoProfile(NOW);
+    // The seeded week itself: the birthday is never in it, so the age
+    // clock doesn't step the average mid-week.
+    const week = weekTargets(p, TODAY, { phasesEnabled: false });
+    expect(week).not.toBeNull();
+    const days = week?.days ?? [];
+    const kcal = days.map((d) => d.targetCalories);
+    expect(new Set(kcal).size).toBeGreaterThan(1);
+    expect(new Set(days.map((d) => d.training?.meanCalories)).size).toBe(1);
+    const mean = days[0]?.training?.meanCalories ?? 0;
+    // The seven planned days sum to the weekly average × 7 (within the
+    // 50 kcal rounding grid's half-step).
+    expect(Math.abs((week?.totalCalories ?? 0) - 7 * mean)).toBeLessThanOrEqual(
+      25,
+    );
+    // A rest day sits under the average, the heavy day over it.
+    const restDay = days.find((d) => d.training?.dayClass === "rest");
+    const heavyDay = days.find((d) => d.training?.dayClass === "heavy");
+    expect(restDay?.targetCalories).toBeLessThan(mean);
+    expect(heavyDay?.targetCalories).toBeGreaterThan(mean);
   });
 });
 

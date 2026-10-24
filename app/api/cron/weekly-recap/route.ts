@@ -6,13 +6,14 @@ import { loadUserTier } from "@/lib/billing/usage";
 import type { DailyLog, WeightEntry } from "@/lib/db";
 import { sendEmail } from "@/lib/email/resend";
 import { weeklyRecapEmail } from "@/lib/email/templates";
+import { loadLatestBodyFatPct } from "@/lib/latest-body-fat";
 import { localDateInTimeZone } from "@/lib/local-time";
 import { emailsById, listAllAuthUsers } from "@/lib/supabase/admin-users";
 import { getSupabaseSecretConfig } from "@/lib/supabase/env";
 import { personalInfoFromPayload } from "@/lib/sync/mappers";
 import { computeWeeklyRecap } from "@/lib/weekly-recap";
 import { NextResponse } from "next/server";
-import { targetsForDate } from "@maqro/core/targets";
+import { targetsForDate, targetsUseBodyFat } from "@maqro/core/targets";
 import { createClient } from "@supabase/supabase-js";
 
 /** Vercel cron handler — Monday-morning "your week in macros"
@@ -104,11 +105,30 @@ export async function GET(req: Request): Promise<NextResponse> {
     const phasesEnabled = personalInfo
       ? FEATURES.canUseGoalPhases(await loadUserTier(admin, userId))
       : false;
+    // The same body-fat estimate the app derives, so a training day's
+    // target matches what the user sees. A failed read skips this user
+    // rather than score the week against a target the app wouldn't show.
+    // Only an enabled training schedule reads it: otherwise there is no
+    // read (and no failure) that could change the targets.
+    let bodyFatPct: number | null = null;
+    if (personalInfo && targetsUseBodyFat(personalInfo)) {
+      const bodyFat = await loadLatestBodyFatPct(admin, userId, personalInfo);
+      if (!bodyFat.ok) {
+        console.error(
+          "[cron/weekly-recap] body measurements read failed:",
+          bodyFat.error,
+        );
+        errors++;
+        continue;
+      }
+      bodyFatPct = bodyFat.bodyFatPct;
+    }
     // Each logged day is scored against its OWN target (a phase change or a
     // planned training day inside the window); the email shows today's.
     const targetCaloriesFor = (date: string) =>
       personalInfo
-        ? targetsForDate(personalInfo, date, { phasesEnabled }).targetCalories
+        ? targetsForDate(personalInfo, date, { phasesEnabled, bodyFatPct })
+            .targetCalories
         : 0;
     const targetCalories = targetCaloriesFor(today);
 

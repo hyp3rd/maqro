@@ -3,6 +3,7 @@ import { effectiveGoal } from "./goal-phases";
 import { computeMacros } from "./macros";
 import {
   type FloorsExceedMeanCause,
+  MACRO_GRAM_STEP,
   type ProteinBasis,
   type TrainingDayClass,
   classifyTrainingDay,
@@ -82,6 +83,12 @@ export type TrainingDayTargets = {
    *  false, every planned day holds all of them: cycling narrows its spread
    *  rather than plan a day that can't. */
   floorsExceedMean: false | FloorsExceedMeanCause;
+  /** The daily protein (g) the setting asks for, on the same 5 g grid as
+   *  the planned `protein`. The two are equal unless the floors made
+   *  protein give way (`floorsExceedMean`), so a planned `protein` under
+   *  it is the UI's cue to say protein is held below the setting for now
+   *  and by how much. */
+  requestedProtein: number;
   /** The fat floor raised the plan's fat above what the user's explicit fat
    *  choice (a `lowFat` diet type or a custom macro split) yields for the
    *  mean day — the UI's info note (`fatFloorLiftsChoice`). Always needs
@@ -134,6 +141,16 @@ function localMidnight(date: string): Date | undefined {
   return dt;
 }
 
+/** Whether `targetsForDate` reads `ctx.bodyFatPct` for this profile: only
+ *  an enabled training schedule's protein does. Without one the targets are
+ *  identical with or without an estimate, so a caller that has to fetch it
+ *  (the crons' measurement read) can skip the read and pass `null`. */
+export function targetsUseBodyFat(
+  profile: Pick<PersonalInfo, "training">,
+): boolean {
+  return normalizeTrainingSchedule(profile.training)?.enabled === true;
+}
+
 /** Resolve the calorie/macro target for `date` (local `YYYY-MM-DD`). */
 export function targetsForDate(
   profile: PersonalInfo,
@@ -161,6 +178,7 @@ export function targetsForDate(
 
   // No enabled schedule (absent, disabled or malformed) → exactly the above.
   // A non-date key has no weekday to plan, so it keeps the weekly mean.
+  // (`targetsUseBodyFat` is the same test.)
   const schedule = normalizeTrainingSchedule(profile.training);
   if (!schedule?.enabled || !midnight) return base;
 
@@ -222,6 +240,8 @@ export function targetsForDate(
       floorsExceedMean:
         values.targetCalories < minDay &&
         floorsExceedMeanCause({ ...floors, setting, body }),
+      requestedProtein:
+        Math.round(protein.grams / MACRO_GRAM_STEP) * MACRO_GRAM_STEP,
       fatFloorLifted: fatFloorLiftsChoice(week),
     },
   };

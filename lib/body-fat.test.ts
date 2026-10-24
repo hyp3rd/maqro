@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { bodyFatCategory, estimateBodyFat } from "./body-fat";
+import {
+  bodyFatCategory,
+  bodyFatBodyType,
+  estimateBodyFat,
+  hasBodyFatInputs,
+  latestBodyFatPct,
+} from "./body-fat";
 
 describe("estimateBodyFat (male)", () => {
   it("returns a plausible value for a typical adult male", () => {
@@ -164,5 +170,92 @@ describe("bodyFatCategory", () => {
     expect(bodyFatCategory(23, "female")).toBe("fitness");
     expect(bodyFatCategory(28, "female")).toBe("average");
     expect(bodyFatCategory(35, "female")).toBe("obese");
+  });
+});
+
+/** The ONE derivation of the body-fat % the targets read (`TargetContext.
+ *  bodyFatPct`): the app, /report and both crons pass its result, so they
+ *  can never disagree on a training-day protein target. */
+describe("latestBodyFatPct", () => {
+  const MALE = { gender: "male" as const, heightCm: 178 };
+  const FEMALE = { gender: "female" as const, heightCm: 165 };
+  const male = (waistCm: number, neckCm: number) =>
+    estimateBodyFat({ bodyType: "male", heightCm: 178, waistCm, neckCm });
+
+  it("estimates from the latest measurement, whatever the input order", () => {
+    const rows = [
+      { date: "2026-10-20", waistCm: 84, neckCm: 38 },
+      { date: "2026-09-01", waistCm: 92, neckCm: 38 },
+      { date: "2026-10-01", waistCm: 88, neckCm: 38 },
+    ];
+    expect(latestBodyFatPct(rows, MALE)).toBe(male(84, 38));
+    expect(latestBodyFatPct([...rows].reverse(), MALE)).toBe(male(84, 38));
+  });
+
+  it("skips newer rows that lack the formula's inputs (waist-only check-ins)", () => {
+    const rows = [
+      { date: "2026-10-01", waistCm: 88, neckCm: 38 },
+      { date: "2026-10-20", waistCm: 84 },
+      { date: "2026-10-22", waistCm: 83, neckCm: null, hipsCm: null },
+    ];
+    expect(latestBodyFatPct(rows, MALE)).toBe(male(88, 38));
+  });
+
+  it("needs hips for the female formula", () => {
+    const rows = [
+      { date: "2026-10-01", waistCm: 74, neckCm: 33, hipsCm: 98 },
+      { date: "2026-10-20", waistCm: 72, neckCm: 33 },
+    ];
+    expect(latestBodyFatPct(rows, FEMALE)).toBe(
+      estimateBodyFat({
+        bodyType: "female",
+        heightCm: 165,
+        waistCm: 74,
+        neckCm: 33,
+        hipCm: 98,
+      }),
+    );
+  });
+
+  it("does not fall back to an older row when the latest one is implausible", () => {
+    // Waist under neck: the latest complete reading is a measurement error,
+    // and an older estimate would describe a body that has since changed.
+    const rows = [
+      { date: "2026-10-01", waistCm: 88, neckCm: 38 },
+      { date: "2026-10-20", waistCm: 30, neckCm: 38 },
+    ];
+    expect(latestBodyFatPct(rows, MALE)).toBeNull();
+  });
+
+  it("is null with no usable measurement, or with no published formula", () => {
+    expect(latestBodyFatPct([], MALE)).toBeNull();
+    expect(
+      latestBodyFatPct([{ date: "2026-10-01", waistCm: 88 }], MALE),
+    ).toBeNull();
+    const rows = [{ date: "2026-10-01", waistCm: 88, neckCm: 38, hipsCm: 99 }];
+    expect(
+      latestBodyFatPct(rows, { gender: "nonbinary", heightCm: 178 }),
+    ).toBeNull();
+    expect(
+      latestBodyFatPct(rows, { gender: "preferNotToSay", heightCm: 178 }),
+    ).toBeNull();
+  });
+});
+
+describe("bodyFatBodyType / hasBodyFatInputs", () => {
+  it("maps only the two genders with a published formula", () => {
+    expect(bodyFatBodyType("male")).toBe("male");
+    expect(bodyFatBodyType("female")).toBe("female");
+    expect(bodyFatBodyType("nonbinary")).toBeNull();
+    expect(bodyFatBodyType("preferNotToSay")).toBeNull();
+  });
+
+  it("requires positive waist + neck, and hips for female", () => {
+    const row = { date: "d", waistCm: 80, neckCm: 37 };
+    expect(hasBodyFatInputs(row, "male")).toBe(true);
+    expect(hasBodyFatInputs(row, "female")).toBe(false);
+    expect(hasBodyFatInputs({ ...row, hipsCm: 95 }, "female")).toBe(true);
+    expect(hasBodyFatInputs({ ...row, neckCm: 0 }, "male")).toBe(false);
+    expect(hasBodyFatInputs({ ...row, waistCm: null }, "male")).toBe(false);
   });
 });

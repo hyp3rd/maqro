@@ -3,7 +3,7 @@
  */
 import { writeCachedTier } from "@/lib/billing/tier-cache";
 import type { Tier } from "@/lib/billing/tiers";
-import type { DailyLog } from "@/lib/db";
+import type { BodyMeasurement, DailyLog } from "@/lib/db";
 import {
   afterAll,
   afterEach,
@@ -14,9 +14,18 @@ import {
   it,
   vi,
 } from "vitest";
-import type { PersonalInfo } from "@maqro/core/types";
+import { estimateBodyFat } from "@maqro/core/body-fat";
+import { targetsForDate as resolveTargets } from "@maqro/core/targets";
+import type { PersonalInfo, TrainingSchedule } from "@maqro/core/types";
 import type { User } from "@supabase/supabase-js";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 
 /** /report must show the SAME target as the app: phase-aware via the shared
  *  `targetsForDate` resolver + tier gate (it used to call a bare
@@ -56,7 +65,15 @@ const data = vi.hoisted(() => ({
   query: "sections=calories",
   profile: null as PersonalInfo | null,
   logs: [] as DailyLog[],
+  measurements: [] as BodyMeasurement[],
 }));
+
+// The real resolver, observed: the body-fat suite asserts every call's
+// context.
+vi.mock("@maqro/core/targets", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@maqro/core/targets")>();
+  return { ...actual, targetsForDate: vi.fn(actual.targetsForDate) };
+});
 
 /** A logged day with one food of `calories`. */
 function logged(date: string, calories: number): DailyLog {
@@ -104,7 +121,7 @@ vi.mock("@/lib/db", async (importOriginal) => {
     getProfile: async () => data.profile,
     listWeightEntries: async () => [],
     listDailyLogs: async () => data.logs,
-    listBodyMeasurements: async () => [],
+    listBodyMeasurements: async () => data.measurements,
     listMicronutrientProfiles: async () => [],
     listBloodPressure: async () => [],
     listWaterIntake: async () => [],
@@ -127,6 +144,7 @@ beforeEach(() => {
   data.query = "sections=calories";
   data.profile = PROFILE;
   data.logs = [logged("2026-06-09", 1850)];
+  data.measurements = [];
   vi.useFakeTimers({ toFake: ["Date"] });
   // Midday on 2026-06-10, inside PROFILE's cut.
   vi.setSystemTime(new Date(2026, 5, 10, 12, 0, 0));
@@ -175,6 +193,144 @@ describe("/report target", () => {
     expect(
       await screen.findByText("Daily kcal vs target of 1900 kcal."),
     ).toBeTruthy();
+  });
+});
+
+/** /report resolves targets with the SAME body-fat estimate as the app and
+ *  the emails: `latestBodyFatPct` over the WHOLE measurement history (not
+ *  the report's window), so a training day's protein never differs. */
+describe("/report body fat", () => {
+  const measurement = (
+    date: string,
+    waistCm: number,
+    neckCm?: number,
+  ): BodyMeasurement => ({ date, waistCm, neckCm, recordedAt: 0 });
+
+  it("passes the latest usable estimate, even from before the window, to every target", async () => {
+    const { targetsForDate } = await import("@maqro/core/targets");
+    const resolver = vi.mocked(targetsForDate);
+    resolver.mockClear();
+    data.query = "sections=summary,calories&days=7";
+    // The complete reading predates the 7-day window; the newer one is a
+    // waist-only check-in.
+    data.measurements = [
+      measurement("2026-04-01", 88, 38),
+      measurement("2026-06-08", 86),
+    ];
+    fetchMock.mockResolvedValue(usage("free"));
+    await renderReport();
+    await screen.findByText("Daily kcal vs target of 2600 kcal.");
+    const expected = estimateBodyFat({
+      bodyType: "male",
+      heightCm: 180,
+      waistCm: 88,
+      neckCm: 38,
+    });
+    expect(expected).not.toBeNull();
+    // The profile and the measurements load together, so every target the
+    // report resolves (today's and each recap day's) carries the estimate.
+    expect(resolver.mock.calls.length).toBeGreaterThan(0);
+    for (const [, , ctx] of resolver.mock.calls) {
+      expect(ctx).toEqual({ phasesEnabled: false, bodyFatPct: expected });
+    }
+  });
+});
+
+/** With a training week on, today's target is the day's PLANNED share of the
+ *  week: averaged intake is compared with the weekly average, and the PDF's
+ *  target tile names today's planned day beside that average, so its
+ *  figures add up (TDEE + delta = the average). */
+describe("/report with a training week", () => {
+  const rest = { type: "rest" } as const;
+  // 2026-06-10 is a Wednesday: a hard lower-body day, above the average.
+  const training: TrainingSchedule = {
+    enabled: true,
+    cycling: "modest",
+    days: [
+      rest,
+      rest,
+      rest,
+      { type: "lower", intensity: "hard" },
+      rest,
+      rest,
+      rest,
+    ],
+  };
+  const LINEAR: PersonalInfo = { ...PROFILE, goalPhases: [] };
+  const TRAINING: PersonalInfo = { ...LINEAR, training };
+  const FREE = { phasesEnabled: false, bodyFatPct: null };
+
+  type PdfStat = { label: string; value: string; sub?: string };
+  type PdfModel = {
+    targets: { stats: PdfStat[] } | null;
+    calories: { stats: PdfStat[]; chart: { targetY?: number } | null };
+  };
+
+  /** Render, press Download PDF and return the model POSTed to the server
+   *  renderer. */
+  async function downloadedModel(): Promise<PdfModel> {
+    fetchMock.mockImplementation(async (input) =>
+      input === "/api/report/pdf" ? new Response("%PDF") : usage("free"),
+    );
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:report");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    await renderReport();
+    await screen.findByText(/^Daily kcal vs /);
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Download PDF" }));
+    });
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([url]) => url === "/api/report/pdf"),
+      ).toBe(true),
+    );
+    const call = fetchMock.mock.calls.find(
+      ([url]) => url === "/api/report/pdf",
+    );
+    const init = (call as unknown as [string, RequestInit])[1];
+    return JSON.parse(String(init.body)) as PdfModel;
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("compares the calories with the weekly average and labels today's planned day", async () => {
+    data.profile = TRAINING;
+    const today = resolveTargets(TRAINING, "2026-06-10", FREE);
+    const mean = today.training?.meanCalories ?? 0;
+    expect(mean).toBe(2600);
+    expect(today.targetCalories).toBeGreaterThan(mean);
+
+    const model = await downloadedModel();
+    expect(
+      screen.getByText("Daily kcal vs weekly average target of 2600 kcal."),
+    ).toBeTruthy();
+    expect(model.calories.stats[0]?.sub).toBe("average target 2600 kcal");
+    expect(model.calories.chart?.targetY).toBe(2600);
+    const tile = model.targets?.stats.find((t) => t.label.startsWith("Today"));
+    expect(tile).toEqual({
+      label: "Today (planned)",
+      value: `${today.targetCalories} kcal`,
+      sub: "2600 kcal avg · 0 kcal/day",
+    });
+    expect(model.targets?.stats.find((t) => t.label === "Target")).toBe(
+      undefined,
+    );
+  });
+
+  it("without training, every figure is today's target as before", async () => {
+    data.profile = LINEAR;
+    const model = await downloadedModel();
+    expect(screen.getByText("Daily kcal vs target of 2600 kcal.")).toBeTruthy();
+    expect(model.calories.stats[0]?.sub).toBe("target 2600 kcal");
+    expect(model.calories.chart?.targetY).toBe(2600);
+    expect(model.targets?.stats.find((t) => t.label === "Target")).toEqual({
+      label: "Target",
+      value: "2600 kcal",
+      sub: "0 kcal/day",
+    });
   });
 });
 

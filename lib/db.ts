@@ -1182,6 +1182,10 @@ export async function saveBodyMeasurement(
     localUpdatedAt: nowIso(),
     serverUpdatedAt: existing?.serverUpdatedAt ?? null,
   }));
+  // Wake the data-bus like `saveDailyLog` does: the app's targets read the
+  // latest body-fat estimate from this store (`useLatestBodyFatPct`) and
+  // re-load only on this rev.
+  notifyDataChanged("bodyMeasurements");
 }
 
 /** All body measurements, oldest first - chart-natural order. */
@@ -1203,6 +1207,7 @@ export async function deleteBodyMeasurement(date: string): Promise<void> {
   const db = await getDB();
   await db.delete(STORE_BODY_MEASUREMENTS, date);
   await recordDeletion("bodyMeasurements", date);
+  notifyDataChanged("bodyMeasurements");
 }
 
 /** Sync-layer hook: write a server-pulled measurement. Mirrors

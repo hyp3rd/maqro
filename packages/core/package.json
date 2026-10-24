@@ -28,6 +28,7 @@
     "./targets": "./src/targets.ts",
     "./timing-insights": "./src/timing-insights.ts",
     "./training": "./src/training.ts",
+    "./training-edit": "./src/training-edit.ts",
     "./trends": "./src/trends.ts",
     "./types": "./src/types.ts",
     "./units": "./src/units.ts",
