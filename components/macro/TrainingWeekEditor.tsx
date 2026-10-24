@@ -421,19 +421,29 @@ function DayRow({
       aria-current={isToday ? "date" : undefined}
       className="flex min-h-touch-10 w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-5"
     >
-      <span className="w-12 shrink-0">
+      {/* Today reads as on Today's week strip: a brand-outlined tile with
+          the weekday in brand text. Every row keeps the same tile box, so
+          the weekdays line up. */}
+      <span
+        className={cn(
+          "-ml-2 w-16 shrink-0 rounded-lg border px-2 py-1",
+          isToday ? "border-brand/40 bg-brand/10" : "border-transparent",
+        )}
+      >
         <span className="sr-only">Edit {WEEKDAY_NAME[weekday]}</span>
         <span
           aria-hidden
           className={cn(
-            "block text-sm font-medium",
-            isToday ? "text-foreground" : "text-muted-foreground",
+            "block text-sm",
+            isToday
+              ? "font-semibold text-brand-text"
+              : "font-medium text-muted-foreground",
           )}
         >
           {WEEKDAY_SHORT[weekday]}
         </span>
         {isToday && (
-          <span className="block text-label font-medium text-signal">
+          <span className="block text-label font-medium text-foreground">
             Today
           </span>
         )}

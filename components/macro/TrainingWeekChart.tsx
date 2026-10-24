@@ -173,7 +173,7 @@ export function TrainingWeekChart({ days, mean, floor, className }: Props) {
                     className={cn(
                       "text-label",
                       d.today
-                        ? "fill-signal font-semibold"
+                        ? "fill-brand-text font-semibold"
                         : "fill-muted-foreground",
                     )}
                   >

@@ -195,6 +195,21 @@ describe("TrainingWeekEditor: the week", () => {
     expect(row("Friday").getAttribute("aria-current")).toBeNull();
   });
 
+  it("marks today like Today's week strip: a brand-outlined day tile", () => {
+    renderEditor({ initial: profile });
+    const tile = (day: string) =>
+      within(row(day)).getByText(day.slice(0, 3)).parentElement;
+    const today = tile("Saturday")?.className ?? "";
+    expect(today).toContain("border-brand/40");
+    expect(today).toContain("bg-brand/10");
+    expect(within(row("Saturday")).getByText("Sat").className).toContain(
+      "text-brand-text",
+    );
+    expect(tile("Friday")?.className).not.toContain("border-brand/40");
+    // No second accent for the same idea (the cyan signal is the "now").
+    expect(row("Saturday").querySelector("[class*='signal']")).toBeNull();
+  });
+
   it("a cycling preset change updates the planned kcal", () => {
     const onTraining = vi.fn();
     // At maintenance the safety floor leaves the full pronounced spread.
