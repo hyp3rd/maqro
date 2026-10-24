@@ -283,8 +283,8 @@ const clean = (x: number) => Math.round(x * 1e6) / 1e6;
  *  the bounds; equal weights ⇒ equal kcal; a heavier day is never planned
  *  below a lighter one; and the week's sum is within 25 × n kcal of 7T,
  *  where n is the size of the largest group whose raw day is off the grid —
- *  so within 25 kcal when every such group is a single day, and never more
- *  than 150 kcal a week (≈ 21 kcal a day: a group has at most 6 days, as a
+ *  so within 25 kcal when every such group is a single day, and at most
+ *  150 kcal a week (≈ 21 kcal a day: a group has at most 6 days, as a
  *  week with a spread has two weights at least). Rounding whole groups is
  *  what costs the exactness of a per-day rounding: a 3-day group can only
  *  move the week in 150 kcal steps. (Proof of the bound: rounding the groups

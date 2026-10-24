@@ -634,8 +634,8 @@ describe("distributeWeekCalories", () => {
               }
             }
             // The tolerance: 25 kcal per day of the largest weight group
-            // (an upper bound for the largest one off the 50 grid), never
-            // over 150 kcal a week.
+            // (an upper bound for the largest one off the 50 grid), at most
+            // 150 kcal a week.
             const counts = new Map<number, number>();
             for (const c of classes) {
               counts.set(weight(c), (counts.get(weight(c)) ?? 0) + 1);
