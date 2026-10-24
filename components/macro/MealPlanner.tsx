@@ -398,7 +398,7 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
     // The breakpoints assume the expanded 240 px sidebar plus the shell's
     // padding (18rem), so each tier has room for its columns whatever the
     // sidebar's state (a container query here would also contain the
-    // fixed-position QuickAddFab and DragOverlay):
+    // fixed-position DragOverlay):
     //  - 66rem (≥ 48rem of content): the instrument and the extras side by
     //    side, logging below at full width;
     //  - 84rem (≥ 66rem of content): two columns, the instrument and the
@@ -495,10 +495,9 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
           </Button>
         )}
 
-        {/* Mobile's add-food entry point is the thumb-zone QuickAddFab
-            (rendered at the end of this view) — it floats over the whole
-            list, so a second inline "Log meal" button here was redundant.
-            The dense inline form below is desktop-only. */}
+        {/* Mobile's add-food entry point is the tab bar's centre [+] quick
+            add (MobileBottomNav), reachable from every view. The dense
+            inline form below is desktop-only. */}
         <div className="hidden md:block">
           <AddFoodForm
             meals={meals}
@@ -614,8 +613,25 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
               <span className="font-medium text-foreground">
                 No meals logged for this day.
               </span>{" "}
-              Use the search above to add foods to any meal, apply a saved
-              template from a meal&apos;s menu, or hit{" "}
+              {/* Name the add that exists at each breakpoint: the search
+                  (AddFoodForm) is desktop-only; a phone has each meal's
+                  "Add food" and, on today only, the tab bar's [+] (which
+                  always logs into today, so a past day doesn't offer it). */}
+              <span className="md:hidden">
+                {selectedDate === today && (
+                  <>
+                    Tap <span className="font-medium text-foreground">+</span>{" "}
+                    below to log a meal,{" "}
+                  </>
+                )}
+                {selectedDate === today ? "use" : "Use"}{" "}
+                <span className="font-medium text-foreground">Add food</span> on
+                any meal,
+              </span>
+              <span className="hidden md:inline">
+                Use the search above to add foods to any meal,
+              </span>{" "}
+              apply a saved template from a meal&apos;s menu, or hit{" "}
               <span className="font-medium text-foreground">Auto-fill</span> to
               generate a plan that matches your macros.
             </div>

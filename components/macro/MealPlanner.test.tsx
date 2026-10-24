@@ -26,7 +26,6 @@ vi.mock("sonner", () => ({
 vi.mock("./AddFoodForm", () => ({ default: () => <div>AddFoodForm</div> }));
 vi.mock("./WaterCounter", () => ({ WaterCounter: () => <div>Water</div> }));
 vi.mock("./FastingCard", () => ({ FastingCard: () => <div>Fasting</div> }));
-vi.mock("./QuickAddFab", () => ({ QuickAddFab: () => null }));
 // A pinned minute clock: Wed 21 Oct 2026, 15:10 local.
 const { NOW } = vi.hoisted(() => ({
   NOW: new Date(2026, 9, 21, 15, 10).getTime(),
@@ -190,7 +189,6 @@ function renderPlanner(
     onLogScheduled: vi.fn(),
     onOpenSuggestDay: vi.fn(),
     onOpenMealDetail: vi.fn(),
-    onOpenLogMeal: vi.fn(),
     ...overrides,
   };
   render(<MealPlanner {...props} />, { wrapper: intlWrapper() });

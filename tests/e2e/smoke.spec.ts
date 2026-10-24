@@ -182,23 +182,35 @@ test.describe("maqro happy path", () => {
     await page.goto("/app");
     await openToday(page);
 
-    // Start on today: the Today header names the shown day.
+    // Start on today. The shell's page heading (h1) and the Today header
+    // (h2) both name the shown day; the navigator's date label too.
+    const heading = page.getByRole("heading", { level: 1 });
     const dayHeading = (name: string) =>
       page.getByRole("heading", { level: 2, name, exact: true });
+    const dateLabel = page.locator("label", { hasText: /^(Today|Yesterday)/ });
     await expect(dayHeading("Today")).toBeVisible();
+    await expect(dateLabel).toHaveText("Today");
 
     // Click "Previous day" to go to yesterday.
     await page.getByRole("button", { name: "Previous day" }).click();
     await expect(dayHeading("Yesterday")).toBeVisible();
-    // The navigator's "Today" snap-back button appears when off today
-    // (exact: the header's "Back to today" and the week strip's day
-    // buttons also mention today).
-    const snapBack = page.getByRole("button", { name: "Today", exact: true });
+    // (Off today the label also carries the ISO date on wide screens.)
+    await expect(dateLabel).toHaveText(/^Yesterday/);
+    // The page heading names the shown day too, never "Today" off today.
+    await expect(heading).toHaveText("Yesterday");
+    // The navigator's "Today" snap-back button appears when off today (in
+    // the day view, not the sidebar's "Today"; exact: the header's "Back to
+    // today" and the week strip's day buttons also mention today).
+    const snapBack = page
+      .getByRole("main")
+      .getByRole("button", { name: "Today", exact: true });
     await expect(snapBack).toBeVisible();
 
     // Snap back to today.
     await snapBack.click();
     await expect(dayHeading("Today")).toBeVisible();
+    await expect(dateLabel).toHaveText("Today");
+    await expect(heading).toHaveText("Today");
   });
 
   test("meal templates round-trip: save then apply on an empty meal", async ({
