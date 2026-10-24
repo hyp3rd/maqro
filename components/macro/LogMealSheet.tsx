@@ -12,13 +12,8 @@ import {
   Soup,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "../ui/dialog";
+import { BottomSheetHeader, BottomSheetTitle } from "../ui/bottom-sheet";
+import { Dialog, DialogContent, DialogDescription } from "../ui/dialog";
 import { QuickAddFoods } from "./QuickAddFoods";
 import type { Food, Meal } from "./types";
 
@@ -173,18 +168,18 @@ function LogMealFlow({
 
   return (
     <>
-      <DialogHeader>
-        <DialogTitle className="text-left">
+      <BottomSheetHeader>
+        <BottomSheetTitle>
           {mealId === null
             ? `Log a meal · ${dayLabel}`
             : `Add to ${targetMeal?.name ?? "meal"} · ${dayLabel}`}
-        </DialogTitle>
-        <DialogDescription className="text-left">
+        </BottomSheetTitle>
+        <DialogDescription>
           {mealId === null
             ? "Where does this go?"
             : "How do you want to log it?"}
         </DialogDescription>
-      </DialogHeader>
+      </BottomSheetHeader>
 
       <AnimatePresence
         mode="wait"

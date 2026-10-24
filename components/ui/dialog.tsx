@@ -141,6 +141,7 @@ const DialogContent = React.forwardRef<
           sheet to dismiss. */}
         <div
           aria-hidden
+          data-slot="sheet-handle"
           onPointerDown={onHandleDown}
           onPointerMove={onHandleMove}
           onPointerUp={endDrag}
