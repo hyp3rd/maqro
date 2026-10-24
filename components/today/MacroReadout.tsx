@@ -84,7 +84,11 @@ export function MacroReadout({
           <Stat
             key={row.key}
             size="md"
-            className="gap-y-0"
+            // Each row is its own size container: a cell too narrow for the
+            // label and "160 g left" side by side (a 2 × 2 readout on a
+            // 320 px phone) puts the detail (the `dd` after the figure's)
+            // under the figure instead of clipping the label.
+            className="gap-y-0 @container @max-[9.5rem]:[&>dd+dd]:col-span-2 @max-[9.5rem]:[&>dd+dd]:col-start-1 @max-[9.5rem]:[&>dd+dd]:row-start-3"
             label={
               <span className="inline-flex items-center gap-1.5">
                 <span
@@ -96,9 +100,13 @@ export function MacroReadout({
             }
             value={show(reading.value)}
             unit={
-              reading.target !== null
-                ? `/ ${show(reading.target)} ${row.unit}`
-                : row.unit
+              // One unbroken run: a narrow cell wraps "/ 2,000 kcal" whole
+              // under the figure rather than stranding "kcal" on a line.
+              <span className="whitespace-nowrap">
+                {reading.target !== null
+                  ? `/ ${show(reading.target)} ${row.unit}`
+                  : row.unit}
+              </span>
             }
             detail={detail}
           />

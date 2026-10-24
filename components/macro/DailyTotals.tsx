@@ -97,11 +97,11 @@ const DailyTotals: React.FC<DailyTotalsProps> = ({
     <div data-part="energy">
       {/* Side by side from 22rem of panel (a 390 px phone and up). In a
           narrower panel the readout beside the gauge would squeeze its
-          labels to an ellipsis, so the gauge centres above it: a 2 × 2
-          readout while each cell still holds "Protein" and "160 g left"
-          on one row (19.5rem, a 360 px phone), one column below that (a
-          320 px phone). Keyed off the panel's own width, not the
-          viewport, since the desktop columns size it too. */}
+          labels to an ellipsis, so the gauge centres above a 2 × 2
+          readout (a 360 or 320 px phone; on the narrowest, each cell puts
+          its "N g left" under the figure, see MacroReadout). Keyed off
+          the panel's own width, not the viewport, since the desktop
+          columns size it too. */}
       <div className="@container">
         <div
           data-part="gauge-row"
@@ -116,7 +116,7 @@ const DailyTotals: React.FC<DailyTotalsProps> = ({
           <MacroReadout
             eaten={totalMacros}
             targets={calculatedValues}
-            className="w-full gap-x-4 @min-[19.5rem]:grid-cols-2 @min-[22rem]:w-auto @min-[22rem]:min-w-0 @min-[22rem]:flex-1 @min-[22rem]:grid-cols-1"
+            className="w-full grid-cols-2 gap-x-4 @min-[22rem]:w-auto @min-[22rem]:min-w-0 @min-[22rem]:flex-1 @min-[22rem]:grid-cols-1"
           />
         </div>
       </div>
