@@ -61,6 +61,8 @@ export function trainingContextLine(
   }
   // A session that leaves the day UNDER the weekly average (a light one in
   // a week of harder ones): "lower … — light session" reads as if the
-  // session took food away, so the line says what the day is relative to.
-  return `${macro} ${verb} lower ${dayPhrase} — an easier day than your weekly average, with a ${session}${at}`;
+  // session took food away, so the line says the day was planned to suit
+  // it. Kept as short as the "higher" line: it sits under the gauge on the
+  // fold, one line at 390 and on desktop.
+  return `${macro} ${verb} lower ${dayPhrase} to match the ${session}${at}`;
 }

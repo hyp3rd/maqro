@@ -11,7 +11,9 @@ import type { DateTargets } from "@maqro/core/targets";
 /** The calm line under the Today gauge on a training day: "Carbs are
  *  higher today — heavy session at 18:00" (see `trainingContextLine`).
  *  Renders nothing on a rest day, with training off, or when the session
- *  left the day at the weekly average. Muted, never a warning colour. */
+ *  left the day at the weekly average. Muted, never a warning colour;
+ *  wrapped "pretty" (where supported) so a narrow phone does not leave the
+ *  start time alone on a second line. */
 export function TrainingContext({
   day,
   today,
@@ -41,7 +43,7 @@ export function TrainingContext({
   return (
     <p
       data-part="training-context"
-      className={cn("text-label text-muted-foreground", className)}
+      className={cn("text-label text-muted-foreground text-pretty", className)}
     >
       {line}
     </p>

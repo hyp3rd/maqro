@@ -137,10 +137,25 @@ describe("trainingContextLine", () => {
       ],
     });
     expect(line("2026-10-19", hardWeek)).toBe(
-      "Carbs are lower today — an easier day than your weekly average, with a light session at 07:15",
+      "Carbs are lower today to match the light session at 07:15",
     );
     expect(line("2026-10-19", hardWeek, "past", "on Monday")).toBe(
-      "Carbs were lower on Monday — an easier day than your weekly average, with a light session at 07:15",
+      "Carbs were lower on Monday to match the light session at 07:15",
+    );
+    // Without a start time the line ends on the session.
+    const untimed = withTraining({
+      days: [
+        { type: "lower", intensity: "hard" },
+        { type: "upper", intensity: "light" },
+        { type: "lower", intensity: "hard" },
+        { type: "upper", intensity: "hard" },
+        { type: "lower", intensity: "hard" },
+        { type: "upper", intensity: "hard" },
+        { type: "rest" },
+      ],
+    });
+    expect(line("2026-10-19", untimed, "future", "on Monday")).toBe(
+      "Carbs are lower on Monday to match the light session",
     );
   });
 
