@@ -16,7 +16,7 @@ import {
   BLOOD_PRESSURE_LABELS,
   bloodPressureCategory,
 } from "@/lib/blood-pressure";
-import { bodyFatCategory, estimateBodyFat } from "@/lib/body-fat";
+import { bodyFatCategory } from "@/lib/body-fat";
 import {
   getProfile,
   listBloodPressure,
@@ -78,7 +78,7 @@ import {
 import { ArrowLeft, CloudUpload, FileDown, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { latestBodyFatPct } from "@maqro/core/body-fat";
+import { latestBodyFatReading } from "@maqro/core/body-fat";
 import { addDays } from "@maqro/core/date";
 import {
   type TargetContext,
@@ -308,21 +308,27 @@ function ReportBody({
   const phasesEnabled = tier !== null && FEATURES.canUseGoalPhases(tier);
   // The body-fat estimate the app and the emails use: the latest usable
   // reading in the WHOLE history (not this report's window), so a training
-  // day's protein here matches theirs. The per-date session overrides are
+  // day's protein here matches theirs — and the body-composition section
+  // and the PDF show this same reading. The per-date session overrides are
   // the same rows the app reads, so an overridden day is scored against
   // the target the app showed for it.
-  const ctx = useMemo<TargetContext>(
-    () => ({
-      phasesEnabled,
-      bodyFatPct: profile
-        ? latestBodyFatPct(measurements, {
+  const bodyFat = useMemo(
+    () =>
+      profile
+        ? latestBodyFatReading(measurements, {
             gender: profile.gender,
             heightCm: profile.height,
           })
         : null,
+    [profile, measurements],
+  );
+  const ctx = useMemo<TargetContext>(
+    () => ({
+      phasesEnabled,
+      bodyFatPct: bodyFat?.pct ?? null,
       overrideFor: dayOverrideResolver(dayOverrides),
     }),
-    [phasesEnabled, profile, measurements, dayOverrides],
+    [phasesEnabled, bodyFat, dayOverrides],
   );
   const calc = useMemo(
     () => (profile ? targetsForDate(profile, today, ctx) : null),
@@ -478,16 +484,6 @@ function ReportBody({
       cm === undefined
         ? "—"
         : `${(units === "imperial" ? cmToInches(cm) : cm).toFixed(1)} ${cmUnitLabel}`;
-    const bf =
-      mLast && bodyType && profile
-        ? estimateBodyFat({
-            bodyType,
-            heightCm: profile.height,
-            waistCm: mLast.waistCm ?? 0,
-            neckCm: mLast.neckCm ?? 0,
-            hipCm: mLast.hipsCm,
-          })
-        : null;
     const body = mLast
       ? {
           stats: [
@@ -496,11 +492,8 @@ function ReportBody({
             { label: "Hips", value: lenDisplay(mLast.hipsCm) },
             {
               label: "Body fat",
-              value: bf !== null ? `${bf.toFixed(1)}%` : "—",
-              sub:
-                bf !== null && bodyType
-                  ? bodyFatCategory(bf, bodyType)
-                  : undefined,
+              value: bodyFat ? `${bodyFat.pct.toFixed(1)}%` : "—",
+              sub: bodyFatSub(bodyFat, bodyType, mLast.date),
             },
           ],
           notes: mLast.notes ?? null,
@@ -1043,6 +1036,7 @@ function ReportBody({
         {enabled.has("body") && (
           <BodySection
             entries={measurementsWindow}
+            bodyFat={bodyFat}
             profile={profile}
             cmUnitLabel={cmUnitLabel}
             units={units}
@@ -1301,13 +1295,31 @@ function WeightSection({
   );
 }
 
+/** The body-fat stat's sub-line: its category, and the reading's date when
+ *  it isn't the measurement shown beside it (`latestDate`). */
+function bodyFatSub(
+  bodyFat: { pct: number; date: string } | null,
+  bodyType: "male" | "female" | null,
+  latestDate: string,
+): string | undefined {
+  if (!bodyFat || !bodyType) return undefined;
+  const category = bodyFatCategory(bodyFat.pct, bodyType);
+  return bodyFat.date === latestDate
+    ? category
+    : `${category} · from ${shortDateLabel(bodyFat.date)}`;
+}
+
 function BodySection({
   entries,
+  bodyFat,
   profile,
   cmUnitLabel,
   units,
 }: {
   entries: BodyMeasurement[];
+  /** The estimate the targets read (`latestBodyFatReading` over the whole
+   *  history), so this section never disagrees with them. */
+  bodyFat: { pct: number; date: string } | null;
   profile: PersonalInfo | null;
   cmUnitLabel: string;
   units: "metric" | "imperial";
@@ -1326,16 +1338,6 @@ function BodySection({
   const bodyType: "male" | "female" | null =
     profile?.gender === "male" || profile?.gender === "female"
       ? profile.gender
-      : null;
-  const bf =
-    bodyType && profile
-      ? estimateBodyFat({
-          bodyType,
-          heightCm: profile.height,
-          waistCm: latest.waistCm ?? 0,
-          neckCm: latest.neckCm ?? 0,
-          hipCm: latest.hipsCm,
-        })
       : null;
   const toDisplay = (cm: number | undefined) =>
     cm === undefined
@@ -1361,12 +1363,8 @@ function BodySection({
         />
         <Stat
           label="Body fat"
-          value={bf !== null ? `${bf.toFixed(1)}%` : "—"}
-          sub={
-            bf !== null && bodyType !== null
-              ? bodyFatCategory(bf, bodyType)
-              : undefined
-          }
+          value={bodyFat ? `${bodyFat.pct.toFixed(1)}%` : "—"}
+          sub={bodyFatSub(bodyFat, bodyType, latest.date)}
         />
       </dl>
       {latest.notes && (

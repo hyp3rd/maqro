@@ -5,6 +5,7 @@ import {
   estimateBodyFat,
   hasBodyFatInputs,
   latestBodyFatPct,
+  latestBodyFatReading,
 } from "./body-fat";
 
 describe("estimateBodyFat (male)", () => {
@@ -238,6 +239,43 @@ describe("latestBodyFatPct", () => {
     ).toBeNull();
     expect(
       latestBodyFatPct(rows, { gender: "preferNotToSay", heightCm: 178 }),
+    ).toBeNull();
+  });
+});
+
+/** The reading behind `latestBodyFatPct`, for the displays (Progress,
+ *  /report) that show the same estimate the targets read and say which
+ *  measurement it comes from. */
+describe("latestBodyFatReading", () => {
+  const MALE = { gender: "male" as const, heightCm: 178 };
+
+  it("is the latest complete reading's estimate and date — latestBodyFatPct's", () => {
+    const rows = [
+      { date: "2026-10-01", waistCm: 88, neckCm: 38 },
+      { date: "2026-10-20", waistCm: 84 },
+    ];
+    const reading = latestBodyFatReading(rows, MALE);
+    expect(reading).toEqual({
+      pct: estimateBodyFat({
+        bodyType: "male",
+        heightCm: 178,
+        waistCm: 88,
+        neckCm: 38,
+      }),
+      date: "2026-10-01",
+    });
+    expect(reading?.pct).toBe(latestBodyFatPct(rows, MALE));
+  });
+
+  it("is null exactly when latestBodyFatPct is", () => {
+    const implausible = [
+      { date: "2026-10-01", waistCm: 88, neckCm: 38 },
+      { date: "2026-10-20", waistCm: 30, neckCm: 38 },
+    ];
+    expect(latestBodyFatReading(implausible, MALE)).toBeNull();
+    expect(latestBodyFatReading([], MALE)).toBeNull();
+    expect(
+      latestBodyFatReading(implausible, { gender: "nonbinary", heightCm: 178 }),
     ).toBeNull();
   });
 });

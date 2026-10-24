@@ -237,6 +237,38 @@ describe("/report body fat", () => {
       expect(ctx).toMatchObject({ phasesEnabled: false, bodyFatPct: expected });
     }
   });
+
+  it("the body-composition section and the PDF show that same estimate, with its date", async () => {
+    data.query = "sections=summary,body,calories&days=30";
+    // The complete reading is inside the window but no longer the latest
+    // row: the newer one is a waist-only check-in.
+    data.measurements = [
+      measurement("2026-05-20", 88, 38),
+      measurement("2026-06-08", 86),
+    ];
+    const expected = estimateBodyFat({
+      bodyType: "male",
+      heightCm: 180,
+      waistCm: 88,
+      neckCm: 38,
+    });
+    const value = `${expected?.toFixed(1)}%`;
+    const from = new Date("2026-05-20").toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+    });
+
+    const model = (await downloadedModel()) as PdfModel & {
+      body: { stats: PdfStat[] };
+    };
+    const section = screen.getByRole("heading", { name: "Body composition" })
+      .parentElement as HTMLElement;
+    expect(section.textContent).toContain(value);
+    expect(section.textContent).toContain(`from ${from}`);
+    const bodyFat = model.body.stats.find((s) => s.label === "Body fat");
+    expect(bodyFat?.value).toBe(value);
+    expect(bodyFat?.sub).toContain(`from ${from}`);
+  });
 });
 
 /** The model the report POSTs to the PDF renderer, as far as these tests

@@ -16,7 +16,11 @@ import { Label } from "@/components/ui/label";
 import { useTier } from "@/hooks/use-ai-usage";
 import { useToday } from "@/hooks/use-today";
 import { FEATURES } from "@/lib/billing/tiers";
-import { bodyFatCategory, estimateBodyFat } from "@/lib/body-fat";
+import {
+  bodyFatCategory,
+  estimateBodyFat,
+  latestBodyFatReading,
+} from "@/lib/body-fat";
 import { dayIndexFromIsoDate } from "@/lib/charts/geometry";
 import {
   listBodyMeasurements,
@@ -1814,23 +1818,18 @@ function BodyMeasurementsSection({
   const latest = recent.length > 0 ? recent[recent.length - 1] : null;
   const previous = recent.length > 1 ? recent[recent.length - 2] : null;
 
-  // Body-fat estimate uses gender + height + the latest entry. Only
-  // available when (1) gender is male/female (no published formula
-  // for non-binary bodies) and (2) all required inputs are present.
-  // The category label is rendered alongside the percentage to give
-  // the number context.
+  // The body-fat estimate the targets read (`latestBodyFatReading`, the
+  // rule behind `useLatestBodyFatPct`): the latest COMPLETE reading over the
+  // whole history, so a newer waist-only check-in doesn't blank it while the
+  // training protein still uses it. Only for male/female (no published
+  // formula for non-binary bodies). The category label is rendered
+  // alongside the percentage to give the number context.
   const bfBodyType: "male" | "female" | null =
     gender === "male" || gender === "female" ? gender : null;
-  const latestBf = useMemo(() => {
-    if (!latest || !bfBodyType) return null;
-    return estimateBodyFat({
-      bodyType: bfBodyType,
-      heightCm,
-      waistCm: latest.waistCm ?? 0,
-      neckCm: latest.neckCm ?? 0,
-      hipCm: latest.hipsCm,
-    });
-  }, [latest, bfBodyType, heightCm]);
+  const latestBf = useMemo(
+    () => latestBodyFatReading(entries ?? [], { gender, heightCm }),
+    [entries, gender, heightCm],
+  );
 
   // Trend points for the BF% sparkline - only entries that have all
   // required inputs contribute. The chart skips days where an input
@@ -1915,7 +1914,11 @@ function BodyMeasurementsSection({
               units={units}
             />
             <BodyFatMetric
-              bf={latestBf}
+              bf={latestBf?.pct ?? null}
+              // Name the reading when it isn't the row shown beside it.
+              fromDate={
+                latestBf && latestBf.date !== latest.date ? latestBf.date : null
+              }
               bodyType={bfBodyType}
             />
           </div>
@@ -2002,9 +2005,12 @@ function Metric({
 
 function BodyFatMetric({
   bf,
+  fromDate,
   bodyType,
 }: {
   bf: number | null;
+  /** The reading's date, when it isn't the latest measurement's. */
+  fromDate: string | null;
   bodyType: "male" | "female" | null;
 }) {
   return (
@@ -2018,6 +2024,11 @@ function BodyFatMetric({
       {bf !== null && bodyType !== null && (
         <p className="mt-0.5 text-[10px] capitalize text-muted-foreground">
           {bodyFatCategory(bf, bodyType)}
+        </p>
+      )}
+      {bf !== null && fromDate !== null && (
+        <p className="mt-0.5 text-[10px] text-muted-foreground">
+          from {shortLabel(fromDate)}
         </p>
       )}
       {bodyType === null && (
