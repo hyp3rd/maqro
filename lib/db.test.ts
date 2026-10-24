@@ -724,6 +724,22 @@ describe("clearDemoSeededStores", () => {
       raw.close();
     }
   });
+
+  it("notifies the data-bus table of every store it clears, once", async () => {
+    const db = await freshDb();
+    const bus = await import("@/lib/sync/data-bus");
+    await db.listCustomFoods();
+    const before = bus.getDataVersion("pantryItems");
+    const versions = () =>
+      db.DEMO_SEEDED_STORES.map((t) => bus.getDataVersion(t));
+    const start = versions();
+
+    await db.clearDemoSeededStores();
+
+    expect(versions()).toEqual(start.map((v) => v + 1));
+    // A store the demo clear keeps is not woken.
+    expect(bus.getDataVersion("pantryItems")).toBe(before);
+  });
 });
 
 describe("clearAllStores", () => {
@@ -801,6 +817,28 @@ describe("clearAllStores", () => {
     } finally {
       raw.close();
     }
+  });
+
+  it("notifies the data-bus table of every store it wipes", async () => {
+    const db = await freshDb();
+    const bus = await import("@/lib/sync/data-bus");
+    await db.listCustomFoods();
+    const raw = await openDB("maqro");
+    const storeNames = Array.from(raw.objectStoreNames);
+    raw.close();
+    const tables = storeNames.filter(bus.isSyncedTable);
+    // Every data-bus table is a store the wipe clears (`deletions` and the
+    // other stores without readers on the bus are simply not tables).
+    expect(tables).toEqual(
+      expect.arrayContaining(["dailyLogs", "profile", "trainingDayOverrides"]),
+    );
+    const start = tables.map((t) => bus.getDataVersion(t));
+
+    await db.clearAllStores();
+
+    expect(tables.map((t) => bus.getDataVersion(t))).toEqual(
+      start.map((v) => v + 1),
+    );
   });
 
   it("is idempotent - running on an already-empty DB is a no-op", async () => {

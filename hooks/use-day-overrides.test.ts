@@ -31,6 +31,21 @@ describe("useDayOverrides", () => {
     ]);
   });
 
+  it.each(["clearAllStores", "clearDemoSeededStores"] as const)(
+    "a %s wipe empties the shown overrides (sign-out / the demo clear)",
+    async (wipe) => {
+      const { useDayOverrides, db } = await fresh();
+      await db.saveDayOverride(DATE, { type: "rest" });
+      const { result } = renderHook(() => useDayOverrides());
+      await waitFor(() => expect(result.current.overrides).toHaveLength(1));
+
+      await act(async () => {
+        await db[wipe]();
+      });
+      await waitFor(() => expect(result.current.overrides).toEqual([]));
+    },
+  );
+
   it("changing a day's session is stored, shown and counted as unsynced", async () => {
     const { useDayOverrides, db, status } = await fresh();
     const { result } = renderHook(() => useDayOverrides());

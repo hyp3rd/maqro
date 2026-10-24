@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   __resetDataBusForTests,
   getDataVersion,
+  isSyncedTable,
   notifyDataChanged,
   subscribeDataChanged,
 } from "./data-bus";
@@ -77,6 +78,16 @@ describe("data-bus", () => {
 
     expect(a).not.toHaveBeenCalled();
     expect(b).toHaveBeenCalledTimes(1);
+  });
+
+  it("tells a data-bus table from any other store name", () => {
+    expect(isSyncedTable("dailyLogs")).toBe(true);
+    expect(isSyncedTable("trainingDayOverrides")).toBe(true);
+    // The tombstone store has no readers on the bus.
+    expect(isSyncedTable("deletions")).toBe(false);
+    // Own keys only, never the prototype's.
+    expect(isSyncedTable("toString")).toBe(false);
+    expect(isSyncedTable("constructor")).toBe(false);
   });
 
   it("isolates a throwing subscriber so peers still receive", () => {

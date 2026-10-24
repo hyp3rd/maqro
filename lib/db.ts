@@ -7,7 +7,11 @@ import type {
 import { pickWinnerProfile } from "@/lib/micronutrients/merge";
 import type { MicronutrientProfile } from "@/lib/micronutrients/types";
 import type { ShoppingAisle } from "@/lib/shopping/categorize";
-import { type SyncedTable, notifyDataChanged } from "@/lib/sync/data-bus";
+import {
+  type SyncedTable,
+  isSyncedTable,
+  notifyDataChanged,
+} from "@/lib/sync/data-bus";
 import { type DBSchema, type IDBPDatabase, openDB } from "idb";
 import type { FastSession, FastSessionInput } from "@maqro/core/fasting";
 import type {
@@ -783,8 +787,8 @@ export async function isProfileMarkedAsDemo(): Promise<boolean> {
 
 /** The stores `clearDemoSeededStores` wipes — the ONE list everything the
  *  demo clear does is derived from (the stores cleared, the tombstones
- *  dropped), so a store added here can't be cleared without its tombstones
- *  going:
+ *  dropped, the data-bus tables notified), so a store added here can't be
+ *  cleared without its tombstones going and its readers re-loading:
  *
  *  - `profile`, `dailyLogs`, `weightHistory`, `waterIntake`: what the
  *    `?demo=1` seed populates (DemoSeed).
@@ -818,7 +822,10 @@ function tombstoneKeysOf(store: DeletableStore): IDBKeyRange {
  *  transaction, together with the pending tombstones of those of them that
  *  are deletable. A tombstone written against a demo row has a row key (a
  *  date) shared with whatever account signs in next: replayed by the first
- *  sync it would delete that account's real row for the same date. Used by
+ *  sync it would delete that account's real row for the same date. Then
+ *  every cleared store's data-bus table is notified, so mounted readers
+ *  (`useProfile`, StreakChip, `useWeekIntake`, `useDayOverrides`, …) re-load
+ *  from the now-empty stores instead of showing the sample data. Used by
  *  `clearDemoModeData` before the first post-sign-in sync. */
 export async function clearDemoSeededStores(): Promise<void> {
   const db = await getDB();
@@ -835,6 +842,7 @@ export async function clearDemoSeededStores(): Promise<void> {
     ),
     tx.done,
   ]);
+  for (const store of DEMO_SEEDED_STORES) notifyDataChanged(store);
 }
 
 /** Sync-layer hook: write the profile we just pulled from the server.
@@ -2667,7 +2675,8 @@ export async function applyServerDeletion(
  * per-account data, a per-account derived cache, or pending tombstones.
  *
  * Runs in a single transaction so a mid-flight failure either clears all
- * stores or none - no half-state. */
+ * stores or none - no half-state. Afterwards every cleared store's data-bus
+ * table is notified, so mounted readers re-load the empty stores. */
 export async function clearAllStores(): Promise<void> {
   const db = await getDB();
   const storeNames = Array.from(db.objectStoreNames);
@@ -2676,4 +2685,11 @@ export async function clearAllStores(): Promise<void> {
     ...storeNames.map((name) => tx.objectStore(name).clear()),
     tx.done,
   ]);
+  // Wake every data-bus reader of a wiped store (StreakChip, useWeekIntake,
+  // the overrides and profile hooks, …): without it they keep showing the
+  // previous account's rows until some unrelated bump. Same derivation as
+  // the store list: whatever the live database holds.
+  for (const name of storeNames) {
+    if (isSyncedTable(name)) notifyDataChanged(name);
+  }
 }
