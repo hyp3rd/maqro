@@ -156,7 +156,12 @@ export function TrainingWeekChart({ days, mean, floor, className }: Props) {
                       x={cx}
                       y={delta > 0 ? y - 5 : y + h + 13}
                       textAnchor="middle"
-                      className="fill-muted-foreground font-mono text-xs tabular-nums"
+                      // A card-coloured halo keeps the figure readable
+                      // where it crosses the dashed floor line.
+                      paintOrder="stroke"
+                      strokeWidth={4}
+                      strokeLinejoin="round"
+                      className="fill-muted-foreground stroke-card font-mono text-xs tabular-nums"
                     >
                       {signed(delta, locale)}
                     </text>

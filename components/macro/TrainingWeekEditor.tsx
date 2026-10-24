@@ -436,7 +436,7 @@ function DayRow({
           className={cn(
             "inline-flex items-center rounded-full px-2 py-0.5 text-label font-medium",
             rest
-              ? "bg-muted text-muted-foreground"
+              ? "bg-background text-muted-foreground ring-1 ring-inset ring-border"
               : "bg-brand/12 text-brand-text",
           )}
         >
