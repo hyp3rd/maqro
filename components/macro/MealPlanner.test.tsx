@@ -234,6 +234,15 @@ describe("MealPlanner as Instrument Today", () => {
     ).toBeTruthy();
   });
 
+  it("offers Share only on today: another day is not 'today's macros'", () => {
+    // Past (food logged) and future (food planned ahead).
+    for (const selectedDate of ["2026-10-19", "2026-10-23"]) {
+      renderPlanner({ selectedDate });
+      expect(screen.queryByRole("button", { name: /share/i })).toBeNull();
+      cleanup();
+    }
+  });
+
   it("is one region, named by the day, with no region nested inside", () => {
     renderPlanner();
     const today = screen.getByRole("region", { name: "Today" });
