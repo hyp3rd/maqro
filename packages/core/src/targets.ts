@@ -7,6 +7,7 @@ import {
   type ProteinBasis,
   type TrainingDayClass,
   classifyTrainingDay,
+  dayKcalForClass,
   distributeWeekCalories,
   explicitFatChoice,
   fatFloorLiftsChoice,
@@ -14,6 +15,7 @@ import {
   minDayKcal,
   normalizeProteinSetting,
   normalizeTrainingSchedule,
+  parseTrainingDay,
   partitionDayMacros,
   proteinGrams,
 } from "./training";
@@ -36,9 +38,11 @@ import {
  *  `computeMacros` engine, with the age clock pinned to local midnight of
  *  `date`. With an enabled training schedule (FREE) that result is the
  *  WEEKLY MEAN, and the day's own planned share of it comes from the
- *  template (training.ts). Pure: the date, the tier decision and any
- *  body-fat estimate are inputs, never read from the environment, so it runs
- *  identically on web, server and native. */
+ *  template (training.ts) — or, when the user changed that one day's
+ *  session (a per-date override, FREE), from the override's class on the
+ *  template week's scale. Pure: the date, the tier decision, any body-fat
+ *  estimate and any overrides are inputs, never read from the environment,
+ *  so it runs identically on web, server and native. */
 
 /** What the caller has resolved about the user before asking for a target.
  *  Gating lives in callers (see goal-phases.ts): pass `phasesEnabled: true`
@@ -50,12 +54,35 @@ import {
 export type TargetContext = {
   phasesEnabled: boolean;
   bodyFatPct?: number | null;
+  /** The user's per-date session override for a date, if any — the stored
+   *  `training_day_overrides` row's `day`, raw (`dayOverrideResolver` builds
+   *  this from the rows). `targetsForDate` reads it for its own date only
+   *  and validates it there (`parseTrainingDay`): a malformed row is
+   *  ignored, and every override is ignored while the training schedule is
+   *  off. Absent = no overrides (the template week as planned). */
+  overrideFor?: (date: string) => unknown;
 };
+
+/** The `TargetContext.overrideFor` for a set of stored override rows (one
+ *  per date, as the table's primary key guarantees): the row's raw `day`
+ *  for its date, `undefined` for any other. */
+export function dayOverrideResolver(
+  rows: Iterable<{ date: string; day: unknown }>,
+): (date: string) => unknown {
+  const byDate = new Map<string, unknown>();
+  for (const row of rows) byDate.set(row.date, row.day);
+  return (date) => byDate.get(date);
+}
 
 /** What drove a training-day target (present only while a schedule is on). */
 export type TrainingDayTargets = {
-  /** The template entry for this weekday. */
+  /** The session the day is planned for: the date's override when there is
+   *  a valid one, else the template entry for its weekday. */
   day: TrainingDay;
+  /** The template entry for this weekday (what "back to plan" restores). */
+  plannedDay: TrainingDay;
+  /** A per-date override replaced the template session for this day. */
+  overridden: boolean;
   dayClass: TrainingDayClass;
   cycling: CyclingPreset;
   /** The weekly mean daily target the day is planned around. */
@@ -184,7 +211,12 @@ export function targetsForDate(
 
   const weekday = midnight.getDay();
   const classes = schedule.days.map(classifyTrainingDay);
-  const dayClass = classes[weekday];
+  // A valid per-date override replaces only THIS day's session; the week's
+  // scale, fat level and floors stay the template's.
+  const plannedDay = schedule.days[weekday];
+  const override = parseTrainingDay(ctx.overrideFor?.(date));
+  const day = override ?? plannedDay;
+  const dayClass = classifyTrainingDay(day);
   const setting = normalizeProteinSetting(profile.proteinSetting);
   const body = {
     weightKg: profile.weight,
@@ -203,7 +235,7 @@ export function targetsForDate(
   };
   // The smallest day that holds the protein and the fat + carb floors.
   const minDay = minDayKcal({ ...floors, proteinGrams: protein.grams });
-  const weekKcal = distributeWeekCalories({
+  const weekInput = {
     meanKcal: values.targetCalories,
     classes,
     cycling: schedule.cycling,
@@ -212,11 +244,21 @@ export function targetsForDate(
     // instead. A mean under `minDay` leaves no room, so every day is the
     // mean.
     floorKcal: Math.max(values.bmr, MIN_DAILY_KCAL, minDay),
-  });
-  const dayKcal = weekKcal[weekday];
+  };
+  const weekKcal = distributeWeekCalories(weekInput);
+  // An override of another class takes that class's day under the
+  // TEMPLATE week's (narrowed) scale; the rest of the week is untouched (no
+  // rebalancing), so its weekly sum legitimately differs from 7 × the mean
+  // by this day's change. One of the planned day's own class keeps the
+  // planned day's kcal (the week's rounding included).
+  const dayKcal =
+    override && dayClass !== classes[weekday]
+      ? dayKcalForClass(weekInput, dayClass)
+      : weekKcal[weekday];
   const week = {
-    // The week's held fat (or carbs) is set on its smallest planned day,
-    // so every day of the week shares it.
+    // The week's held fat (or carbs) is set on its smallest PLANNED day,
+    // so every day of the week shares it; an override below it is the
+    // week's smallest day only for its own split (`partitionDayMacros`).
     weekMinKcal: Math.min(...weekKcal),
     mean: values,
     proteinGrams: protein.grams,
@@ -231,7 +273,9 @@ export function targetsForDate(
     targetCalories: dayKcal,
     ...macros,
     training: {
-      day: schedule.days[weekday],
+      day,
+      plannedDay,
+      overridden: override !== null,
       dayClass,
       cycling: schedule.cycling,
       meanCalories: values.targetCalories,
@@ -251,9 +295,13 @@ export function targetsForDate(
 export type WeekTargets = {
   /** The week's Monday (local `YYYY-MM-DD`). */
   weekStart: string;
-  /** Monday → Sunday, each exactly what `targetsForDate` returns for it. */
+  /** Monday → Sunday, each exactly what `targetsForDate` returns for it
+   *  (with the context's overrides, if any). */
   days: DateTargets[];
-  /** Sum of the seven `targetCalories`. */
+  /** Sum of the seven `targetCalories`: 7 × the weekly mean for the template
+   *  week (within the 50 kcal rounding). A per-date override changes only
+   *  its own day — nothing is rebalanced — so a week with one differs from
+   *  that by exactly the overridden days' changes. */
   totalCalories: number;
 };
 
