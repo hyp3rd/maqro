@@ -250,6 +250,27 @@ describe("TrainingWeekEditor: the week", () => {
     expect(row("Saturday").querySelector("[class*='signal']")).toBeNull();
   });
 
+  it("uses the width on desktop: the day list beside the chart and protein", () => {
+    renderEditor({ initial: profile });
+    const days = screen.getByRole("region", { name: "Weekly template" });
+    const calories = screen
+      .getByRole("radiogroup", { name: "Day-to-day difference" })
+      .closest("section");
+    const protein = screen.getByRole("region", { name: /Protein:/ });
+    const grid = days.parentElement;
+    // One two-column grid at lg: chart, cycling and protein on the left,
+    // the seven days on the right; one column (in reading order) below lg.
+    expect(grid?.className).toContain("lg:grid-cols-2");
+    expect(calories?.parentElement).toBe(grid);
+    expect(protein.parentElement).toBe(grid);
+    expect(days.className).toContain("lg:col-start-2");
+    expect(days.className).toContain("lg:row-start-1");
+    // Not held to a narrow left-aligned column on a wide screen.
+    const root = grid?.parentElement;
+    expect(root?.className).toContain("max-w-2xl");
+    expect(root?.className).toContain("lg:max-w-none");
+  });
+
   it("a cycling preset change updates the planned kcal", () => {
     const onTraining = vi.fn();
     // At maintenance the safety floor leaves the full pronounced spread.

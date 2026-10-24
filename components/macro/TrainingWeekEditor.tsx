@@ -186,7 +186,7 @@ export function TrainingWeekEditor({
   };
 
   return (
-    <div className="max-w-2xl space-y-4">
+    <div className="max-w-2xl space-y-4 lg:max-w-none">
       {/* The breadcrumb above names the page; the heading keeps the outline
           for assistive tech without spending the fold on it twice. */}
       <h2 className="sr-only">Training week</h2>
@@ -321,7 +321,10 @@ function EnabledEditor({
   });
 
   return (
-    <>
+    // One column in reading order on a phone; at lg the seven days sit
+    // beside the chart, the cycling choice and protein (the last row
+    // takes any slack, so the left cards stay together at the top).
+    <div className="space-y-4 lg:grid lg:grid-cols-2 lg:grid-rows-[auto_auto_1fr] lg:items-start lg:gap-4 lg:space-y-0">
       <Card asChild>
         <section aria-labelledby={`${id}-calories`}>
           <CardBody className="space-y-4">
@@ -383,7 +386,10 @@ function EnabledEditor({
       </Card>
 
       <Card asChild>
-        <section aria-labelledby={`${id}-days`}>
+        <section
+          aria-labelledby={`${id}-days`}
+          className="lg:col-start-2 lg:row-span-3 lg:row-start-1"
+        >
           <h3
             id={`${id}-days`}
             className="sr-only"
@@ -440,7 +446,7 @@ function EnabledEditor({
           onOpenMeasurements={onOpenMeasurements}
         />
       )}
-    </>
+    </div>
   );
 }
 
