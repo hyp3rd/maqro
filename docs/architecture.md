@@ -150,10 +150,9 @@ components/
                                     #   LogMealSheet + FoodSearchSheet (guided mobile
                                     #   add-food), SheetAction (shared sheet primitives),
                                     #   TrainingWeekEditor (Profile → Training week:
-                                    #   TrainingDayDialog + TrainingWeekChart)
-  today/                            # Instrument Today day view: TodayGauge (ring gauge),
-                                    #   MacroReadout, DayTimeline (24-h track), WeekStrip,
-                                    #   DayTypeChip, MealRail, TodayHeader
+                                    #   TrainingDayDialog + TrainingWeekChart),
+                                    #   DayTypeSheet (day view: change one day's
+                                    #   session, previewed through useTargets)
   icons/                            # In-tree SVGs (e.g. GoogleLogo for OAuth button)
   marketing/                        # StructuredData (JSON-LD for landing SEO)
   ui/                               # shadcn primitives
@@ -165,6 +164,7 @@ hooks/
   use-targets.ts                    # Day / today / selected-week / planned-week targets via core
                                     #   targetsForDate (one tier + body-fat context)
   use-latest-body-fat.ts            # Body-fat % the targets read (core latestBodyFatPct over IDB)
+  use-day-overrides.ts              # Per-date training-session overrides (IDB, synced) the targets read
   use-food-search.ts                # Debounced merged search
   use-today.ts                      # Live today-date (rolls at midnight)
   use-week-intake.ts                # One week of logged kcal (ranged IDB read, data-bus refresh)
@@ -178,6 +178,7 @@ lib/
   db.ts                             # IndexedDB wrapper (idb)
   macros.ts                         # BMR, TDEE, target calories
   latest-body-fat.ts                # Crons' read of the latest usable body measurement (same derivation as the app)
+  day-overrides-server.ts           # Weekly-recap cron's owner-scoped read of training_day_overrides
   meal-planner.ts                   # 3×3 Cramer-based portion solver
   trends.ts                         # Smoothing, plateau detection, TDEE recalibration
   streaks.ts                        # Consecutive-logged-days computation
