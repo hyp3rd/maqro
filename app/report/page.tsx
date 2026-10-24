@@ -313,6 +313,11 @@ function ReportBody({
     [profile, today, ctx],
   );
   const targetCalories = calc?.targetCalories ?? 0;
+  // With a training week on, today's target is that day's PLANNED share of
+  // the week, above or below its average. Averaged intake is compared with
+  // the weekly average (`training.meanCalories`), as in Progress.
+  const weeklyAverage = calc?.training?.meanCalories;
+  const averageTarget = weeklyAverage ?? targetCalories;
   // Each recap day is scored against its OWN target (same resolver + tier),
   // so a phase change or a planned training day in the window counts right.
   const targetCaloriesFor = useCallback(
@@ -573,8 +578,8 @@ function ReportBody({
               {
                 label: "Avg per day",
                 value: `${Math.round(logsWindow.reduce((s, l) => s + sumCalories(l), 0) / logsWindow.length)} kcal`,
-                sub: targetCalories
-                  ? `target ${targetCalories} kcal`
+                sub: averageTarget
+                  ? `${weeklyAverage !== undefined ? "average target" : "target"} ${averageTarget} kcal`
                   : `${logsWindow.length} days`,
               },
               { label: "Days logged", value: String(logsWindow.length) },
@@ -587,7 +592,7 @@ function ReportBody({
                 x: Math.floor(new Date(l.date).getTime() / 86_400_000),
                 y: sumCalories(l),
               })),
-              ...(targetCalories ? { targetY: targetCalories } : {}),
+              ...(averageTarget ? { targetY: averageTarget } : {}),
             }
           : null,
     };
@@ -660,15 +665,22 @@ function ReportBody({
                     ? "manual override"
                     : "BMR × activity",
             },
+            // With a training week, today's figures are the day's planned
+            // share; the delta is the weekly average's balance, so the
+            // average sits beside it (TDEE + delta = the average).
             {
-              label: "Target",
+              label: calc.training ? "Today (planned)" : "Target",
               value: `${calc.targetCalories} kcal`,
-              sub: `${calc.dailyDelta > 0 ? "+" : ""}${calc.dailyDelta} kcal/day`,
+              sub: `${calc.training ? `${calc.training.meanCalories} kcal avg · ` : ""}${calc.dailyDelta > 0 ? "+" : ""}${calc.dailyDelta} kcal/day`,
             },
             {
               label: "Macro target",
               value: `P${calc.protein} · C${calc.carbs} · F${calc.fat} g`,
-              sub: profile?.macroSplit ? "custom split" : "goal-based",
+              sub: calc.training
+                ? "today's plan"
+                : profile?.macroSplit
+                  ? "custom split"
+                  : "goal-based",
             },
           ],
         }
@@ -1044,7 +1056,8 @@ function ReportBody({
         {enabled.has("calories") && (
           <CalorieSection
             logs={logsWindow}
-            targetCalories={targetCalories}
+            targetCalories={averageTarget}
+            weeklyAverage={weeklyAverage !== undefined}
           />
         )}
 
@@ -1352,9 +1365,13 @@ function BodySection({
 function CalorieSection({
   logs,
   targetCalories,
+  weeklyAverage,
 }: {
   logs: DailyLog[];
+  /** A training week's weekly average (`weeklyAverage`), else today's
+   *  target. */
   targetCalories: number;
+  weeklyAverage: boolean;
 }) {
   if (logs.length === 0) {
     return (
@@ -1376,7 +1393,8 @@ function CalorieSection({
   return (
     <ReportSection title="Calorie adherence">
       <p className="mb-2 text-[11px] text-muted-foreground">
-        Daily kcal vs target of {targetCalories} kcal.
+        Daily kcal vs {weeklyAverage ? "weekly average target" : "target"} of{" "}
+        {targetCalories} kcal.
       </p>
       <MiniLineChart
         data={points}
@@ -1386,7 +1404,9 @@ function CalorieSection({
         title="Calories per day"
         targetY={targetCalories || undefined}
         targetLabel={
-          targetCalories ? `${targetCalories} kcal target` : undefined
+          targetCalories
+            ? `${targetCalories} kcal ${weeklyAverage ? "average" : "target"}`
+            : undefined
         }
       />
     </ReportSection>
