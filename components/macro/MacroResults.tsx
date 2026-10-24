@@ -150,17 +150,17 @@ const SAFETY_FLOOR_EXPLAINER = (
       metabolism, increase hunger, and stall progress within a few weeks.
     </p>
     <p>
-      This is also why your displayed weekly rate may not match what you set on
-      the Calculator tab — the cap moved the actual deficit up to the floor.
+      This is also why your displayed weekly rate may not match the one you set
+      under Goal — the cap moved the actual deficit up to the floor.
     </p>
     <p className="text-xs text-muted-foreground">
       Three ways to bring goal and actual back into alignment:
     </p>
     <ul className="ml-4 list-disc space-y-1 text-xs text-muted-foreground">
       <li>
-        <strong>Pick a slower weekly rate&nbsp;</strong> on the Calculator tab.
-        Slower fat loss is also more sustainable — most people lose long- term
-        faster at 0.5%/week than at 1%/week.
+        <strong>Pick a slower weekly rate&nbsp;</strong> under Goal. Slower fat
+        loss is also more sustainable — most people lose long- term faster at
+        0.5%/week than at 1%/week.
       </li>
       <li>
         <strong>Raise your activity level&nbsp;</strong> if it&apos;s realistic.
@@ -264,8 +264,7 @@ const MacroResults: React.FC<MacroResultsProps> = ({
           <div className="flex items-start gap-1.5 border-t border-border/60 bg-amber-500/5 px-5 py-2 text-[11px] text-amber-700 dark:text-amber-400">
             <span className="flex-1">
               Capped to safety floor (max(BMR, 1200 kcal)). Your displayed
-              weekly rate is the capped one, not the rate you set on the
-              Calculator tab.
+              weekly rate is the capped one, not the rate you set under Goal.
             </span>
             <InfoExplainer
               title="Why the cap?"

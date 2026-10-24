@@ -34,7 +34,7 @@ ships with privacy-respecting operational logging.
   is active today. Applying a phase that would _raise_ today's target
   (e.g. a cut gentler than your current deficit) asks for a quick
   confirm first, so the change is never a surprise.
-- **Meal Plan** - log foods against a per-profile set of meal slots
+- **Today (the day view)** - log foods against a per-profile set of meal slots
   (Breakfast / Lunch / Dinner / Snacks by default, fully editable in
   the Template editor). Auto-fill a day that hits your macro targets
   via a 3×3 linear solve over a protein/carb/fat triplet; portions

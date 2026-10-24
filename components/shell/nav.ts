@@ -273,6 +273,26 @@ export function viewFromParam(raw: string | null): ViewKey {
   return VIEW_ALIASES.get(raw) ?? DEFAULT_VIEW;
 }
 
+/** Where copy sends someone for `key`, in the names they will see: the
+ *  destination's label, plus the way to it on a phone when the tab bar
+ *  doesn't show it under that label ("Targets (You → Targets on a phone)").
+ *  Copy reads this rather than naming a place itself, so it follows the
+ *  registry when a destination is renamed or moves. */
+export function navPlace(key: ViewKey): string {
+  const d: NavDestination = NAV[key];
+  switch (d.mobile) {
+    case "tab":
+      return d.shortLabel === d.label
+        ? d.label
+        : `${d.label} (${d.shortLabel} on a phone)`;
+    case "you":
+      return `${d.label} (${NAV[YOU_TAB].shortLabel} → ${d.label} on a phone)`;
+    case "more":
+      // The More sheet lists it under its label, wherever the sheet lives.
+      return d.label;
+  }
+}
+
 /** The tab bar slot that lights up for `current`: its own tab, else the
  *  slot that hosts it on a phone (More, or the You tab for hub tiles and,
  *  once More leaves the tab bar, for the More sheet's destinations too). */

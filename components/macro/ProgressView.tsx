@@ -9,6 +9,7 @@ import {
   MiniLineChart,
 } from "@/components/shell/MiniLineChart";
 import { NumberTicker } from "@/components/shell/NumberTicker";
+import { navPlace } from "@/components/shell/nav";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -1097,8 +1098,8 @@ function WeightSection({
           <div className="min-w-0">
             <h3 className="text-sm font-semibold tracking-tight">Weight</h3>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Last {targetWindow} days. Auto-logs when you change your weight on
-              the Calculator tab.
+              Last {targetWindow} days. Auto-logs when you change your weight in{" "}
+              {navPlace("profile")}.
             </p>
           </div>
           {hasData && latest && first && (
@@ -1147,7 +1148,7 @@ function WeightSection({
         ) : (
           <EmptyState
             title="No weigh-ins yet"
-            body="Update your weight on the Calculator tab - or use the form below to log a measurement directly."
+            body={`Update your weight in ${navPlace("profile")} - or use the form below to log a measurement directly.`}
           />
         )}
       </div>
@@ -1278,7 +1279,7 @@ function CalorieSection({
         ) : (
           <EmptyState
             title="No logs yet"
-            body="Add foods on the Meal Plan tab - once you've logged a day or two, your adherence will show up here."
+            body={`Add foods in ${navPlace("plan")} - once you've logged a day or two, your adherence will show up here.`}
           />
         )}
       </div>
@@ -1394,7 +1395,7 @@ function EatingWindowSection({
         ) : (
           <EmptyState
             title="No meal times yet"
-            body="Log foods on the Meal Plan tab as you eat them — your eating window and fasting streak chart here."
+            body={`Log foods in ${navPlace("plan")} as you eat them — your eating window and fasting streak chart here.`}
           />
         )}
       </div>
@@ -1534,7 +1535,7 @@ function HydrationSection({
         ) : (
           <EmptyState
             title="No water logged yet"
-            body="Tap the water counter on the Meal Plan tab to log a glass — your daily totals will chart here."
+            body={`Tap the water counter in ${navPlace("plan")} to log a glass — your daily totals will chart here.`}
           />
         )}
       </div>

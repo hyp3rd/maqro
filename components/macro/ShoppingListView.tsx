@@ -2,6 +2,7 @@
 
 import { SwipeHint } from "@/components/gestures/SwipeHint";
 import { SwipeRow } from "@/components/gestures/SwipeRow";
+import { NAV } from "@/components/shell/nav";
 import { Button } from "@/components/ui/button";
 import {
   addPantryItem,
@@ -147,7 +148,7 @@ function dayLabel(date: string): string {
 }
 
 type Props = {
-  /** Switch the app to the Meal Plan view. Surfaced from the empty
+  /** Switch the app to the day view (Today). Surfaced from the empty
    *  state's CTA so a fresh user can jump straight to where they
    *  populate the data this view aggregates. Optional. */
   onGoToPlan?: () => void;
@@ -937,7 +938,7 @@ export function ShoppingListView({ onGoToPlan }: Props = {}) {
                   size="sm"
                   onClick={onGoToPlan}
                 >
-                  Open Meal Plan
+                  Open {NAV.plan.label}
                 </Button>
               </div>
             )}

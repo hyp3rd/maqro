@@ -8,6 +8,7 @@ import {
   VIEW_KEYS,
   YOU_HUB,
   activeTabSlot,
+  navPlace,
   viewFromParam,
   type ViewKey,
 } from "./nav";
@@ -155,5 +156,24 @@ describe("activeTabSlot", () => {
 
   it("a You hub destination lights You", () => {
     expect(activeTabSlot("calculator")).toBe("profile");
+  });
+});
+
+describe("navPlace", () => {
+  it("names a tab destination by its label", () => {
+    expect(navPlace("plan")).toBe("Today");
+    expect(navPlace("progress")).toBe("Progress");
+  });
+
+  it("adds the tab's name when the tab bar shows a different one", () => {
+    expect(navPlace("profile")).toBe("Profile (You on a phone)");
+  });
+
+  it("gives the way to a You hub tile on a phone", () => {
+    expect(navPlace("calculator")).toBe("Targets (You → Targets on a phone)");
+  });
+
+  it("names a More sheet destination as the sheet lists it", () => {
+    for (const key of MORE_SHEET) expect(navPlace(key)).toBe(NAV[key].label);
   });
 });
