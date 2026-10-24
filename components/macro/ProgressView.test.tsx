@@ -277,6 +277,40 @@ describe("ProgressView", () => {
       expect(change.className).toContain("text-muted-foreground");
       expect(change.className).not.toMatch(JUDGED);
     });
+
+    it.each([
+      ["maintain", "Holding steady"],
+      ["lose", "Weight has held steady"],
+      ["gain", "Weight has held steady"],
+    ] as const)(
+      "draws a flat weight trend in neutral tokens when the goal is %s",
+      async (goal, heading) => {
+        // Three weeks at the same weight: a flat band the plateau read calls.
+        const today = todayKey();
+        for (let i = 0; i < 21; i++) {
+          await saveWeightEntry(addDays(today, -i), 80);
+        }
+        render(
+          <ProgressView
+            {...BASE}
+            goal={goal}
+          />,
+        );
+
+        const title = await screen.findByRole("heading", { name: heading });
+        const card = title.closest("div");
+        const icon = title.parentElement?.querySelector("svg");
+        expect(card).not.toBeNull();
+        expect(icon).not.toBeNull();
+        for (const el of [card, title, icon]) {
+          expect(el?.getAttribute("class") ?? "").not.toMatch(JUDGED);
+        }
+        expect(card?.className).toContain("bg-card");
+        expect(title.className).toContain("text-muted-foreground");
+        expect(icon?.getAttribute("class")).toContain("text-muted-foreground");
+        expect(screen.queryByText("Plateau detected")).toBeNull();
+      },
+    );
   });
 
   describe("hydration chart", () => {

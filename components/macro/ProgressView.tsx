@@ -650,45 +650,32 @@ function TrendsSection({
         </div>
       )}
 
-      {plateau.advisory &&
-        (() => {
-          // A flat trend is the GOAL when maintaining (positive/neutral); an
-          // attention signal when losing/gaining (amber).
-          const onTarget = goal === "maintain";
-          const tone = onTarget
-            ? "border-emerald-500/30 bg-emerald-500/5"
-            : "border-amber-500/30 bg-amber-500/5";
-          const accent = onTarget
-            ? "text-emerald-700 dark:text-emerald-400"
-            : "text-amber-700 dark:text-amber-400";
-          return (
-            <div className={cn("rounded-lg border px-5 py-4", tone)}>
-              <header className="mb-1.5 flex items-center gap-2">
-                <LineChart className={cn("h-3.5 w-3.5", accent)} />
-                <h3
-                  className={cn(
-                    "text-xs font-medium uppercase tracking-wider",
-                    accent,
-                  )}
-                >
-                  {onTarget ? "Holding steady" : "Plateau detected"}
-                </h3>
-              </header>
-              <p className="text-sm leading-relaxed text-foreground">
-                {plateau.advisory}
-              </p>
-              {plateau.startKg !== null && plateau.endKg !== null && (
-                <p className="mt-2 font-mono text-[11px] tabular-nums text-muted-foreground">
-                  Smoothed weight:{" "}
-                  {kgToDisplay(plateau.startKg, units).toFixed(1)} →{" "}
-                  {kgToDisplay(plateau.endKg, units).toFixed(1)} {unitLabel}{" "}
-                  over {plateau.daysFlat} days · {plateau.weighIns} weigh-in
-                  {plateau.weighIns === 1 ? "" : "s"}
-                </p>
-              )}
-            </div>
-          );
-        })()}
+      {plateau.advisory && (
+        // A flat trend is stated, never judged: the same neutral card as the
+        // adaptive-TDEE read below, whether the goal is to hold, lose or gain.
+        // The advisory copy carries the "what next"; colour adds no verdict.
+        <div className="rounded-lg border border-border/60 bg-card px-5 py-4">
+          <header className="mb-1.5 flex items-center gap-2">
+            <LineChart className="h-3.5 w-3.5 text-muted-foreground" />
+            <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              {goal === "maintain"
+                ? "Holding steady"
+                : "Weight has held steady"}
+            </h3>
+          </header>
+          <p className="text-sm leading-relaxed text-foreground">
+            {plateau.advisory}
+          </p>
+          {plateau.startKg !== null && plateau.endKg !== null && (
+            <p className="mt-2 font-mono text-[11px] tabular-nums text-muted-foreground">
+              Smoothed weight: {kgToDisplay(plateau.startKg, units).toFixed(1)}{" "}
+              → {kgToDisplay(plateau.endKg, units).toFixed(1)} {unitLabel} over{" "}
+              {plateau.daysFlat} days · {plateau.weighIns} weigh-in
+              {plateau.weighIns === 1 ? "" : "s"}
+            </p>
+          )}
+        </div>
+      )}
 
       {showAdaptive && observed !== null && (
         <div className="rounded-lg border border-border/60 bg-card px-5 py-4">
