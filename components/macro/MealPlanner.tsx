@@ -455,7 +455,6 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
         />
         <TrainingContext
           day={calculatedValues}
-          week={week}
           today={today}
         />
         <LiveDayTimeline

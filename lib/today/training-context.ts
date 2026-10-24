@@ -5,16 +5,19 @@ import { formatClock, parseClock, type RelativeDay } from "./timeline";
 /** The calm line under the Today gauge on a training day: which macro the
  *  day's planned session moved and why — "Carbs are higher today — heavy
  *  session at 18:00". Pure: worded from the shown day's resolved targets
- *  (`DateTargets.training` and its macros) against its own week.
+ *  alone (`DateTargets.training` and its macros).
  *
- *  The moving macro is read from the week rather than the diet setting:
- *  calorie cycling lands on carbs (fat stays one level all week) except
- *  for a fat-moving diet, which mirrors it — so whichever of the two sits
- *  further (in kcal) from its weekly average is the one the day moved.
- *  Nothing is said on a rest day, with training off, or when the day sits
- *  at the weekly average (cycling off, or a session that didn't move it):
- *  then there is nothing to explain. Never a judgement — a planned
- *  difference, stated. */
+ *  What the session moved is the day's carbs and fat against the same day
+ *  planned at the weekly mean (`training.meanDay`: same week, protein and
+ *  held level, no calorie shift) — never against the other days of the
+ *  week, whose targets also carry a goal phase that starts mid-week (Pro)
+ *  or another day's override, neither of which is this session's doing.
+ *  Calorie cycling lands on carbs (fat stays one level all week) except
+ *  for a fat-moving diet, which mirrors it, so whichever of the two moved
+ *  further (in kcal) is named. Nothing is said on a rest day, with
+ *  training off, or when the session left the day at the weekly average
+ *  (cycling off, or a session that didn't move it): then there is nothing
+ *  to explain. Never a judgement — a planned difference, stated. */
 
 const SESSION: Record<Exclude<TrainingDayClass, "rest">, string> = {
   light: "light session",
@@ -23,30 +26,24 @@ const SESSION: Record<Exclude<TrainingDayClass, "rest">, string> = {
   endurance: "long session",
 };
 
-/** Less than this many kcal from the weekly average is "the same": the
- *  day targets sit on a 50 kcal / 5 g grid. */
+/** Less than this many kcal from the mean day is "the same": the day
+ *  targets sit on a 50 kcal / 5 g grid. */
 const SAME_KCAL = 25;
 
-type DayTargets = Pick<DateTargets, "date" | "carbs" | "fat" | "training">;
-
-function mean(values: readonly number[]): number {
-  return values.reduce((sum, v) => sum + v, 0) / values.length;
-}
+type DayTargets = Pick<DateTargets, "carbs" | "fat" | "training">;
 
 /** `dayPhrase` names the shown day as the line speaks of it: "today",
  *  "tomorrow", "on Friday". */
 export function trainingContextLine(
   day: DayTargets,
-  week: { days: readonly Pick<DateTargets, "date" | "carbs" | "fat">[] } | null,
   when: RelativeDay,
   dayPhrase: string,
 ): string | null {
   const training = day.training;
   if (!training || training.day.type === "rest" || training.dayClass === "rest")
     return null;
-  if (!week || !week.days.some((d) => d.date === day.date)) return null;
-  const carbsKcal = (day.carbs - mean(week.days.map((d) => d.carbs))) * 4;
-  const fatKcal = (day.fat - mean(week.days.map((d) => d.fat))) * 9;
+  const carbsKcal = (day.carbs - training.meanDay.carbs) * 4;
+  const fatKcal = (day.fat - training.meanDay.fat) * 9;
   const fatMoved = Math.abs(fatKcal) > Math.abs(carbsKcal);
   const shift = fatMoved ? fatKcal : carbsKcal;
   if (!(Math.abs(shift) >= SAME_KCAL)) return null;
@@ -54,10 +51,16 @@ export function trainingContextLine(
   const past = when === "past";
   const verb = fatMoved ? (past ? "was" : "is") : past ? "were" : "are";
   const macro = fatMoved ? "Fat" : "Carbs";
-  const direction = shift > 0 ? "higher" : "lower";
   const session = SESSION[training.dayClass];
   const start = parseClock(training.day.time);
-  return start !== null
-    ? `${macro} ${verb} ${direction} ${dayPhrase} — ${session} at ${formatClock(start)}`
-    : `${macro} ${verb} ${direction} ${dayPhrase} for the ${session}`;
+  const at = start !== null ? ` at ${formatClock(start)}` : "";
+  if (shift > 0) {
+    return start !== null
+      ? `${macro} ${verb} higher ${dayPhrase} — ${session}${at}`
+      : `${macro} ${verb} higher ${dayPhrase} for the ${session}`;
+  }
+  // A session that leaves the day UNDER the weekly average (a light one in
+  // a week of harder ones): "lower … — light session" reads as if the
+  // session took food away, so the line says what the day is relative to.
+  return `${macro} ${verb} lower ${dayPhrase} — an easier day than your weekly average, with a ${session}${at}`;
 }
