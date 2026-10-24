@@ -2841,14 +2841,18 @@ const MacroCalculator = () => {
       />
 
       {/* Mounted per open, so it starts from the day's current session;
-          open only while `dayTargets` is the date it was opened for. */}
+          open only while `dayTargets` is the date it was opened for. Its
+          close clears only that date: a sheet closed under a save still in
+          flight (the date moved on) can't close the one opened after it
+          when the save settles. */}
       {dayTypeSheetDate !== null && (
         <DayTypeSheet
           targets={dayTargets}
           today={today}
           previewDayTargets={previewDayTargets}
           onOpenChange={(open) => {
-            if (!open) setDayTypeSheetDate(null);
+            const openedFor = dayTypeSheetDate;
+            if (!open) setDayTypeSheetDate((d) => (d === openedFor ? null : d));
           }}
           returnFocusTo={dayTypeChipRef}
         />
