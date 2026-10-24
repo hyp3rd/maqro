@@ -183,7 +183,10 @@ export function TrainingWeekEditor({
   };
 
   return (
-    <div className="max-w-2xl space-y-4 lg:max-w-none">
+    // A size container: the week goes two-column by the room this page
+    // actually has (the sidebar takes 56 or 240 px of the window), not by
+    // the viewport. See `EnabledEditor`.
+    <div className="@container space-y-4">
       {/* The breadcrumb above names the page; the heading keeps the outline
           for assistive tech without spending the fold on it twice. */}
       <h2 className="sr-only">Training week</h2>
@@ -194,9 +197,13 @@ export function TrainingWeekEditor({
           remounted and keeps keyboard focus when toggled. */}
       <Card
         className={cn(
+          "max-w-2xl",
           // On, the row is only as tall as the switch: no clipping, so the
-          // switch's focus ring (drawn outside it) shows whole.
-          enabled && "overflow-visible border-transparent bg-transparent",
+          // switch's focus ring (drawn outside it) shows whole. Beside two
+          // columns it spans the left one only (the grid's gap-4 split),
+          // keeping the switch near its label.
+          enabled &&
+            "overflow-visible border-transparent bg-transparent @4xl:max-w-[calc(50%_-_0.5rem)]",
         )}
       >
         <CardBody
@@ -324,10 +331,12 @@ function EnabledEditor({
   });
 
   return (
-    // One column in reading order on a phone; at lg the seven days sit
-    // beside the chart, the cycling choice and protein (the last row
-    // takes any slack, so the left cards stay together at the top).
-    <div className="space-y-4 lg:grid lg:grid-cols-2 lg:grid-rows-[auto_auto_1fr] lg:items-start lg:gap-4 lg:space-y-0">
+    // One capped column in reading order; once the page is 56rem wide
+    // (each column ~440 px, room for a day row's session details on one
+    // line) the seven days sit beside the chart, the cycling choice and
+    // protein (the last row takes any slack, so the left cards stay
+    // together at the top).
+    <div className="max-w-2xl space-y-4 @4xl:grid @4xl:max-w-none @4xl:grid-cols-2 @4xl:grid-rows-[auto_auto_1fr] @4xl:items-start @4xl:gap-4 @4xl:space-y-0">
       <Card asChild>
         <section aria-labelledby={`${id}-calories`}>
           <CardBody className="space-y-4">
@@ -390,7 +399,7 @@ function EnabledEditor({
       <Card asChild>
         <section
           aria-labelledby={`${id}-days`}
-          className="lg:col-start-2 lg:row-span-3 lg:row-start-1"
+          className="@4xl:col-start-2 @4xl:row-span-3 @4xl:row-start-1"
         >
           <h3
             id={`${id}-days`}

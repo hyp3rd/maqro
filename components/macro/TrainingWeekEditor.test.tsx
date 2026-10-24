@@ -313,17 +313,36 @@ describe("TrainingWeekEditor: the week", () => {
       .closest("section");
     const protein = screen.getByRole("region", { name: /Protein:/ });
     const grid = days.parentElement;
-    // One two-column grid at lg: chart, cycling and protein on the left,
-    // the seven days on the right; one column (in reading order) below lg.
-    expect(grid?.className).toContain("lg:grid-cols-2");
+    // Two columns only when the page itself has room for two (a container
+    // query on the editor, not the viewport): a 1024 px window with the
+    // sidebar expanded leaves ~736 px, two phone-narrow columns.
+    const root = grid?.parentElement;
+    expect(root?.classList.contains("@container")).toBe(true);
+    // Chart, cycling and protein on the left, the seven days on the
+    // right; one capped column (in reading order) below that.
+    expect(grid?.className).toContain("@4xl:grid-cols-2");
+    expect(grid?.className).not.toMatch(/(^|\s)lg:/);
     expect(calories?.parentElement).toBe(grid);
     expect(protein.parentElement).toBe(grid);
-    expect(days.className).toContain("lg:col-start-2");
-    expect(days.className).toContain("lg:row-start-1");
-    // Not held to a narrow left-aligned column on a wide screen.
-    const root = grid?.parentElement;
-    expect(root?.className).toContain("max-w-2xl");
-    expect(root?.className).toContain("lg:max-w-none");
+    expect(days.className).toContain("@4xl:col-start-2");
+    expect(days.className).toContain("@4xl:row-start-1");
+    // Not held to a narrow left-aligned column once there are two.
+    expect(grid?.classList.contains("max-w-2xl")).toBe(true);
+    expect(grid?.classList.contains("@4xl:max-w-none")).toBe(true);
+  });
+
+  it("keeps the enable switch near its label beside two columns", () => {
+    renderEditor({ initial: profile });
+    // The compact row spans the left column only, not both, so the switch
+    // is not a page-width away from what it turns on.
+    const row = switchControl().parentElement?.parentElement;
+    expect(row?.classList.contains("max-w-2xl")).toBe(true);
+    expect(row?.classList.contains("@4xl:max-w-[calc(50%_-_0.5rem)]")).toBe(
+      true,
+    );
+    // Off, the explaining card stays one readable column.
+    fireEvent.click(switchControl());
+    expect(row?.classList.contains("max-w-2xl")).toBe(true);
   });
 
   it("a cycling preset change updates the planned kcal", () => {
