@@ -13,6 +13,10 @@ import {
 import { useNotificationDrawer } from "@/hooks/use-notification-drawer";
 import { useSafeSignOut } from "@/hooks/use-safe-sign-out";
 import { useUser } from "@/hooks/use-user";
+import {
+  OFFLINE_UNVERIFIED_HINT,
+  OFFLINE_UNVERIFIED_LABEL,
+} from "@/lib/auth/offline-unverified-copy";
 import { signOutAndClearLocal } from "@/lib/auth/sign-out";
 import { getProfile } from "@/lib/db";
 import { subscribeProfileChanged } from "@/lib/profile-bus";
@@ -21,6 +25,7 @@ import { cn } from "@/lib/utils";
 import { useEffect, useState } from "react";
 import {
   Bell,
+  CloudOff,
   Home,
   Hourglass,
   LayoutGrid,
@@ -49,15 +54,20 @@ type UserMenuProps = {
   onSelectView?: (key: ViewKey) => void;
 };
 
-/** Sidebar footer chip (or topbar avatar in compact mode). Three states:
+/** Sidebar footer chip (or topbar avatar in compact mode). Four states:
  *   - Loading: muted "…" placeholder while the auth client resolves.
+ *   - Offline-unverified: a non-interactive "Server unreachable" chip — not
+ *     "Sign in", since the account's data is still shown, and no Sign out,
+ *     which needs the session (it is re-checked as soon as the network
+ *     returns). Its explanation is in the title and, for screen readers, in
+ *     visually hidden text.
  *   - Signed out (or unconfigured): "Sign in" link to /login.
  *   - Signed in: avatar + email + dropdown with Sign out. */
 export function UserMenu({
   compact = false,
   onSelectView,
 }: UserMenuProps = {}) {
-  const { user, isLoaded, isUnconfigured } = useUser();
+  const { user, isLoaded, isUnconfigured, isOfflineUnverified } = useUser();
   const { displayName, isAdmin } = useProfileSnippet();
   // Mobile-only: the avatar menu also hosts notifications + theme, moved
   // out of the cramped topbar. `mobileExtras` gates them so the desktop
@@ -71,7 +81,7 @@ export function UserMenu({
   const safeSignOut = useSafeSignOut(async () => {
     const supabase = getSupabaseBrowser();
     if (!supabase) return;
-    await signOutAndClearLocal(supabase);
+    await signOutAndClearLocal(supabase, user?.id);
     window.location.assign("/login");
   });
 
@@ -103,8 +113,35 @@ export function UserMenu({
     return (
       <SignedOutMenu
         isUnconfigured={isUnconfigured}
+        isOfflineUnverified={isOfflineUnverified}
         onSelectView={onSelectView}
       />
+    );
+  }
+
+  if (!user && isOfflineUnverified) {
+    return (
+      <div
+        role="status"
+        className={cn(
+          "flex items-center gap-2.5 rounded-md text-sm text-muted-foreground",
+          compact ? "h-8 w-8 justify-center" : "w-full px-2.5 py-1.5",
+        )}
+        title={OFFLINE_UNVERIFIED_HINT}
+      >
+        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-muted">
+          <CloudOff
+            className="h-3 w-3"
+            aria-hidden
+          />
+        </div>
+        {!compact && (
+          <span className="flex-1 text-left">{OFFLINE_UNVERIFIED_LABEL}</span>
+        )}
+        {/* `title` alone is not reliably announced, so the explanation is
+            in the accessible text too, compact or not. */}
+        <span className="sr-only">{OFFLINE_UNVERIFIED_HINT}</span>
+      </div>
     );
   }
 
@@ -328,12 +365,18 @@ export function UserMenu({
  *  collapsed straight to a "Sign in" link. After Settings + Templates
  *  moved out of the bottom tab bar, that left a signed-out mobile
  *  user with no path to either view — they could see the app's
- *  data but not change anything. */
+ *  data but not change anything.
+ *
+ *  Offline-unverified uses the same menu, labelled with the offline-
+ *  unverified explanation and without "Sign in": the account is still on
+ *  this device and is verified again when the network returns. */
 function SignedOutMenu({
   isUnconfigured,
+  isOfflineUnverified,
   onSelectView,
 }: {
   isUnconfigured: boolean;
+  isOfflineUnverified: boolean;
   onSelectView: (key: ViewKey) => void;
 }) {
   // Guests still have a local pantry (and so local low-stock alerts) and
@@ -359,7 +402,11 @@ function SignedOutMenu({
             }
           >
             <div className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[11px] font-medium">
-              <LogIn className="h-3 w-3" />
+              {isOfflineUnverified ? (
+                <CloudOff className="h-3 w-3" />
+              ) : (
+                <LogIn className="h-3 w-3" />
+              )}
             </div>
             {drawer.unreadCount > 0 && (
               <Badge
@@ -377,7 +424,7 @@ function SignedOutMenu({
           className="w-56"
         >
           <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-            Guest mode
+            {isOfflineUnverified ? OFFLINE_UNVERIFIED_HINT : "Guest mode"}
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           <DropdownMenuItem
@@ -428,7 +475,7 @@ function SignedOutMenu({
               Visit homepage
             </Link>
           </DropdownMenuItem>
-          {!isUnconfigured && (
+          {!isUnconfigured && !isOfflineUnverified && (
             <DropdownMenuItem asChild>
               <Link
                 href="/login"

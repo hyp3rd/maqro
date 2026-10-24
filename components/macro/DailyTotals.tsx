@@ -24,7 +24,10 @@ interface DailyTotalsProps {
   breakdown?: MacroBreakdown;
   /** Displayed day + today's key. Used to fire the one-shot "calorie
    *  target met" celebration only while viewing today — never when
-   *  scrolling back to a past day that already crossed its target. */
+   *  scrolling back to a past day that already crossed its target — and
+   *  to word the remaining-kcal line ("left today" only makes sense for
+   *  today; a past day came in "under target"; a future day has kcal "to
+   *  plan"). `calculatedValues` is the DISPLAYED day's own target. */
   selectedDate: string;
   today: string;
 }
@@ -81,7 +84,7 @@ const DailyTotals: React.FC<DailyTotalsProps> = ({
   today,
 }) => {
   // The single most actionable number on the page: how many calories are
-  // left against today's target. The tiles show consumed/target, which
+  // left against the displayed day's target. The tiles show consumed/target, which
   // forces the user to do the subtraction in their head — this does it for
   // them. Held back until the first food is logged so a brand-new day shows
   // the cold-start guidance below, not a lone "2,100 kcal left".
@@ -90,8 +93,11 @@ const DailyTotals: React.FC<DailyTotalsProps> = ({
   const remainingCalories = targetCalories - consumedCalories;
   const showRemaining = targetCalories > 0 && consumedCalories > 0;
 
+  const isToday = selectedDate === today;
+  // `YYYY-MM-DD` keys order lexicographically.
+  const isFuture = selectedDate > today;
   const goalReached = targetCalories > 0 && consumedCalories >= targetCalories;
-  useGoalReachedCelebration(goalReached, selectedDate === today, today);
+  useGoalReachedCelebration(goalReached, isToday, today);
 
   // Each meter runs against the day's target and keeps going past it: over
   // and under are shown (a same-hue overshoot and a neutral "+N"), never
@@ -133,7 +139,15 @@ const DailyTotals: React.FC<DailyTotalsProps> = ({
               <span className="font-semibold tabular-nums text-foreground">
                 {remainingCalories.toLocaleString()}
               </span>{" "}
-              <span className="text-muted-foreground">kcal left today</span>
+              <span className="text-muted-foreground">
+                {/* Today has calories "left"; a past day is closed (it came
+                    in under); a future day is being planned ahead. */}
+                {isToday
+                  ? "kcal left today"
+                  : isFuture
+                    ? "kcal to plan"
+                    : "kcal under target"}
+              </span>
             </>
           ) : remainingCalories === 0 ? (
             <span className="font-medium text-foreground">

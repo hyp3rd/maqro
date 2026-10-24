@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { useRefreshAiUsage } from "@/hooks/use-ai-usage";
 import { clientFetch } from "@/lib/auth/client-fetch";
 import type { PantryItem } from "@/lib/db";
 import { SHOPPING_AISLES, categorizeFallback } from "@/lib/shopping/categorize";
@@ -70,6 +71,7 @@ export function ShopForMeDialog({
   const [adhoc, setAdhoc] = useState("");
   const [building, setBuilding] = useState(false);
   const [result, setResult] = useState<ShoppingSuggestion | null>(null);
+  const refreshAiUsage = useRefreshAiUsage();
 
   // Re-seed from the current pantry gaps each time the dialog opens.
   // Done as a during-render reset on the open↔closed transition (the
@@ -160,6 +162,9 @@ export function ShopForMeDialog({
         }),
       });
       if (res.ok) {
+        // A 2xx may have spent an AI call (the route debits before trying
+        // the model, even when it then falls back), so refresh the counter.
+        refreshAiUsage();
         setResult((await res.json()) as ShoppingSuggestion);
       } else {
         setResult(localFallback());

@@ -14,6 +14,7 @@ export * from "./off";
 export * from "./rda";
 export * from "./records";
 export * from "./supplements";
+export * from "./targets";
 export * from "./timing-insights";
 export * from "./trends";
 export * from "./types";

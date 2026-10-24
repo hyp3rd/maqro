@@ -19,7 +19,7 @@ import { SupplementsSection } from "./SupplementsSection";
  *  write it can't see is wiped on sign-out without being counted. */
 
 vi.mock("@/hooks/use-ai-usage", () => ({
-  useAiUsage: () => ({ state: { status: "ok", data: { tier: "pro" } } }),
+  useTier: () => ({ tier: "pro", resolved: true }),
 }));
 vi.mock("@/hooks/use-notification-prefs", () => ({
   useNotificationPrefs: () => ({

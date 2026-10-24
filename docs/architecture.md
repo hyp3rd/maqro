@@ -145,13 +145,13 @@ components/
   marketing/                        # StructuredData (JSON-LD for landing SEO)
   ui/                               # shadcn primitives
 hooks/
-  use-user.ts                       # Supabase auth subscription
+  use-user.ts                       # Supabase auth subscription (+ offline-unverified last-known user)
   use-user-role.ts                  # Client-side isAdmin (UX hint only)
   use-profile.ts                    # IDB-hydrated profile state
   use-daily-log.ts                  # IDB-hydrated day log state
   use-food-search.ts                # Debounced merged search
   use-today.ts                      # Live today-date (rolls at midnight)
-  use-ai-usage.ts                   # Current-month AI usage + tier
+  use-ai-usage.tsx                  # Shared AI usage + cached last-known tier (provider)
   use-subscription-status.ts        # Billing-tier + past-due state polling (drives PastDueBanner)
   use-notification-prefs.ts         # Email + browser-push subscription toggles
   use-pwa-install.ts                # beforeinstallprompt + iOS detection

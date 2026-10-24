@@ -1,4 +1,5 @@
 import type {
+  Cuisine,
   FoodItem,
   GoalPhase,
   Meal,
@@ -7,6 +8,7 @@ import type {
 import { addDays } from "@maqro/core/date";
 import {
   clearDemoSeededStores,
+  dateKey,
   isProfileMarkedAsDemo,
   type DailyLog,
   type WaterIntake,
@@ -48,26 +50,52 @@ export function getDemoProfile(now: number = Date.now()): PersonalInfo {
     goal: "lose",
     dietType: "balanced",
     dietPreference: "omnivore",
-    cuisinePreferences: ["mediterranean"],
+    // The stored field is an open `string[]` (legacy values must
+    // round-trip), but the form matches chips by exact `CUISINES` value —
+    // `satisfies` keeps the seed on the canonical spelling.
+    cuisinePreferences: ["Mediterranean"] satisfies Cuisine[],
     allergies: [],
     dislikedFoods: [],
     weeklyRateKg: 0.4,
     manualTdee: null,
     macroSplit: null,
     units: "metric",
-    // Sample user runs a 16:8 window with a fast already ~10h in, so the
-    // fasting card, Topbar chip, and live phase indicator all land populated
-    // (mid fat-burning, eating window a few hours out).
+    // Sample user runs a 16:8 window, so the fasting card, Topbar chip, and
+    // live phase indicator all land populated — with a fast that agrees with
+    // the seeded meals at this `now` (see `demoFastStartedAt`).
     fasting: {
       enabled: true,
       protocol: "16:8",
-      fastStartedAt: now - 10 * 3600_000,
+      fastStartedAt: demoFastStartedAt(now),
     },
     // Sample goal-phase plan — a 12-week cut ~3 weeks in, then a 2-week diet
     // break. Drives the calorie target + active-phase banner for the Pro
     // (mocked) verification; free users see the planner's upgrade prompt.
     goalPhases: demoGoalPhases(now),
   };
+}
+
+/** When the demo's current fast began: the last food of the most recent day
+ *  whose meals are all eaten by `now`. Derived from `getDemoMealLogs` at the
+ *  same `now` (which leaves today's not-yet-eaten foods unstamped), so the
+ *  fasting card can't contradict the seeded log:
+ *   - before today's first meal, the fast runs from last night's dinner;
+ *   - during today's meals, that overnight fast has reached its 16 h target
+ *     and the card shows the eating window open;
+ *   - after today's last food, a fresh fast runs from it.
+ *  `null` (no fast running) only if no seeded day is complete. */
+function demoFastStartedAt(now: number): number | null {
+  const logs = getDemoMealLogs(dateKey(new Date(now)), now);
+  for (let i = logs.length - 1; i >= 0; i--) {
+    const foods = logs[i].meals.flatMap((meal) => meal.foods);
+    const stamps = foods
+      .map((food) => food.loggedAt)
+      .filter((at): at is number => at !== undefined);
+    if (stamps.length > 0 && stamps.length === foods.length) {
+      return Math.max(...stamps);
+    }
+  }
+  return null;
 }
 
 /** A cut → diet break → resumed cut, with the **diet break active now** — so
@@ -498,6 +526,14 @@ export function getDemoWaterLogs(
   return entries;
 }
 
+/** True when `search` (a `location.search`-style query string) asks for the
+ *  sample dataset — the landing page's "Try with sample data" link,
+ *  `/app?demo=1`. The one definition of that request, shared by the seed
+ *  routine and the onboarding gate so the two can't drift apart. */
+export function isDemoSeedRequest(search: string): boolean {
+  return new URLSearchParams(search).get("demo") === "1";
+}
+
 /** localStorage flag set by the seed routine. Kept alongside the
  *  durable IDB marker on the profile row so synchronous callers (the
  *  Settings page, a "this is sample data" banner) can check demo mode
@@ -554,6 +590,12 @@ export async function clearDemoModeData(): Promise<void> {
   // Bump the data-bus versions for the stores we actually touched so
   // any mounted view re-reads from the now-empty IDB and shows a brief
   // loading state until the upcoming sync pull lands the real rows.
+  // `profile` included: the data-bus is what re-loads `useProfile` and the
+  // fasting status, which would otherwise keep showing — and on the next
+  // edit save — the sample profile. The profile-bus is a separate channel,
+  // for the readers that load the profile on their own (UserMenu,
+  // `useDisplayName`).
+  notifyDataChanged("profile");
   notifyProfileChanged();
   notifyDataChanged("dailyLogs");
   notifyDataChanged("weightHistory");

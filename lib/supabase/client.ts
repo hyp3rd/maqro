@@ -3,6 +3,7 @@
 import { createBrowserClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { SUPABASE_CONFIG } from "./env";
+import { storedSessionUserId } from "./stored-session";
 
 let cached: SupabaseClient | null = null;
 
@@ -25,4 +26,12 @@ export function getSupabaseBrowser(): SupabaseClient | null {
     { auth: { experimental: { passkey: true } } },
   );
   return cached;
+}
+
+/** The user id of the session the browser client keeps in storage, expired
+ *  or not ([stored-session.ts](./stored-session.ts)), or `null` when none is
+ *  stored, it can't be read, or Supabase isn't configured. */
+export function readStoredSessionUserId(): Promise<string | null> {
+  if (!SUPABASE_CONFIG) return Promise.resolve(null);
+  return storedSessionUserId(SUPABASE_CONFIG.url, document.cookie);
 }

@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { useRefreshAiUsage } from "@/hooks/use-ai-usage";
 import { toAiCustomFoods } from "@/lib/ai/request-payload";
 import { clientFetch } from "@/lib/auth/client-fetch";
 import { listCustomFoods } from "@/lib/db";
@@ -159,6 +160,7 @@ function VoiceLogBody({
   const [phase, setPhase] = useState<Phase>(
     supported ? { kind: "idle" } : { kind: "review", transcript: "" },
   );
+  const refreshAiUsage = useRefreshAiUsage();
 
   // The active recognizer instance. `null` outside the recording
   // phase — we mint a fresh one each session so stale callbacks
@@ -309,6 +311,8 @@ function VoiceLogBody({
           data.error ?? "Couldn't make sense of that. Please try again.",
         );
       }
+      // The server debited this call — bring the shared counter up to date.
+      refreshAiUsage();
       const result = (await res.json()) as ResolvedMealPhoto;
       if (result.foods.length === 0) {
         throw new Error(

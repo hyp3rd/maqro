@@ -6,7 +6,7 @@ import type {
   Meal,
   PersonalInfo,
 } from "@/components/macro/types";
-import { useAiUsage } from "@/hooks/use-ai-usage";
+import { useRefreshAiUsage, useTier } from "@/hooks/use-ai-usage";
 import { effectiveAge } from "@/lib/age";
 import { AI_MAX_NAME_CHARS } from "@/lib/ai/request-limits";
 import { clampAiText } from "@/lib/ai/request-payload";
@@ -68,10 +68,8 @@ function sexFromGender(g: PersonalInfo["gender"] | undefined): BiologicalSex {
  *  Header-less — the host (MealHubSheet) renders the meal title — and
  *  keyed by meal id at the call site so it remounts (fresh data) per open. */
 export function MealDetail({ meal, goal }: { meal: Meal; goal?: DailyGoal }) {
-  const { state } = useAiUsage();
-  const isPro =
-    state.status === "ok" && FEATURES.canTrackMicronutrients(state.data.tier);
-  const tierResolved = state.status === "ok" || state.status === "anon";
+  const { tier, resolved: tierResolved } = useTier();
+  const isPro = tier !== null && FEATURES.canTrackMicronutrients(tier);
 
   const [profiles, setProfiles] = useState<MicronutrientProfile[] | null>(null);
   const [userProfile, setUserProfile] = useState<PersonalInfo | null>(null);
@@ -461,6 +459,7 @@ function AiAdvice({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [dontAsk, setDontAsk] = useState(false);
   const [capUpgradeOpen, setCapUpgradeOpen] = useState(false);
+  const refreshAiUsage = useRefreshAiUsage();
 
   const totals = meal.foods.reduce(
     (a, f) => ({
@@ -530,6 +529,8 @@ function AiAdvice({
         }
         return;
       }
+      // The server debited this call — bring the shared counter up to date.
+      refreshAiUsage();
       const { advice } = (await res.json()) as { advice: string };
       setState({ status: "done", advice });
     } catch {
