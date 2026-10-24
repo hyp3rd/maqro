@@ -1,14 +1,22 @@
 "use client";
 
 import { NumberTicker } from "@/components/shell/NumberTicker";
+import { formatNumber } from "@/lib/i18n/number";
 import { kgToDisplay, type UnitSystem } from "@/lib/units";
 import { cn } from "@/lib/utils";
 import * as React from "react";
+import { useLocale } from "next-intl";
+import type { TrainingDayTargets } from "@maqro/core/targets";
 import { CalculatedValues, TotalMacros } from "../../components/macro/types";
 import { InfoExplainer } from "./InfoExplainer";
+import { DAY_CLASS_LABEL } from "./training-labels";
 
 interface MacroResultsProps {
-  calculatedValues: CalculatedValues;
+  /** Today's targets. With a training schedule on (`training` present),
+   *  `targetCalories` and the macros are today's PLANNED day while
+   *  `dailyDelta` stays the weekly average's balance (`DateTargets`), so the
+   *  weekly projection below follows the average. */
+  calculatedValues: CalculatedValues & { training?: TrainingDayTargets };
   totalMacros: TotalMacros;
   /** User's preferred display units. The deficit-rate line at the
    *  bottom of the headline grid renders "kg/wk" or "lb/wk" based
@@ -183,6 +191,8 @@ const MacroResults: React.FC<MacroResultsProps> = ({
   totalMacros,
   units,
 }) => {
+  const locale = useLocale();
+  const training = calculatedValues.training;
   const pct = (current: number, target: number) =>
     target === 0 ? 0 : Math.min(Math.round((current / target) * 100), 100);
 
@@ -231,10 +241,36 @@ const MacroResults: React.FC<MacroResultsProps> = ({
             </div>
           ))}
         </div>
+        {training && (
+          <div
+            data-testid="planned-day"
+            className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-t border-border/60 px-5 py-3 text-label"
+          >
+            <span className="font-medium text-foreground">
+              {DAY_CLASS_LABEL[training.dayClass]}
+            </span>
+            <span className="text-muted-foreground">
+              <span className="font-mono tabular-nums text-foreground">
+                {formatNumber(calculatedValues.targetCalories, locale)}
+              </span>{" "}
+              kcal planned today ·{" "}
+              <span className="font-mono tabular-nums text-foreground">
+                {formatNumber(training.meanCalories, locale)}
+              </span>{" "}
+              kcal weekly average
+            </span>
+          </div>
+        )}
         {calculatedValues.dailyDelta !== 0 && (
           <div className="flex items-center justify-between border-t border-border/60 px-5 py-3">
             <span className="text-xs text-muted-foreground">
-              {calculatedValues.dailyDelta < 0 ? "Deficit" : "Surplus"}
+              {/* With training the delta is the weekly AVERAGE's balance
+                  (today's planned day sits above or below it). */}
+              {training
+                ? `Average ${calculatedValues.dailyDelta < 0 ? "deficit" : "surplus"}`
+                : calculatedValues.dailyDelta < 0
+                  ? "Deficit"
+                  : "Surplus"}
             </span>
             <span
               className={cn(
