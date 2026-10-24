@@ -197,6 +197,21 @@ interface MealPlannerProps {
   onOpenMealDetail: (mealId: number, intent?: MealHubIntent) => void;
 }
 
+/** The timing track on the minute clock (0 until hydrated) for its "Now"
+ *  cursor. Reading the clock here, not in MealPlanner, keeps the minute
+ *  tick to the track instead of re-rendering the whole day view. */
+function LiveDayTimeline(
+  props: Omit<React.ComponentProps<typeof DayTimeline>, "now">,
+) {
+  const now = useNow();
+  return (
+    <DayTimeline
+      {...props}
+      now={now}
+    />
+  );
+}
+
 const MealPlanner: React.FC<MealPlannerProps> = ({
   calculatedValues,
   week,
@@ -268,8 +283,6 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
   const dayIsEmpty = meals.every((m) => m.foods.length === 0);
   const titleId = React.useId();
 
-  // The minute clock for the timeline's "Now" cursor (0 until hydrated).
-  const now = useNow();
   // The week strip: that week's logged kcal from IndexedDB, with the shown
   // day's live total over its stored one (the day log saves behind edits).
   // Only once that day has loaded: until then `meals` (and so `totalMacros`)
@@ -418,11 +431,10 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
           selectedDate={selectedDate}
           today={today}
         />
-        <DayTimeline
+        <LiveDayTimeline
           meals={meals}
           date={selectedDate}
           today={today}
-          now={now}
           training={calculatedValues.training}
         />
       </section>
