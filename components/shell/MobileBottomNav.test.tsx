@@ -107,6 +107,93 @@ describe("MobileBottomNav", () => {
     expect(add.dataset.pending).toBe("true");
   });
 
+  describe("the busy spinner", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    function spinnerShown(add: HTMLElement): boolean {
+      return add.querySelector("svg.lucide-loader-circle") !== null;
+    }
+
+    it("waits 200 ms, so a quick load keeps the Plus (aria-busy is immediate)", () => {
+      const props = {
+        current: "progress" as const,
+        onSelect: vi.fn(),
+        onQuickAdd: vi.fn(),
+      };
+      const { rerender } = render(
+        <MobileBottomNav
+          {...props}
+          quickAddPending
+        />,
+      );
+      const add = screen.getByRole("button", { name: "Quick add" });
+      expect(add.getAttribute("aria-busy")).toBe("true");
+      expect(spinnerShown(add)).toBe(false);
+      act(() => {
+        vi.advanceTimersByTime(199);
+      });
+      expect(spinnerShown(add)).toBe(false);
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(spinnerShown(add)).toBe(true);
+
+      // Loaded: back to the Plus, and the next wait starts from zero.
+      rerender(
+        <MobileBottomNav
+          {...props}
+          quickAddPending={false}
+        />,
+      );
+      expect(spinnerShown(add)).toBe(false);
+      expect(add.getAttribute("aria-busy")).toBeNull();
+      rerender(
+        <MobileBottomNav
+          {...props}
+          quickAddPending
+        />,
+      );
+      expect(spinnerShown(add)).toBe(false);
+      act(() => {
+        vi.advanceTimersByTime(200);
+      });
+      expect(spinnerShown(add)).toBe(true);
+    });
+
+    it("a load that finishes inside the wait never shows it", () => {
+      const props = {
+        current: "progress" as const,
+        onSelect: vi.fn(),
+        onQuickAdd: vi.fn(),
+      };
+      const { rerender } = render(
+        <MobileBottomNav
+          {...props}
+          quickAddPending
+        />,
+      );
+      act(() => {
+        vi.advanceTimersByTime(150);
+      });
+      rerender(
+        <MobileBottomNav
+          {...props}
+          quickAddPending={false}
+        />,
+      );
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+      const add = screen.getByRole("button", { name: "Quick add" });
+      expect(spinnerShown(add)).toBe(false);
+    });
+  });
+
   it("lays the bar out with one column per slot", () => {
     const { bar } = renderNav();
     expect(bar.style.gridTemplateColumns).toBe(

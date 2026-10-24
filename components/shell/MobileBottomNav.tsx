@@ -32,6 +32,9 @@ export function MobileBottomNav({
   quickAddPending,
 }: Props) {
   const lit = activeTabSlot(current);
+  // aria-busy is immediate; the spinner waits, so a quick read keeps the
+  // Plus instead of flashing a spinner for a few frames.
+  const showSpinner = useAfterDelay(quickAddPending, SPINNER_DELAY_MS);
   return (
     <nav
       aria-label="Primary navigation (mobile)"
@@ -76,7 +79,7 @@ export function MobileBottomNav({
                   "motion-safe:active:scale-95",
                 )}
               >
-                {quickAddPending ? (
+                {showSpinner ? (
                   <LoaderCircle
                     aria-hidden
                     className="size-6 motion-safe:animate-spin"
@@ -126,6 +129,25 @@ export function MobileBottomNav({
       })}
     </nav>
   );
+}
+
+/** How long the [+] stays a Plus while busy before it shows a spinner:
+ *  under it, today's log usually loads before the spinner would appear. */
+const SPINNER_DELAY_MS = 200;
+
+/** `active`, but only once it has held for `delayMs`; false again (and the
+ *  wait restarts) as soon as it drops. */
+function useAfterDelay(active: boolean, delayMs: number): boolean {
+  const [held, setHeld] = React.useState(false);
+  React.useEffect(() => {
+    if (!active) return;
+    const id = window.setTimeout(() => setHeld(true), delayMs);
+    return () => window.clearTimeout(id);
+  }, [active, delayMs]);
+  // Reset during render (React's "storing information from previous
+  // renders" pattern) so the next wait starts from zero.
+  if (!active && held) setHeld(false);
+  return active && held;
 }
 
 type TabButtonProps = Omit<
