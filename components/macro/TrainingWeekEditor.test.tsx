@@ -536,7 +536,7 @@ describe("TrainingWeekEditor: when the days can't vary", () => {
     );
     renderEditor({ initial: atFloor });
     const line =
-      "Your average is already at your safety floor, so every day stays at the average for now.";
+      "Your average is already close to your safety floor, so every day stays at the average for now.";
     expect(within(caloriesCard()).getByText(line)).toBeTruthy();
     expect(screen.queryByText(MOVES)).toBeNull();
     // A bigger spread can't change that, and the line keeps saying why.

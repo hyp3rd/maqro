@@ -634,11 +634,11 @@ function SpreadLine({
       break;
     case "atFloor":
       copy =
-        "Your average is already at your safety floor, so every day stays at the average for now.";
+        "Your average is already close to your safety floor, so every day stays at the average for now.";
       break;
     case "atMinimums":
       copy =
-        "Your average is already at the smallest day that fits your protein, fat and carb minimums, so every day stays at the average for now.";
+        "Your average is already close to the smallest day that fits your protein, fat and carb minimums, so every day stays at the average for now.";
       break;
   }
   return <Callout className="text-label leading-5">{copy}</Callout>;
