@@ -10,12 +10,18 @@ import {
   setWaterTotal,
   todayKey,
 } from "@/lib/db";
+import { intlWrapper } from "@/lib/i18n/intl-test-wrapper";
+import type { ReactElement } from "react";
 import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { estimateBodyFat } from "@maqro/core/body-fat";
 import { addDays } from "@maqro/core/date";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render as rtlRender, screen } from "@testing-library/react";
 import { ProgressView } from "./ProgressView";
+
+/** The app renders every view inside the root layout's
+ *  NextIntlClientProvider; its readouts (NumberTicker) read the locale. */
+const render = (ui: ReactElement) => rtlRender(ui, { wrapper: intlWrapper() });
 
 // Pro, so the phase markers and the per-phase maintenance reads are on: the
 // code path that reads `goalPhases[].startDate`.

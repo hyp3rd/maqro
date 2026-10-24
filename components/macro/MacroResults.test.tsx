@@ -71,7 +71,7 @@ describe("MacroResults without a training schedule", () => {
     expect(text).not.toMatch(/planned/i);
     expect(screen.getByText("Deficit")).toBeTruthy();
     expect(document.body.textContent).toMatchInlineSnapshot(
-      `"Daily TargetsBMR1780kcal/dayTDEE2600kcal/dayTarget2050kcal/dayDeficit-550 kcal≈ 0.50 kg/wkMacro TargetsProtein205g820 kcalCarbs128g512 kcalFat80g720 kcalTodayProtein0g / 205gCarbs0g / 128gFat0g / 80gCalories0 / 2050Assumes ~7700 kcal/kg of bodyweight change. If your real-world rate diverges by more than ~20% after a few weeks, override TDEE in the form to recalibrate."`,
+      `"Daily TargetsBMR1,780kcal/dayTDEE2,600kcal/dayTarget2,050kcal/dayDeficit-550 kcal≈ 0.50 kg/wkMacro TargetsProtein205g820 kcalCarbs128g512 kcalFat80g720 kcalTodayProtein0g / 205gCarbs0g / 128gFat0g / 80gCalories0 / 2050Assumes ~7700 kcal/kg of bodyweight change. If your real-world rate diverges by more than ~20% after a few weeks, override TDEE in the form to recalibrate."`,
     );
   });
 });
