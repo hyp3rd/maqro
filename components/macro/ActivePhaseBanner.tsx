@@ -37,10 +37,10 @@ export function ActivePhaseBanner({
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-        <h3 className="flex items-center gap-1.5 text-sm font-semibold tracking-tight">
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold tracking-tight">
           <Target className="h-4 w-4 text-brand" />
           {PHASE_LABELS[phase.kind]}
-        </h3>
+        </h2>
         <p className="font-mono text-xs tabular-nums text-muted-foreground">
           week {progress.weekOf} of {progress.totalWeeks} · {rateLabel} ·{" "}
           {weeksLeft} {weeksLeft === 1 ? "wk" : "wks"} left
