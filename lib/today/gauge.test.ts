@@ -8,6 +8,7 @@ import {
   gaugeCenter,
   quarterMarksPath,
   ringArc,
+  ringStrokes,
   targetIndexPath,
 } from "./gauge";
 
@@ -45,6 +46,29 @@ describe("ringArc", () => {
     expect(ringArc(1200, Number.NaN, 88)).toMatchObject({ fill: 0, over: 0 });
     expect(ringArc(Number.NaN, 2000, 88)).toMatchObject({ fill: 0, over: 0 });
     expect(ringArc(-50, 2000, 88)).toMatchObject({ fill: 0, over: 0 });
+  });
+});
+
+describe("ringStrokes", () => {
+  const C = circumference(ENERGY_RING.radius);
+  const parse = (d: string) => d.split(" ").map(Number);
+
+  it("under target: one solid arc from 12 o'clock, no overshoot stroke", () => {
+    const s = ringStrokes(ringArc(1240, 2500, ENERGY_RING.radius));
+    expect(parse(s.solid.dashArray)[0]).toBeCloseTo(274.25, 2);
+    expect(s.solid.dashOffset).toBe(0);
+    expect(s.over).toBeNull();
+  });
+
+  it("over target: the overshoot from the index on, the solid arc on the rest of the lap", () => {
+    const s = ringStrokes(ringArc(2875, 2500, ENERGY_RING.radius));
+    const over = 0.15 * C;
+    expect(parse(s.over?.dashArray ?? "")[0]).toBeCloseTo(over, 2);
+    expect(s.over?.dashOffset).toBe(0);
+    // The solid arc starts where the overshoot ends and closes the lap at
+    // the index.
+    expect(parse(s.solid.dashArray)[0]).toBeCloseTo(C - over, 2);
+    expect(s.solid.dashOffset).toBeCloseTo(-over, 2);
   });
 });
 

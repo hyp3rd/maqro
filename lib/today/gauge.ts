@@ -64,6 +64,34 @@ export function dashArray(length: number, ringCircumference: number): string {
   return `${round3(length)} ${round3(ringCircumference)}`;
 }
 
+/** How a ring is stroked: the solid arc, and the overshoot at lower
+ *  intensity. Under target the solid arc runs from 12 o'clock to the
+ *  intake. Over it the lap is complete: the overshoot is drawn from 12
+ *  o'clock on (the arc visibly carries on past the index) and the solid arc
+ *  covers the rest of the lap up to the index, so the two never stack. */
+export type RingStrokes = {
+  solid: { dashArray: string; dashOffset: number };
+  over: { dashArray: string; dashOffset: number } | null;
+};
+
+export function ringStrokes(arc: RingArc): RingStrokes {
+  const c = arc.circumference;
+  if (arc.over <= 0) {
+    return {
+      solid: { dashArray: dashArray(arc.fill, c), dashOffset: 0 },
+      over: null,
+    };
+  }
+  return {
+    solid: {
+      dashArray: dashArray(arc.fill - arc.over, c),
+      // A negative offset starts the dash `over` along the ring.
+      dashOffset: -round3(arc.over),
+    },
+    over: { dashArray: dashArray(arc.over, c), dashOffset: 0 },
+  };
+}
+
 /** The bezel's 60 tick marks as a dash pattern, offset so the first tick
  *  is centred on 12 o'clock. */
 export function bezelDash(): { dashArray: string; dashOffset: number } {
