@@ -445,7 +445,7 @@ function ProfileTile({
     <button
       type="button"
       {...buttonProps}
-      className="group flex min-h-28 flex-col items-start justify-between gap-3 rounded-xl border border-border/60 bg-card p-4 text-left transition-colors hover:border-brand/40 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-5"
+      className="group flex flex-col items-start gap-3 rounded-xl border border-border/60 bg-card p-4 text-left transition-colors hover:border-brand/40 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:p-5"
     >
       <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand/10 text-brand">
         <Icon className="h-5 w-5" />
