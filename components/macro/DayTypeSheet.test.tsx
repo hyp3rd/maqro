@@ -1,7 +1,9 @@
 /**
  * @vitest-environment jsdom
  */
+import { TodayHeader } from "@/components/today/TodayHeader";
 import { intlWrapper } from "@/lib/i18n/intl-test-wrapper";
+import { useRef, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type DateTargets,
@@ -19,7 +21,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { DaySessionRow } from "./DayTypeSheet";
+import { DayTypeSheet } from "./DayTypeSheet";
 
 const writes = vi.hoisted(() => ({
   setOverride: vi.fn<(date: string, day: unknown) => Promise<boolean>>(),
@@ -85,12 +87,48 @@ function app(stored: { date: string; day: TrainingDay }[] = []) {
   };
 }
 
+/** The app's wiring (macro-calculator): Today's header chip opens the
+ *  sheet for the shown day, mounted per open. */
+function ChipAndSheet({
+  targets,
+  preview,
+}: {
+  targets: DateTargets;
+  preview: (date: string, day: TrainingDay | null) => DateTargets;
+}) {
+  const [open, setOpen] = useState(false);
+  const chip = useRef<HTMLElement | null>(null);
+  return (
+    <>
+      <TodayHeader
+        date={targets.date}
+        today={WED}
+        training={targets.training}
+        titleId="day-title"
+        onSelectDate={vi.fn()}
+        onEditDayType={(trigger) => {
+          chip.current = trigger;
+          setOpen(true);
+        }}
+      />
+      {open && (
+        <DayTypeSheet
+          targets={targets}
+          today={WED}
+          previewDayTargets={preview}
+          onOpenChange={setOpen}
+          returnFocusTo={chip}
+        />
+      )}
+    </>
+  );
+}
+
 function renderRow(targets: DateTargets, preview = app().previewDayTargets) {
   return render(
-    <DaySessionRow
+    <ChipAndSheet
       targets={targets}
-      today={WED}
-      previewDayTargets={preview}
+      preview={preview}
     />,
     { wrapper: intlWrapper() },
   );
@@ -112,43 +150,43 @@ afterEach(() => {
   cleanup();
 });
 
-describe("DaySessionRow", () => {
-  it("renders nothing while training is off", () => {
+describe("Today's session chip", () => {
+  it("offers no change while training is off", () => {
     const off = targetsForDate(
       { ...PROFILE, training: { ...PROFILE.training!, enabled: false } },
       WED,
       FREE,
     );
-    const { container } = renderRow(off);
-    expect(container.textContent).toBe("");
+    renderRow(off);
+    expect(screen.queryByRole("button", { name: /session/i })).toBeNull();
   });
 
-  it("names the shown day's planned session with a Change control", () => {
+  it("is the one control that changes the shown day's session", () => {
     renderRow(app().targetsFor(WED));
-    const row = screen.getByRole("group", { name: "Today’s session" });
-    expect(row.textContent).toContain(
-      "Session: Lower body · Hard · 18:00 · 75\u00a0min",
-    );
     expect(
-      within(row).getByRole("button", { name: "Change today’s session" }),
+      screen.getByRole("button", {
+        name: "Lower, heavy day, 18:00, 75 min. Change today’s session",
+      }),
     ).toBeTruthy();
   });
 
   it("names another day by its weekday", () => {
     renderRow(app().targetsFor(THU));
     expect(
-      screen.getByRole("button", { name: "Change Thursday’s session" }),
+      screen.getByRole("button", {
+        name: "Rest day. Change Thursday’s session",
+      }),
     ).toBeTruthy();
-    expect(screen.getByText("Rest day")).toBeTruthy();
   });
 
-  it("shows a changed day with its plan", () => {
+  it("shows a changed day as changed", () => {
     const { targetsFor } = app([{ date: WED, day: { type: "rest" } }]);
     renderRow(targetsFor(WED));
-    expect(screen.getByText("Rest day")).toBeTruthy();
     expect(
-      screen.getByText("Changed for this day", { exact: false }).textContent,
-    ).toBe("Changed for this day · plan: Lower body");
+      screen.getByRole("button", {
+        name: "Rest day, changed from the plan. Change today’s session",
+      }).textContent,
+    ).toBe("Rest day· changed");
   });
 });
 
@@ -184,11 +222,11 @@ describe("DayTypeSheet", () => {
     expect(writes.setOverride).toHaveBeenCalledWith(WED, { type: "rest" });
     expect(writes.clearOverride).not.toHaveBeenCalled();
     expect(screen.queryByRole("dialog")).toBeNull();
-    // Focus goes back to the control that opened the sheet (Radix restores
-    // it on the next task after the content unmounts).
+    // Focus goes back to the chip that opened the sheet (Radix restores it
+    // on the next task after the content unmounts).
     await waitFor(() =>
       expect(document.activeElement).toBe(
-        screen.getByRole("button", { name: "Change today’s session" }),
+        screen.getByRole("button", { name: /change today’s session/i }),
       ),
     );
   });

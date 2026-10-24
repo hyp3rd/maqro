@@ -12,9 +12,7 @@ import {
 import { useDayOverrides } from "@/hooks/use-day-overrides";
 import { haptic } from "@/lib/haptics";
 import { formatNumber } from "@/lib/i18n/number";
-import { cn } from "@/lib/utils";
-import { type RefObject, useId, useRef, useState } from "react";
-import { Dumbbell, Moon } from "lucide-react";
+import { type RefObject, useId, useState } from "react";
 import { useLocale } from "next-intl";
 import type { DateTargets } from "@maqro/core/targets";
 import type { TrainingDay } from "@maqro/core/types";
@@ -32,7 +30,7 @@ import {
   sessionDetails,
 } from "./training-labels";
 
-/** What both components need from the app's targets (`useTargets`). */
+/** What the sheet needs from the app's targets (`useTargets`). */
 type DaySessionProps = {
   /** The shown day's targets (`dayTargets`). Without an enabled training
    *  schedule there is no `training`, and nothing renders. */
@@ -72,77 +70,6 @@ function dayPossessive(date: string, today: string): string {
   return `${WEEKDAY_NAME[weekday] ?? "This day"}’s`;
 }
 
-/** The day view's small "Session: <plan> · Change" row (FREE, only while
- *  training is on) and the sheet it opens. Self-contained: give it the
- *  shown day's targets and the preview resolver; writes go through
- *  `useDayOverrides`. */
-export function DaySessionRow({
-  targets,
-  today,
-  previewDayTargets,
-}: DaySessionProps) {
-  const [open, setOpen] = useState(false);
-  const changeRef = useRef<HTMLButtonElement>(null);
-  const training = targets.training;
-  if (!training) return null;
-  const rest = training.day.type === "rest";
-  const Icon = rest ? Moon : Dumbbell;
-  const whose = dayPossessive(targets.date, today);
-
-  return (
-    // A group, not a `<section>`: a one-line row isn't worth a landmark.
-    <div
-      role="group"
-      aria-label={`${whose} session`}
-      className="flex items-center gap-3 rounded-lg border border-border/60 bg-card px-3 py-2 sm:px-5"
-    >
-      <Icon
-        aria-hidden
-        className={cn(
-          "h-4 w-4 shrink-0",
-          rest ? "text-muted-foreground" : "text-brand-text",
-        )}
-      />
-      <p className="min-w-0 flex-1 text-sm">
-        <span className="text-muted-foreground">Session: </span>
-        <span className="font-medium text-foreground">
-          {sessionLabel(training.day)}
-        </span>
-        {training.overridden && (
-          <span className="block text-label text-muted-foreground">
-            Changed for this day · plan:{" "}
-            {TRAINING_TYPE_LABEL[training.plannedDay.type]}
-          </span>
-        )}
-      </p>
-      <Button
-        ref={changeRef}
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="shrink-0 text-brand-text"
-        aria-label={`Change ${targets.date === today ? "today’s" : whose} session`}
-        aria-haspopup="dialog"
-        onClick={() => {
-          haptic("tap");
-          setOpen(true);
-        }}
-      >
-        Change
-      </Button>
-      {open && (
-        <DayTypeSheet
-          targets={targets}
-          today={today}
-          previewDayTargets={previewDayTargets}
-          onOpenChange={setOpen}
-          returnFocusTo={changeRef}
-        />
-      )}
-    </div>
-  );
-}
-
 /** Change ONE day's session without touching the weekly template: shows
  *  the template's plan for the date, lets the user pick another session or
  *  rest, previews the day's new target through the same resolver ("2,500 →
@@ -152,8 +79,9 @@ export function DaySessionRow({
  *
  *  A bottom sheet on phones and a dialog on wider screens (`DialogContent`);
  *  Radix traps focus inside, and on close focus returns to `returnFocusTo`
- *  (the control that opened it). Mount it per open so each one starts from
- *  the day's current session. */
+ *  (the control that opened it: Today's session chip, `DayTypeChip`; the
+ *  sheet has no Radix trigger, so without it focus falls to <body>). Mount
+ *  it per open so each one starts from the day's current session. */
 export function DayTypeSheet({
   targets,
   today,

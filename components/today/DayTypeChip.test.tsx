@@ -15,6 +15,12 @@ const LOWER = {
     durationMin: 75,
   },
   dayClass: "heavy" as const,
+  overridden: false,
+};
+const REST_OVERRIDE = {
+  day: { type: "rest" as const },
+  dayClass: "rest" as const,
+  overridden: true,
 };
 
 describe("DayTypeChip", () => {
@@ -27,6 +33,7 @@ describe("DayTypeChip", () => {
     render(<DayTypeChip training={LOWER} />);
     expect(screen.getByText("Lower · heavy day")).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.queryByText("· changed")).toBeNull();
     expect(
       screen
         .getByText("Lower · heavy day")
@@ -37,23 +44,55 @@ describe("DayTypeChip", () => {
 
   it("says 'Rest day' on a rest day", () => {
     render(
-      <DayTypeChip training={{ day: { type: "rest" }, dayClass: "rest" }} />,
+      <DayTypeChip
+        training={{
+          day: { type: "rest" },
+          dayClass: "rest",
+          overridden: false,
+        }}
+      />,
     );
     expect(screen.getByText("Rest day")).toBeTruthy();
   });
 
-  it("becomes an edit button when given onEdit", () => {
+  it("marks a day whose session was changed from the plan", () => {
+    render(<DayTypeChip training={REST_OVERRIDE} />);
+    expect(screen.getByText("Rest day")).toBeTruthy();
+    expect(screen.getByText("· changed")).toBeTruthy();
+    expect(
+      screen.getByText("Rest day").closest("[title]")?.getAttribute("title"),
+    ).toBe("Rest day, changed from the plan");
+  });
+
+  it("becomes the edit button, named by its action, when given onEdit", () => {
     const onEdit = vi.fn();
     render(
       <DayTypeChip
         training={LOWER}
         onEdit={onEdit}
+        editLabel="Change Wednesday’s session"
       />,
     );
     const button = screen.getByRole("button", {
-      name: "Lower, heavy day, 18:00, 75 min. Change this day's training",
+      name: "Lower, heavy day, 18:00, 75 min. Change Wednesday’s session",
     });
+    expect(button.getAttribute("aria-haspopup")).toBe("dialog");
     fireEvent.click(button);
     expect(onEdit).toHaveBeenCalledOnce();
+  });
+
+  it("says a changed day is changed in the button's name too", () => {
+    render(
+      <DayTypeChip
+        training={REST_OVERRIDE}
+        onEdit={vi.fn()}
+        editLabel="Change today’s session"
+      />,
+    );
+    expect(
+      screen.getByRole("button", {
+        name: "Rest day, changed from the plan. Change today’s session",
+      }),
+    ).toBeTruthy();
   });
 });

@@ -2,8 +2,10 @@
  * @vitest-environment jsdom
  */
 import type { Meal, PersonalInfo } from "@/components/macro/types";
+import { useTargets } from "@/hooks/use-targets";
 import { intlWrapper } from "@/lib/i18n/intl-test-wrapper";
 import type * as React from "react";
+import { useRef, useState } from "react";
 import { IDBFactory } from "fake-indexeddb";
 import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -16,6 +18,8 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
+import { act } from "@testing-library/react";
+import { DayTypeSheet } from "./DayTypeSheet";
 import MealPlanner from "./MealPlanner";
 
 vi.mock("sonner", () => ({
@@ -31,6 +35,10 @@ const { NOW } = vi.hoisted(() => ({
   NOW: new Date(2026, 9, 21, 15, 10).getTime(),
 }));
 vi.mock("@/hooks/use-now", () => ({ useNow: () => NOW }));
+// useTargets' tier (the provider-backed hook): free, so no goal phases.
+vi.mock("@/hooks/use-ai-usage", () => ({
+  useTier: () => ({ tier: "free", resolved: true }),
+}));
 
 beforeEach(() => {
   globalThis.indexedDB = new IDBFactory();
@@ -100,9 +108,9 @@ const MEALS: Meal[] = [
   { id: 4, name: "Snacks", foods: [] },
 ];
 
-function renderPlanner(
+function plannerProps(
   overrides: Partial<React.ComponentProps<typeof MealPlanner>> = {},
-) {
+): React.ComponentProps<typeof MealPlanner> {
   const selectedDate = overrides.selectedDate ?? TODAY;
   const ctx = { phasesEnabled: false };
   const props: React.ComponentProps<typeof MealPlanner> = {
@@ -191,6 +199,13 @@ function renderPlanner(
     onOpenMealDetail: vi.fn(),
     ...overrides,
   };
+  return props;
+}
+
+function renderPlanner(
+  overrides: Partial<React.ComponentProps<typeof MealPlanner>> = {},
+) {
+  const props = plannerProps(overrides);
   render(<MealPlanner {...props} />, { wrapper: intlWrapper() });
   return props;
 }
@@ -342,5 +357,123 @@ describe("MealPlanner as Instrument Today", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Back to today" }));
     expect(props.onSelectDate).toHaveBeenCalledWith(TODAY);
+  });
+});
+
+/** The app's wiring (macro-calculator): live `useTargets` (with this
+ *  device's stored overrides) feeds the planner, and the header's session
+ *  chip opens the day-type sheet for the shown day. */
+function TodayWithDayType() {
+  const { dayTargets, selectedWeek, previewDayTargets } = useTargets(
+    PROFILE,
+    TODAY,
+    TODAY,
+  );
+  const [open, setOpen] = useState(false);
+  const chip = useRef<HTMLElement | null>(null);
+  return (
+    <>
+      <MealPlanner
+        {...plannerProps()}
+        calculatedValues={dayTargets}
+        week={selectedWeek}
+        onEditDayType={(trigger) => {
+          chip.current = trigger;
+          setOpen(true);
+        }}
+      />
+      {open && (
+        <DayTypeSheet
+          targets={dayTargets}
+          today={TODAY}
+          previewDayTargets={previewDayTargets}
+          onOpenChange={setOpen}
+          returnFocusTo={chip}
+        />
+      )}
+    </>
+  );
+}
+
+describe("Today: changing the day's session from the chip", () => {
+  const FREE = { phasesEnabled: false };
+  const planned = weekTargets(PROFILE, TODAY, FREE);
+  const restToday = targetsForDate(PROFILE, TODAY, {
+    ...FREE,
+    overrideFor: (d) => (d === TODAY ? { type: "rest" } : undefined),
+  });
+  const kcal = (n: number) => n.toLocaleString("en");
+  const stripDays = () =>
+    within(screen.getByRole("group", { name: "Week" })).getAllByRole("button");
+  const chip = (name: RegExp) => screen.getByRole("button", { name });
+  const plannedWed = planned?.days[2]?.targetCalories ?? 0;
+  const plannedTue = planned?.days[1]?.targetCalories ?? 0;
+
+  it("opens the sheet from the chip, applies the override everywhere, and goes back to plan", async () => {
+    // Sanity: a rest day plans a smaller target than the hard lower day.
+    expect(restToday.targetCalories).toBeLessThan(plannedWed);
+    render(<TodayWithDayType />, { wrapper: intlWrapper() });
+
+    // The plan: the chip, the gauge and Wednesday's strip bar agree.
+    const planChip = await screen.findByRole("button", {
+      name: "Lower, heavy day, 18:00, 75 min. Change today’s session",
+    });
+    expect(planChip.textContent).toBe("Lower · heavy day");
+    expect(gaugeStatus().textContent).toBe(
+      `${kcal(plannedWed - 1240)} kcal left today`,
+    );
+    expect(stripDays()[2]?.getAttribute("aria-label")).toContain(
+      `of ${kcal(plannedWed)} kcal`,
+    );
+    // One entry point: no interim "Session · Change" row.
+    expect(screen.queryByText(/^Session:/)).toBeNull();
+    expect(screen.queryByRole("group", { name: /session/i })).toBeNull();
+    expect(screen.getAllByRole("button", { name: /session/i })).toHaveLength(1);
+
+    // Today is a rest day.
+    planChip.focus();
+    fireEvent.click(planChip);
+    const sheet = await screen.findByRole("dialog");
+    fireEvent.click(within(sheet).getByRole("radio", { name: "Rest" }));
+    await act(async () => {
+      fireEvent.click(within(sheet).getByRole("button", { name: "Save" }));
+    });
+
+    const restChip = await screen.findByRole("button", {
+      name: "Rest day, changed from the plan. Change today’s session",
+    });
+    expect(restChip.textContent).toBe("Rest day· changed");
+    expect(gaugeStatus().textContent).toBe(
+      `${kcal(restToday.targetCalories - 1240)} kcal left today`,
+    );
+    expect(stripDays()[2]?.getAttribute("aria-label")).toContain(
+      `of ${kcal(restToday.targetCalories)} kcal`,
+    );
+    // That day only: Tuesday keeps its planned target.
+    expect(stripDays()[1]?.getAttribute("aria-label")).toBe(
+      `Tue 20 Oct, target ${kcal(plannedTue)} kcal`,
+    );
+    // The chip that opened the sheet gets focus back.
+    await waitFor(() => expect(document.activeElement).toBe(restChip));
+
+    // Back to plan restores the chip, the gauge and the strip.
+    fireEvent.click(restChip);
+    const again = await screen.findByRole("dialog");
+    await act(async () => {
+      fireEvent.click(
+        within(again).getByRole("button", { name: "Back to plan" }),
+      );
+    });
+    await waitFor(() =>
+      expect(chip(/change today’s session/i).textContent).toBe(
+        "Lower · heavy day",
+      ),
+    );
+    expect(gaugeStatus().textContent).toBe(
+      `${kcal(plannedWed - 1240)} kcal left today`,
+    );
+    expect(stripDays()[2]?.getAttribute("aria-label")).toContain(
+      `of ${kcal(plannedWed)} kcal`,
+    );
   });
 });

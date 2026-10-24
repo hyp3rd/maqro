@@ -3,7 +3,7 @@
  */
 import type { AiPlanRequest, AiPlanResult } from "@/lib/ai-plan";
 import { computeSlotBudget } from "@/lib/recipe-ranking";
-import type { ComponentProps, ReactElement, ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -233,6 +233,9 @@ vi.mock("./components/macro/SaveTemplateDialog", () => ({
 vi.mock("./components/macro/SettingsView", () => ({
   SettingsView: ui.stub("SettingsView"),
 }));
+vi.mock("./components/macro/DayTypeSheet", () => ({
+  DayTypeSheet: ui.stub("DayTypeSheet"),
+}));
 vi.mock("./components/macro/ShoppingListView", () => ({
   ShoppingListView: ui.stub("ShoppingListView"),
 }));
@@ -254,8 +257,6 @@ vi.mock("./components/macro/VoiceLogSheet", () => ({
 
 const { default: MacroCalculator } = await import("./macro-calculator");
 const { formatDayLabel } = await import("./components/shell/DateNavigator");
-const { DaySessionRow } = await import("./components/macro/DayTypeSheet");
-type DaySessionProps = ComponentProps<typeof DaySessionRow>;
 
 /** A prop the stubbed `component` last rendered with. */
 function prop<T>(component: string, name: string): T {
@@ -373,18 +374,42 @@ describe("macro-calculator: the day view gets the selected date's targets", () =
     expect(refreshAiUsage).toHaveBeenCalledTimes(3);
   });
 
-  it("the session row gets the selected day's targets and the preview resolver", async () => {
+  it("the session chip opens the day-type sheet for the shown day", async () => {
     await renderOnPastDay();
+    // One entry point: no interim session row next to the chip.
+    expect(ui.props.MealPlanner).not.toHaveProperty("sessionRow");
+    expect(ui.props.DayTypeSheet).toBeUndefined();
 
-    const row = prop<ReactElement<DaySessionProps>>(
-      "MealPlanner",
-      "sessionRow",
-    );
-    expect(row.type).toBe(DaySessionRow);
-    expect(row.props.targets).toEqual(pastTargets);
-    expect(row.props.today).toBe(TODAY);
+    const chip = document.createElement("button");
+    await act(async () => {
+      prop<(trigger: HTMLElement) => void>(
+        "MealPlanner",
+        "onEditDayType",
+      )(chip);
+    });
+
+    expect(prop("DayTypeSheet", "targets")).toEqual(pastTargets);
+    expect(prop("DayTypeSheet", "today")).toBe(TODAY);
     // Back to plan for the shown day: the same resolver and tier context.
-    expect(row.props.previewDayTargets(PAST_DAY, null)).toEqual(pastTargets);
+    expect(
+      prop<(d: string, day: null) => unknown>(
+        "DayTypeSheet",
+        "previewDayTargets",
+      )(PAST_DAY, null),
+    ).toEqual(pastTargets);
+    // Focus goes back to the chip that opened it.
+    expect(
+      prop<RefObject<HTMLElement | null>>("DayTypeSheet", "returnFocusTo")
+        .current,
+    ).toBe(chip);
+
+    const onOpenChange = prop<(open: boolean) => void>(
+      "DayTypeSheet",
+      "onOpenChange",
+    );
+    delete ui.props.DayTypeSheet;
+    await act(async () => onOpenChange(false));
+    expect(ui.props.DayTypeSheet).toBeUndefined();
   });
 
   it("an AI call that is not debited does not refresh usage", async () => {

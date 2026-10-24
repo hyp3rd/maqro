@@ -13,7 +13,7 @@ import { ApplyTemplateDialog } from "./components/macro/ApplyTemplateDialog";
 import { BodySummaryStrip } from "./components/macro/BodySummaryStrip";
 import { CameraSheet } from "./components/macro/CameraSheet";
 import { CustomFoodForm } from "./components/macro/CustomFoodForm";
-import { DaySessionRow } from "./components/macro/DayTypeSheet";
+import { DayTypeSheet } from "./components/macro/DayTypeSheet";
 import { FastingView } from "./components/macro/FastingView";
 import { FoodSearchSheet } from "./components/macro/FoodSearchSheet";
 import { GoalPhasesPlanner } from "./components/macro/GoalPhasesPlanner";
@@ -477,6 +477,10 @@ const MacroCalculator = () => {
   );
   const [capUpgradeOpen, setCapUpgradeOpen] = useState(false);
   const [suggestDayOpen, setSuggestDayOpen] = useState(false);
+  // The day-type sheet for the shown day, opened from Today's session chip
+  // (the sheet has no Radix trigger, so it hands focus back to the chip).
+  const [dayTypeSheetOpen, setDayTypeSheetOpen] = useState(false);
+  const dayTypeChipRef = useRef<HTMLElement | null>(null);
   // Meal templates: which dialog is open and for which meal. `null` =
   // no dialog. The dialogs themselves read templates from IDB on open.
   const [templateDialog, setTemplateDialog] = useState<
@@ -2279,13 +2283,11 @@ const MacroCalculator = () => {
         <MealPlanner
           calculatedValues={dayTargets}
           week={selectedWeek}
-          sessionRow={
-            <DaySessionRow
-              targets={dayTargets}
-              today={today}
-              previewDayTargets={previewDayTargets}
-            />
-          }
+          onEditDayType={(chip) => {
+            haptic("tap");
+            dayTypeChipRef.current = chip;
+            setDayTypeSheetOpen(true);
+          }}
           totalMacros={totalMacros}
           macroBreakdown={macroBreakdown}
           meals={meals}
@@ -2749,6 +2751,16 @@ const MacroCalculator = () => {
         }}
       />
 
+      {/* Mounted per open, so it starts from the day's current session. */}
+      {view === "plan" && dayTypeSheetOpen && (
+        <DayTypeSheet
+          targets={dayTargets}
+          today={today}
+          previewDayTargets={previewDayTargets}
+          onOpenChange={setDayTypeSheetOpen}
+          returnFocusTo={dayTypeChipRef}
+        />
+      )}
       {suggestDayOpen && (
         <SuggestDayDialog
           open={suggestDayOpen}

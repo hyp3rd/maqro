@@ -62,9 +62,10 @@ interface MealPlannerProps {
    *  (`useTargets().selectedWeek`) for the week strip; `null` before the
    *  date is known. */
   week: WeekTargets | null;
-  /** The shown day's training session row (`DaySessionRow`), rendered
-   *  under the day header; it renders nothing while training is off. */
-  sessionRow?: React.ReactNode;
+  /** Open the day-type sheet for the shown day — the header's session
+   *  chip becomes its button (training on) and is passed as the sheet's
+   *  focus-return target. */
+  onEditDayType?: (trigger: HTMLElement) => void;
   totalMacros: {
     protein: number;
     carbs: number;
@@ -218,7 +219,7 @@ function LiveDayTimeline(
 const MealPlanner: React.FC<MealPlannerProps> = ({
   calculatedValues,
   week,
-  sessionRow,
+  onEditDayType,
   totalMacros,
   macroBreakdown,
   meals,
@@ -420,8 +421,8 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
           training={calculatedValues.training}
           titleId={titleId}
           onSelectDate={onSelectDate}
+          onEditDayType={onEditDayType}
         />
-        {sessionRow}
         {week && (
           <WeekStrip
             days={week.days}
