@@ -75,6 +75,24 @@ describe("SegmentedControl", () => {
     expect(radio("lb").tabIndex).toBe(-1);
   });
 
+  it("checks nothing while the value is null, until one is picked", () => {
+    const onChange = vi.fn();
+    render(
+      <SegmentedControl<Spread>
+        aria-label="Day-to-day difference"
+        value={null}
+        onValueChange={onChange}
+        options={OPTIONS}
+      />,
+    );
+    for (const name of ["Off", "Modest", "Pronounced"]) {
+      expect(radio(name).getAttribute("aria-checked")).toBe("false");
+    }
+    expect(radio("Off").tabIndex).toBe(0);
+    fireEvent.click(radio("Pronounced"));
+    expect(onChange).toHaveBeenCalledWith("pronounced");
+  });
+
   it("moves the tab stop to the first enabled radio when the checked one is disabled", () => {
     render(
       <Harness

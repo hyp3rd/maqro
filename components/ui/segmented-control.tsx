@@ -10,7 +10,8 @@ export type SegmentedOption<T extends string> = {
 };
 
 export type SegmentedControlProps<T extends string> = {
-  value: T;
+  /** The checked option, or `null` while none is chosen yet. */
+  value: T | null;
   onValueChange: (value: T) => void;
   options: readonly SegmentedOption<T>[];
   className?: string;
