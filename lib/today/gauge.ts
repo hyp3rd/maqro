@@ -30,12 +30,20 @@ export function circumference(radius: number): number {
   return 2 * Math.PI * radius;
 }
 
+/** How far past the index an overshoot is drawn at most, in laps. Past
+ *  the target the solid arc covers the rest of the lap (see `ringStrokes`),
+ *  so a longer overshoot would shrink it: at 2× a full pale lap with no
+ *  solid arc left reads as an empty ring — "little eaten". Capped here,
+ *  the solid arc always holds two thirds of the lap; the gauge's centre
+ *  states the overshoot in kcal. */
+export const MAX_OVER_LAP = 1 / 3;
+
 /** Stroke lengths of one ring for `value` against `target`.
  *  `fill` runs from the index up to the target (at most one lap); `over`
  *  is how far an overshoot continues past the index, drawn in the same hue
- *  at lower intensity and capped at one more lap. Over and under are shown,
- *  never clamped away and never judged. No positive target (or no intake)
- *  → nothing drawn. */
+ *  at lower intensity, to scale up to `MAX_OVER_LAP`. Over and under are
+ *  shown, never clamped away and never judged. No positive target (or no
+ *  intake) → nothing drawn. */
 export type RingArc = { circumference: number; fill: number; over: number };
 
 export function ringArc(
@@ -52,7 +60,7 @@ export function ringArc(
   return {
     circumference: c,
     fill: Math.min(ratio, 1) * c,
-    over: Math.min(Math.max(ratio - 1, 0), 1) * c,
+    over: Math.min(Math.max(ratio - 1, 0), MAX_OVER_LAP) * c,
   };
 }
 

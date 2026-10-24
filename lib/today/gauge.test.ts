@@ -36,9 +36,25 @@ describe("ringArc", () => {
     expect(arc.over).toBeCloseTo(0.15 * C, 6);
   });
 
-  it("caps the overshoot at one more lap", () => {
-    const arc = ringArc(9000, 2500, ENERGY_RING.radius);
-    expect(arc.over).toBeCloseTo(C, 6);
+  it("draws an overshoot to scale up to a third of a lap past the index", () => {
+    const arc = ringArc(3250, 2500, ENERGY_RING.radius);
+    expect(arc.over).toBeCloseTo(0.3 * C, 6);
+  });
+
+  it("never lets a large overshoot read as little eaten", () => {
+    // At 2× (and far past it) the solid lap would shrink to a sliver under
+    // a pale full-lap overshoot — a ring that reads nearly empty. The
+    // overshoot stops at a third of a lap, so the solid arc always holds
+    // at least two thirds: the target was met, and then some (the
+    // gauge's centre states by how much).
+    for (const eaten of [5000, 9000, 50000]) {
+      const arc = ringArc(eaten, 2500, ENERGY_RING.radius);
+      expect(arc.fill).toBeCloseTo(C, 6);
+      expect(arc.over).toBeCloseTo(C / 3, 6);
+      const s = ringStrokes(arc);
+      const solid = Number(s.solid.dashArray.split(" ")[0]);
+      expect(solid).toBeGreaterThanOrEqual((2 * C) / 3 - 0.01);
+    }
   });
 
   it("draws nothing without a positive target or for a non-figure", () => {
