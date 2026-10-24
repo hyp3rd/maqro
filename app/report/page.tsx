@@ -79,7 +79,7 @@ import { ArrowLeft, CloudUpload, FileDown, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { latestBodyFatReading } from "@maqro/core/body-fat";
-import { addDays } from "@maqro/core/date";
+import { addDays, localDateOfKey } from "@maqro/core/date";
 import {
   type TargetContext,
   dayOverrideResolver,
@@ -1770,11 +1770,12 @@ function clampDays(n: number): number {
   return Math.min(365, Math.round(n));
 }
 
+/** A `YYYY-MM-DD` key as a short label ("May 20") for its LOCAL calendar
+ *  day; a malformed key is shown as-is. */
 function shortDateLabel(d: string): string {
-  return new Date(d).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
+  const day = localDateOfKey(d);
+  if (!day) return d;
+  return day.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function sumCalories(log: DailyLog): number {

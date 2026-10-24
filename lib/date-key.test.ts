@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { isDateKey } from "@maqro/core/date";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { isDateKey, localDateOfKey } from "@maqro/core/date";
 
 describe("isDateKey", () => {
   it.each([
@@ -29,4 +29,31 @@ describe("isDateKey", () => {
       expect(isDateKey(v)).toBe(false);
     }
   });
+});
+
+describe("localDateOfKey", () => {
+  /** West of UTC, a key parsed as UTC midnight lands on the evening before. */
+  const savedTz = process.env.TZ;
+  beforeAll(() => {
+    process.env.TZ = "America/New_York";
+  });
+  afterAll(() => {
+    process.env.TZ = savedTz;
+  });
+
+  it("is local midnight of the key's own calendar day", () => {
+    const dt = localDateOfKey("2026-10-22");
+    expect(dt).not.toBeNull();
+    expect([dt?.getFullYear(), dt?.getMonth(), dt?.getDate()]).toEqual([
+      2026, 9, 22,
+    ]);
+    expect([dt?.getHours(), dt?.getMinutes()]).toEqual([0, 0]);
+  });
+
+  it.each(["", "2026-02-30", "2026-6-4", "2026-06-04T00:00:00Z"])(
+    "is null for %j",
+    (s) => {
+      expect(localDateOfKey(s)).toBeNull();
+    },
+  );
 });

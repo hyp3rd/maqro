@@ -253,7 +253,8 @@ describe("/report body fat", () => {
       neckCm: 38,
     });
     const value = `${expected?.toFixed(1)}%`;
-    const from = new Date("2026-05-20").toLocaleDateString(undefined, {
+    // The reading's LOCAL calendar day (month index 4 = May).
+    const from = new Date(2026, 4, 20).toLocaleDateString(undefined, {
       month: "short",
       day: "numeric",
     });
@@ -268,6 +269,46 @@ describe("/report body fat", () => {
     const bodyFat = model.body.stats.find((s) => s.label === "Body fat");
     expect(bodyFat?.value).toBe(value);
     expect(bodyFat?.sub).toContain(`from ${from}`);
+  });
+
+  /** A `YYYY-MM-DD` key is a calendar day, not UTC midnight: west of UTC,
+   *  parsing it as UTC named the day before (the Progress screen, which
+   *  parses it locally, named the right one). */
+  describe("west of UTC", () => {
+    const savedTz = process.env.TZ;
+    beforeAll(() => {
+      process.env.TZ = "America/New_York"; // UTC−4 in May/June
+    });
+    afterAll(() => {
+      process.env.TZ = savedTz;
+    });
+
+    const label = (month: number, day: number) =>
+      new Date(2026, month, day).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+      });
+
+    it("dates the estimate and the latest measurement by their own calendar day", async () => {
+      data.query = "sections=summary,body,calories&days=30";
+      data.measurements = [
+        measurement("2026-05-20", 88, 38),
+        measurement("2026-06-08", 86),
+      ];
+
+      const model = (await downloadedModel()) as PdfModel & {
+        body: { stats: PdfStat[] };
+      };
+      const section = screen.getByRole("heading", { name: "Body composition" })
+        .parentElement as HTMLElement;
+      expect(section.textContent).toContain(`from ${label(4, 20)}`);
+      expect(section.textContent).not.toContain(`from ${label(4, 19)}`);
+      expect(section.textContent).toContain(
+        `Latest measurements (${label(5, 8)})`,
+      );
+      const bodyFat = model.body.stats.find((s) => s.label === "Body fat");
+      expect(bodyFat?.sub).toContain(`from ${label(4, 20)}`);
+    });
   });
 });
 
