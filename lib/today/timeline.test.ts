@@ -11,6 +11,7 @@ import {
   mealStartMinute,
   mealTicks,
   minuteOfDay,
+  nowFlagText,
   parseClock,
   relativeDay,
   timelineSummary,
@@ -230,15 +231,37 @@ describe("workoutSpan", () => {
 describe("labels", () => {
   it("keeps the hour marks clear of the now flag on the narrowest track", () => {
     expect(hourLabels(null)).toEqual([0, 6, 12, 18, 24]);
-    // 15:10 on a 288px track: "Now 15:10" (65px) covers 12 and 18.
-    expect(hourLabels(910)).toEqual([0, 6, 24]);
-    // 01:00: the flag runs inwards from its tick, over 00 and 06.
-    expect(hourLabels(60)).toEqual([12, 18, 24]);
+    // 15:10 on a 288px track: the flag is just "15:10" (36px), between
+    // 12 and 18, so both stay readable.
+    expect(nowFlagText(910)).toBe("15:10");
+    expect(hourLabels(910)).toEqual([0, 6, 12, 18, 24]);
+    // 01:00: the flag runs inwards from its tick, over 00 only.
+    expect(hourLabels(60)).toEqual([6, 12, 18, 24]);
+  });
+
+  it("keeps 12 and 18 readable mid-afternoon on every phone width", () => {
+    // 320, 360 and 390 px phones (288, 328 and 358 px tracks) at 15:00.
+    for (const trackPx of [288, 328, 358]) {
+      expect(hourLabels(900, trackPx)).toEqual([0, 6, 12, 18, 24]);
+    }
+  });
+
+  it("says 'Now' on the flag only where an hour gap holds it", () => {
+    // A 360px phone (328px track): "Now 15:00" would cover 12 and 18.
+    expect(nowFlagText(900, 328)).toBe("15:00");
+    // A 390px phone (358px track) and wider.
+    expect(nowFlagText(900, 358)).toBe("Now 15:00");
+    expect(nowFlagText(900, 1200)).toBe("Now 15:00");
+    // The boundary: 12 characters of 7.2px in a 6-hour gap (345.6px).
+    expect(nowFlagText(900, 345)).toBe("15:00");
+    expect(nowFlagText(900, 346)).toBe("Now 15:00");
+    // An unknown width is the narrowest track's.
+    expect(nowFlagText(900, 0)).toBe("15:00");
   });
 
   it("clears only the hour labels the now flag actually overlaps", () => {
-    // A 390px phone's 358px track at 15:00: the flag sits between 12 and
-    // 18, and both stay readable.
+    // A 390px phone's 358px track at 15:00: "Now 15:00" sits between 12
+    // and 18, and both stay readable.
     expect(hourLabels(900, 358)).toEqual([0, 6, 12, 18, 24]);
     // 11:40: only 12 is under the flag.
     expect(hourLabels(700, 358)).toEqual([0, 6, 18, 24]);

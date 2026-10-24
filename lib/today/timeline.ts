@@ -206,28 +206,58 @@ export function workoutSpan(
 /** The hour marks labelled under the track. */
 export const HOUR_MARKS = [0, 6, 12, 18, 24] as const;
 
-/** Characters in the "Now HH:MM" flag and in an hour label ("18"). */
-const NOW_LABEL_CHARS = 9;
+/** Characters in an hour label ("18"). */
 const HOUR_LABEL_CHARS = 2;
 /** The clear gap kept between the now flag and an hour label: half a
  *  character, so "18" never touches "Now 15:00". */
 const NOW_LABEL_PAD_CHARS = 0.5;
+/** The "Now HH:MM" flag (9 characters) with an hour label's half and a
+ *  pad on each side: what one 6-hour gap between hour labels must hold for
+ *  the flag to sit between them (15:00 between 12 and 18). */
+const FULL_NOW_GAP_CHARS = 9 + HOUR_LABEL_CHARS + 2 * NOW_LABEL_PAD_CHARS;
+/** The narrowest track (px) whose 6-hour gaps hold the full flag: about
+ *  346 px, so a 390 px phone (358 px track) reads "Now 15:00" while a
+ *  360 or 320 px one reads just "15:00" beside the signal cursor. */
+const FULL_NOW_MIN_TRACK_PX =
+  (FULL_NOW_GAP_CHARS * LABEL_CHAR_PX * DAY_MINUTES) / (6 * 60);
 
-/** The hour marks to label: every one except those the "Now HH:MM" flag
- *  actually overlaps on a track `trackPx` wide, both placed as
- *  `labelAnchor` places them (at 15:00 on a 358px phone track, 12 and 18
- *  both stay). The width is measured; until it is (the server, the first
- *  render) the narrowest track keeps the flag clear everywhere. */
+/** A measured track width, or the narrowest track's when it isn't known
+ *  (the server, the first render). */
+function usableTrackPx(trackPx: number): number {
+  return Number.isFinite(trackPx) && trackPx > 0 ? trackPx : NARROWEST_TRACK_PX;
+}
+
+/** The now flag's text on a track `trackPx` wide: "Now 15:00" where an
+ *  hour gap holds it, else just the time (the signal-coloured cursor
+ *  marks it as now, and the track's accessible summary says "Now 15:00"),
+ *  so 12 and 18 stay readable mid-afternoon on a narrow phone. */
+export function nowFlagText(
+  nowMinute: number,
+  trackPx: number = NARROWEST_TRACK_PX,
+): string {
+  const clock = formatClock(nowMinute);
+  return usableTrackPx(trackPx) >= FULL_NOW_MIN_TRACK_PX
+    ? `Now ${clock}`
+    : clock;
+}
+
+/** The hour marks to label: every one except those the now flag
+ *  (`nowFlagText`) actually overlaps on a track `trackPx` wide, both
+ *  placed as `labelAnchor` places them (at 15:00, 12 and 18 both stay on
+ *  every phone width). The width is measured; until it is (the server,
+ *  the first render) the narrowest track's is assumed. */
 export function hourLabels(
   nowMinute: number | null,
   trackPx: number = NARROWEST_TRACK_PX,
 ): number[] {
   if (nowMinute === null) return [...HOUR_MARKS];
-  const perChar = minutesPerChar(
-    Number.isFinite(trackPx) && trackPx > 0 ? trackPx : NARROWEST_TRACK_PX,
-  );
+  const perChar = minutesPerChar(usableTrackPx(trackPx));
   const pad = NOW_LABEL_PAD_CHARS * perChar;
-  const now = labelExtent(nowMinute, NOW_LABEL_CHARS, perChar);
+  const now = labelExtent(
+    nowMinute,
+    nowFlagText(nowMinute, trackPx).length,
+    perChar,
+  );
   return HOUR_MARKS.filter((h) => {
     const label = labelExtent(h * 60, HOUR_LABEL_CHARS, perChar);
     return label.to + pad <= now.from || label.from - pad >= now.to;
