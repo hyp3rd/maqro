@@ -211,13 +211,20 @@ const HOUR_LABEL_CHARS = 2;
 /** The clear gap kept between the now flag and an hour label: half a
  *  character, so "18" never touches "Now 15:00". */
 const NOW_LABEL_PAD_CHARS = 0.5;
+/** The clear room the full flag keeps from an hour label on each side:
+ *  a whole character. Where the half-character `NOW_LABEL_PAD_CHARS` is
+ *  all that's left, the flag reads cramped beside 12 and 18 (~5 px on a
+ *  390 px phone) next to the short flag on a 320 or 360 px phone
+ *  (11-16 px), so it stays short there too. */
+const FULL_NOW_PAD_CHARS = 1;
 /** The "Now HH:MM" flag (9 characters) with an hour label's half and a
  *  pad on each side: what one 6-hour gap between hour labels must hold for
  *  the flag to sit between them (15:00 between 12 and 18). */
-const FULL_NOW_GAP_CHARS = 9 + HOUR_LABEL_CHARS + 2 * NOW_LABEL_PAD_CHARS;
+const FULL_NOW_GAP_CHARS = 9 + HOUR_LABEL_CHARS + 2 * FULL_NOW_PAD_CHARS;
 /** The narrowest track (px) whose 6-hour gaps hold the full flag: about
- *  346 px, so a 390 px phone (358 px track) reads "Now 15:00" while a
- *  360 or 320 px one reads just "15:00" beside the signal cursor. */
+ *  374 px, so every phone up to 390 px (a 358 px track) reads just
+ *  "15:00" beside the signal cursor, and the desktop column (384 px) and
+ *  wider read "Now 15:00". */
 const FULL_NOW_MIN_TRACK_PX =
   (FULL_NOW_GAP_CHARS * LABEL_CHAR_PX * DAY_MINUTES) / (6 * 60);
 
