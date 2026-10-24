@@ -773,13 +773,31 @@ export async function isProfileMarkedAsDemo(): Promise<boolean> {
   return row?._demoSeeded === true;
 }
 
+/** Deletable stores `clearDemoSeededStores` wipes. A tombstone for one of
+ *  them was written against demo rows, and its row key (a date) is shared
+ *  with whatever account signs in next: replayed by the first sync, it
+ *  would delete that account's real row for the same date. The wipe drops
+ *  those tombstones with the rows. */
+const DEMO_WIPED_DELETABLE_STORES: readonly DeletableStore[] = [
+  "trainingDayOverrides",
+];
+
+/** Every tombstone key of `store`: the keys are `<store>:<rowKey>`, and the
+ *  strings from `<store>:` up to (excluding) `<store>;` — `;` is the code
+ *  point after `:` — are exactly the ones with that prefix. */
+function tombstoneKeysOf(store: DeletableStore): IDBKeyRange {
+  return IDBKeyRange.bound(`${store}:`, `${store};`, false, true);
+}
+
 /** Wipe only the IDB stores the demo seed actually populates
  *  (`profile` / `dailyLogs` / `weightHistory`, …) or that only make sense
  *  against the sample profile (session overrides of its training week).
  *  Pantry items, recipes,
  *  custom foods, templates, favourites etc. the user added in guest
- *  mode are deliberately preserved — they aren't demo data. Used by
- *  `clearDemoModeData` before the first post-sign-in sync. */
+ *  mode are deliberately preserved — they aren't demo data, and neither
+ *  are their pending tombstones. The tombstones of the wiped stores go
+ *  (see `DEMO_WIPED_DELETABLE_STORES`). Used by `clearDemoModeData`
+ *  before the first post-sign-in sync. */
 export async function clearDemoSeededStores(): Promise<void> {
   const db = await getDB();
   const tx = db.transaction(
@@ -797,6 +815,7 @@ export async function clearDemoSeededStores(): Promise<void> {
       // Session overrides change days of the sample profile's training
       // week: they belong to the demo plan, not to the account signing in.
       STORE_TRAINING_DAY_OVERRIDES,
+      STORE_DELETIONS,
     ],
     "readwrite",
   );
@@ -807,6 +826,9 @@ export async function clearDemoSeededStores(): Promise<void> {
     tx.objectStore(STORE_WATER_INTAKE).clear(),
     tx.objectStore(STORE_SHOPPING_LIST_META).clear(),
     tx.objectStore(STORE_TRAINING_DAY_OVERRIDES).clear(),
+    ...DEMO_WIPED_DELETABLE_STORES.map((store) =>
+      tx.objectStore(STORE_DELETIONS).delete(tombstoneKeysOf(store)),
+    ),
     tx.done,
   ]);
 }

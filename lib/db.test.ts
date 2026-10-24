@@ -639,6 +639,30 @@ describe("training day overrides", () => {
     await db.clearDemoSeededStores();
     expect(await db.listDayOverrides()).toHaveLength(0);
   });
+
+  it("the demo clear drops a demo 'back to plan' tombstone too", async () => {
+    const db = await freshDb();
+    await db.saveDayOverride("2026-10-22", LEGS);
+    await db.deleteDayOverride("2026-10-22");
+    // A tombstone for a store that is not wiped stays: that row was the
+    // guest's own data and the delete still has to reach the account.
+    const foodId = await db.addCustomFood({
+      name: "Whey",
+      protein: 80,
+      carbs: 8,
+      fat: 2,
+      calories: 370,
+    });
+    await db.deleteCustomFood(foodId);
+
+    await db.clearDemoSeededStores();
+
+    // Replayed after sign-in, the override's tombstone would delete the
+    // account's real override for that date.
+    expect(
+      (await db.listDeletions()).map((d) => [d.storeName, d.rowKey]),
+    ).toEqual([["customFoods", foodId]]);
+  });
 });
 
 describe("clearAllStores", () => {

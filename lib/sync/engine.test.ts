@@ -1142,6 +1142,34 @@ describe("signing in after exploring the sample data", () => {
     expect(await db.getProfileRecord()).toBeNull();
     expect(await db.listWeightEntries()).toEqual([]);
   });
+
+  it("a demo 'back to plan' never deletes the account's real override", async () => {
+    const { db, sync, server, sb } = env;
+    // Set on another device: the account's real session for DAY.
+    server.seed("training_day_overrides", {
+      user_id: USER_ID,
+      date: DAY,
+      day: { type: "rest" },
+      recorded_at: "2026-05-16T07:00:00.000+00:00",
+    });
+    // The guest changes DAY on the sample week, then goes back to plan.
+    const { getDemoProfile } = await import("@/lib/demo-data");
+    await db.saveDemoProfile(getDemoProfile());
+    await db.saveDayOverride(DAY, { type: "upper", intensity: "hard" });
+    await db.deleteDayOverride(DAY);
+
+    // SyncManager's sign-in chain.
+    const { clearDemoModeData } = await import("@/lib/demo-data");
+    await clearDemoModeData();
+    const result = await sync.triggerSync(sb, USER_ID);
+
+    expect(result?.deletionsPushed).toBe(0);
+    expect(
+      server.find("training_day_overrides", { user_id: USER_ID, date: DAY })
+        ?.day,
+    ).toEqual({ type: "rest" });
+    expect((await db.getDayOverride(DAY))?.day).toEqual({ type: "rest" });
+  });
 });
 
 describe("error isolation", () => {
