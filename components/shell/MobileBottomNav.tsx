@@ -51,7 +51,9 @@ export function MobileBottomNav({ current, onSelect, onQuickAdd }: Props) {
                   onQuickAdd();
                 }}
                 className={cn(
-                  "inline-flex h-12 w-14 items-center justify-center rounded-2xl bg-brand text-brand-foreground ring-4 ring-brand/15 transition-transform duration-150",
+                  // `brand-strong`, not `brand`: the token contract's fill
+                  // behind a `brand-foreground` label (deeper in dark mode).
+                  "inline-flex h-12 w-14 items-center justify-center rounded-2xl bg-brand-strong text-brand-foreground ring-4 ring-brand/15 transition-transform duration-150",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
                   "motion-safe:active:scale-95",
                 )}

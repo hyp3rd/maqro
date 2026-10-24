@@ -88,6 +88,13 @@ describe("MobileBottomNav", () => {
     expect(onSelect).not.toHaveBeenCalled();
     expect(haptic).toHaveBeenCalledWith("tap");
   });
+
+  it("the centre button fills with brand-strong, the fill behind a brand-foreground label", () => {
+    const { bar } = renderNav("plan");
+    const add = within(bar).getByRole("button", { name: "Quick add" });
+    expect(add.className).toContain("bg-brand-strong");
+    expect(add.className).toContain("text-brand-foreground");
+  });
 });
 
 describe("More sheet", () => {

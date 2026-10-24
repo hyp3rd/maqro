@@ -95,7 +95,8 @@ export function AppShell({
               // sm+ goes back to the original generous padding. Bottom
               // padding on mobile is added below the AnimatePresence
               // on the footer wrapper to clear the fixed bottom tab
-              // bar (min-h-14 content + env(safe-area-inset-bottom)).
+              // bar (~67px + env(safe-area-inset-bottom); 5.25rem, the
+              // same clearance toasts get via --toast-offset-bottom).
               className="mx-auto w-full max-w-6xl flex-1 px-4 py-4 sm:px-6 sm:py-8 lg:py-10"
             >
               {children}
@@ -105,7 +106,7 @@ export function AppShell({
               with content rather than pinning to the viewport. The
               mobile bottom nav still floats over it via fixed
               positioning. Mobile padding here clears the bottom nav. */}
-          <div className="pb-[calc(env(safe-area-inset-bottom)+4.5rem)] md:pb-0">
+          <div className="pb-[calc(env(safe-area-inset-bottom)+5.25rem)] md:pb-0">
             <Footer />
           </div>
         </PullToSync>
