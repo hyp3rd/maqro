@@ -20,6 +20,13 @@ export function relativeDay(date: string, today: string): RelativeDay {
   return date < today ? "past" : "future";
 }
 
+/** Local midnight `Date` of a `YYYY-MM-DD` key, built from its components
+ *  (never parsed as UTC), for naming the day in the user's locale. */
+export function localDate(key: string): Date {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(y ?? Number.NaN, (m ?? Number.NaN) - 1, d ?? Number.NaN);
+}
+
 const CLOCK = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 /** Minutes after midnight of a 24 h `HH:MM` (the training template's

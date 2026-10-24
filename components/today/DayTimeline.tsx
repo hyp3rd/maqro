@@ -72,8 +72,14 @@ export function DayTimeline({
       aria-label={`Day timeline: ${summary}`}
       className={cn("relative select-none", className)}
     >
-      {/* Meal kcal labels, two lanes so close meals don't overlap. */}
-      <div className="relative h-8">
+      {/* Meal kcal labels; a second lane opens only when two meals sit
+          close enough for their labels to overlap. */}
+      <div
+        className={cn(
+          "relative",
+          ticks.some((t) => t.lane === 1) ? "h-8" : "h-4",
+        )}
+      >
         {ticks.map((t) => (
           <span
             key={t.mealId}

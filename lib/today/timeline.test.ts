@@ -6,6 +6,7 @@ import {
   formatClock,
   hourLabels,
   labelAnchor,
+  localDate,
   mealStartMinute,
   mealTicks,
   minuteOfDay,
@@ -70,6 +71,19 @@ describe("clock helpers", () => {
     expect(trackPercent(DAY_MINUTES)).toBe(100);
     expect(trackPercent(-10)).toBe(0);
     expect(trackPercent(5000)).toBe(100);
+  });
+});
+
+describe("localDate", () => {
+  it("is local midnight of the key's calendar day", () => {
+    const d = localDate("2026-03-29");
+    expect([d.getFullYear(), d.getMonth(), d.getDate(), d.getHours()]).toEqual([
+      2026, 2, 29, 0,
+    ]);
+  });
+
+  it("is an invalid date for a key that isn't one", () => {
+    expect(Number.isNaN(localDate("").getTime())).toBe(true);
   });
 });
 

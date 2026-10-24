@@ -2,6 +2,7 @@
 
 import { haptic } from "@/lib/haptics";
 import { formatNumber } from "@/lib/i18n/number";
+import { localDate } from "@/lib/today/timeline";
 import {
   STRIP_TICK,
   type StripDay,
@@ -9,12 +10,6 @@ import {
 } from "@/lib/today/week-strip";
 import { cn } from "@/lib/utils";
 import { useLocale } from "next-intl";
-
-/** Local `Date` of a `YYYY-MM-DD` key (component-based: no DST drift). */
-function localDate(key: string): Date {
-  const [y, m, d] = key.split("-").map(Number);
-  return new Date(y ?? 1970, (m ?? 1) - 1, d ?? 1);
-}
 
 function dayNames(key: string, locale: string) {
   const date = localDate(key);

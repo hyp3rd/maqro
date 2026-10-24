@@ -65,7 +65,7 @@ export function MacroReadout({
   const show = (n: number) => formatNumber(n, locale);
 
   return (
-    <dl className={cn("grid content-center gap-y-2.5", className)}>
+    <dl className={cn("grid content-center gap-y-2", className)}>
       {ROWS.map((row) => {
         const reading = meterReading(eaten[row.key], row.target(targets), 0);
         const left =
@@ -84,6 +84,7 @@ export function MacroReadout({
           <Stat
             key={row.key}
             size="md"
+            className="gap-y-0"
             label={
               <span className="inline-flex items-center gap-1.5">
                 <span

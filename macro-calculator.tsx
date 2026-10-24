@@ -724,6 +724,7 @@ const MacroCalculator = () => {
     dayTargets,
     targetForPhases,
     targetCaloriesForDate,
+    selectedWeek,
   } = useTargets(personalInfo, today, selectedDate);
   const activeGoalPhase = todayTargets.phase;
   // Every AI request below calls this after a 2xx so the shared usage counter
@@ -2269,6 +2270,7 @@ const MacroCalculator = () => {
       {view === "plan" && (
         <MealPlanner
           calculatedValues={dayTargets}
+          week={selectedWeek}
           totalMacros={totalMacros}
           macroBreakdown={macroBreakdown}
           meals={meals}
