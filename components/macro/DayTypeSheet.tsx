@@ -81,7 +81,9 @@ function dayPossessive(date: string, today: string): string {
  *  Radix traps focus inside, and on close focus returns to `returnFocusTo`
  *  (the control that opened it: Today's session chip, `DayTypeChip`; the
  *  sheet has no Radix trigger, so without it focus falls to <body>). Mount
- *  it per open so each one starts from the day's current session. */
+ *  it per open so each one starts from the day's current session, and
+ *  unmount it if `targets` would move to another date: the draft belongs
+ *  to the day it was opened for. */
 export function DayTypeSheet({
   targets,
   today,

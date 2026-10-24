@@ -477,9 +477,11 @@ const MacroCalculator = () => {
   );
   const [capUpgradeOpen, setCapUpgradeOpen] = useState(false);
   const [suggestDayOpen, setSuggestDayOpen] = useState(false);
-  // The day-type sheet for the shown day, opened from Today's session chip
-  // (the sheet has no Radix trigger, so it hands focus back to the chip).
-  const [dayTypeSheetOpen, setDayTypeSheetOpen] = useState(false);
+  // The day-type sheet, open for the date it names (`null` = closed): the
+  // shown day when Today's session chip opened it (the sheet has no Radix
+  // trigger, so it hands focus back to the chip). It closes once the day
+  // view stops showing that date — see the adjustment after `view` below.
+  const [dayTypeSheetDate, setDayTypeSheetDate] = useState<string | null>(null);
   const dayTypeChipRef = useRef<HTMLElement | null>(null);
   // Meal templates: which dialog is open and for which meal. `null` =
   // no dialog. The dialogs themselves read templates from IDB on open.
@@ -580,6 +582,21 @@ const MacroCalculator = () => {
       setLogFlowMealId(quickAddMealId(meals, quickAddAt));
       setLogMealOpen(true);
     }
+  }
+  // The day-type sheet edits the day it was opened for, on the day view.
+  // Leaving Today, or the shown date changing under it (the nav's Today,
+  // midnight while following today), closes it — adjusted during render,
+  // like the quick-add request above — so no stale flag reopens it,
+  // unprompted, on the next visit to Today, and a session drafted for one
+  // day never sits over another day's targets. Closed rather than re-keyed
+  // to the new date: the user opened it for a day they chose, and a sheet
+  // that swaps to another day under their thumb invites a save to the
+  // wrong one (Save writes an override for the date it shows).
+  if (
+    dayTypeSheetDate !== null &&
+    (view !== "plan" || dayTypeSheetDate !== selectedDate)
+  ) {
+    setDayTypeSheetDate(null);
   }
 
   const search = useFoodSearch(foodSearch, customFoodsRev);
@@ -2286,7 +2303,7 @@ const MacroCalculator = () => {
           onEditDayType={(chip) => {
             haptic("tap");
             dayTypeChipRef.current = chip;
-            setDayTypeSheetOpen(true);
+            setDayTypeSheetDate(selectedDate);
           }}
           totalMacros={totalMacros}
           macroBreakdown={macroBreakdown}
@@ -2751,13 +2768,16 @@ const MacroCalculator = () => {
         }}
       />
 
-      {/* Mounted per open, so it starts from the day's current session. */}
-      {view === "plan" && dayTypeSheetOpen && (
+      {/* Mounted per open, so it starts from the day's current session;
+          open only while `dayTargets` is the date it was opened for. */}
+      {dayTypeSheetDate !== null && (
         <DayTypeSheet
           targets={dayTargets}
           today={today}
           previewDayTargets={previewDayTargets}
-          onOpenChange={setDayTypeSheetOpen}
+          onOpenChange={(open) => {
+            if (!open) setDayTypeSheetDate(null);
+          }}
           returnFocusTo={dayTypeChipRef}
         />
       )}
