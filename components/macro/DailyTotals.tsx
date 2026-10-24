@@ -94,18 +94,30 @@ const DailyTotals: React.FC<DailyTotalsProps> = ({
 
   return (
     <section aria-label="Energy and macros">
-      <div className="flex items-center gap-4 sm:gap-6">
-        <TodayGauge
-          eaten={totalMacros}
-          targets={calculatedValues}
-          when={relativeDay(selectedDate, today)}
-          className="w-[10.5rem] sm:w-44"
-        />
-        <MacroReadout
-          eaten={totalMacros}
-          targets={calculatedValues}
-          className="min-w-0 flex-1"
-        />
+      {/* Side by side from 22rem of panel (a 390 px phone and up). In a
+          narrower panel the readout beside the gauge would squeeze its
+          labels to an ellipsis, so the gauge centres above it: a 2 × 2
+          readout while each cell still holds "Protein" and "160 g left"
+          on one row (19.5rem, a 360 px phone), one column below that (a
+          320 px phone). Keyed off the panel's own width, not the
+          viewport, since the desktop columns size it too. */}
+      <div className="@container">
+        <div
+          data-part="gauge-row"
+          className="flex flex-col items-center gap-4 @min-[22rem]:flex-row sm:gap-6"
+        >
+          <TodayGauge
+            eaten={totalMacros}
+            targets={calculatedValues}
+            when={relativeDay(selectedDate, today)}
+            className="w-[10.5rem] sm:w-44"
+          />
+          <MacroReadout
+            eaten={totalMacros}
+            targets={calculatedValues}
+            className="w-full gap-x-4 @min-[19.5rem]:grid-cols-2 @min-[22rem]:w-auto @min-[22rem]:min-w-0 @min-[22rem]:flex-1 @min-[22rem]:grid-cols-1"
+          />
+        </div>
       </div>
       {/* Always laid out at touch height, so Share arriving with the first
           logged food never shifts the timeline below. */}
