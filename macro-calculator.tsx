@@ -544,6 +544,15 @@ const MacroCalculator = () => {
   // day's slots, so the launcher asks which meal). Holds the tap's minute
   // of the day while the switch is pending.
   const [quickAddAt, setQuickAddAt] = useState<number | null>(null);
+  // The shell's nav (tab bar, sidebar, More sheet, command palette) labels
+  // the day view "Today", so choosing it always shows today's date — from
+  // another view as well as re-tapping it while a past day is open (the
+  // phone convention: tap the active tab to return to its root). In-view
+  // links that only need the day view (e.g. "Go to plan") keep `setView`.
+  const selectFromNav = (key: ViewKey) => {
+    if (key === "plan") setExplicitDate(null);
+    setView(key);
+  };
   const handleQuickAdd = () => {
     const now = new Date();
     setView("plan");
@@ -2203,7 +2212,7 @@ const MacroCalculator = () => {
     <AppShell
       current={view}
       title={view === "plan" ? dayLabel : undefined}
-      onSelect={setView}
+      onSelect={selectFromNav}
       onQuickAdd={handleQuickAdd}
     >
       {view === "calculator" && (

@@ -10,7 +10,8 @@ before the macro-calculator → maqro rebrand) and is wired into the
 mobile tab bar / More sheet / You hub placement) is declared once in the nav
 registry, [`components/shell/nav.ts`](../components/shell/nav.ts), which the
 sidebar, the mobile tab bar, the command palette, the topbar and the
-`?view=` parser all read; no `?view=` opens the day view ("Today").
+`?view=` parser all read; no `?view=` opens the day view ("Today"), and
+choosing Today from the nav always shows today's date.
 Persistence is layered:
 
 1. **IndexedDB (always)** - [`lib/db.ts`](../lib/db.ts) is the source of

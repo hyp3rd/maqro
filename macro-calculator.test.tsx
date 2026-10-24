@@ -435,6 +435,34 @@ describe("macro-calculator: the day view's heading names the day it shows", () =
     expect(prop("LogMealSheet", "dayLabel")).toBe(pastLabel);
   });
 
+  describe("choosing Today in the shell's nav shows today", () => {
+    const selectToday = async () => {
+      await act(async () => {
+        prop<(k: string) => void>("AppShell", "onSelect")("plan");
+      });
+    };
+
+    it("re-tapping the active Today on a past day returns to today", async () => {
+      await renderOnPastDay();
+      expect(prop("AppShell", "current")).toBe("plan");
+      await selectToday();
+      expect(prop("MealPlanner", "selectedDate")).toBe(TODAY);
+      expect(prop("AppShell", "title")).toBe("Today");
+    });
+
+    it("coming back from another view lands on today, not the past day", async () => {
+      await renderOnPastDay();
+      await act(async () => {
+        prop<(k: string) => void>("AppShell", "onSelect")("progress");
+      });
+      expect(prop("AppShell", "current")).toBe("progress");
+      await selectToday();
+      expect(prop("AppShell", "current")).toBe("plan");
+      expect(prop("MealPlanner", "selectedDate")).toBe(TODAY);
+      expect(prop("AppShell", "title")).toBe("Today");
+    });
+  });
+
   it("other views keep their registry title", () => {
     nav.search = "view=progress";
     render(<MacroCalculator />);
