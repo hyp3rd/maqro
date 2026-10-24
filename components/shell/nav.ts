@@ -1,7 +1,8 @@
+import { TodayRings } from "@/components/icons/TodayRings";
 import {
   Apple,
+  Calculator,
   ChefHat,
-  CircleDot,
   HeartPulse,
   LayoutGrid,
   LineChart,
@@ -9,7 +10,6 @@ import {
   Package,
   Settings,
   ShoppingCart,
-  Target,
   UserRound,
 } from "lucide-react";
 
@@ -64,7 +64,7 @@ export const NAV = {
     label: "Today",
     shortLabel: "Today",
     title: "Today",
-    icon: CircleDot,
+    icon: TodayRings,
     group: "main",
     mobile: "tab",
     keywords: [
@@ -144,7 +144,9 @@ export const NAV = {
     label: "Targets",
     shortLabel: "Targets",
     title: "Targets",
-    icon: Target,
+    // Not a target/rings glyph: that would sit beside Today's rings as a
+    // near-twin in the sidebar. The calculator is what this view is.
+    icon: Calculator,
     group: "you",
     mobile: "you",
     hint: "Calories, macros & goal",

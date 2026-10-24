@@ -1,3 +1,5 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_VIEW,
@@ -40,6 +42,21 @@ describe("nav registry", () => {
       expect(d.title.trim()).not.toBe("");
       expect(d.icon).toBeTruthy();
     }
+  });
+
+  it("Today wears the Instrument design's two concentric rings; Targets no rings at all", () => {
+    /** The `r` of every circle the icon draws. */
+    const radii = (icon: (typeof NAV)[ViewKey]["icon"]) =>
+      [
+        ...renderToStaticMarkup(createElement(icon)).matchAll(
+          /<circle[^>]*\sr="([\d.]+)"/g,
+        ),
+      ].map((m) => m[1]);
+    expect(radii(NAV.plan.icon)).toEqual(["8.5", "3.5"]);
+    expect(radii(NAV.calculator.icon)).toEqual([]);
+    expect(renderToStaticMarkup(createElement(NAV.calculator.icon))).not.toMatch(
+      /\sa[\d.]+ [\d.]+ 0 1 [01]/,
+    );
   });
 
   it("the day view is 'plan', labelled Today, and is the default", () => {
