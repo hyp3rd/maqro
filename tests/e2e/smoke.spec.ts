@@ -303,8 +303,32 @@ test.describe("maqro happy path", () => {
   }) => {
     await page.goto("/app");
     await openToday(page);
-    // Default state is empty → prompt should be visible.
+    // Default state is empty → prompt should be visible, naming the
+    // desktop's add (the search above the meals).
     await expect(page.getByText(/No meals logged for this day/)).toBeVisible();
+    await expect(
+      page.getByText("Use the search above to add foods to any meal,"),
+    ).toBeVisible();
+  });
+
+  test("on a phone the empty day prompt names the adds a phone has", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/app");
+    await expect(page.getByText(/No meals logged for this day/)).toBeVisible();
+    // The search is desktop-only; today offers the tab bar's [+] and each
+    // meal's Add food.
+    await expect(
+      page.getByText("Use the search above to add foods to any meal,"),
+    ).toBeHidden();
+    await expect(page.getByText(/below to log a meal, use/)).toBeVisible();
+
+    // [+] always logs into today, so a past day offers only Add food.
+    await page.getByRole("button", { name: "Previous day" }).first().click();
+    await expect(page.getByText(/No meals logged for this day/)).toBeVisible();
+    await expect(page.getByText(/below to log a meal/)).toHaveCount(0);
+    await expect(page.getByText(/Use Add food on any meal,/)).toBeVisible();
   });
 
   test("profile + meal log persist across a reload", async ({ page }) => {
