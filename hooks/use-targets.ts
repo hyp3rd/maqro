@@ -3,7 +3,12 @@
 import { useTier } from "@/hooks/use-ai-usage";
 import { FEATURES } from "@/lib/billing/tiers";
 import { useCallback, useMemo } from "react";
-import { type DateTargets, targetsForDate } from "@maqro/core/targets";
+import {
+  type DateTargets,
+  type WeekTargets,
+  targetsForDate,
+  weekTargets,
+} from "@maqro/core/targets";
 import type { GoalPhase, PersonalInfo } from "@maqro/core/types";
 
 export type AppTargets = {
@@ -21,6 +26,13 @@ export type AppTargets = {
   /** Any date's own calorie target, through the same resolver and tier
    *  decision — the weekly recap scores each day against it. */
   targetCaloriesForDate: (date: string) => number;
+  /** The Monday-to-Sunday week containing the displayed day, each day its
+   *  own `targetsForDate` result (a cycled training week plans every day
+   *  differently) — the Today week strip. `null` while the date key is not
+   *  a calendar date (before hydration). The one place a week of day
+   *  targets is resolved, so a per-date session override plugs in here
+   *  for the strip and the day view alike. */
+  selectedWeek: WeekTargets | null;
 };
 
 /** The app's calorie/macro targets, all from `targetsForDate` with one tier
@@ -58,11 +70,17 @@ export function useTargets(
     [profile, phasesEnabled],
   );
 
+  const selectedWeek = useMemo(
+    () => weekTargets(profile, selectedDate, { phasesEnabled }),
+    [profile, selectedDate, phasesEnabled],
+  );
+
   return {
     phasesEnabled,
     todayTargets,
     dayTargets,
     targetForPhases,
     targetCaloriesForDate,
+    selectedWeek,
   };
 }
