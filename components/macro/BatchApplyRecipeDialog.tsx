@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { WeekdayPicker } from "@/components/ui/weekday-picker";
 import {
   addDays,
   enumerateDateRange,
@@ -22,7 +23,7 @@ import {
   todayKey,
   upsertMealSchedule,
 } from "@/lib/db";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { toast } from "sonner";
 import { ServingsStepper } from "./ServingsStepper";
 import type { Meal, Recipe } from "./types";
@@ -46,17 +47,6 @@ type Props = {
  *  with one click. */
 const WEEKDAY_SET: ReadonlySet<number> = new Set([1, 2, 3, 4, 5]);
 
-const DOW_LABELS = ["S", "M", "T", "W", "T", "F", "S"] as const;
-const DOW_FULL = [
-  "Sunday",
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-] as const;
-
 export function BatchApplyRecipeDialog({
   open,
   onOpenChange,
@@ -65,6 +55,7 @@ export function BatchApplyRecipeDialog({
   editing,
 }: Props) {
   const today = todayKey();
+  const daysLabelId = useId();
   // Default range: today through six days out = a one-week meal plan. Most
   // "Sunday cook for the week" users want exactly this. When editing, the
   // existing schedule's range / days / slots / scale pre-fill instead.
@@ -106,15 +97,6 @@ export function BatchApplyRecipeDialog({
     selectedDates.length > 0 &&
     selectedMealIds.size > 0 &&
     startDate <= endDate;
-
-  function toggleDow(dow: number) {
-    setAllowedDows((prev) => {
-      const next = new Set(prev);
-      if (next.has(dow)) next.delete(dow);
-      else next.add(dow);
-      return next;
-    });
-  }
 
   function toggleMealId(id: number) {
     setSelectedMealIds((prev) => {
@@ -225,30 +207,17 @@ export function BatchApplyRecipeDialog({
           </div>
 
           <div className="space-y-1.5">
-            <p className="text-xs font-medium text-muted-foreground">
+            <p
+              id={daysLabelId}
+              className="text-xs font-medium text-muted-foreground"
+            >
               Days of the week
             </p>
-            <div className="flex gap-1">
-              {DOW_LABELS.map((label, dow) => {
-                const active = allowedDows.has(dow);
-                return (
-                  <button
-                    key={dow}
-                    type="button"
-                    onClick={() => toggleDow(dow)}
-                    aria-pressed={active}
-                    aria-label={DOW_FULL[dow]}
-                    className={`h-9 flex-1 rounded-md border text-xs font-medium transition-colors ${
-                      active
-                        ? "border-foreground/40 bg-foreground text-background"
-                        : "border-border/60 bg-background text-muted-foreground hover:bg-accent/40"
-                    }`}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
+            <WeekdayPicker
+              aria-labelledby={daysLabelId}
+              value={[...allowedDows]}
+              onValueChange={(days) => setAllowedDows(new Set(days))}
+            />
           </div>
 
           <div className="space-y-1.5">

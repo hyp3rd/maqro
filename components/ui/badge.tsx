@@ -12,8 +12,17 @@ const badgeVariants = cva(
         secondary:
           "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80",
         destructive:
-          "border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80",
+          "border-transparent bg-destructive-strong text-destructive-foreground hover:bg-destructive-strong/80",
         outline: "text-foreground",
+        // Soft tones: a 10% tint and a 40% border of the tone, with the
+        // label in the foreground colour. Tone-coloured text on its own tint
+        // falls below 4.5:1 in light mode, so the hue lives in the chrome.
+        // System status only (saved, synced, beta) - never a verdict on
+        // intake against a target.
+        success: "border-success/40 bg-success/10 text-foreground",
+        warning: "border-warning/40 bg-warning/10 text-foreground",
+        info: "border-info/40 bg-info/10 text-foreground",
+        brand: "border-brand/40 bg-brand/10 text-foreground",
       },
     },
     defaultVariants: { variant: "default" },

@@ -308,13 +308,13 @@ function ConflictResolveDialog({
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction
             onClick={onKeepOther}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            className="bg-destructive-strong text-destructive-foreground hover:bg-destructive-strong/90"
           >
             Keep the other device&apos;s
           </AlertDialogAction>
           <AlertDialogAction
             onClick={onKeepLocal}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            className="bg-destructive-strong text-destructive-foreground hover:bg-destructive-strong/90"
           >
             Keep this device&apos;s
           </AlertDialogAction>
@@ -358,7 +358,7 @@ function DiscardConfirmDialog({
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction
             onClick={onConfirm}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            className="bg-destructive-strong text-destructive-foreground hover:bg-destructive-strong/90"
           >
             Discard {noun}
           </AlertDialogAction>

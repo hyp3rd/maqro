@@ -1251,6 +1251,8 @@ function WeightSection({
         data={points}
         height={220}
         yUnit={` ${unitLabel}`}
+        xType="day"
+        title="Weight"
       />
     </ReportSection>
   );
@@ -1365,6 +1367,9 @@ function CalorieSection({
       <MiniLineChart
         data={points}
         height={220}
+        yUnit=" kcal"
+        xType="day"
+        title="Calories per day"
         targetY={targetCalories || undefined}
         targetLabel={
           targetCalories ? `${targetCalories} kcal target` : undefined
@@ -1494,6 +1499,8 @@ function WaterReportSection({
       <MiniLineChart
         data={points}
         height={200}
+        xType="day"
+        title="Water per day"
         targetY={goalMl ? toDisplay(goalMl) : undefined}
         targetLabel={goalMl ? `${toDisplay(goalMl)} ${unit} goal` : undefined}
         yUnit={` ${unit}`}

@@ -13,3 +13,24 @@ export function addDays(date: string, days: number): string {
   dt.setDate(dt.getDate() + days);
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
 }
+
+const DATE_KEY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** Whether `value` is a real calendar `YYYY-MM-DD` key: the right shape AND a
+ *  day that exists ("2026-02-30" and "2026-13-01" are not). Takes `unknown`
+ *  so it can guard values read back from synced or imported blobs, whose
+ *  date fields no database constraint checks. */
+export function isDateKey(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const m = DATE_KEY.exec(value);
+  if (!m) return false;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  return (
+    dt.getUTCFullYear() === y &&
+    dt.getUTCMonth() === mo - 1 &&
+    dt.getUTCDate() === d
+  );
+}

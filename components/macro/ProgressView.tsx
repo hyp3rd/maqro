@@ -16,6 +16,7 @@ import { useTier } from "@/hooks/use-ai-usage";
 import { useToday } from "@/hooks/use-today";
 import { FEATURES } from "@/lib/billing/tiers";
 import { bodyFatCategory, estimateBodyFat } from "@/lib/body-fat";
+import { dayIndexFromIsoDate } from "@/lib/charts/geometry";
 import {
   listBodyMeasurements,
   listDailyLogs,
@@ -85,6 +86,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { toast } from "sonner";
+import { isDateKey } from "@maqro/core/date";
 import { ExportReportDialog } from "./ExportReportDialog";
 
 const WINDOW_DAYS = 60;
@@ -166,10 +168,6 @@ type Props = {
 function parseLocalDate(d: string): Date {
   const [y, m, day] = d.split("-").map(Number);
   return new Date(y, m - 1, day);
-}
-
-function dayIndex(d: string): number {
-  return Math.floor(parseLocalDate(d).getTime() / 86_400_000);
 }
 
 function shortLabel(d: string): string {
@@ -354,14 +352,19 @@ export function ProgressView({
 
   // Phase-boundary markers for the weight/calorie charts — one per phase
   // start. MiniLineChart clips them to each chart's visible x-range, so
-  // passing every phase is fine. Pro + has-phases only.
+  // passing every phase is fine. Pro + has-phases only. The phase plan lives
+  // in the synced profile blob, which no database constraint checks, so a
+  // phase whose start isn't a real date key (an older build could save "")
+  // has no place on the axis and is left off rather than thrown on.
   const phaseMarkers = useMemo<ChartMarker[]>(
     () =>
       isProTrends && goalPhases && goalPhases.length > 0
-        ? sortPhases(goalPhases).map((p) => ({
-            x: dayIndex(p.startDate),
-            label: PHASE_LABELS[p.kind],
-          }))
+        ? sortPhases(goalPhases)
+            .filter((p) => isDateKey(p.startDate))
+            .map((p) => ({
+              x: dayIndexFromIsoDate(p.startDate),
+              label: PHASE_LABELS[p.kind],
+            }))
         : [],
     [isProTrends, goalPhases],
   );
@@ -781,7 +784,7 @@ function AdaptiveTdeeProSection({
   if (loading) return null;
 
   const chartPoints: LinePoint[] = history.map((p) => ({
-    x: dayIndex(p.date),
+    x: dayIndexFromIsoDate(p.date),
     y: p.observedTdee,
     label: shortLabel(p.date),
     tooltipLabel: shortLabel(p.date),
@@ -815,6 +818,8 @@ function AdaptiveTdeeProSection({
               data={chartPoints}
               height={240}
               yUnit=" kcal"
+              xType="day"
+              title="Maintenance over time"
             />
           </ChartZoomDialog>
         </div>
@@ -1077,7 +1082,7 @@ function WeightSection({
   // know about kg vs lb. Headline + axis use the matching unit
   // label so everything reads consistently.
   const points: LinePoint[] = windowed.map((e) => ({
-    x: dayIndex(e.date),
+    x: dayIndexFromIsoDate(e.date),
     y: kgToDisplay(e.kg, units),
     label: shortLabel(e.date),
   }));
@@ -1134,6 +1139,8 @@ function WeightSection({
               data={points}
               height={240}
               yUnit={` ${unitLabel}`}
+              xType="day"
+              title="Weight"
               markers={markers}
             />
           </ChartZoomDialog>
@@ -1190,7 +1197,7 @@ function CalorieSection({
   const hasData = series.length > 0;
 
   const points: LinePoint[] = series.map((p) => ({
-    x: dayIndex(p.date),
+    x: dayIndexFromIsoDate(p.date),
     y: p.calories,
     label: shortLabel(p.date),
   }));
@@ -1254,8 +1261,17 @@ function CalorieSection({
             <MiniLineChart
               data={points}
               height={240}
-              targetY={targetCalories}
-              targetLabel={`${targetCalories} kcal target`}
+              variant="bar"
+              xType="day"
+              yUnit=" kcal"
+              title="Calories per day"
+              highlightX={dayIndexFromIsoDate(today)}
+              // An incomplete profile has no target (0): draw plain bars
+              // rather than every day "over" a 0 kcal line.
+              targetY={targetCalories > 0 ? targetCalories : undefined}
+              targetLabel={
+                targetCalories > 0 ? `${targetCalories} kcal target` : undefined
+              }
               markers={markers}
             />
           </ChartZoomDialog>
@@ -1297,7 +1313,7 @@ function EatingWindowSection({
   const hasData = series.length > 0;
 
   const points: LinePoint[] = series.map((p) => ({
-    x: dayIndex(p.date),
+    x: dayIndexFromIsoDate(p.date),
     y: Number((p.lengthMin / 60).toFixed(2)),
     label: shortLabel(p.date),
   }));
@@ -1368,6 +1384,9 @@ function EatingWindowSection({
             <MiniLineChart
               data={points}
               height={240}
+              yUnit=" h"
+              xType="day"
+              title="Eating window"
               targetY={eatHrs}
               targetLabel={`${eatHrs}h target`}
             />
@@ -1427,9 +1446,12 @@ function HydrationSection({
     .slice(-targetWindow);
   const hasData = series.length > 0;
 
+  // Plotted in the user's volume unit, rounded the way the goal label
+  // (formatVolume) and today's total are, so the axis, the goal line and
+  // the header always agree.
   const points: LinePoint[] = series.map((e) => ({
-    x: dayIndex(e.date),
-    y: e.ml,
+    x: dayIndexFromIsoDate(e.date),
+    y: mlToDisplay(e.ml, units),
     label: shortLabel(e.date),
   }));
 
@@ -1502,7 +1524,10 @@ function HydrationSection({
             <MiniLineChart
               data={points}
               height={240}
-              targetY={goalMl}
+              yUnit={` ${volumeUnitSuffix(units)}`}
+              xType="day"
+              title="Water per day"
+              targetY={mlToDisplay(goalMl, units)}
               targetLabel={`${formatVolume(goalMl, units)} goal`}
             />
           </ChartZoomDialog>
@@ -1807,7 +1832,7 @@ function BodyMeasurementsSection({
       });
       if (bf !== null) {
         points.push({
-          x: dayIndex(e.date),
+          x: dayIndexFromIsoDate(e.date),
           y: bf,
           label: shortLabel(e.date),
           tooltipLabel: shortLabel(e.date),
@@ -1891,6 +1916,8 @@ function BodyMeasurementsSection({
                 <MiniLineChart
                   data={bfTrend}
                   yUnit="%"
+                  xType="day"
+                  title="Body fat %"
                   height={160}
                 />
               </ChartZoomDialog>

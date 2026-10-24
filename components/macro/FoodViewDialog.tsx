@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { MacroStat } from "@/components/ui/macro-stat";
 import type { CustomFood } from "@/lib/db";
 import { Pencil } from "lucide-react";
 import type { MacroBreakdown } from "./types";
@@ -111,25 +112,29 @@ function ViewBody({
           <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
             Macros (per 100 g)
           </p>
-          <dl className="grid grid-cols-4 gap-x-3 gap-y-1 font-mono text-sm tabular-nums">
-            <MacroCell
-              label="kcal"
-              value={Math.round(food.calories)}
+          <dl className="grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-4">
+            <MacroStat
+              macro="calories"
+              value={food.calories}
+              size="sm"
             />
-            <MacroCell
-              label="P"
-              value={`${food.protein}g`}
-              cssVar="--macro-protein"
+            <MacroStat
+              macro="protein"
+              value={food.protein}
+              format={String}
+              size="sm"
             />
-            <MacroCell
-              label="C"
-              value={`${food.carbs}g`}
-              cssVar="--macro-carbs"
+            <MacroStat
+              macro="carbs"
+              value={food.carbs}
+              format={String}
+              size="sm"
             />
-            <MacroCell
-              label="F"
-              value={`${food.fat}g`}
-              cssVar="--macro-fat"
+            <MacroStat
+              macro="fat"
+              value={food.fat}
+              format={String}
+              size="sm"
             />
           </dl>
         </section>
@@ -191,29 +196,5 @@ function ViewBody({
         </Button>
       </DialogFooter>
     </>
-  );
-}
-
-function MacroCell({
-  label,
-  value,
-  cssVar,
-}: {
-  label: string;
-  value: string | number;
-  cssVar?: string;
-}) {
-  return (
-    <div className="flex flex-col">
-      <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-        {label}
-      </dt>
-      <dd
-        className="text-sm font-semibold"
-        style={cssVar ? { color: `hsl(var(${cssVar}))` } : undefined}
-      >
-        {value}
-      </dd>
-    </div>
   );
 }

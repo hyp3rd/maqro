@@ -1,7 +1,10 @@
 "use client";
 
+import { PALETTE } from "@/lib/design/palette";
 import { reportClientError } from "@/lib/error-reporter";
 import { useEffect } from "react";
+
+const LIGHT = PALETTE.light;
 
 /** Outer-most Next.js error boundary. Catches errors that even the
  *  root [error.tsx](./error.tsx) can't — namely errors thrown by
@@ -11,7 +14,8 @@ import { useEffect } from "react";
  *  `<html>` and `<body>` because the layout failed. No fonts, no
  *  toaster, no theme provider — those are exactly what failed.
  *  Inline styles keep us independent of `globals.css` too, in
- *  case its load was the original failure. */
+ *  case its load was the original failure - hence the literal light
+ *  palette from lib/design/palette.ts instead of CSS tokens. */
 export default function GlobalError({
   error,
   reset,
@@ -34,8 +38,8 @@ export default function GlobalError({
           padding: 0,
           fontFamily:
             "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
-          color: "#0a0a0c",
-          background: "#fff",
+          color: LIGHT.foreground,
+          background: LIGHT.background,
         }}
       >
         <main
@@ -55,7 +59,7 @@ export default function GlobalError({
           <p
             style={{
               fontSize: "0.875rem",
-              color: "#6b7280",
+              color: LIGHT.mutedForeground,
               maxWidth: "28rem",
               margin: "0.75rem 0 1.5rem",
               lineHeight: 1.55,
@@ -70,8 +74,8 @@ export default function GlobalError({
             onClick={() => reset()}
             style={{
               appearance: "none",
-              background: "#0a0a0c",
-              color: "#fff",
+              background: LIGHT.primary,
+              color: LIGHT.primaryForeground,
               border: 0,
               borderRadius: "0.5rem",
               padding: "0.625rem 1rem",

@@ -5,12 +5,15 @@ import { useTier } from "@/hooks/use-ai-usage";
 import { FEATURES } from "@/lib/billing/tiers";
 import {
   activePhase,
+  isValidPhaseDuration,
+  isValidPhaseStart,
   newPhase,
   normalizePhase,
   phaseEndDate,
   PHASE_KINDS,
   PHASE_LABELS,
   phaseHasRate,
+  phaseHasValidWindow,
   presetCut,
   presetCutThenBreak,
   presetLeanBulk,
@@ -23,8 +26,9 @@ import {
   type UnitSystem,
 } from "@/lib/units";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Pencil, Plus, Sparkles, Target, Trash2 } from "lucide-react";
+import { isDateKey } from "@maqro/core/date";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -54,7 +58,39 @@ const GOAL_LABEL: Record<PersonalInfo["goal"], string> = {
 const INPUT_CLASS =
   "mt-1 h-8 w-full rounded-md border border-border/60 bg-card px-2 text-sm text-foreground";
 
+/** A number for a numeric input's `value`: an unreadable one (NaN from a
+ *  phase synced by an older client) shows as empty, never as "NaN". */
+function inputNumber(n: number): number | "" {
+  return Number.isFinite(n) ? n : "";
+}
+
+/** What the editor's draft still needs before it can be saved: a valid
+ *  window, and — for a kind that uses one — a readable weekly rate. */
+function draftProblem({
+  startOk,
+  weeksOk,
+  rateOk,
+}: {
+  startOk: boolean;
+  weeksOk: boolean;
+  rateOk: boolean;
+}): string {
+  const missing = [
+    startOk ? null : "a start date",
+    weeksOk ? null : "how many weeks it runs",
+    rateOk ? null : "a weekly rate",
+  ].filter((part): part is string => part !== null);
+  const list =
+    missing.length > 1
+      ? `${missing.slice(0, -1).join(", ")} and ${missing.at(-1)}`
+      : (missing[0] ?? "");
+  return `Enter ${list} to save this phase.`;
+}
+
 function fmtDate(d: string): string {
+  // A phase saved by an older build may hold "" here; name the gap instead of
+  // printing "Invalid Date", so the user knows to edit it.
+  if (!isDateKey(d)) return "no date";
   const [y, m, day] = d.split("-").map(Number);
   return new Date(y, m - 1, day).toLocaleDateString(undefined, {
     month: "short",
@@ -97,6 +133,9 @@ export function GoalPhasesPlanner({
   const { tier, resolved: tierResolved } = useTier();
   const isPro = tier !== null && FEATURES.canUseGoalPhases(tier);
   const [editing, setEditing] = useState<GoalPhase | null>(null);
+  // Prefix for the ids of the "dates can't be read" notes (phase ids are
+  // opaque synced strings, not safe as element ids).
+  const noteIdBase = useId();
   // A pending change held back for confirmation because it would raise today's
   // target while a cut is active (see `applyMaybeWarn`). `null` = no warning.
   const [pendingRaise, setPendingRaise] = useState<{
@@ -209,8 +248,15 @@ export function GoalPhasesPlanner({
         ) : (
           <>
             <ul className="space-y-1.5">
-              {list.map((phase) => {
+              {list.map((phase, index) => {
                 const isActive = active?.id === phase.id;
+                // A phase without a valid window (e.g. a datetime start from
+                // an older client) is ignored by every schedule computation:
+                // say so, and point its Edit/Remove buttons at why.
+                const hasDates = phaseHasValidWindow(phase);
+                const noteId = hasDates
+                  ? undefined
+                  : `${noteIdBase}-no-dates-${index}`;
                 return (
                   <li
                     key={phase.id}
@@ -218,7 +264,9 @@ export function GoalPhasesPlanner({
                       "flex items-center gap-2 rounded-lg border px-3 py-2",
                       isActive
                         ? "border-brand/50 bg-brand/5"
-                        : "border-border/60",
+                        : hasDates
+                          ? "border-border/60"
+                          : "border-amber-500/40",
                     )}
                   >
                     <span className="min-w-0 flex-1">
@@ -230,19 +278,33 @@ export function GoalPhasesPlanner({
                           </span>
                         )}
                       </span>
-                      <span className="block font-mono text-[11px] tabular-nums text-muted-foreground">
-                        {fmtDate(phase.startDate)} →{" "}
-                        {fmtDate(phaseEndDate(phase))} · {phase.durationWeeks}{" "}
-                        wk
-                        {phase.durationWeeks === 1 ? "" : "s"}
-                        {phaseHasRate(phase.kind) &&
-                          ` · ${rateText(phase, units)}`}
-                      </span>
+                      {hasDates ? (
+                        <span className="block font-mono text-[11px] tabular-nums text-muted-foreground">
+                          {fmtDate(phase.startDate)} →{" "}
+                          {fmtDate(phaseEndDate(phase))} · {phase.durationWeeks}{" "}
+                          wk
+                          {phase.durationWeeks === 1 ? "" : "s"}
+                          {phaseHasRate(phase.kind) &&
+                            ` · ${rateText(phase, units)}`}
+                        </span>
+                      ) : (
+                        <span className="mt-0.5 flex items-start gap-1 text-[11px] leading-snug text-amber-700 dark:text-amber-400">
+                          <AlertCircle
+                            aria-hidden="true"
+                            className="mt-px h-3 w-3 shrink-0"
+                          />
+                          <span id={noteId}>
+                            Its dates can&apos;t be read, so it isn&apos;t used
+                            for your targets. Edit or remove it.
+                          </span>
+                        </span>
+                      )}
                     </span>
                     <button
                       type="button"
                       onClick={() => setEditing(phase)}
                       aria-label={`Edit ${PHASE_LABELS[phase.kind]} phase`}
+                      aria-describedby={noteId}
                       className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground"
                     >
                       <Pencil className="h-3.5 w-3.5" />
@@ -253,6 +315,7 @@ export function GoalPhasesPlanner({
                         commit(list.filter((p) => p.id !== phase.id))
                       }
                       aria-label={`Remove ${PHASE_LABELS[phase.kind]} phase`}
+                      aria-describedby={noteId}
                       className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -345,9 +408,24 @@ function PhaseEditor({
   onCancel: () => void;
 }) {
   const [draft, setDraft] = useState<GoalPhase>(phase);
+  // A cleared or half-typed <input type="date"> reports "". Such a phase can't
+  // be placed on the calendar, so it must not be saved into the synced profile.
+  const startValid = isDateKey(draft.startDate);
+  const startErrorId = useId();
   const showRate = phaseHasRate(draft.kind);
   const capKg = weightKg * 0.01;
   const unitLabel = units === "imperial" ? "lb" : "kg";
+  // Only a phase with a valid window is saved (a phase without one is
+  // ignored by every target computation), and only with a readable rate
+  // when its kind uses one (an unreadable rate would make every target it
+  // drives NaN; an out-of-range one is clamped on save). Each field says
+  // if it's the reason, so an unreadable phase from the list can actually
+  // be fixed.
+  const startOk = isValidPhaseStart(draft.startDate);
+  const weeksOk = isValidPhaseDuration(draft.durationWeeks);
+  const rateOk = !showRate || Number.isFinite(draft.weeklyRateKg);
+  const canSave = phaseHasValidWindow(draft) && rateOk;
+  const problemId = useId();
 
   return (
     <div className="space-y-2.5 rounded-lg border border-border/60 bg-muted/20 p-3">
@@ -383,8 +461,19 @@ function PhaseEditor({
             type="date"
             value={draft.startDate}
             onChange={(e) => setDraft({ ...draft, startDate: e.target.value })}
+            required
+            aria-invalid={!startValid}
+            aria-describedby={startValid ? undefined : startErrorId}
             className={INPUT_CLASS}
           />
+          {!startValid && (
+            <span
+              id={startErrorId}
+              className="mt-1 block text-xs text-foreground"
+            >
+              Pick a start date to save this phase.
+            </span>
+          )}
         </label>
 
         <label className="text-xs text-muted-foreground">
@@ -394,12 +483,21 @@ function PhaseEditor({
             inputMode="numeric"
             min={1}
             max={52}
-            value={draft.durationWeeks}
-            onChange={(e) => {
-              const n = Number.parseInt(e.target.value, 10);
-              if (Number.isFinite(n)) setDraft({ ...draft, durationWeeks: n });
-            }}
-            className={cn(INPUT_CLASS, "font-mono tabular-nums")}
+            value={inputNumber(draft.durationWeeks)}
+            // A cleared field is NaN: no valid window until it is filled in.
+            onChange={(e) =>
+              setDraft({
+                ...draft,
+                durationWeeks: Number.parseInt(e.target.value, 10),
+              })
+            }
+            aria-invalid={weeksOk ? undefined : true}
+            aria-describedby={weeksOk ? undefined : problemId}
+            className={cn(
+              INPUT_CLASS,
+              "font-mono tabular-nums",
+              !weeksOk && "border-destructive",
+            )}
           />
         </label>
 
@@ -412,26 +510,54 @@ function PhaseEditor({
               min={0}
               max={kgToDisplay(capKg, units)}
               step={0.05}
-              value={kgToDisplay(draft.weeklyRateKg, units)}
+              value={inputNumber(kgToDisplay(draft.weeklyRateKg, units))}
+              // A cleared field is NaN: no saving until it is filled in.
               onChange={(e) => {
                 const v = Number.parseFloat(e.target.value);
-                if (Number.isFinite(v))
-                  setDraft({
-                    ...draft,
-                    weeklyRateKg: Math.min(displayToKg(v, units), capKg),
-                  });
+                setDraft({
+                  ...draft,
+                  weeklyRateKg: Number.isFinite(v)
+                    ? Math.min(displayToKg(v, units), capKg)
+                    : Number.NaN,
+                });
               }}
-              className={cn(INPUT_CLASS, "font-mono tabular-nums")}
+              aria-invalid={rateOk ? undefined : true}
+              aria-describedby={rateOk ? undefined : problemId}
+              className={cn(
+                INPUT_CLASS,
+                "font-mono tabular-nums",
+                !rateOk && "border-destructive",
+              )}
             />
           </label>
         )}
       </div>
+
+      {/* Always rendered, so screen readers announce the message as it
+          appears; while empty it takes no space (`sr-only`, not hidden,
+          keeps the live region in the accessibility tree). */}
+      <p
+        id={problemId}
+        aria-live="polite"
+        className="flex items-start gap-1.5 text-xs leading-snug text-foreground empty:sr-only"
+      >
+        {!canSave && (
+          <>
+            <AlertCircle
+              aria-hidden="true"
+              className="mt-px h-3.5 w-3.5 shrink-0 text-destructive"
+            />
+            {draftProblem({ startOk, weeksOk, rateOk })}
+          </>
+        )}
+      </p>
 
       <div className="flex items-center gap-1.5">
         <Button
           type="button"
           size="sm"
           className="h-8"
+          disabled={!startValid}
           onClick={() => onSave(draft)}
         >
           Save phase

@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { addSupplement, clearAllStores } from "@/lib/db";
+import { addSupplement, clearAllStores, listSupplements } from "@/lib/db";
 import { __resetSyncStatusForTests, getSyncSnapshot } from "@/lib/sync-status";
 import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -62,5 +62,45 @@ describe("SupplementsSection", () => {
 
     // The delete plus the intake clean-up that follows it.
     await waitFor(() => expect(getSyncSnapshot().pending).toBe(2));
+  });
+
+  it("edits reminder days Monday-first and saves getDay numbers", async () => {
+    await clearAllStores();
+    await addSupplement({
+      name: "Magnesium",
+      doseLabel: "1 tablet",
+      micros: { magnesium: 200 },
+      schedule: { reminderTimes: [21], daysOfWeek: [1, 3, 5] },
+    });
+    render(<SupplementsSection />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+
+    const group = screen.getByRole("group", { name: "Reminder days" });
+    const days = Array.from(group.querySelectorAll("button"));
+    expect(days.map((b) => b.getAttribute("aria-label"))).toEqual([
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+      "Sunday",
+    ]);
+    expect(
+      days.filter((b) => b.getAttribute("aria-pressed") === "true").length,
+    ).toBe(3);
+
+    fireEvent.click(screen.getByRole("button", { name: "Sunday" }));
+    fireEvent.click(screen.getByRole("button", { name: "Wednesday" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(async () => {
+      const [saved] = await listSupplements();
+      expect(saved?.schedule).toEqual({
+        reminderTimes: [21],
+        daysOfWeek: [0, 1, 5],
+      });
+    });
   });
 });

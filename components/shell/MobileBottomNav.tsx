@@ -44,6 +44,9 @@ export function MobileBottomNav({ current, onSelect }: Props) {
   return (
     <nav
       aria-label="Primary navigation (mobile)"
+      // Hook for app/globals.css: while this bar is mounted (and visible
+      // below `md`) toasts are lifted above it via --toast-offset-bottom.
+      data-mobile-bottom-nav=""
       className={cn(
         // Padding works on both ends:
         //

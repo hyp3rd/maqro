@@ -11,10 +11,26 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 
 /** Controllable auth state. Defaults to signed-out (what `useUser` reports
  *  when Supabase isn't configured) so the original suites keep their
- *  guest-mode behaviour; the identity suites flip it per test. */
-const auth = vi.hoisted(() => ({ user: null as User | null }));
+ *  guest-mode behaviour; the identity suites flip it per test.
+ *  `offlineUserId` models the offline-unverified state (no session, the
+ *  last-known user's local data). */
+const auth = vi.hoisted(() => ({
+  user: null as User | null,
+  offlineUserId: null as string | null,
+}));
 vi.mock("@/hooks/use-user", () => ({
-  useUser: () => ({ user: auth.user, isLoaded: true, isUnconfigured: false }),
+  useUser: () => ({
+    user: auth.user,
+    localUserId: auth.user?.id ?? auth.offlineUserId,
+    isOfflineUnverified: auth.user === null && auth.offlineUserId !== null,
+    isLoaded: true,
+    isUnconfigured: false,
+  }),
+}));
+
+const enrichment = vi.hoisted(() => ({ enqueue: vi.fn() }));
+vi.mock("@/lib/micronutrients/enqueue", () => ({
+  enqueueMicronutrientEnrichment: enrichment.enqueue,
 }));
 
 function asUser(id: string): User {
@@ -285,6 +301,57 @@ function pastDebounce() {
 describe("useDailyLog - identity changes", () => {
   beforeEach(() => {
     auth.user = null;
+    auth.offlineUserId = null;
+    enrichment.enqueue.mockReset();
+  });
+
+  it("offline-unverified keeps the account's day, and verifying it changes nothing", async () => {
+    // Opened offline after the access token expired: no session, the
+    // last-known user's local data. When the network returns and the same
+    // account is verified, an edit started meanwhile still lands.
+    const { useDailyLog } = await freshHook();
+    const db = await import("@/lib/db");
+    await db.saveDailyLog(DATE, dayWith("A's oats"));
+    auth.offlineUserId = "user-a";
+
+    const { result, rerender } = renderHook(() =>
+      useDailyLog(DATE, DEFAULT_MEALS),
+    );
+    await waitFor(() => expect(result.current.isHydrated).toBe(true));
+    const target = result.current.day;
+
+    auth.user = asUser("user-a");
+    auth.offlineUserId = null;
+    rerender();
+
+    let applied: boolean | undefined;
+    await act(async () => {
+      applied = await result.current.commitToDay(target, () => dayWith("Plan"));
+    });
+    expect(applied).toBe(true);
+    expect(result.current.day.epoch).toBe(target.epoch);
+    // Let the edit's debounced save settle inside this test.
+    await pastDebounce();
+  });
+
+  it("offline-unverified never enqueues server enrichment (no session)", async () => {
+    const { useDailyLog } = await freshHook();
+    auth.offlineUserId = "user-a";
+    const { result } = renderHook(() => useDailyLog(DATE, DEFAULT_MEALS));
+    await waitFor(() => expect(result.current.isHydrated).toBe(true));
+
+    act(() => result.current.setMeals(dayWith("Oats")));
+    await pastDebounce();
+    expect(enrichment.enqueue).not.toHaveBeenCalled();
+
+    // Control: the same edit with a session does enqueue.
+    auth.user = asUser("user-a");
+    auth.offlineUserId = null;
+    const signedIn = renderHook(() => useDailyLog(DATE, DEFAULT_MEALS));
+    await waitFor(() => expect(signedIn.result.current.isHydrated).toBe(true));
+    act(() => signedIn.result.current.setMeals(dayWith("Rice")));
+    await pastDebounce();
+    expect(enrichment.enqueue).toHaveBeenCalledTimes(1);
   });
 
   it("does not re-persist the signed-out user's day into the wiped store", async () => {

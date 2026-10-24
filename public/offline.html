@@ -9,7 +9,13 @@
     <title>Offline — Maqro</title>
     <meta
       name="theme-color"
-      content="#0a0a0c"
+      media="(prefers-color-scheme: light)"
+      content="#FFFFFF"
+    />
+    <meta
+      name="theme-color"
+      media="(prefers-color-scheme: dark)"
+      content="#07070A"
     />
     <!--
       Static, JS-free fallback served by the service worker when a
@@ -20,21 +26,24 @@
       (the local data is in IndexedDB and the rest of the app is in
       the cache, so a subsequent navigation usually succeeds), and
       gives a one-tap retry.
+
+      Colours are the Instrument palette (lib/design/palette.ts) copied
+      by hand because this page is static; palette.test.ts pins them.
     -->
     <style>
       :root {
         color-scheme: light dark;
         --bg: #ffffff;
-        --fg: #0a0a0c;
-        --muted: #6b7280;
-        --border: rgba(0, 0, 0, 0.12);
+        --fg: #0a0a0f;
+        --muted: #52525b;
+        --border: #ddddde;
       }
       @media (prefers-color-scheme: dark) {
         :root {
-          --bg: #0a0a0c;
-          --fg: #f4f4f5;
+          --bg: #07070a;
+          --fg: #ededf2;
           --muted: #a1a1aa;
-          --border: rgba(255, 255, 255, 0.12);
+          --border: #27272a;
         }
       }
       * {

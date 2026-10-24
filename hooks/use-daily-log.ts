@@ -55,8 +55,11 @@ export type DailyLogState = {
  * the day: guest data is adopted by the account by design. */
 export function useDailyLog(date: string, defaultMeals: Meal[]): DailyLogState {
   const [meals, setMealsState] = useState<Meal[]>(defaultMeals);
-  const userId = useUser().user?.id ?? null;
-  const isSignedIn = userId !== null;
+  // The identity epoch follows whose local data this is (`localUserId`), so
+  // an offline open with an expired session (offline-unverified) keeps the
+  // account's day. Server calls need a real session (`user`).
+  const { user, localUserId: userId } = useUser();
+  const isSignedIn = user !== null;
   // Identity epoch — see the hook doc. Adjusted during render (React's
   // "storing information from previous renders" pattern) so the very render
   // that sees the user leave already reports the day as not hydrated, which
@@ -154,8 +157,9 @@ export function useDailyLog(date: string, defaultMeals: Meal[]): DailyLogState {
       editedSinceLoad.current = false;
       saveDailyLog(date, meals).then(reportStorageOk).catch(reportStorageError);
       // Offer the day's foods for background micronutrient enrichment.
-      // Fire-and-forget + Pro-gated server-side. Skip it entirely when
-      // signed out — the route is auth-only and would just 401.
+      // Fire-and-forget + Pro-gated server-side. Skip it entirely without a
+      // session (signed out or offline-unverified) — the route is auth-only
+      // and would just 401.
       if (latest.current.isSignedIn) enqueueMicronutrientEnrichment(meals);
     }, WRITE_DEBOUNCE_MS);
     return () => window.clearTimeout(t);

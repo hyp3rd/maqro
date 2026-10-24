@@ -1,39 +1,32 @@
+import { AppToaster } from "@/components/app-toaster";
+import { MotionProvider } from "@/components/motion-provider";
 import { CookieNotice } from "@/components/shell/CookieNotice";
+import { ThemeColorSync } from "@/components/theme-color-sync";
 import { ThemeProvider } from "@/components/theme-provider";
 import { getAppUrl } from "@/lib/app-url";
+import { THEME_COLOR } from "@/lib/design/palette";
 import type { Metadata, Viewport } from "next";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
-import { Inter, JetBrains_Mono, Manrope } from "next/font/google";
-import { Toaster } from "sonner";
+import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
-/** Three-font system:
- *    - Inter (body)         - the workhorse: dense UI, forms, small text.
- *      Excellent at 11–14 px where most of the app lives.
- *    - Manrope (display)    - slightly more character at heading sizes.
- *      Closed apertures and a more confident "g" / "a" / "R" give h1/h2
- *      a different texture from body without clashing.
- *    - JetBrains Mono       - monospace for macro tables, version chips,
- *      slugs. Tabular by default.
+/** Two-family system (the "Instrument" direction):
+ *    - Geist       - UI, body and headings. `--font-display` aliases it in
+ *      app/globals.css, so `font-display` and the h1–h3 rule keep working.
+ *    - Geist Mono  - readouts, times, targets, macro tables, slugs.
+ *  Both are variable fonts, so every weight comes from one file each.
  *
  *  `display: "swap"` everywhere - render in fallback first, swap when
  *  ready. The brief FOUT is preferable to a blank-text FOIT for the
  *  perceived-speed budget. */
-const inter = Inter({
+const sans = Geist({
   subsets: ["latin"],
   variable: "--font-sans",
   display: "swap",
 });
 
-const manrope = Manrope({
-  subsets: ["latin"],
-  variable: "--font-display",
-  display: "swap",
-  weight: ["500", "600", "700", "800"],
-});
-
-const mono = JetBrains_Mono({
+const mono = Geist_Mono({
   subsets: ["latin"],
   variable: "--font-mono",
   display: "swap",
@@ -146,9 +139,11 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
+  // First paint follows the OS; ThemeColorSync retargets both metas to
+  // the manual theme once next-themes resolves it.
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#0a0a0c" },
+    { media: "(prefers-color-scheme: light)", color: THEME_COLOR.light },
+    { media: "(prefers-color-scheme: dark)", color: THEME_COLOR.dark },
   ],
 };
 
@@ -166,7 +161,7 @@ export default async function RootLayout({
   return (
     <html
       lang={locale}
-      className={`${inter.variable} ${manrope.variable} ${mono.variable}`}
+      className={`${sans.variable} ${mono.variable}`}
       suppressHydrationWarning
     >
       <body className="font-sans antialiased">
@@ -180,16 +175,11 @@ export default async function RootLayout({
             enableSystem
             disableTransitionOnChange
           >
-            {children}
-            {/* Toaster lives inside ThemeProvider so `theme="system"`
-                picks up the active class. `richColors` gives semantic
-                green / red for success / error variants. */}
-            <Toaster
-              position="bottom-center"
-              richColors
-              closeButton
-              theme="system"
-            />
+            <MotionProvider>{children}</MotionProvider>
+            {/* Inside ThemeProvider: both follow next-themes' resolved
+                theme rather than the OS preference. */}
+            <AppToaster />
+            <ThemeColorSync />
             {/* Cookie/privacy notice - informational only because
              *  Maqro doesn't set non-essential cookies. Mounted in
              *  the root layout so it covers /, /app, /login, and

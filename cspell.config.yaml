@@ -30,6 +30,7 @@ words:
   - appinstalled
   - aren
   - aring
+  - artboards
   - artefacts
   - asdfqwerzxcv
   - atilde
@@ -74,6 +75,7 @@ words:
   - checkmarks
   - ciphertext
   - Ciqual
+  - CLDR
   - Clickjacking
   - cmdk
   - codepoint
@@ -232,6 +234,7 @@ words:
   - mealless
   - Menlo
   - messagebird
+  - metas
   - microdata
   - micronutrients
   - middot
@@ -251,6 +254,8 @@ words:
   - msttexthash
   - Navigations
   - ndash
+  - neighbour
+  - neighbouring
   - networkidle
   - noeng
   - Nominatim
@@ -345,9 +350,11 @@ words:
   - replayable
   - Reshare
   - restli
+  - retargets
   - roledescription
   - rowsecurity
   - rowtype
+  - RRGGBB
   - rsquo
   - sandboxed
   - sanitisation
@@ -374,6 +381,7 @@ words:
   - squircle
   - staticcheck
   - stdlib
+  - Steffen
   - strawberr
   - stringly
   - sublicensable
@@ -383,6 +391,7 @@ words:
   - subtransaction
   - sulfonylureas
   - summarise
+  - summarises
   - supabase
   - svix
   - swipeable

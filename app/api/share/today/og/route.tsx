@@ -1,3 +1,4 @@
+import { PALETTE } from "@/lib/design/palette";
 import { parseShareBadgeParams } from "@/lib/share-badge";
 import { isSigningEnabled, verifyShareBadge } from "@/lib/share-badge-signing";
 import { ImageResponse } from "next/og";
@@ -31,23 +32,23 @@ export const runtime = "edge";
 const WIDTH = 1200;
 const HEIGHT = 630;
 
-// Brand palette — matches the app's `.dark` CSS custom properties
-// in [app/globals.css](../../../../../app/globals.css). Inlined as
-// literal hex because Satori's HSL handling is unreliable for
-// gradient/border combinations and the dark surface is the single
-// most important visual: getting the background tone wrong reads
-// as "this isn't a Maqro card".
+// The dark Instrument palette (lib/design/palette.ts). Satori cannot read
+// CSS custom properties and its HSL handling is unreliable for
+// gradient/border combinations, so it gets the literal hex values; the
+// dark surface is the single most important visual: getting the
+// background tone wrong reads as "this isn't a Maqro card".
+const DARK = PALETTE.dark;
 const COLORS = {
-  bg: "#0a0a0c",
-  surface: "#101013",
-  border: "#27272a",
-  fg: "#fafafa",
-  fgMuted: "#a1a1aa",
-  fgDim: "#52525b",
-  protein: "#5BB8E5",
-  carbs: "#F4B040",
-  fat: "#E0739D",
-  rail: "#1f1f23",
+  bg: DARK.background,
+  surface: DARK.card,
+  border: DARK.border,
+  fg: DARK.foreground,
+  fgMuted: DARK.mutedForeground,
+  fgDim: DARK.faintForeground,
+  protein: DARK.macroProtein,
+  carbs: DARK.macroCarbs,
+  fat: DARK.macroFat,
+  rail: DARK.accent,
 };
 
 export async function GET(req: NextRequest): Promise<Response> {

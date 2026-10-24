@@ -740,6 +740,13 @@ export async function saveDemoProfile(profile: PersonalInfo): Promise<void> {
     serverUpdatedAt: existing?.serverUpdatedAt ?? null,
     _demoSeeded: true,
   }));
+  // Wake the data-bus like `saveDailyLog` does: the seed writes behind the
+  // back of the already-mounted `useProfile` (and the fasting status), which
+  // re-load only on this rev. `saveProfile` leaves the refresh to its callers
+  // (`useProfile` already holds its own write, `useFastingStatus.writeFasting`
+  // notifies itself, the backup import reloads the page), but this seed has no
+  // such caller — nothing else would ever tell them the profile changed.
+  notifyDataChanged("profile");
 }
 
 /** True when the locally-stored profile is marked as demo-seeded.
@@ -2516,57 +2523,26 @@ export async function applyServerDeletion(
 
 // ─── Bulk ──────────────────────────────────────────────────────────────────
 
-/** Wipes every store. Used by the Delete account flow so a future sign-in
- * on the same device starts from a truly empty slate (otherwise the next
- * sync would push the leftover rows into the new user's account). Runs
- * in a single transaction so a mid-flight failure either clears all
+/** Wipes every object store, so the next account signed in on this device
+ * starts from a truly empty slate: any row left behind - dirty or not -
+ * would otherwise be pushed into that account by the next sync. Callers:
+ * sign-out, forced sign-out, Delete account, Settings "Reset this device"
+ * and "Discard local changes".
+ *
+ * The store list is read from the live connection (`objectStoreNames`,
+ * i.e. whatever the upgrade chain created) rather than enumerated by hand,
+ * so a store added by a future upgrade is cleared without touching this
+ * function. No store deliberately survives the wipe: every one holds
+ * per-account data, a per-account derived cache, or pending tombstones.
+ *
+ * Runs in a single transaction so a mid-flight failure either clears all
  * stores or none - no half-state. */
 export async function clearAllStores(): Promise<void> {
   const db = await getDB();
-  const tx = db.transaction(
-    [
-      STORE_CUSTOM_FOODS,
-      STORE_PROFILE,
-      STORE_DAILY_LOGS,
-      STORE_MEAL_TEMPLATES,
-      STORE_WEIGHT_HISTORY,
-      STORE_WATER_INTAKE,
-      STORE_SUPPLEMENT_INTAKE,
-      STORE_SUPPLEMENTS,
-      STORE_BODY_MEASUREMENTS,
-      STORE_BLOOD_PRESSURE,
-      STORE_FAST_SESSIONS,
-      STORE_RECIPES,
-      STORE_PANTRY_ITEMS,
-      STORE_PANTRY_NOTIFICATIONS,
-      STORE_FAVORITE_STORES,
-      STORE_FAVORITE_FOODS,
-      STORE_SHOPPING_LIST_META,
-      STORE_MICRONUTRIENT_PROFILES,
-      STORE_DELETIONS,
-    ],
-    "readwrite",
-  );
+  const storeNames = Array.from(db.objectStoreNames);
+  const tx = db.transaction(storeNames, "readwrite");
   await Promise.all([
-    tx.objectStore(STORE_CUSTOM_FOODS).clear(),
-    tx.objectStore(STORE_PROFILE).clear(),
-    tx.objectStore(STORE_DAILY_LOGS).clear(),
-    tx.objectStore(STORE_MEAL_TEMPLATES).clear(),
-    tx.objectStore(STORE_WEIGHT_HISTORY).clear(),
-    tx.objectStore(STORE_WATER_INTAKE).clear(),
-    tx.objectStore(STORE_SUPPLEMENT_INTAKE).clear(),
-    tx.objectStore(STORE_SUPPLEMENTS).clear(),
-    tx.objectStore(STORE_BODY_MEASUREMENTS).clear(),
-    tx.objectStore(STORE_BLOOD_PRESSURE).clear(),
-    tx.objectStore(STORE_FAST_SESSIONS).clear(),
-    tx.objectStore(STORE_RECIPES).clear(),
-    tx.objectStore(STORE_PANTRY_ITEMS).clear(),
-    tx.objectStore(STORE_PANTRY_NOTIFICATIONS).clear(),
-    tx.objectStore(STORE_FAVORITE_STORES).clear(),
-    tx.objectStore(STORE_FAVORITE_FOODS).clear(),
-    tx.objectStore(STORE_SHOPPING_LIST_META).clear(),
-    tx.objectStore(STORE_MICRONUTRIENT_PROFILES).clear(),
-    tx.objectStore(STORE_DELETIONS).clear(),
+    ...storeNames.map((name) => tx.objectStore(name).clear()),
     tx.done,
   ]);
 }

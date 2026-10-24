@@ -45,6 +45,9 @@ const config = {
           "monospace",
         ],
       },
+      // Every colour token in app/globals.css is mapped here (enforced by
+      // lib/design/palette.test.ts). Values are `hsl(var(--x))` over HSL
+      // channel triples, so opacity modifiers (`bg-brand/10`) work.
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -59,21 +62,87 @@ const config = {
           DEFAULT: "hsl(var(--secondary))",
           foreground: "hsl(var(--secondary-foreground))",
         },
+        // `destructive` is destructive-red text; `destructive-strong` is the
+        // fill behind a `destructive-foreground` label.
         destructive: {
           DEFAULT: "hsl(var(--destructive))",
           foreground: "hsl(var(--destructive-foreground))",
+          strong: "hsl(var(--destructive-strong))",
+        },
+        success: {
+          DEFAULT: "hsl(var(--success))",
+          foreground: "hsl(var(--success-foreground))",
+        },
+        warning: {
+          DEFAULT: "hsl(var(--warning))",
+          foreground: "hsl(var(--warning-foreground))",
+        },
+        info: {
+          DEFAULT: "hsl(var(--info))",
+          foreground: "hsl(var(--info-foreground))",
+        },
+        success: {
+          DEFAULT: "hsl(var(--success))",
+          foreground: "hsl(var(--success-foreground))",
+        },
+        warning: {
+          DEFAULT: "hsl(var(--warning))",
+          foreground: "hsl(var(--warning-foreground))",
+        },
+        info: {
+          DEFAULT: "hsl(var(--info))",
+          foreground: "hsl(var(--info-foreground))",
+        },
+        success: {
+          DEFAULT: "hsl(var(--success))",
+          foreground: "hsl(var(--success-foreground))",
+        },
+        warning: {
+          DEFAULT: "hsl(var(--warning))",
+          foreground: "hsl(var(--warning-foreground))",
+        },
+        info: {
+          DEFAULT: "hsl(var(--info))",
+          foreground: "hsl(var(--info-foreground))",
         },
         muted: {
           DEFAULT: "hsl(var(--muted))",
           foreground: "hsl(var(--muted-foreground))",
         },
+        // Tertiary text tier (captions, units, timestamps): `text-faint-foreground`.
+        faint: { foreground: "hsl(var(--faint-foreground))" },
         accent: {
           DEFAULT: "hsl(var(--accent))",
           foreground: "hsl(var(--accent-foreground))",
         },
+        // `brand` is the graphic accent; `brand-strong` is the fill behind a
+        // `brand-foreground` label; `brand-text` is brand-coloured text.
         brand: {
           DEFAULT: "hsl(var(--brand))",
           foreground: "hsl(var(--brand-foreground))",
+          strong: "hsl(var(--brand-strong))",
+          text: "hsl(var(--brand-text))",
+        },
+        // "Now / open / today" marks only.
+        signal: {
+          DEFAULT: "hsl(var(--signal))",
+          foreground: "hsl(var(--signal-foreground))",
+        },
+        // Fills (`bg-macro-protein`) and text-safe variants
+        // (`text-macro-protein-text`).
+        macro: {
+          protein: {
+            DEFAULT: "hsl(var(--macro-protein))",
+            text: "hsl(var(--macro-protein-text))",
+          },
+          carbs: {
+            DEFAULT: "hsl(var(--macro-carbs))",
+            text: "hsl(var(--macro-carbs-text))",
+          },
+          fat: {
+            DEFAULT: "hsl(var(--macro-fat))",
+            text: "hsl(var(--macro-fat-text))",
+          },
         },
         popover: {
           DEFAULT: "hsl(var(--popover))",
@@ -96,19 +165,6 @@ const config = {
           900: "#134e4a",
           950: "#042f2e",
         },
-        violet: {
-          50: "#f5f3ff",
-          100: "#ede9fe",
-          200: "#ddd6fe",
-          300: "#c4b5fd",
-          400: "#a78bfa",
-          500: "#8b5cf6",
-          600: "#7c3aed",
-          700: "#6d28d9",
-          800: "#5b21b6",
-          900: "#4c1d95",
-          950: "#2e1065",
-        },
         rose: {
           50: "#fff1f2",
           100: "#ffe4e6",
@@ -123,10 +179,24 @@ const config = {
           950: "#4c0519",
         },
       },
+      // One scale off `--radius` (12px): bare `rounded` 4px for marks and
+      // chips, `sm` 6px, `md` 10px for controls, `lg` 12px for panels,
+      // `xl`/`2xl` 16/20px for hero cards and sheets.
       borderRadius: {
-        lg: "var(--radius)",
+        DEFAULT: "calc(var(--radius) - 8px)",
+        sm: "calc(var(--radius) - 6px)",
         md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+        lg: "var(--radius)",
+        xl: "calc(var(--radius) + 4px)",
+        "2xl": "calc(var(--radius) + 8px)",
+      },
+      // Named small sizes replacing literal `text-[10px]` / `text-[11px]`,
+      // plus `label` (13px) for readable sentence-case labels. The coarse-
+      // pointer readability floor in app/globals.css matches 3xs/2xs too.
+      fontSize: {
+        "3xs": ["0.625rem", { lineHeight: "0.875rem" }],
+        "2xs": ["0.6875rem", { lineHeight: "1rem" }],
+        label: ["0.8125rem", { lineHeight: "1.125rem" }],
       },
       keyframes: {
         "accordion-down": {
@@ -137,12 +207,10 @@ const config = {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: 0 },
         },
-        shimmer: { "100%": { transform: "translateX(100%)" } },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
-        shimmer: "shimmer 2s infinite",
       },
     },
   },
