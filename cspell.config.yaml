@@ -81,6 +81,7 @@ words:
   - codepoint
   - colour
   - colours
+  - confdeltype
   - conkey
   - conname
   - conrelid
@@ -345,6 +346,7 @@ words:
   - regen
   - regprocedure
   - regtype
+  - relrowsecurity
   - remoteip
   - renderable
   - replayable
