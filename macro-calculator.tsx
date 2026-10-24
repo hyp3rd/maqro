@@ -555,15 +555,17 @@ const MacroCalculator = () => {
   // renders" pattern, as useDailyLog does) rather than in an effect, so the
   // switch and the open land in one commit. `logFlowMealId` is what seeds
   // the launcher's meal step (and a tool's "Back" to it).
-  if (
-    quickAddAt !== null &&
-    view === "plan" &&
-    explicitDate === null &&
-    dayHydrated
-  ) {
-    setQuickAddAt(null);
-    setLogFlowMealId(quickAddMealId(meals, quickAddAt));
-    setLogMealOpen(true);
+  if (quickAddAt !== null) {
+    if (view !== "plan" || explicitDate !== null) {
+      // The tap set both, so either changing means the user went elsewhere
+      // before today loaded: drop the request rather than pop the launcher
+      // open, unprompted, the next time they land on Today.
+      setQuickAddAt(null);
+    } else if (dayHydrated) {
+      setQuickAddAt(null);
+      setLogFlowMealId(quickAddMealId(meals, quickAddAt));
+      setLogMealOpen(true);
+    }
   }
 
   const search = useFoodSearch(foodSearch, customFoodsRev);

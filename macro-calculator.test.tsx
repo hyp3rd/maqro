@@ -83,8 +83,16 @@ const SIGNED_IN = {
   isUnconfigured: false,
 };
 const auth = vi.hoisted(() => ({ state: null as unknown }));
-/** The day's meal slots `useDailyLog` reports, when a test renames them. */
-const dayMeals = vi.hoisted(() => ({ override: null as Meal[] | null }));
+/** The day's meal slots `useDailyLog` reports, when a test renames them or
+ *  gives a date its own. `loaded`, when set, lists the dates whose log has
+ *  loaded: any other date reports `isHydrated: false` and still holds the
+ *  last loaded day's meals, as the real hook does across a date switch. */
+const dayMeals = vi.hoisted(() => ({
+  override: null as Meal[] | null,
+  byDate: {} as Record<string, Meal[]>,
+  loaded: null as Set<string> | null,
+  last: null as Meal[] | null,
+}));
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(nav.search),
@@ -103,14 +111,19 @@ vi.mock("./hooks/use-profile", () => ({
   }),
 }));
 vi.mock("./hooks/use-daily-log", () => ({
-  useDailyLog: (date: string) => ({
-    date,
-    meals: dayMeals.override ?? MEALS,
-    setMeals: vi.fn(),
-    isHydrated: true,
-    day: { date, epoch: 0 },
-    commitToDay: async () => true,
-  }),
+  useDailyLog: (date: string) => {
+    const own = dayMeals.byDate[date] ?? dayMeals.override ?? MEALS;
+    const isHydrated = dayMeals.loaded?.has(date) ?? true;
+    if (isHydrated) dayMeals.last = own;
+    return {
+      date,
+      meals: isHydrated ? own : (dayMeals.last ?? own),
+      setMeals: vi.fn(),
+      isHydrated,
+      day: { date, epoch: 0 },
+      commitToDay: async () => true,
+    };
+  },
 }));
 vi.mock("./hooks/use-food-search", () => ({
   useFoodSearch: () => ({ results: [], isSearchingRemote: false }),
@@ -259,6 +272,9 @@ beforeEach(() => {
   nav.search = "view=plan";
   auth.state = SIGNED_IN;
   dayMeals.override = null;
+  dayMeals.byDate = {};
+  dayMeals.loaded = null;
+  dayMeals.last = null;
   for (const key of Object.keys(ui.props)) delete ui.props[key];
   refreshAiUsage.mockReset();
   requestAiMealPlan.mockReset();
@@ -483,6 +499,62 @@ describe("macro-calculator: quick add (the tab bar's centre [+])", () => {
     await quickAdd();
     expect(prop("MealPlanner", "selectedDate")).toBe(TODAY);
     expect(launcher()).toEqual({ open: true, mealId: 2, dayLabel: "Today" });
+  });
+
+  describe("while today's log is still loading", () => {
+    /** On PAST_DAY, whose slots have their own ids, with today's log not
+     *  loaded yet. */
+    async function onPastDayBeforeTodayLoads() {
+      dayMeals.byDate[PAST_DAY] = MEALS.map((m) => ({ ...m, id: m.id + 10 }));
+      const view = render(<MacroCalculator />);
+      await act(async () => {
+        prop<(d: string) => void>("MealPlanner", "onSelectDate")(PAST_DAY);
+      });
+      dayMeals.loaded = new Set([PAST_DAY]);
+      view.rerender(<MacroCalculator />);
+      return view;
+    }
+
+    it("waits for today's slots, then targets today's", async () => {
+      const view = await onPastDayBeforeTodayLoads();
+      await quickAdd();
+      expect(prop("MealPlanner", "selectedDate")).toBe(TODAY);
+      // Still showing the past day's slots: no launcher yet.
+      expect(launcher().open).toBe(false);
+
+      dayMeals.loaded?.add(TODAY);
+      view.rerender(<MacroCalculator />);
+      expect(launcher()).toEqual({ open: true, mealId: 2, dayLabel: "Today" });
+    });
+
+    it.each([
+      [
+        "another view",
+        () => prop<(k: string) => void>("AppShell", "onSelect")("progress"),
+      ],
+      [
+        "another day",
+        () =>
+          prop<(d: string) => void>("MealPlanner", "onSelectDate")(PAST_DAY),
+      ],
+    ])("leaving for %s drops the request", async (_, leave) => {
+      const view = await onPastDayBeforeTodayLoads();
+      await quickAdd();
+      await act(async () => {
+        leave();
+      });
+      dayMeals.loaded?.add(TODAY);
+      view.rerender(<MacroCalculator />);
+      // Back on Today, loaded: nothing pops open unprompted.
+      await act(async () => {
+        prop<(k: string) => void>("AppShell", "onSelect")("plan");
+      });
+      await act(async () => {
+        prop<(d: string) => void>("MealPlanner", "onSelectDate")(TODAY);
+      });
+      expect(prop("MealPlanner", "selectedDate")).toBe(TODAY);
+      expect(launcher().open).toBe(false);
+    });
   });
 
   it("a method hands off to its tool, whose Back returns to the method step", async () => {
