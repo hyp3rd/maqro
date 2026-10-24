@@ -72,8 +72,8 @@ export function draftToSession(draft: SessionDraft): TrainingDay {
 }
 
 /** The session controls shared by the template's day dialog and the
- *  per-date day-type sheet: type, then (unless rest) intensity, start time
- *  and duration. */
+ *  per-date day-type sheet: type, then intensity, start time and duration
+ *  (kept in place but disabled on a rest day, in both sheets). */
 export function TrainingSessionFields({
   draft,
   onChange,
