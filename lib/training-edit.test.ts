@@ -9,6 +9,7 @@ import {
   withTrainingCycling,
   withTrainingDay,
   withTrainingEnabled,
+  withWorkoutMeals,
 } from "@maqro/core/training-edit";
 
 /** A template written by a NEWER client: a session type and keys this
@@ -117,6 +118,40 @@ describe("withTrainingCycling", () => {
   it("sets the preset and keeps the rest", () => {
     const next = withTrainingCycling(FROM_NEWER_CLIENT, "pronounced");
     expect(next).toEqual({ ...FROM_NEWER_CLIENT, cycling: "pronounced" });
+  });
+});
+
+describe("withWorkoutMeals", () => {
+  it("sets which meals training days get and keeps the rest", () => {
+    const next = withWorkoutMeals(FROM_NEWER_CLIENT, {
+      pre: false,
+      post: true,
+    });
+    expect(next).toEqual({
+      ...FROM_NEWER_CLIENT,
+      workoutMeals: { pre: false, post: true },
+    });
+    expect(normalizeTrainingSchedule(next)?.workoutMeals).toEqual({
+      pre: false,
+      post: true,
+    });
+  });
+
+  it("keeps keys a newer client stored inside the setting", () => {
+    const stored = {
+      ...defaultTrainingSchedule(),
+      workoutMeals: { pre: true, post: true, snackAfter: true },
+    };
+    expect(
+      withWorkoutMeals(stored, { pre: true, post: false }).workoutMeals,
+    ).toEqual({ pre: true, post: false, snackAfter: true });
+  });
+
+  it("with no usable template, starts from the default week", () => {
+    expect(withWorkoutMeals(undefined, { pre: false, post: false })).toEqual({
+      ...defaultTrainingSchedule(),
+      workoutMeals: { pre: false, post: false },
+    });
   });
 });
 

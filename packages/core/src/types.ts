@@ -115,7 +115,20 @@ export type FoodItem = {
   loggedAt?: number;
 } & MacroBreakdown;
 
-export type Meal = { id: number; name: string; foods: FoodItem[] };
+/** A training day's workout meal (see [workout-meals.ts](./workout-meals.ts)):
+ *  the meal before the session or the one after it. */
+export type WorkoutMealRole = "preWorkout" | "postWorkout";
+
+export type Meal = {
+  id: number;
+  name: string;
+  foods: FoodItem[];
+  /** Set only on a workout meal (reserved ids 5 and 6). Absent on the four
+   *  regular meals. Rides the existing `meals` JSONB — no migration; an
+   *  older client keeps or drops it, so readers identify a workout meal
+   *  with `workoutRole` (role, else name, else id). */
+  role?: WorkoutMealRole;
+};
 
 /** One ingredient in a saved Recipe. We store the catalog reference by
  *  name (matching how `MealTemplate.foods` already works) plus a frozen
@@ -289,12 +302,15 @@ export type TrainingIntensity = "light" | "moderate" | "hard";
 /** One weekday in the training template. `time` is the planned local start
  *  (`HH:MM`, 24 h) and `durationMin` the planned length; both optional, and
  *  only `durationMin` affects the target today (a long endurance session,
- *  or a long `light` one — see `classifyTrainingDay`). */
+ *  or a long `light` one — see `classifyTrainingDay`). Both also time the
+ *  day's workout meals. `fasted` (only ever `true` when set): the user
+ *  trains without eating first, so the day has no pre-workout meal. */
 export type TrainingDay = {
   type: TrainingType;
   intensity?: TrainingIntensity;
   time?: string;
   durationMin?: number;
+  fasted?: boolean;
 };
 
 /** The seven template days, indexed by JS `Date.getDay()` (0 = Sunday). */
@@ -320,7 +336,12 @@ export type TrainingSchedule = {
   enabled: boolean;
   days: TrainingWeek;
   cycling: CyclingPreset;
+  /** Which workout meals a training day gets. Absent = both (the default). */
+  workoutMeals?: WorkoutMealSettings;
 };
+
+/** Whether training days get a pre-workout and a post-workout meal. */
+export type WorkoutMealSettings = { pre: boolean; post: boolean };
 
 /** Fixed daily protein, in grams per kg of bodyweight or of lean mass (the
  *  latter needs a body-fat estimate; without one, min(2.0, its g/kg) on

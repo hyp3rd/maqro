@@ -125,8 +125,9 @@ function isOneOf<T extends string>(v: unknown, options: readonly T[]): v is T {
 
 /** Validate one stored session at read time: `null` unless it is an object
  *  with a known `type`; malformed optional fields (`intensity`, a
- *  non-`HH:MM` `time`, a non-positive / over-24 h `durationMin`) are dropped
- *  and unknown keys stripped. Returns a fresh object (never persisted back).
+ *  non-`HH:MM` `time`, a non-positive / over-24 h `durationMin`, a `fasted`
+ *  that isn't literally `true` or sits on a rest day) are dropped and
+ *  unknown keys stripped. Returns a fresh object (never persisted back).
  *
  *  This is how a per-date override's `day` is read (`targetsForDate`): a
  *  malformed override is IGNORED — the day keeps its template session —
@@ -149,6 +150,7 @@ export function parseTrainingDay(raw: unknown): TrainingDay | null {
   ) {
     day.durationMin = d;
   }
+  if (raw.fasted === true && day.type !== "rest") day.fasted = true;
   return day;
 }
 
@@ -169,14 +171,17 @@ function normalizeTrainingDay(raw: unknown): TrainingDay {
  *  - `enabled` is on only for a literal `true`.
  *  - An unknown `cycling` → the `modest` default.
  *  - A malformed day → rest; malformed optional fields (`intensity`, a
- *    non-`HH:MM` `time`, a non-positive / over-24 h `durationMin`) are dropped;
- *    unknown keys are stripped. */
+ *    non-`HH:MM` `time`, a non-positive / over-24 h `durationMin`, a
+ *    `fasted` that isn't `true`) are dropped; unknown keys are stripped.
+ *  - `workoutMeals` is kept only when stored as an object; each of `pre` /
+ *    `post` is off only for a literal `false` (absent = on, the default). */
 export function normalizeTrainingSchedule(
   raw: unknown,
 ): TrainingSchedule | null {
   if (!isRecord(raw)) return null;
   const days = raw.days;
   if (!Array.isArray(days) || days.length !== 7) return null;
+  const meals = raw.workoutMeals;
   return {
     enabled: raw.enabled === true,
     days: [
@@ -191,6 +196,9 @@ export function normalizeTrainingSchedule(
     cycling: isOneOf(raw.cycling, CYCLING_PRESETS)
       ? raw.cycling
       : DEFAULT_CYCLING,
+    ...(isRecord(meals) && {
+      workoutMeals: { pre: meals.pre !== false, post: meals.post !== false },
+    }),
   };
 }
 

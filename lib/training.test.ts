@@ -239,6 +239,44 @@ describe("normalizeTrainingSchedule", () => {
     normalizeTrainingSchedule(raw);
     expect(JSON.stringify(raw)).toBe(before);
   });
+
+  it("keeps a fasted session; a fasted rest day or a non-true flag is dropped", () => {
+    const days = [
+      { type: "rest", fasted: true },
+      { type: "upper", time: "06:30", fasted: true },
+      { type: "rest" },
+      { type: "lower", fasted: "yes" },
+      { type: "rest" },
+      { type: "fullBody", fasted: false },
+      { type: "rest" },
+    ];
+    expect(
+      normalizeTrainingSchedule({ enabled: true, days, cycling: "modest" })
+        ?.days,
+    ).toEqual([
+      { type: "rest" },
+      { type: "upper", time: "06:30", fasted: true },
+      { type: "rest" },
+      { type: "lower" },
+      { type: "rest" },
+      { type: "fullBody" },
+      { type: "rest" },
+    ]);
+  });
+
+  it("reads the workout-meal setting only when stored; only a literal false turns one off", () => {
+    const base = { enabled: true, days: MOCKUP_WEEK, cycling: "modest" };
+    expect(normalizeTrainingSchedule(base)).not.toHaveProperty("workoutMeals");
+    expect(
+      normalizeTrainingSchedule({ ...base, workoutMeals: "both" }),
+    ).not.toHaveProperty("workoutMeals");
+    expect(
+      normalizeTrainingSchedule({
+        ...base,
+        workoutMeals: { pre: false, post: "no", extra: 1 },
+      })?.workoutMeals,
+    ).toEqual({ pre: false, post: true });
+  });
 });
 
 describe("parseTrainingDay (a per-date override's session)", () => {
@@ -272,6 +310,19 @@ describe("parseTrainingDay (a per-date override's session)", () => {
         extra: "stripped",
       }),
     ).toEqual({ type: "upper" });
+  });
+
+  it("keeps fasted only as a literal true on a session", () => {
+    expect(parseTrainingDay({ type: "hiit", fasted: true })).toEqual({
+      type: "hiit",
+      fasted: true,
+    });
+    expect(parseTrainingDay({ type: "hiit", fasted: 1 })).toEqual({
+      type: "hiit",
+    });
+    expect(parseTrainingDay({ type: "rest", fasted: true })).toEqual({
+      type: "rest",
+    });
   });
 
   it("never mutates the stored payload", () => {
