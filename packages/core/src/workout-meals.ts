@@ -367,10 +367,27 @@ export function withWorkoutMeal(
   );
 }
 
-/** The stored meals to write, without workout meals that hold no food: in
- *  storage a workout meal exists only while it has food. */
+/** The meals to write, without workout meals that hold no food (in storage
+ *  a workout meal exists only while it has food), in id order — the order
+ *  an older client renumbers by. Takes the day as shown (`dayMealsWithWorkout`
+ *  + `orderDayMeals`) as well as stored meals. */
 export function withoutEmptyWorkoutMeals(stored: readonly Meal[]): Meal[] {
-  return stored.filter((m) => workoutRole(m) === null || m.foods.length > 0);
+  return stored
+    .filter((m) => workoutRole(m) === null || m.foods.length > 0)
+    .sort((a, b) => a.id - b.id);
+}
+
+/** The workout meal whose eating window holds `minute` (minutes after local
+ *  midnight), or `null`: what to log into right now around a session. */
+export function workoutMealAt(
+  plan: WorkoutMealsPlan | null,
+  minute: number,
+): WorkoutMealSlot | null {
+  for (const slot of [plan?.pre, plan?.post]) {
+    const w = slot?.window;
+    if (slot && w && minute >= w.start && minute < w.end) return slot;
+  }
+  return null;
 }
 
 /** How the day's target splits across the four regular meals. */

@@ -14,6 +14,7 @@ import {
   WORKOUT_MEALS_MAX_MACRO_SHARE,
   withoutEmptyWorkoutMeals,
   withWorkoutMeal,
+  workoutMealAt,
   workoutMealSettings,
   workoutMealsForDay,
   workoutRole,
@@ -435,6 +436,41 @@ describe("withWorkoutMeal / withoutEmptyWorkoutMeals", () => {
     expect(withoutEmptyWorkoutMeals(stored).map((m) => m.id)).toEqual([
       1, 2, 3, 4, 6,
     ]);
+  });
+
+  it("writes the day as shown back in id order", () => {
+    const shown: Meal[] = [
+      REGULAR[0],
+      REGULAR[1],
+      { id: 5, name: "Pre-workout", role: "preWorkout", foods: [SHAKE] },
+      { id: 6, name: "Post-workout", role: "postWorkout", foods: [] },
+      REGULAR[2],
+      REGULAR[3],
+    ];
+    expect(withoutEmptyWorkoutMeals(shown).map((m) => m.id)).toEqual([
+      1, 2, 3, 4, 5,
+    ]);
+    // Never the caller's array.
+    expect(shown.map((m) => m.id)).toEqual([1, 2, 5, 6, 3, 4]);
+  });
+});
+
+describe("workoutMealAt", () => {
+  const monday = plan(day(MON)); // pre 15:00–17:00, post 19:00–21:00
+
+  it("the meal whose window holds the minute", () => {
+    expect(workoutMealAt(monday, 15 * 60)?.role).toBe("preWorkout");
+    expect(workoutMealAt(monday, 16 * 60 + 59)?.role).toBe("preWorkout");
+    expect(workoutMealAt(monday, 20 * 60)?.role).toBe("postWorkout");
+  });
+
+  it("none between, outside, untimed or without a plan", () => {
+    expect(workoutMealAt(monday, 17 * 60)).toBeNull(); // end is exclusive
+    expect(workoutMealAt(monday, 18 * 60)).toBeNull();
+    expect(workoutMealAt(monday, 8 * 60)).toBeNull();
+    const untimed = plan(withSession(MON, { type: "upper" }));
+    expect(workoutMealAt(untimed, 16 * 60)).toBeNull();
+    expect(workoutMealAt(null, 16 * 60)).toBeNull();
   });
 });
 
