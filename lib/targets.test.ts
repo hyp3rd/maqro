@@ -8,6 +8,7 @@ import {
   targetsUseOverrides,
   weekTargets,
 } from "@maqro/core/targets";
+import { normalizeProteinSetting, proteinGrams } from "@maqro/core/training";
 import type {
   GoalPhase,
   MacroSplit,
@@ -508,6 +509,32 @@ describe("targetsForDate — training days", () => {
     MOCKUP_DATES.forEach((date, i) => {
       expect(targetsForDate(p, date, FREE)).toStrictEqual(week?.days[i]);
     });
+  });
+
+  it("floorKg is the weight protein is taken on — never lean mass", () => {
+    const date = "2026-10-21";
+    // Bodyweight under BMI 30.
+    expect(targetsForDate(mockupProfile(), date, FREE).training?.floorKg).toBe(
+      80,
+    );
+    // A lean-mass setting with a body-fat estimate: protein on lean mass,
+    // every per-kg amount still on bodyweight.
+    const lean = targetsForDate(
+      mockupProfile({ proteinSetting: { basis: "leanMass", gPerKg: 2.6 } }),
+      date,
+      { ...FREE, bodyFatPct: 20 },
+    );
+    expect(lean.training?.proteinBasis).toBe("leanMass");
+    expect(lean.training?.floorKg).toBe(80);
+    // BMI 37 without an estimate: the tapered protein weight.
+    const heavy = mockupProfile({ weight: 120 });
+    const body = { weightKg: 120, heightCm: 180, bodyFatPct: null };
+    expect(targetsForDate(heavy, date, FREE).training?.floorKg).toBe(
+      proteinGrams(normalizeProteinSetting(undefined), body).kg,
+    );
+    expect(targetsForDate(heavy, date, FREE).training?.floorKg).toBeLessThan(
+      120,
+    );
   });
 
   it("cycling off: flat days — only the fixed protein applies", () => {

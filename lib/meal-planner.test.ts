@@ -1,5 +1,6 @@
 import type { Food, Meal } from "@/components/macro/types";
 import { describe, expect, it } from "vitest";
+import type { WorkoutMealsPlan } from "@maqro/core/workout-meals";
 import {
   det3,
   planDay,
@@ -258,17 +259,94 @@ describe("planDay", () => {
     ];
     const customRice = food("Custom Rice", 5, 70, 1); // no mealTypes
     const breakfastOnly: Meal[] = [{ id: 1, name: "Breakfast", foods: [] }];
-    // Use a single-meal distribution so all daily macros land on this meal.
+    // A lone meal takes the whole day (the shares are normalized over the
+    // meals present).
     const planned = planDay(
       breakfastOnly,
       sparseBuiltin,
       { protein: 30, carbs: 40, fat: 15, calories: 415 },
-      { customFoods: [customRice], distribution: { 1: 1.0 } },
+      { customFoods: [customRice] },
     );
     // Without the custom rice, no carb-dominant food would be available
     // for breakfast and planMeal would fall back to a single food.
     const names = planned[0].foods.map((f) => f.name);
     expect(names).toContain("Custom Rice");
+  });
+});
+
+describe("planDay — workout meals", () => {
+  const PRE: Meal = {
+    id: 5,
+    name: "Pre-workout",
+    role: "preWorkout",
+    foods: [],
+  };
+  const WORKOUT: WorkoutMealsPlan = {
+    session: { type: "upper", time: "18:00", durationMin: 60 },
+    heavyOrLong: false,
+    fasted: false,
+    earlySession: false,
+    pre: {
+      role: "preWorkout",
+      id: 5,
+      name: "Pre-workout",
+      aims: { protein: 30, carbs: 40, fat: 10, calories: 370 },
+      window: { start: 15 * 60, end: 17 * 60 },
+      aimMinute: 16 * 60 + 30,
+    },
+    post: null,
+  };
+  const daily = { protein: 160, carbs: 210, fat: 85, calories: 2250 };
+
+  it("plans the pre-workout meal toward its aims from light, quick foods", () => {
+    // One food per macro among the snack foods, so the solve is
+    // deterministic; the chicken is a lunch/dinner food.
+    const db = [
+      food("Egg whites", 11, 1, 0, "protein", ["snack"]),
+      food("Banana", 1, 23, 0.3, "fruit", ["snack"]),
+      food("Butter", 1, 0, 81, "oil", ["snack"]),
+      food("Chicken", 30, 0, 3, "lean protein", ["lunch", "dinner"]),
+    ];
+    const [pre] = planDay([PRE], db, daily, { workout: WORKOUT });
+    expect(pre.role).toBe("preWorkout");
+    expect(pre.foods.map((f) => f.name).sort()).toEqual([
+      "Banana",
+      "Butter",
+      "Egg whites",
+    ]);
+    const s = summarisePlan([pre], {
+      protein: 30,
+      carbs: 40,
+      fat: 10,
+      calories: 370,
+    });
+    expect(s.percent.protein).toBeGreaterThan(85);
+    expect(s.percent.protein).toBeLessThan(115);
+    expect(s.percent.carbs).toBeGreaterThan(85);
+    expect(s.percent.carbs).toBeLessThan(115);
+  });
+
+  it("leaves a workout meal the day doesn't plan as it is", () => {
+    const kept: Meal = {
+      id: 6,
+      name: "Post-workout",
+      role: "postWorkout",
+      foods: [
+        {
+          id: 1,
+          name: "Protein shake",
+          protein: 25,
+          carbs: 5,
+          fat: 2,
+          calories: 138,
+          portionSize: 300,
+        },
+      ],
+    };
+    const meals: Meal[] = [{ id: 1, name: "Breakfast", foods: [] }, kept];
+    // A rest day (no plan), and a day whose plan has no post-workout meal.
+    expect(planDay(meals, [], daily)[1]).toBe(kept);
+    expect(planDay(meals, [], daily, { workout: WORKOUT })[1]).toBe(kept);
   });
 });
 

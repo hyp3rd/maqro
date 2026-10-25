@@ -4,6 +4,7 @@ import type {
   ProteinSetting,
   TrainingDay,
   TrainingSchedule,
+  WorkoutMealSettings,
 } from "./types";
 
 /** Writes for the profile's optional `training` template and
@@ -107,6 +108,22 @@ export function withTrainingCycling(
   cycling: CyclingPreset,
 ): TrainingSchedule {
   return patched(raw, (base) => ({ ...base, cycling }));
+}
+
+/** Set which workout meals training days get; keys this build doesn't know
+ *  (inside `workoutMeals` too) stay. */
+export function withWorkoutMeals(
+  raw: unknown,
+  settings: WorkoutMealSettings,
+): TrainingSchedule {
+  return patched(raw, (base) => ({
+    ...base,
+    workoutMeals: {
+      ...(isRecord(base.workoutMeals) ? base.workoutMeals : {}),
+      pre: settings.pre,
+      post: settings.post,
+    },
+  }));
 }
 
 /** Set the fixed-protein setting: g/kg on the 0.1 grid the editor steps on,

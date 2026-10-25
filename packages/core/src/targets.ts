@@ -100,6 +100,11 @@ export type TrainingDayTargets = {
    *  > 30 without one: g/kg on the protein weight that tapers from the
    *  BMI-30 to the BMI-25 weight for the height, `proteinWeightKg`). */
   proteinBasis: ProteinBasis;
+  /** The kg every per-kg amount of the day is taken on (`ProteinTarget.kg`):
+   *  bodyweight, or the BMI > 30 protein weight without a body-fat estimate
+   *  — never lean mass. The fat and carb floors and the workout meals'
+   *  g/kg aims use it. */
+  floorKg: number;
   /** A body-fat estimate would change this protein target — the UI's cue
    *  to suggest adding one. True exactly for the lean-mass fallback (a
    *  `leanMass` setting without an estimate, which takes min(2.0, its g/kg)
@@ -306,6 +311,7 @@ export function targetsForDate(
       meanCalories: values.targetCalories,
       meanDay: { carbs: meanDay.carbs, fat: meanDay.fat },
       proteinBasis: protein.basis,
+      floorKg: floors.floorKg,
       bodyFatWouldChangeProtein: protein.bodyFatWouldChangeProtein,
       floorsExceedMean:
         values.targetCalories < minDay &&

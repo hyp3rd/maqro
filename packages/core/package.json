@@ -10,6 +10,7 @@
     "./batch-apply": "./src/batch-apply.ts",
     "./blood-pressure": "./src/blood-pressure.ts",
     "./body-fat": "./src/body-fat.ts",
+    "./clock": "./src/clock.ts",
     "./date": "./src/date.ts",
     "./diet": "./src/diet.ts",
     "./fasting": "./src/fasting.ts",
@@ -17,6 +18,7 @@
     "./hydration": "./src/hydration.ts",
     "./log-food": "./src/log-food.ts",
     "./macros": "./src/macros.ts",
+    "./meal-order": "./src/meal-order.ts",
     "./meal-schedule": "./src/meal-schedule.ts",
     "./off": "./src/off.ts",
     "./quick-add": "./src/quick-add.ts",
@@ -32,6 +34,7 @@
     "./trends": "./src/trends.ts",
     "./types": "./src/types.ts",
     "./units": "./src/units.ts",
-    "./weekly-recap": "./src/weekly-recap.ts"
+    "./weekly-recap": "./src/weekly-recap.ts",
+    "./workout-meals": "./src/workout-meals.ts"
   }
 }
