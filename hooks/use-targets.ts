@@ -34,6 +34,10 @@ export type AppTargets = {
   /** Today's calorie target for a hypothetical phase list, through the same
    *  resolver — the phase planner's "raises your target" guard. */
   targetForPhases: (phases: GoalPhase[]) => number;
+  /** Any date's own targets, through the same resolver, tier decision and
+   *  overrides as `dayTargets` — for a deferred edit that lands on a day
+   *  other than the one shown (its workout meals). */
+  targetsFor: (date: string) => DateTargets;
   /** Any date's own calorie target, through the same resolver and tier
    *  decision — the weekly recap scores each day against it. */
   targetCaloriesForDate: (date: string) => number;
@@ -96,9 +100,13 @@ export function useTargets(
         .targetCalories,
     [profile, today, ctx],
   );
-  const targetCaloriesForDate = useCallback(
-    (date: string) => targetsForDate(profile, date, ctx).targetCalories,
+  const targetsFor = useCallback(
+    (date: string) => targetsForDate(profile, date, ctx),
     [profile, ctx],
+  );
+  const targetCaloriesForDate = useCallback(
+    (date: string) => targetsFor(date).targetCalories,
+    [targetsFor],
   );
   const planWeek = useCallback(
     (planned: PersonalInfo) => weekTargets(planned, today, templateCtx),
@@ -123,6 +131,7 @@ export function useTargets(
     todayTargets,
     dayTargets,
     targetForPhases,
+    targetsFor,
     targetCaloriesForDate,
     planWeek,
     selectedWeek,

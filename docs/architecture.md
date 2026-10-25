@@ -11,7 +11,11 @@ mobile tab bar / More sheet / You hub placement) is declared once in the nav
 registry, [`components/shell/nav.ts`](../components/shell/nav.ts), which the
 sidebar, the mobile tab bar, the command palette, the topbar and the
 `?view=` parser all read; no `?view=` opens the day view ("Today"), and
-choosing Today from the nav always shows today's date.
+choosing Today from the nav always shows today's date. On a training day the
+day view works on the meals as shown: the stored meals plus the day's
+planned, still-empty workout meals (`@maqro/core/workout-meals`), ordered by
+time (`@maqro/core/meal-order`). A workout meal is stored only while it holds
+food, so every write goes back through `withoutEmptyWorkoutMeals`.
 Persistence is layered:
 
 1. **IndexedDB (always)** - [`lib/db.ts`](../lib/db.ts) is the source of
@@ -150,7 +154,9 @@ components/
                                     #   LogMealSheet + FoodSearchSheet (guided mobile
                                     #   add-food), SheetAction (shared sheet primitives),
                                     #   TrainingWeekEditor (Profile → Training week:
-                                    #   TrainingDayDialog + TrainingWeekChart),
+                                    #   TrainingDayDialog + TrainingWeekChart, the
+                                    #   workout-meal switches; TrainingSessionFields
+                                    #   shared with DayTypeSheet, "I train fasted"),
                                     #   DayTypeSheet (Today's day-type chip: change one
                                     #   day's session, previewed through useTargets)
   today/                            # Instrument Today day view: TodayGauge (ring gauge),
@@ -171,6 +177,8 @@ hooks/
   use-food-search.ts                # Debounced merged search
   use-today.ts                      # Live today-date (rolls at midnight)
   use-week-intake.ts                # One week of logged kcal (ranged IDB read, data-bus refresh)
+  use-usual-meal-minutes.ts         # Each meal's usual time over 28 days (ranged IDB read): where
+                                    #   Today places a training day's workout meals
   use-ai-usage.tsx                  # Shared AI usage + cached last-known tier (provider)
   use-subscription-status.ts        # Billing-tier + past-due state polling (drives PastDueBanner)
   use-notification-prefs.ts         # Email + browser-push subscription toggles
@@ -185,7 +193,8 @@ lib/
   meal-planner.ts                   # 3×3 Cramer-based portion solver
   trends.ts                         # Smoothing, plateau detection, TDEE recalibration
   streaks.ts                        # Consecutive-logged-days computation
-  today/                            # Pure Today geometry: gauge arcs, 24-h timeline, week strip, rail
+  today/                            # Pure Today geometry: gauge arcs, 24-h timeline (session +
+                                    #   workout-meal windows), week strip, rail
   weekly-recap.ts                   # 7-day rollup for Progress + email
   shopping-list.ts                  # Aggregate foods across a date range
   meal-insights.ts                  # Deterministic per-meal balance + goal-fit flags

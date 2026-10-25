@@ -49,12 +49,36 @@ describe("getDemoMealLogs", () => {
     }
   });
 
-  it("every log has four meals (Breakfast / Lunch / Dinner / Snacks)", () => {
+  it("every log has the four regular meals, and a post-workout meal after an evening session", () => {
     const logs = getDemoMealLogs(TODAY, NOW);
+    const training = normalizeTrainingSchedule(getDemoProfile(NOW).training);
     for (const log of logs) {
-      expect(log.meals).toHaveLength(4);
-      const names = log.meals.map((m) => m.name);
-      expect(names).toEqual(["Breakfast", "Lunch", "Dinner", "Snacks"]);
+      const [y, m, d] = log.date.split("-").map(Number);
+      const session = training?.days[new Date(y, m - 1, d).getDay()];
+      const evening =
+        session !== undefined &&
+        session.type !== "rest" &&
+        (session.time ?? "") >= "12:00";
+      const names = log.meals.map((meal) => meal.name);
+      expect(names).toEqual([
+        "Breakfast",
+        "Lunch",
+        "Dinner",
+        "Snacks",
+        ...(evening ? ["Post-workout"] : []),
+      ]);
+      if (evening) expect(log.meals[4]?.role).toBe("postWorkout");
+    }
+    // The seeded week has both kinds of day.
+    expect(logs.some((log) => log.meals.length === 5)).toBe(true);
+    expect(logs.some((log) => log.meals.length === 4)).toBe(true);
+  });
+
+  it("morning sessions, before the eating window, are fasted", () => {
+    const training = normalizeTrainingSchedule(getDemoProfile(NOW).training);
+    for (const session of training?.days ?? []) {
+      if (session.type === "rest") continue;
+      expect(session.fasted === true).toBe((session.time ?? "") < "12:00");
     }
   });
 

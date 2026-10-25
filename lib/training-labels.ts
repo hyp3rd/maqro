@@ -74,14 +74,16 @@ export const MONDAY_FIRST = [1, 2, 3, 4, 5, 6, 0] as const;
  *  wraps. */
 const minutes = (n: number) => `${n} min`;
 
-/** "Moderate · 18:00 · 60 min" — the session details after its type, or
- *  "No session" for a rest day. Parts that aren't set are left out. */
+/** "Moderate · 18:00 · 60 min" (and "Fasted" when it is) — the session
+ *  details after its type, or "No session" for a rest day. Parts that
+ *  aren't set are left out. */
 export function sessionDetails(day: TrainingDay): string {
   if (day.type === "rest") return "No session";
   const parts = [
     day.intensity ? TRAINING_INTENSITY_LABEL[day.intensity] : null,
     day.time ?? null,
     day.durationMin !== undefined ? minutes(day.durationMin) : null,
+    day.fasted === true ? "Fasted" : null,
   ].filter((p): p is string => p !== null);
   return parts.length > 0 ? parts.join(" · ") : "No details yet";
 }

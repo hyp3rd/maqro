@@ -320,6 +320,50 @@ describe("DayTypeSheet", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("training fasted is a change of the day's session", async () => {
+    const { targetsFor, previewDayTargets } = app();
+    renderRow(targetsFor(WED), previewDayTargets);
+    const sheet = await openSheet();
+    fireEvent.click(
+      within(sheet).getByRole("switch", { name: "I train fasted" }),
+    );
+    await act(async () => {
+      fireEvent.click(within(sheet).getByRole("button", { name: "Save" }));
+    });
+    expect(writes.setOverride).toHaveBeenCalledWith(WED, {
+      type: "lower",
+      intensity: "hard",
+      time: "18:00",
+      durationMin: 75,
+      fasted: true,
+    });
+  });
+
+  it("a fasted override reopens fasted; turning it off is back to plan", async () => {
+    const fastedWed: TrainingDay = {
+      type: "lower",
+      intensity: "hard",
+      time: "18:00",
+      durationMin: 75,
+      fasted: true,
+    };
+    const { targetsFor, previewDayTargets } = app([
+      { date: WED, day: fastedWed },
+    ]);
+    renderRow(targetsFor(WED), previewDayTargets);
+    const sheet = await openSheet();
+    const fasted = within(sheet).getByRole("switch", {
+      name: "I train fasted",
+    });
+    expect(fasted.getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(fasted);
+    await act(async () => {
+      fireEvent.click(within(sheet).getByRole("button", { name: "Save" }));
+    });
+    expect(writes.clearOverride).toHaveBeenCalledWith(WED);
+    expect(writes.setOverride).not.toHaveBeenCalled();
+  });
+
   it("saving an unchanged override writes nothing", async () => {
     const { targetsFor, previewDayTargets } = app([
       { date: WED, day: { type: "rest" } },

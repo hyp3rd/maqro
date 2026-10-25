@@ -21,6 +21,10 @@ import type {
   Recipe,
   TrainingSchedule,
 } from "@maqro/core/types";
+import {
+  DEFAULT_WORKOUT_MEALS,
+  workoutMealsForDay,
+} from "@maqro/core/workout-meals";
 import type { User } from "@supabase/supabase-js";
 import { act, cleanup, render } from "@testing-library/react";
 
@@ -166,6 +170,8 @@ vi.mock("./lib/db", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./lib/db")>()),
   listCustomFoods: async () => [],
   listDailyLogs: async () => [],
+  // The usual meal times' history (`useUsualMealMinutes`): none.
+  listDailyLogsBetween: async () => [],
   listDayOverrides: () => overridesRead.pending ?? Promise.resolve([]),
   listMealSchedules: async () => [],
   listMicronutrientProfiles: async () => [],
@@ -1290,5 +1296,203 @@ describe("macro-calculator: every way of logging food times it on today", () => 
     const past = writtenLunch();
     expect(past).toHaveLength(2);
     expect(past[1]?.loggedAt).toBeUndefined();
+  });
+});
+
+/** Training days' workout meals: the day view works on the meals as shown
+ *  (stored + the planned, still-empty workout meals, in time order) and
+ *  writes back only what holds food. */
+describe("macro-calculator: workout meals", () => {
+  /** TODAY (a Wednesday) trains upper body at 18:00 for an hour. */
+  const TRAINING: PersonalInfo = {
+    ...PROFILE,
+    training: {
+      enabled: true,
+      cycling: "modest",
+      days: [
+        { type: "rest" },
+        { type: "rest" },
+        { type: "rest" },
+        {
+          type: "upper",
+          intensity: "moderate",
+          time: "18:00",
+          durationMin: 60,
+        },
+        { type: "rest" },
+        { type: "rest" },
+        { type: "rest" },
+      ],
+    },
+  };
+  const day = targetsForDate(TRAINING, TODAY, pro);
+  const plan = workoutMealsForDay(day, DEFAULT_WORKOUT_MEALS);
+  const SHAKE: FoodItem = {
+    id: 77,
+    name: "Protein shake",
+    protein: 25,
+    carbs: 5,
+    fat: 2,
+    calories: 138,
+    portionSize: 300,
+  };
+  const names = (meals: Meal[]) => meals.map((m) => m.name);
+
+  /** Render on TODAY with the training profile; the overrides load. */
+  async function renderTraining() {
+    stored.profile = TRAINING;
+    render(<MacroCalculator />);
+    await act(async () => {});
+  }
+
+  it("shows the planned workout meals among the others, by time", async () => {
+    await renderTraining();
+    expect(plan?.pre?.aimMinute).toBe(16 * 60 + 30);
+    expect(names(prop<Meal[]>("MealPlanner", "meals"))).toEqual([
+      "Breakfast",
+      "Lunch",
+      "Pre-workout",
+      "Post-workout",
+      "Dinner",
+      "Snacks",
+    ]);
+    expect(prop("MealPlanner", "workoutMeals")).toEqual(plan);
+  });
+
+  it("plans no workout meal before the overrides have loaded", async () => {
+    stored.profile = TRAINING;
+    overridesRead.pending = new Promise(() => {});
+    render(<MacroCalculator />);
+    await act(async () => {});
+    expect(names(prop<Meal[]>("MealPlanner", "meals"))).toEqual(names(MEALS));
+    expect(prop("MealPlanner", "workoutMeals")).toBeNull();
+  });
+
+  it("a first food stores the workout meal; the empty one is never written", async () => {
+    await renderTraining();
+    await act(async () => {
+      prop<(food: Food, mealId: number, grams: number) => void>(
+        "MealPlanner",
+        "onQuickLog",
+      )(
+        {
+          name: "Banana",
+          protein: 1,
+          carbs: 23,
+          fat: 0,
+          calories: 89,
+          category: "fruit",
+        },
+        5,
+        120,
+      );
+    });
+    const written = writes.setMeals.mock.lastCall?.[0] ?? [];
+    expect(written.map((m) => m.id)).toEqual([1, 2, 3, 4, 5]);
+    expect(written[4]).toMatchObject({
+      id: 5,
+      name: "Pre-workout",
+      role: "preWorkout",
+    });
+    expect(written[4]?.foods.map((f) => f.name)).toEqual(["Banana"]);
+  });
+
+  it("emptying a workout meal drops it from storage", async () => {
+    dayMeals.override = [
+      ...MEALS,
+      { id: 6, name: "Post-workout", role: "postWorkout", foods: [SHAKE] },
+    ];
+    await renderTraining();
+    await act(async () => {
+      prop<(mealId: number, foodId: number) => void>(
+        "MealPlanner",
+        "removeFood",
+      )(6, SHAKE.id);
+    });
+    expect(writes.setMeals.mock.lastCall?.[0]).toEqual(MEALS);
+  });
+
+  it("Auto-fill plans the regular meals to what the workout meals leave", async () => {
+    dayMeals.override = [
+      ...MEALS,
+      { id: 6, name: "Post-workout", role: "postWorkout", foods: [SHAKE] },
+    ];
+    await renderTraining();
+    await act(async () => {
+      await prop<() => Promise<void>>("MealPlanner", "generateMealPlan")();
+    });
+    const req = requestAiMealPlan.mock.lastCall?.[0];
+    expect(req?.mealNames).toEqual(names(MEALS));
+    expect(req?.targets).toEqual({
+      protein: day.protein - SHAKE.protein,
+      carbs: day.carbs - SHAKE.carbs,
+      fat: day.fat - SHAKE.fat,
+      calories: day.targetCalories - SHAKE.calories,
+    });
+  });
+
+  it("regenerate never runs on a workout meal", async () => {
+    await renderTraining();
+    await act(async () => {
+      await prop<(mealId: number) => Promise<void>>(
+        "MealPlanner",
+        "onRegenerateMeal",
+      )(5);
+    });
+    expect(requestAiMealPlan).not.toHaveBeenCalled();
+  });
+
+  it("quick add inside a workout meal's window starts on that meal", async () => {
+    vi.setSystemTime(new Date(2026, 5, 10, 16, 0, 0));
+    await renderTraining();
+    await act(async () => {
+      prop<(trigger: HTMLElement) => void>(
+        "AppShell",
+        "onQuickAdd",
+      )(document.createElement("button"));
+    });
+    expect(prop("LogMealSheet", "initialMealId")).toBe(5);
+  });
+
+  it("a workout meal ranks recipes against its own aims", async () => {
+    await renderTraining();
+    await act(async () => {
+      prop<(mealId: number) => void>("MealPlanner", "onApplyRecipe")(5);
+    });
+    const aims = plan?.pre?.aims;
+    expect(prop("ApplyRecipeDialog", "slotBudget")).toEqual({
+      protein: aims?.protein,
+      carbs: aims?.carbs,
+      fat: aims?.fat,
+    });
+    // A regular meal: an even share of what the workout meals leave.
+    await act(async () => {
+      prop<(mealId: number) => void>("MealPlanner", "onApplyRecipe")(2);
+    });
+    const both = [plan?.pre?.aims, plan?.post?.aims];
+    const left = (k: "protein" | "carbs" | "fat") =>
+      day[k] - both.reduce((sum, a) => sum + (a?.[k] ?? 0), 0);
+    expect(prop("ApplyRecipeDialog", "slotBudget")).toEqual(
+      computeSlotBudget(
+        { protein: left("protein"), carbs: left("carbs"), fat: left("fat") },
+        4,
+      ),
+    );
+  });
+
+  it("recipe schedules and the day suggester see the regular meals", async () => {
+    await renderTraining();
+    await act(async () => {
+      prop<() => void>("MealPlanner", "onOpenSuggestDay")();
+    });
+    expect(names(prop<Meal[]>("SuggestDayDialog", "meals"))).toEqual(
+      names(MEALS),
+    );
+    await act(async () => {
+      prop<(k: string) => void>("AppShell", "onSelect")("recipes");
+    });
+    expect(names(prop<Meal[]>("RecipesView", "currentMeals"))).toEqual(
+      names(MEALS),
+    );
   });
 });

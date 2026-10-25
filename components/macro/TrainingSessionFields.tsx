@@ -3,6 +3,7 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { Switch } from "@/components/ui/switch";
 import { formatNumber } from "@/lib/i18n/number";
 import {
   TRAINING_INTENSITY_LABEL,
@@ -31,6 +32,8 @@ export type SessionDraft = {
   time: string;
   /** The input's text, so a half-typed value doesn't jump around. */
   duration: string;
+  /** Trains without eating first: no pre-workout meal that day. */
+  fasted: boolean;
 };
 
 export function toSessionDraft(day: TrainingDay): SessionDraft {
@@ -39,6 +42,7 @@ export function toSessionDraft(day: TrainingDay): SessionDraft {
     intensity: day.intensity ?? null,
     time: day.time ?? "",
     duration: day.durationMin !== undefined ? String(day.durationMin) : "",
+    fasted: day.fasted === true,
   };
 }
 
@@ -59,8 +63,9 @@ export function sessionDraftInvalid(draft: SessionDraft): boolean {
 }
 
 /** The session the draft describes: a rest day carries nothing else; an
- *  unset intensity, an empty time and a blank duration are left out (the
- *  caller holds its save while the duration is invalid). */
+ *  unset intensity, an empty time, a blank duration and a session that isn't
+ *  fasted are left out (the caller holds its save while the duration is
+ *  invalid). */
 export function draftToSession(draft: SessionDraft): TrainingDay {
   if (draft.type === "rest") return { type: "rest" };
   const day: TrainingDay = { type: draft.type };
@@ -68,12 +73,14 @@ export function draftToSession(draft: SessionDraft): TrainingDay {
   if (/^([01]\d|2[0-3]):[0-5]\d$/.test(draft.time)) day.time = draft.time;
   const minutes = draftDuration(draft.duration);
   if (typeof minutes === "number") day.durationMin = minutes;
+  if (draft.fasted) day.fasted = true;
   return day;
 }
 
 /** The session controls shared by the template's day dialog and the
- *  per-date day-type sheet: type, then intensity, start time and duration
- *  (kept in place but disabled on a rest day, in both sheets). */
+ *  per-date day-type sheet: type, then intensity, start time, duration and
+ *  "I train fasted" (kept in place but disabled on a rest day, in both
+ *  sheets). */
 export function TrainingSessionFields({
   draft,
   onChange,
@@ -184,6 +191,30 @@ export function TrainingSessionFields({
               ? `Enter whole minutes from 1 to ${formatNumber(MAX_DURATION_MIN, locale)}, or leave it blank.`
               : "Both optional. A long endurance session counts as a bigger day."}
         </p>
+
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <Label
+              htmlFor={`${id}-fasted`}
+              className="text-label group-disabled:text-muted-foreground"
+            >
+              I train fasted
+            </Label>
+            <p
+              id={`${id}-fasted-hint`}
+              className="mt-0.5 text-label text-muted-foreground"
+            >
+              No pre-workout meal; at least 25 g of protein soon after. Fasted
+              training burns no more fat over the day.
+            </p>
+          </div>
+          <Switch
+            id={`${id}-fasted`}
+            aria-describedby={`${id}-fasted-hint`}
+            checked={!rest && draft.fasted}
+            onCheckedChange={(fasted) => onChange({ fasted })}
+          />
+        </div>
       </fieldset>
     </>
   );

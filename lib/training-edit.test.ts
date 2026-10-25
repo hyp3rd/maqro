@@ -88,6 +88,23 @@ describe("withTrainingDay", () => {
     });
   });
 
+  it("sets and clears fasted with the rest of the session", () => {
+    const fasted = withTrainingDay(defaultTrainingSchedule(), 1, {
+      type: "upper",
+      time: "06:30",
+      fasted: true,
+    });
+    expect(fasted.days[1]).toEqual({
+      type: "upper",
+      time: "06:30",
+      fasted: true,
+    });
+    // An edit without the flag clears it, like any other optional field.
+    expect(
+      withTrainingDay(fasted, 1, { type: "upper", time: "06:30" }).days[1],
+    ).toEqual({ type: "upper", time: "06:30" });
+  });
+
   it("keeps unknown keys on the edited day itself", () => {
     const next = withTrainingDay(FROM_NEWER_CLIENT, 3, {
       type: "lower",

@@ -4,6 +4,10 @@
 import { intlWrapper } from "@/lib/i18n/intl-test-wrapper";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Meal } from "@maqro/core/types";
+import type {
+  WorkoutMealSlot,
+  WorkoutMealsPlan,
+} from "@maqro/core/workout-meals";
 import { cleanup, render, screen } from "@testing-library/react";
 import { DayTimeline } from "./DayTimeline";
 
@@ -250,6 +254,73 @@ describe("DayTimeline", () => {
       { wrapper: intlWrapper() },
     );
     expect(off.container.querySelector("[data-part=workout]")).toBeNull();
+  });
+
+  it("brackets the workout meals' eating windows either side of the session", () => {
+    const aims = { protein: 30, carbs: 55, fat: 10, calories: 430 };
+    const pre: WorkoutMealSlot = {
+      role: "preWorkout",
+      id: 5,
+      name: "Pre-workout",
+      aims,
+      window: { start: 15 * 60, end: 17 * 60 },
+      aimMinute: 16 * 60 + 30,
+    };
+    const workoutMeals: WorkoutMealsPlan = {
+      session: LOWER.day,
+      heavyOrLong: true,
+      fasted: false,
+      earlySession: false,
+      pre,
+      post: {
+        role: "postWorkout",
+        id: 6,
+        name: "Post-workout",
+        aims,
+        window: { start: 19 * 60 + 15, end: 21 * 60 + 15 },
+        aimMinute: 19 * 60 + 45,
+      },
+    };
+    const { container } = render(
+      <DayTimeline
+        meals={MEALS}
+        date={DAY}
+        today={DAY}
+        now={at(15, 10)}
+        training={LOWER}
+        workoutMeals={workoutMeals}
+      />,
+      { wrapper: intlWrapper() },
+    );
+    const preBracket = container.querySelector("[data-part=preWorkout]");
+    expect(left(preBracket)).toBeCloseTo((900 / 1440) * 100, 6);
+    expect(width(preBracket)).toBeCloseTo((120 / 1440) * 100, 6);
+    const post = container.querySelector("[data-part=postWorkout]");
+    expect(left(post)).toBeCloseTo((1155 / 1440) * 100, 6);
+    expect(
+      screen.getByRole("img", {
+        name: "Day timeline: Breakfast at 07:30, 520 kcal. Lunch at 12:45, 720 kcal. Pre-workout window, 15:00 to 17:00. Workout, Lower · heavy day, 18:00 to 19:15. Post-workout window, 19:15 to 21:15. Now 15:10.",
+      }),
+    ).toBeTruthy();
+    // Untimed or no workout meals: no brackets.
+    cleanup();
+    const none = render(
+      <DayTimeline
+        meals={MEALS}
+        date={DAY}
+        today={DAY}
+        now={at(15, 10)}
+        training={LOWER}
+        workoutMeals={{
+          ...workoutMeals,
+          pre: { ...pre, window: null, aimMinute: null },
+          post: null,
+        }}
+      />,
+      { wrapper: intlWrapper() },
+    );
+    expect(none.container.querySelector("[data-part=preWorkout]")).toBeNull();
+    expect(none.container.querySelector("[data-part=postWorkout]")).toBeNull();
   });
 
   it("names the whole track for assistive tech", () => {

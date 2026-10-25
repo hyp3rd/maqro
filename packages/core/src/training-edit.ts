@@ -81,7 +81,13 @@ export function withTrainingEnabled(
   return patched(raw, (base) => ({ ...base, enabled }));
 }
 
-const DAY_FIELDS = ["type", "intensity", "time", "durationMin"] as const;
+const DAY_FIELDS = [
+  "type",
+  "intensity",
+  "time",
+  "durationMin",
+  "fasted",
+] as const;
 
 /** Replace one weekday's session (`weekday` = `getDay()`, 0 = Sunday). The
  *  day's known fields become exactly `day` (an optional field it leaves out

@@ -1,8 +1,10 @@
 "use client";
 
 import { usePastMealsForSlot } from "@/hooks/use-past-meals";
+import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { LayoutGrid, Plus, Soup, Sparkles, Trash2 } from "lucide-react";
+import { workoutRole } from "@maqro/core/workout-meals";
 import { Button } from "../ui/button";
 import {
   Dialog,
@@ -180,6 +182,9 @@ function MealHubBody({
 }) {
   const pastMeals = usePastMealsForSlot(meal.name);
   const hasFoods = meal.foods.length > 0;
+  // AI planning fills the regular meals; a workout meal has no AI generate
+  // until the planner sizes it by its role.
+  const aiGenerates = workoutRole(meal) === null;
   const totalKcal = Math.round(meal.foods.reduce((s, f) => s + f.calories, 0));
 
   // A single prominent action that opens the dedicated food-search sheet
@@ -228,7 +233,12 @@ function MealHubBody({
 
           {addFoodButton}
 
-          <div className="grid grid-cols-3 gap-2">
+          <div
+            className={cn(
+              "grid gap-2",
+              aiGenerates ? "grid-cols-3" : "grid-cols-2",
+            )}
+          >
             <Button
               type="button"
               variant="outline"
@@ -253,16 +263,18 @@ function MealHubBody({
               <Soup className="h-4 w-4" />
               Apply recipe
             </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={regenerating}
-              className="h-auto flex-col gap-1.5 px-1 py-3 text-xs font-medium"
-              onClick={() => onRegenerate(meal.id)}
-            >
-              <Sparkles className="h-4 w-4" />
-              {regeneratingThisMeal ? "Generating…" : "AI generate"}
-            </Button>
+            {aiGenerates && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={regenerating}
+                className="h-auto flex-col gap-1.5 px-1 py-3 text-xs font-medium"
+                onClick={() => onRegenerate(meal.id)}
+              >
+                <Sparkles className="h-4 w-4" />
+                {regeneratingThisMeal ? "Generating…" : "AI generate"}
+              </Button>
+            )}
           </div>
 
           {pastMeals.length > 0 && (

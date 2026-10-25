@@ -5,7 +5,8 @@ import {
   minuteOfDay,
   parseClock,
 } from "@maqro/core/clock";
-import type { Meal, TrainingDay } from "@maqro/core/types";
+import type { Meal, TrainingDay, WorkoutMealRole } from "@maqro/core/types";
+import type { WorkoutMealsPlan } from "@maqro/core/workout-meals";
 
 /** Geometry and wording of the Today 24-hour timing track. Pure: the date,
  *  today's key and the clock are inputs, so the track renders the same in
@@ -133,16 +134,35 @@ export function mealTicks(meals: readonly Meal[], date: string): MealTick[] {
   });
 }
 
-/** A block of time on the track. Today only the planned workout; the
- *  pre/post-workout eating windows join this union when they ship, and
- *  the track draws each kind in its own style. */
+/** A block of time on the track: the planned workout, or the eating window
+ *  of one of the day's workout meals. The track draws each kind in its own
+ *  style. */
 export type TimelineSpan = {
-  kind: "workout";
+  kind: "workout" | WorkoutMealRole;
   startMin: number;
   endMin: number;
-  /** The session as the day-type chip names it ("Lower · heavy day"). */
+  /** The session as the day-type chip names it ("Lower · heavy day"), or
+   *  the workout meal's name. */
   label: string;
 };
+
+/** The eating windows of the day's workout meals, in time order; an untimed
+ *  meal has none. */
+export function workoutMealSpans(
+  plan: WorkoutMealsPlan | null,
+): TimelineSpan[] {
+  const spans: TimelineSpan[] = [];
+  for (const slot of [plan?.pre, plan?.post]) {
+    if (!slot?.window) continue;
+    spans.push({
+      kind: slot.role,
+      startMin: slot.window.start,
+      endMin: slot.window.end,
+      label: slot.name,
+    });
+  }
+  return spans;
+}
 
 /** The planned session of a training template day: from its start time
  *  for its duration (a point when the length is unknown), ending at
@@ -255,11 +275,14 @@ export function timelineSummary(input: {
       (t) =>
         `${t.name} at ${formatClock(t.minutes)}, ${input.formatKcal(t.kcal)} kcal.`,
     ),
-    ...input.spans.map((s) =>
-      s.endMin > s.startMin
+    ...input.spans.map((s) => {
+      if (s.kind !== "workout") {
+        return `${s.label} window, ${formatClock(s.startMin)} to ${formatClock(s.endMin)}.`;
+      }
+      return s.endMin > s.startMin
         ? `Workout, ${s.label}, ${formatClock(s.startMin)} to ${formatClock(s.endMin)}.`
-        : `Workout, ${s.label}, at ${formatClock(s.startMin)}.`,
-    ),
+        : `Workout, ${s.label}, at ${formatClock(s.startMin)}.`;
+    }),
   ];
   if (parts.length === 0) parts.push("No timed meals yet.");
   if (input.nowMinute !== null)

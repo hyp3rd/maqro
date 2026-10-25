@@ -48,7 +48,8 @@ function sameSession(a: TrainingDay, b: TrainingDay): boolean {
     (a.type === "rest" ||
       (a.intensity === b.intensity &&
         a.time === b.time &&
-        a.durationMin === b.durationMin))
+        a.durationMin === b.durationMin &&
+        (a.fasted === true) === (b.fasted === true)))
   );
 }
 

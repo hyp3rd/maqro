@@ -2,6 +2,7 @@
 
 import type { CoherenceIssue } from "@/lib/ai/plan-coherence";
 import type { MealSchedule } from "@/lib/db";
+import { formatClock } from "@/lib/today/timeline";
 import React, { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
@@ -20,6 +21,8 @@ import {
   SortableContext,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
+import type { WorkoutMealRole } from "@maqro/core/types";
+import { type WorkoutMealsPlan, workoutRole } from "@maqro/core/workout-meals";
 import {
   Food,
   FoodItem as FoodItemType,
@@ -36,6 +39,21 @@ import {
 import FoodItem from "./FoodItem";
 import FoodMobileCard from "./FoodMobileCard";
 import type { MealHubIntent } from "./MealHubSheet";
+
+/** What a workout meal is for, shown on it while it's empty. */
+function workoutMealHint(
+  role: WorkoutMealRole,
+  plan: WorkoutMealsPlan | null,
+): string {
+  if (role === "preWorkout") {
+    return plan?.earlySession
+      ? "A small, easy snack 30–60 min before you train."
+      : "Quick carbs and some protein, little fat or fibre.";
+  }
+  return plan?.fasted
+    ? "At least 25 g of protein soon after your fasted session."
+    : "Protein first, within 2 hours of training.";
+}
 
 interface MealItemProps {
   meal: MealType;
@@ -101,6 +119,9 @@ interface MealItemProps {
    *  directly on the offending card so the user doesn't have to scan
    *  a global banner to find what's wrong. */
   issues: CoherenceIssue[];
+  /** The day's workout meals (`workoutMealsForDay`): on a workout meal the
+   *  day plans, the card names its time and aims. */
+  workoutMeals?: WorkoutMealsPlan | null;
 }
 
 const MealItem: React.FC<MealItemProps> = ({
@@ -130,7 +151,17 @@ const MealItem: React.FC<MealItemProps> = ({
   regenerating,
   regeneratingThisMeal,
   issues,
+  workoutMeals = null,
 }) => {
+  const role = workoutRole(meal);
+  // The slot the day plans for this workout meal: none for a regular meal,
+  // nor for one kept for its food after the day flipped to rest.
+  const slot =
+    role === null
+      ? null
+      : role === "preWorkout"
+        ? (workoutMeals?.pre ?? null)
+        : (workoutMeals?.post ?? null);
   // Empty slot = "Generate" verb; populated slot = "Regenerate". A
   // brand-new user clicking on Lunch shouldn't see "Regenerate" -
   // there's nothing to regenerate yet. The progressive form drops
@@ -201,6 +232,16 @@ const MealItem: React.FC<MealItemProps> = ({
       <div className="mb-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
         <h3 className="text-[0.9375rem] font-medium leading-5 tracking-tight text-foreground">
           {meal.name}
+          {/* The separator is the heading's own text: a leading space inside
+              the span would be trimmed from the accessible name. */}
+          {slot && slot.aimMinute !== null && (
+            <>
+              {" · "}
+              <span className="font-mono font-normal tabular-nums text-muted-foreground">
+                {formatClock(slot.aimMinute)}
+              </span>
+            </>
+          )}
         </h3>
         <div className="flex items-center gap-1.5">
           {meal.foods.length > 0 && !regeneratingThisMeal && (
@@ -270,14 +311,18 @@ const MealItem: React.FC<MealItemProps> = ({
                   <DropdownMenuSeparator />
                 </>
               )}
-              <DropdownMenuItem
-                onClick={() => onRegenerate(meal.id)}
-                disabled={regenerating}
-                className="gap-2"
-              >
-                <Sparkles className="h-3.5 w-3.5 text-muted-foreground" />
-                {aiVerb} (AI)
-              </DropdownMenuItem>
+              {/* AI planning fills the regular meals; a workout meal has no
+                  AI generate until the planner sizes it by its role. */}
+              {role === null && (
+                <DropdownMenuItem
+                  onClick={() => onRegenerate(meal.id)}
+                  disabled={regenerating}
+                  className="gap-2"
+                >
+                  <Sparkles className="h-3.5 w-3.5 text-muted-foreground" />
+                  {aiVerb} (AI)
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem
                 onClick={() => onAddFromTemplate(meal.id)}
                 className="gap-2"
@@ -313,6 +358,17 @@ const MealItem: React.FC<MealItemProps> = ({
           </DropdownMenu>
         </div>
       </div>
+
+      {/* A planned workout meal's aims, in the split's own terms. */}
+      {slot && (
+        <p
+          data-part="workout-aims"
+          className="-mt-1 mb-2 font-mono text-xs tabular-nums text-muted-foreground"
+        >
+          Aim {slot.aims.calories} kcal · P{slot.aims.protein} · C
+          {slot.aims.carbs} · F{slot.aims.fat}
+        </p>
+      )}
 
       {/* The meal's P/C/F split where the header has no room for it. */}
       {meal.foods.length > 0 && !regeneratingThisMeal && (
@@ -375,9 +431,22 @@ const MealItem: React.FC<MealItemProps> = ({
             </button>
           )}
           <div className="flex min-h-touch-9 items-center justify-between gap-2">
-            <p className="text-label text-muted-foreground">
-              {isOver ? "Drop here" : "No foods added yet"}
-            </p>
+            {isOver ? (
+              <p className="text-label text-muted-foreground">Drop here</p>
+            ) : role !== null ? (
+              <div className="min-w-0">
+                <p className="text-label text-muted-foreground">
+                  {workoutMealHint(role, workoutMeals)}
+                </p>
+                <p className="text-label text-faint-foreground">
+                  General guidance, not medical advice.
+                </p>
+              </div>
+            ) : (
+              <p className="text-label text-muted-foreground">
+                No foods added yet
+              </p>
+            )}
             {/* One add affordance. Tapping it opens the per-meal hub, which
                 leads with "Log this again" (slot recents, one tap) and
                 carries the search + template / recipe / AI-generate actions
