@@ -6,13 +6,21 @@ import { computeSlotBudget } from "@/lib/recipe-ranking";
 import type { ReactNode, RefObject } from "react";
 import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { MealSchedule, MealTemplate } from "@maqro/core/records";
 import {
   type WeekTargets,
   dayOverrideResolver,
   targetsForDate,
   weekTargets,
 } from "@maqro/core/targets";
-import type { Meal, PersonalInfo, TrainingSchedule } from "@maqro/core/types";
+import type {
+  Food,
+  FoodItem,
+  Meal,
+  PersonalInfo,
+  Recipe,
+  TrainingSchedule,
+} from "@maqro/core/types";
 import type { User } from "@supabase/supabase-js";
 import { act, cleanup, render } from "@testing-library/react";
 
@@ -106,6 +114,13 @@ const dayMeals = vi.hoisted(() => ({
   last: null as Meal[] | null,
 }));
 
+/** The day view's meal writes (`useDailyLog`'s `setMeals`), and the
+ *  recipes `listRecipes` serves (none unless a test adds some). */
+const writes = vi.hoisted(() => ({
+  setMeals: vi.fn<(meals: Meal[]) => void>(),
+  recipes: [] as Recipe[],
+}));
+
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(nav.search),
 }));
@@ -133,7 +148,7 @@ vi.mock("./hooks/use-daily-log", () => ({
     return {
       date,
       meals: isHydrated ? own : (dayMeals.last ?? own),
-      setMeals: vi.fn(),
+      setMeals: writes.setMeals,
       isHydrated,
       day: { date, epoch: 0 },
       commitToDay: async () => true,
@@ -155,7 +170,7 @@ vi.mock("./lib/db", async (importOriginal) => ({
   listMealSchedules: async () => [],
   listMicronutrientProfiles: async () => [],
   listPantryItems: async () => [],
-  listRecipes: async () => [],
+  listRecipes: async () => writes.recipes,
 }));
 
 vi.mock("./components/shell/AppShell", () => ({
@@ -269,7 +284,8 @@ vi.mock("./components/macro/VoiceLogSheet", () => ({
 }));
 
 const { default: MacroCalculator } = await import("./macro-calculator");
-const { formatDayLabel } = await import("./components/shell/DateNavigator");
+const { formatDayLabel } = await import("./lib/today/day-label");
+const { railNodes } = await import("./lib/today/rail");
 
 /** A prop the stubbed `component` last rendered with. */
 function prop<T>(component: string, name: string): T {
@@ -300,6 +316,8 @@ beforeEach(() => {
   dayMeals.loaded = null;
   dayMeals.last = null;
   overridesRead.pending = null;
+  writes.setMeals.mockReset();
+  writes.recipes = [];
   for (const key of Object.keys(ui.props)) delete ui.props[key];
   refreshAiUsage.mockReset();
   requestAiMealPlan.mockReset();
@@ -630,16 +648,18 @@ describe("macro-calculator: Today-first landing", () => {
 });
 
 describe("macro-calculator: the day view's heading names the day it shows", () => {
-  it("reads Today on today, the date on another day, and the launcher agrees", async () => {
+  it("leaves the heading to the day's own header; the launcher names the day", async () => {
     render(<MacroCalculator />);
-    expect(prop("AppShell", "title")).toBe("Today");
+    // No second title in the top bar: the Today header is the page's h1.
+    expect(prop("AppShell", "title")).toBeNull();
+    expect(prop("LogMealSheet", "dayLabel")).toBe("Today");
 
     await act(async () => {
       prop<(d: string) => void>("MealPlanner", "onSelectDate")(PAST_DAY);
     });
     const pastLabel = formatDayLabel(PAST_DAY, TODAY);
     expect(pastLabel).not.toBe("Today");
-    expect(prop("AppShell", "title")).toBe(pastLabel);
+    expect(prop("AppShell", "title")).toBeNull();
     expect(prop("LogMealSheet", "dayLabel")).toBe(pastLabel);
   });
 
@@ -655,7 +675,7 @@ describe("macro-calculator: the day view's heading names the day it shows", () =
       expect(prop("AppShell", "current")).toBe("plan");
       await selectToday();
       expect(prop("MealPlanner", "selectedDate")).toBe(TODAY);
-      expect(prop("AppShell", "title")).toBe("Today");
+      expect(prop("AppShell", "title")).toBeNull();
     });
 
     it("coming back from another view lands on today, not the past day", async () => {
@@ -667,7 +687,7 @@ describe("macro-calculator: the day view's heading names the day it shows", () =
       await selectToday();
       expect(prop("AppShell", "current")).toBe("plan");
       expect(prop("MealPlanner", "selectedDate")).toBe(TODAY);
-      expect(prop("AppShell", "title")).toBe("Today");
+      expect(prop("AppShell", "title")).toBeNull();
     });
   });
 
@@ -958,5 +978,205 @@ describe("macro-calculator: ?upgrade=<plan>", () => {
     const location = renderWithUpgradeParam();
     expect(location.href).toBe(APP_URL);
     expect(info).not.toHaveBeenCalled();
+  });
+});
+
+describe("macro-calculator: every way of logging food times it on today", () => {
+  /** The faked clock (12:00 on TODAY): when food logged now was eaten. */
+  const NOW = new Date(2026, 5, 10, 12, 0, 0).getTime();
+  const OATS = {
+    foodName: "Oats",
+    macrosPer100g: { protein: 13, carbs: 60, fat: 7, calories: 380 },
+    portionGrams: 80,
+  };
+  const RECIPE: Recipe = {
+    id: "r1",
+    name: "Porridge",
+    ingredients: [OATS],
+    createdAt: 0,
+    updatedAt: 0,
+  };
+  const TEMPLATE: MealTemplate = {
+    id: "t1",
+    name: "Usual lunch",
+    // A saved template's food keeps no time of its own.
+    foods: [
+      {
+        id: 7,
+        name: "Rice",
+        protein: 3,
+        carbs: 28,
+        fat: 0,
+        calories: 130,
+        portionSize: 100,
+      },
+    ],
+    createdAt: 0,
+    updatedAt: 0,
+  };
+  const SCHEDULE: MealSchedule = {
+    id: "s1",
+    recipeId: RECIPE.id,
+    recipeName: RECIPE.name,
+    mealNames: ["lunch"],
+    startDate: PAST_DAY,
+    endDate: TODAY,
+    daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+    scale: 1,
+    createdAt: 0,
+    updatedAt: 0,
+  };
+  const PHOTO_FOOD: FoodItem = {
+    id: 1,
+    name: "Salad",
+    protein: 4,
+    carbs: 10,
+    fat: 8,
+    calories: 130,
+    portionSize: 200,
+  };
+
+  /** Each path the UI presents as logging, into Lunch (id 2). */
+  const PATHS: { name: string; log: () => Promise<void> }[] = [
+    {
+      name: "a recipe from the log launcher",
+      log: async () => {
+        await act(async () => {
+          prop<(m: string, id: number) => void>("LogMealSheet", "onMethod")(
+            "recipe",
+            2,
+          );
+        });
+        await act(async () => {
+          prop<(r: Recipe) => void>("ApplyRecipeDialog", "onApply")(RECIPE);
+        });
+      },
+    },
+    {
+      name: "a template from the log launcher",
+      log: async () => {
+        await act(async () => {
+          prop<(m: string, id: number) => void>("LogMealSheet", "onMethod")(
+            "template",
+            2,
+          );
+        });
+        await act(async () => {
+          prop<(t: MealTemplate) => void>(
+            "ApplyTemplateDialog",
+            "onApply",
+          )(TEMPLATE);
+        });
+      },
+    },
+    {
+      name: "a scheduled recipe's 'Log'",
+      log: async () => {
+        writes.recipes = [RECIPE];
+        await act(async () => {
+          await prop<(s: MealSchedule, id: number) => Promise<void>>(
+            "MealPlanner",
+            "onLogScheduled",
+          )(SCHEDULE, 2);
+        });
+      },
+    },
+    {
+      name: "the day suggester's 'Log this day'",
+      log: async () => {
+        await act(async () => {
+          prop<() => void>("MealPlanner", "onOpenSuggestDay")();
+        });
+        await act(async () => {
+          prop<(picks: { recipe: Recipe; mealId: number }[]) => void>(
+            "SuggestDayDialog",
+            "onApplyDay",
+          )([{ recipe: RECIPE, mealId: 2 }]);
+        });
+      },
+    },
+    {
+      name: "confirming a meal photo's foods",
+      log: async () => {
+        await act(async () => {
+          prop<(id: number, foods: FoodItem[], custom: unknown[]) => void>(
+            "MealPhotoReviewDialog",
+            "onConfirm",
+          )(2, [PHOTO_FOOD], []);
+        });
+      },
+    },
+  ];
+
+  /** The day view's last meal write. */
+  function written(): Meal[] {
+    const meals = writes.setMeals.mock.lastCall?.[0];
+    if (!meals) throw new Error("nothing was written");
+    return meals;
+  }
+
+  /** Lunch's foods in the day view's last meal write. */
+  function writtenLunch(): FoodItem[] {
+    const lunch = written().find((m) => m.id === 2);
+    if (!lunch) throw new Error("no Lunch in the write");
+    return lunch.foods;
+  }
+
+  for (const path of PATHS) {
+    it(`${path.name} is eaten now on today, and untimed on another day`, async () => {
+      render(<MacroCalculator />);
+      await path.log();
+      const today = writtenLunch();
+      expect(today.length).toBeGreaterThan(0);
+      for (const food of today) expect(food.loggedAt).toBe(NOW);
+      // So the rail reads the meal as logged, not planned.
+      expect(railNodes(written(), "today")[1]?.node).toBe("logged");
+
+      cleanup();
+      writes.setMeals.mockReset();
+      await renderOnPastDay();
+      await path.log();
+      const past = writtenLunch();
+      expect(past.length).toBeGreaterThan(0);
+      for (const food of past) expect(food.loggedAt).toBeUndefined();
+    });
+  }
+
+  it("replacing a food keeps the time it was eaten", async () => {
+    const EATEN_AT = new Date(2026, 5, 10, 8, 30).getTime();
+    const eggs: FoodItem = {
+      id: 11,
+      name: "Eggs",
+      protein: 13,
+      carbs: 1,
+      fat: 10,
+      calories: 150,
+      portionSize: 100,
+      loggedAt: EATEN_AT,
+    };
+    dayMeals.override = MEALS.map((m) =>
+      m.id === 2 ? { ...m, foods: [eggs] } : m,
+    );
+    render(<MacroCalculator />);
+    await act(async () => {
+      prop<(mealId: number, food: FoodItem) => void>(
+        "MealPlanner",
+        "startReplacingFood",
+      )(2, eggs);
+    });
+    const tofu: Food = {
+      id: "tofu",
+      name: "Tofu",
+      protein: 15,
+      carbs: 2,
+      fat: 8,
+      calories: 140,
+    };
+    await act(async () => {
+      prop<(food: Food) => void>("MealPlanner", "replaceFood")(tofu);
+    });
+    expect(writtenLunch()).toEqual([
+      expect.objectContaining({ name: "Tofu", loggedAt: EATEN_AT }),
+    ]);
   });
 });

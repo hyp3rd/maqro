@@ -3,6 +3,7 @@
 import { DayTimeline } from "@/components/today/DayTimeline";
 import { MealRail } from "@/components/today/MealRail";
 import { TodayHeader } from "@/components/today/TodayHeader";
+import { TrainingContext } from "@/components/today/TrainingContext";
 import { WeekStrip } from "@/components/today/WeekStrip";
 import { useNow } from "@/hooks/use-now";
 import { useWeekIntake } from "@/hooks/use-week-intake";
@@ -39,7 +40,6 @@ import {
   MacroBreakdown,
   Meal,
 } from "../../components/macro/types";
-import { DateNavigator } from "../shell/DateNavigator";
 import type { ViewKey } from "../shell/nav";
 import { Button } from "../ui/button";
 import { ActivePhaseBanner } from "./ActivePhaseBanner";
@@ -52,6 +52,8 @@ import {
   PreDiabeticDisclaimerDialog,
   hasDismissedPreDiabeticDisclaimer,
 } from "./PreDiabeticDisclaimerDialog";
+import { ShareTodayButton } from "./ShareTodayButton";
+import { StreakChip } from "./StreakChip";
 import { WaterCounter } from "./WaterCounter";
 
 interface MealPlannerProps {
@@ -423,6 +425,17 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
           titleId={titleId}
           onSelectDate={onSelectDate}
           onEditDayType={onEditDayType}
+          actions={
+            <>
+              {/* Self-hides with no active streak, so the row stays clean
+                  for first-time and lapsed users. */}
+              <StreakChip />
+              <ShareTodayButton
+                totalMacros={totalMacros}
+                calculatedValues={calculatedValues}
+              />
+            </>
+          }
         />
         {week && (
           <WeekStrip
@@ -438,6 +451,11 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
           totalMacros={totalMacros}
           breakdown={macroBreakdown}
           selectedDate={selectedDate}
+          today={today}
+        />
+        <TrainingContext
+          day={calculatedValues}
+          week={week}
           today={today}
         />
         <LiveDayTimeline
@@ -534,18 +552,14 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
         </div>
 
         <section className="overflow-hidden rounded-lg border border-border/60 bg-card">
-          {/* Header stays single-row at every breakpoint. On mobile the
-            DateNavigator (prev / date pill / next / Today button)
-            takes the left side and Auto-fill collapses to icon-only
-            on the right — the label expands at sm+ where there's
-            room. Keeping date + action on the same row removes the
-            empty-strip gap users were reading as misalignment. */}
+          {/* Header stays single-row at every breakpoint: the section's
+            title on the left, Auto-fill on the right (icon-only on a
+            phone, labelled from sm). The day is chosen once, in the Today
+            header and its week strip above. */}
           <header className="flex items-center justify-between gap-2 border-b border-border/60 px-3 py-2.5 sm:gap-3 sm:px-5 sm:py-3">
-            <DateNavigator
-              date={selectedDate}
-              today={today}
-              onSelect={onSelectDate}
-            />
+            <h2 className="text-[0.9375rem] font-semibold leading-5 tracking-tight text-foreground">
+              Meals
+            </h2>
             <Button
               type="button"
               variant="outline"

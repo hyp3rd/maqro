@@ -29,17 +29,38 @@ describe("DayTypeChip", () => {
     expect(container.innerHTML).toBe("");
   });
 
-  it("names the selected day's session, read-only by default", () => {
+  it("names the selected day's session and its start, read-only by default", () => {
     render(<DayTypeChip training={LOWER} />);
-    expect(screen.getByText("Lower · heavy day")).toBeTruthy();
+    // The start time explains the workout block on the day's timeline.
+    expect(screen.getByText("Lower · heavy day · 18:00")).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull();
     expect(screen.queryByText("· changed")).toBeNull();
     expect(
       screen
-        .getByText("Lower · heavy day")
+        .getByText("Lower · heavy day · 18:00")
         .closest("[title]")
         ?.getAttribute("title"),
     ).toBe("Lower, heavy day, 18:00, 75 min");
+  });
+
+  it("leaves the time off a session without a start time", () => {
+    render(
+      <DayTypeChip
+        training={{
+          day: { type: "fullBody", intensity: "moderate" },
+          dayClass: "training",
+          overridden: false,
+        }}
+      />,
+    );
+    expect(screen.getByText("Full body · training day")).toBeTruthy();
+  });
+
+  it("puts the changed marker after the time", () => {
+    render(<DayTypeChip training={{ ...LOWER, overridden: true }} />);
+    expect(screen.getByText("· changed").parentElement?.textContent).toBe(
+      "Lower · heavy day · 18:00 · changed",
+    );
   });
 
   it("says 'Rest day' on a rest day", () => {

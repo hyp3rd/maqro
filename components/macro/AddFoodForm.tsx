@@ -135,7 +135,7 @@ const AddFoodForm: React.FC<AddFoodFormProps> = ({
           restore the side-by-side layout. */}
       <header className="flex flex-col gap-2 border-b border-border/60 px-3 py-2.5 sm:flex-row sm:items-start sm:justify-between sm:gap-2 sm:px-5 sm:py-3">
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold tracking-tight">Add Food</h3>
+          <h2 className="text-sm font-semibold tracking-tight">Add Food</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
             Search built-in, your saved foods, and Open Food Facts.
           </p>

@@ -5,16 +5,25 @@ import type { RelativeDay } from "./timeline";
  *  Slots carry no planned time, so "now" is positional — on today, the
  *  first empty slot after the last one with food (the next thing to log).
  *
- *  - `logged`: the slot has food (a filled node).
+ *  - `logged`: the slot has food that was logged as eaten (a filled node).
+ *  - `planned`: the slot's food is intent, not a record — on today or a
+ *    future day, none of its foods carries a `loggedAt`. Every path the UI
+ *    presents as logging stamps one on today (search, recipe, template,
+ *    a scheduled recipe, "Log this day", a photo), so this is the Meals
+ *    card's AI Auto-fill, the demo's later meals, or anything put on a
+ *    future day. A distinct node, and
+ *    no time on the rail or the track. A past day can't tell the two apart
+ *    (logging to another day never stamps a time), so its food reads as
+ *    logged.
  *  - `now`: today's next slot to fill (the highlighted node).
  *  - `open`: any other empty slot — skipped, still to come, or on a past or
  *    future day (a hollow node). */
-export type RailNode = "logged" | "now" | "open";
+export type RailNode = "logged" | "planned" | "now" | "open";
 
 export type RailEntry = {
   node: RailNode;
   /** The rail line below this node is drawn solid: a later slot is logged,
-   *  so the day has already run past it. */
+   *  so the day has already run past it (a planned slot is still ahead). */
   lineStrong: boolean;
 };
 
@@ -22,14 +31,26 @@ export function railNodes(
   meals: readonly Meal[],
   when: RelativeDay,
 ): RailEntry[] {
-  const logged = meals.map((m) => m.foods.length > 0);
+  const filled = meals.map((m) => m.foods.length > 0);
+  const logged = meals.map(
+    (m, i) =>
+      (filled[i] ?? false) &&
+      (when === "past" || m.foods.some((f) => f.loggedAt !== undefined)),
+  );
+  const lastFilled = filled.lastIndexOf(true);
   const lastLogged = logged.lastIndexOf(true);
   const nowIndex =
     when === "today"
-      ? logged.findIndex((isLogged, i) => !isLogged && i > lastLogged)
+      ? filled.findIndex((isFilled, i) => !isFilled && i > lastFilled)
       : -1;
-  return logged.map((isLogged, i) => ({
-    node: isLogged ? "logged" : i === nowIndex ? "now" : "open",
+  return meals.map((_, i) => ({
+    node: logged[i]
+      ? "logged"
+      : filled[i]
+        ? "planned"
+        : i === nowIndex
+          ? "now"
+          : "open",
     lineStrong: i < lastLogged,
   }));
 }

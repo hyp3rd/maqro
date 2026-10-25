@@ -14,7 +14,7 @@ import {
   type StreakState,
 } from "@/lib/streaks";
 import { useDataRev } from "@/lib/sync/data-bus";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Flame } from "lucide-react";
 import { toast } from "sonner";
 
@@ -129,19 +129,29 @@ function useStreakState(): StreakState | null {
   return computeStreak(logs, todayKey());
 }
 
-/** Fires a one-shot toast the first time the current streak
- *  crosses a milestone. Persists the highest celebrated milestone
- *  in localStorage so subsequent renders don't re-fire. The check
- *  runs on every state change, but the localStorage gate keeps
- *  the toast from spamming.
+/** Fires a one-shot toast when the current streak crosses a milestone
+ *  while the app is open — the one-day step that logging today's first
+ *  meal makes. Persists the highest celebrated milestone in localStorage
+ *  so subsequent renders don't re-fire. The check runs on every state
+ *  change, but the localStorage gate keeps the toast from spamming.
+ *
+ *  A milestone already reached on the first reading (Today's first
+ *  render: opening the app, a reload, a new device) or arriving in a jump
+ *  (the demo seed, a sync pull of several days) is recorded silently: a
+ *  toast over the first paint of Today celebrates nothing the user just
+ *  did.
  *
  *  Why one-shot per milestone (not per day): celebrating "you
  *  logged today!" every single day is dopamine theatre. The user
  *  gets a meaningful nudge only when they cross a new threshold —
  *  which is rare by design (3, 7, 14, 30, 60, 100, 180, 365). */
 function useMilestoneCelebration(state: StreakState | null): void {
+  // The streak at the previous reading; null before the first one.
+  const previous = useRef<number | null>(null);
   useEffect(() => {
     if (!state) return;
+    const before = previous.current;
+    previous.current = state.current;
     const reached = reachedMilestone(state.current);
     if (reached === null) return;
     let lastCelebrated = 0;
@@ -163,6 +173,8 @@ function useMilestoneCelebration(state: StreakState | null): void {
     } catch {
       // See above.
     }
+    // Only a one-day step from a reading taken while open celebrates.
+    if (before === null || state.current !== before + 1) return;
     toast(`${reached}-day logging streak`, {
       description:
         reached <= 7

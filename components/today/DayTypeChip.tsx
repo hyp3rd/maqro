@@ -1,12 +1,14 @@
 "use client";
 
 import { dayTypeDescription, dayTypeLabel } from "@/lib/today/day-type";
+import { formatClock, parseClock } from "@/lib/today/timeline";
 import { cn } from "@/lib/utils";
 import { Dumbbell, Moon } from "lucide-react";
 import type { TrainingDayTargets } from "@maqro/core/targets";
 
 /** The selected day's session (`DateTargets.training`): "Lower · heavy
- *  day", "Rest day" — the per-date override when the day has one, marked
+ *  day · 18:00" (with its planned start when it has one), "Rest day" —
+ *  the per-date override when the day has one, marked
  *  "changed" (calm, muted) so it never reads as the plan. Hidden while
  *  training is off (no `training`). Read-only by default; pass `onEdit` to
  *  make it the button that changes this day's session (`editLabel` names
@@ -30,7 +32,13 @@ export function DayTypeChip({
 }) {
   if (!training) return null;
   const rest = training.day.type === "rest";
-  const label = dayTypeLabel(training);
+  // The planned start, so the workout block on the day's timeline is
+  // self-explanatory ("Lower · heavy day · 18:00").
+  const start = rest ? null : parseClock(training.day.time);
+  const label =
+    start === null
+      ? dayTypeLabel(training)
+      : `${dayTypeLabel(training)} · ${formatClock(start)}`;
   const description = `${dayTypeDescription(training)}${
     training.overridden ? ", changed from the plan" : ""
   }`;

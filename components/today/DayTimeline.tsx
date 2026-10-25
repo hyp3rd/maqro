@@ -1,15 +1,16 @@
 "use client";
 
+import { useElementWidth } from "@/hooks/use-element-width";
 import { formatNumber } from "@/lib/i18n/number";
 import { dayTypeLabel } from "@/lib/today/day-type";
 import {
   type TimelineSpan,
   elapsedMinutes,
-  formatClock,
   hourLabels,
   labelAnchor,
   mealTicks,
   minuteOfDay,
+  nowFlagText,
   relativeDay,
   timelineSummary,
   trackPercent,
@@ -33,8 +34,9 @@ const HOURS = Array.from({ length: 25 }, (_, h) => h);
  *  first logged food with the meal's kcal above it (meals without a logged
  *  time stay off the track); the day's session as an accent block (time +
  *  duration: the date's override when there is one, else the training
- *  template's) when training is on; and, today only, a signal-coloured
- *  "Now HH:MM" cursor.
+ *  template's) when training is on; and, today only, a signal-coloured now
+ *  cursor, flagged "Now HH:MM" (just "HH:MM" on a narrow phone, see
+ *  `nowFlagText`).
  *
  *  `now` is injected (the caller's minute clock, `useNow`), so the cursor
  *  moves once a minute and tests pin the time; 0 = not known yet (server
@@ -59,6 +61,9 @@ export function DayTimeline({
   training?: Pick<TrainingDayTargets, "day" | "dayClass">;
   className?: string;
 }) {
+  // The track's measured width, so only the hour labels the now flag
+  // really covers give way (until measured, the narrowest track's).
+  const [trackRef, trackWidth] = useElementWidth<HTMLDivElement>();
   const isToday = relativeDay(date, today) === "today";
   const nowMinute = isToday && now > 0 ? minuteOfDay(now, date) : null;
   const elapsed = elapsedMinutes(date, today, now);
@@ -73,6 +78,7 @@ export function DayTimeline({
 
   return (
     <div
+      ref={trackRef}
       role="img"
       aria-label={`Day timeline: ${summary}`}
       className={cn("relative select-none", className)}
@@ -160,7 +166,7 @@ export function DayTimeline({
 
       {/* Hour labels, kept clear of the "Now" flag. */}
       <div className="relative mt-1 h-4 font-mono text-xs leading-4 tabular-nums">
-        {hourLabels(nowMinute).map((h) => (
+        {hourLabels(nowMinute, trackWidth ?? undefined).map((h) => (
           <span
             key={h}
             className={cn(
@@ -180,7 +186,7 @@ export function DayTimeline({
             )}
             style={{ left: `${trackPercent(nowMinute)}%` }}
           >
-            Now {formatClock(nowMinute)}
+            {nowFlagText(nowMinute, trackWidth ?? undefined)}
           </span>
         )}
       </div>

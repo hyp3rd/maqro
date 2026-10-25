@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { intlWrapper } from "@/lib/i18n/intl-test-wrapper";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Meal } from "@maqro/core/types";
 import { cleanup, render, screen } from "@testing-library/react";
 import { DayTimeline } from "./DayTimeline";
@@ -139,7 +139,8 @@ describe("DayTimeline", () => {
       (910 / 1440) * 100,
       6,
     );
-    expect(screen.getByText("Now 15:10")).toBeTruthy();
+    // Unmeasured (the narrowest track): the flag is just the time.
+    expect(screen.getByText("15:10")).toBeTruthy();
     cleanup();
     const past = render(
       <DayTimeline
@@ -156,6 +157,44 @@ describe("DayTimeline", () => {
       width(past.container.querySelector("[data-part=elapsed]")),
     ).toBeCloseTo(100, 6);
   });
+
+  // A 390px phone's track measures 358px, a 360px phone's 328px.
+  it.each([
+    [358, "Now 15:00"],
+    [328, "15:00"],
+  ])(
+    "keeps 12 and 18 at 15:00 on a %ipx track, flagged %s",
+    (trackPx, flag) => {
+      vi.stubGlobal(
+        "ResizeObserver",
+        class {
+          observe() {}
+          disconnect() {}
+        },
+      );
+      const clientWidth = vi
+        .spyOn(HTMLElement.prototype, "clientWidth", "get")
+        .mockReturnValue(trackPx);
+      try {
+        render(
+          <DayTimeline
+            meals={[]}
+            date={DAY}
+            today={DAY}
+            now={at(15, 0)}
+          />,
+          { wrapper: intlWrapper() },
+        );
+        expect(screen.getByText(flag)).toBeTruthy();
+        for (const hour of ["00", "06", "12", "18", "24"]) {
+          expect(screen.getByText(hour)).toBeTruthy();
+        }
+      } finally {
+        clientWidth.mockRestore();
+        vi.unstubAllGlobals();
+      }
+    },
+  );
 
   it("shows no cursor before the clock is known (server snapshot)", () => {
     const { container } = render(

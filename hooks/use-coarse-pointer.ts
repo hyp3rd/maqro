@@ -10,9 +10,9 @@ import { useSyncExternalStore } from "react";
  *
  *  The hook returns `true` when the primary pointing device is a
  *  fingertip or stylus (every phone / tablet, plus a desktop with a
- *  touchscreen as the active input). All three touch-gesture
- *  primitives (SwipeRow, PullToRefresh, DateNavigator's day swipe)
- *  gate on this so desktop users keep the explicit button
+ *  touchscreen as the active input). The touch-gesture primitives
+ *  (SwipeRow, PullToRefresh) gate on this so desktop users keep the
+ *  explicit button
  *  affordances and don't get accidental drag-to-delete from a mouse.
  *
  *  SSR returns `false` — the server has no notion of pointer type,

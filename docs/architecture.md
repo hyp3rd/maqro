@@ -129,7 +129,7 @@ components/
                                     #   PageTopBar (public-page back-to-app chrome),
                                     #   MiniLineChart (Catmull-Rom sparklines),
                                     #   ChartZoomDialog + ChartFullscreen (mobile
-                                    #   landscape pinch-zoom), DateNavigator,
+                                    #   landscape pinch-zoom),
                                     #   PastDueBanner (Stripe dunning),
                                     #   CookieNotice (informational, no analytics)
   macro/                            # Calculator, Meal Plan, ProgressView (with

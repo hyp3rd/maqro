@@ -98,13 +98,19 @@ export type FoodItem = {
    *  later subsystem with their own aggregation. */
   micronutrients?: MicronutrientValues;
   /** Wall-clock time (ms epoch) this food was actually *logged as eaten*.
-   *  Set ONLY by real logging actions (manual add / search / quick-add /
-   *  photo·voice·barcode / copy-a-meal) and ONLY when logging to today —
-   *  never by AI-generated plans, templates, or recipes, which are intent
-   *  not consumption. The intermittent-fasting features read this to derive
-   *  eating windows + the fast timer; foods without it (plans, pre-feature
-   *  logs) are ignored. Rides the existing `meals` JSONB — no migration,
-   *  like `micronutrients` above. */
+   *  Stamped by every action a client presents as logging, and ONLY when
+   *  logging to today: manual add / search / quick-add, photo·voice·
+   *  barcode, copy-a-meal, applying a recipe or a meal template, logging a
+   *  scheduled recipe, and logging a suggested day. A food swap keeps the
+   *  outgoing food's time. Never set by AI-generated plans (auto-fill,
+   *  regenerate, refine), which are intent not consumption, nor by any
+   *  log to another day (a back-filled or planned day has no true hour).
+   *  The intermittent-fasting and timing features read this to derive
+   *  eating windows, the fast timer and the late-calorie share, and Today
+   *  reads a food without it as planned rather than eaten; untimed foods
+   *  (plans, other-day logs, pre-feature logs) are left out of all of
+   *  these. Rides the existing `meals` JSONB — no migration, like
+   *  `micronutrients` above. */
   loggedAt?: number;
 } & MacroBreakdown;
 

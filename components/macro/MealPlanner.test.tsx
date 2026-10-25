@@ -42,7 +42,7 @@ vi.mock("@/hooks/use-ai-usage", () => ({
 
 beforeEach(() => {
   globalThis.indexedDB = new IDBFactory();
-  // jsdom has no matchMedia; the date navigator asks for a coarse pointer.
+  // jsdom has no matchMedia; the gesture primitives ask for a coarse pointer.
   vi.stubGlobal("matchMedia", (query: string) => ({
     matches: false,
     media: query,
@@ -211,19 +211,61 @@ function renderPlanner(
 }
 
 /** The gauge's centre (dnd-kit adds its own live region to the page). */
-const gaugeStatus = () =>
-  within(screen.getByRole("region", { name: "Energy and macros" })).getByRole(
-    "status",
-  );
+const gaugeStatus = () => {
+  const centre = screen
+    .getAllByRole("status")
+    .find((s) => /kcal|target/.test(s.textContent ?? ""));
+  if (!centre) throw new Error("no gauge centre");
+  return centre;
+};
 
 describe("MealPlanner as Instrument Today", () => {
+  it("keeps Share in the header's title row, ahead of the gauge", () => {
+    renderPlanner();
+    const header = screen
+      .getByRole("heading", { level: 1 })
+      .closest("header") as HTMLElement;
+    const share = within(header).getByRole("button", {
+      name: "Share today's macros",
+    });
+    expect(
+      share.compareDocumentPosition(gaugeStatus()) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("is one region, named by the day, with no region nested inside", () => {
+    renderPlanner();
+    const today = screen.getByRole("region", { name: "Today" });
+    expect(within(today).queryAllByRole("region")).toHaveLength(0);
+  });
+
   it("leads with the day's header and its planned session", () => {
     renderPlanner();
     expect(
-      screen.getByRole("heading", { level: 2, name: "Today" }),
+      screen.getByRole("heading", { level: 1, name: "Today" }),
     ).toBeTruthy();
     // Wednesday in the template: a hard lower-body session.
-    expect(screen.getByText("Lower · heavy day")).toBeTruthy();
+    expect(screen.getByText("Lower · heavy day · 18:00")).toBeTruthy();
+  });
+
+  it("explains a training day's targets in a calm line under the gauge", () => {
+    renderPlanner();
+    expect(
+      screen.getByText("Carbs are higher today — heavy session at 18:00"),
+    ).toBeTruthy();
+  });
+
+  it("says nothing more on a rest day or with training off", () => {
+    renderPlanner({ selectedDate: "2026-10-20" });
+    expect(screen.queryByText(/are (higher|lower)/)).toBeNull();
+    cleanup();
+    const off = { ...PROFILE, training: undefined };
+    renderPlanner({
+      calculatedValues: targetsForDate(off, TODAY, { phasesEnabled: false }),
+      week: weekTargets(off, TODAY, { phasesEnabled: false }),
+    });
+    expect(screen.queryByText(/are (higher|lower)/)).toBeNull();
   });
 
   it("hides the session chip while training is off", () => {
@@ -309,6 +351,31 @@ describe("MealPlanner as Instrument Today", () => {
     expect(within(rail).getByText("Next to log")).toBeTruthy();
   });
 
+  it("shows each meal's P/C/F split however narrow its list is", () => {
+    render(<MealPlanner {...plannerProps()} />, { wrapper: intlWrapper() });
+    const rail = screen.getByRole("list", { name: "Meals" });
+    // The meal list is the size container; the split follows its width,
+    // not the viewport's.
+    expect(rail.className).toContain("@container");
+    // The rail's own items (each meal card lists its foods too).
+    const [breakfast, , dinner] = [...rail.children] as [
+      HTMLElement,
+      HTMLElement,
+      HTMLElement,
+    ];
+    // Narrow: on its own line under the meal's header.
+    const narrow = breakfast.querySelector("[data-part=meal-split-narrow]");
+    expect(narrow?.textContent).toBe("P20 · C40 · F10");
+    expect(narrow?.className).toContain("@min-[30rem]:hidden");
+    // Wide: beside the kcal in the header.
+    const wide = breakfast.querySelector("[data-part=meal-split]");
+    expect(wide?.textContent?.trim()).toBe("· P20 · C40 · F10");
+    expect(wide?.className).toContain("@min-[30rem]:inline");
+    expect(wide?.className).not.toContain("sm:inline");
+    // An empty meal has no split to show.
+    expect(dinner.querySelector("[data-part=meal-split-narrow]")).toBeNull();
+  });
+
   it("keeps one-tap water and fasting ahead of the meal list", () => {
     renderPlanner();
     const meals = screen.getByRole("list", { name: "Meals" });
@@ -329,7 +396,7 @@ describe("MealPlanner as Instrument Today", () => {
       meals: MEALS.map((m) => ({ ...m, foods: [] })),
     });
     expect(gaugeStatus().textContent).toMatch(/kcal to plan$/);
-    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
       "Friday",
     );
     expect(
@@ -346,17 +413,120 @@ describe("MealPlanner as Instrument Today", () => {
       calculatedValues: targetsForDate(PROFILE, "", { phasesEnabled: false }),
       week: null,
     });
-    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe("Today");
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Today");
     expect(screen.queryByRole("group", { name: "Week" })).toBeNull();
   });
 
-  it("offers a way back to today from another day", () => {
+  it("offers one way back to today from another day, landing on the heading", () => {
     const props = renderPlanner({ selectedDate: "2026-10-20" });
-    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(
-      "Yesterday",
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Back to today" }));
+    const heading = screen.getByRole("heading", { level: 1 });
+    expect(heading.textContent).toBe("Yesterday");
+    // Exactly one control returns to today (the old date navigator's
+    // second "Today" button is gone).
+    expect(
+      screen.getAllByRole("button", { name: /^(Back to today|Today)$/ }),
+    ).toHaveLength(1);
+    // On the date line beside the date, so a long session chip never
+    // pushes it onto a row of its own; touch-sized by the same hit-slop.
+    const back = screen.getByRole("button", { name: "Back to today" });
+    expect(back.closest('[data-part="date-line"]')).not.toBeNull();
+    expect(back.className).toContain("coarse:before:-inset-y-[13px]");
+    fireEvent.click(back);
     expect(props.onSelectDate).toHaveBeenCalledWith(TODAY);
+    expect(document.activeElement).toBe(heading);
+  });
+
+  it("names the day once: one h1 and no second day navigator", () => {
+    renderPlanner();
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Previous day" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Next day" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Back to today" })).toBeNull();
+    // The meal list is a section of the page under that heading.
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Meals" }),
+    ).toBeTruthy();
+  });
+
+  describe("the date opens a picker for any day", () => {
+    const trigger = () =>
+      screen.getByRole("button", { name: "Wed, Oct 21, choose a day" });
+    /** The date field the picker writes to (hidden behind the button). */
+    const field = () => {
+      const input =
+        trigger().parentElement?.querySelector('input[type="date"]');
+      if (!(input instanceof HTMLInputElement)) throw new Error("no field");
+      return input;
+    };
+
+    afterEach(() => {
+      // jsdom has no showPicker(); a case that needs one adds it.
+      Reflect.deleteProperty(HTMLInputElement.prototype, "showPicker");
+    });
+
+    it("is a visible button that shows keyboard focus and is touch-sized", () => {
+      renderPlanner();
+      const button = trigger();
+      expect(button.tagName).toBe("BUTTON");
+      // Focus is drawn on the date itself, since the button is taller.
+      const face = button.querySelector('[data-part="date-trigger-face"]');
+      expect(face?.className).toContain("group-focus-visible:ring-2");
+      expect(button.className).toContain("group");
+      // The line stays one 18 px row on every pointer; on a touch screen
+      // the button's hit area (an absolute ::before) reaches 44 px —
+      // 13 px past each side of the line — without taking layout space.
+      // The measured target is asserted in e2e/today-narrow.spec.ts.
+      const line = button.closest('[data-part="date-line"]');
+      expect(line?.className).toContain("h-[1.125rem]");
+      expect(line?.className).not.toMatch(/coarse:h-/);
+      expect(button.className).toContain("relative");
+      expect(button.className).toContain("coarse:before:absolute");
+      expect(button.className).toContain("coarse:before:-inset-y-[13px]");
+      expect(line?.contains(screen.getByRole("heading", { level: 1 }))).toBe(
+        false,
+      );
+      // The field behind it is neither tabbable nor announced.
+      expect(field().tabIndex).toBe(-1);
+      expect(field().getAttribute("aria-hidden")).toBe("true");
+    });
+
+    it("opens the platform picker; a chosen day, future included, is shown", () => {
+      const showPicker = vi.fn();
+      Object.defineProperty(HTMLInputElement.prototype, "showPicker", {
+        value: showPicker,
+        configurable: true,
+      });
+      const props = renderPlanner();
+      fireEvent.click(trigger());
+      expect(showPicker).toHaveBeenCalledOnce();
+      expect(showPicker.mock.contexts[0]).toBe(field());
+      // A future day can be planned, as on the week strip: no cap at today.
+      expect(field().hasAttribute("max")).toBe(false);
+      fireEvent.change(field(), { target: { value: "2026-11-02" } });
+      expect(props.onSelectDate).toHaveBeenCalledWith("2026-11-02");
+      fireEvent.change(field(), { target: { value: "2026-09-30" } });
+      expect(props.onSelectDate).toHaveBeenLastCalledWith("2026-09-30");
+    });
+
+    it("shows the date field itself when the browser can't open a picker", () => {
+      Object.defineProperty(HTMLInputElement.prototype, "showPicker", {
+        value: () => {
+          throw new DOMException("no gesture", "NotAllowedError");
+        },
+        configurable: true,
+      });
+      const props = renderPlanner();
+      fireEvent.click(trigger());
+      const typed = screen.getByLabelText("Wed, Oct 21, choose a day");
+      expect(typed.getAttribute("type")).toBe("date");
+      expect(typed.getAttribute("aria-hidden")).toBeNull();
+      expect(document.activeElement).toBe(typed);
+      fireEvent.change(typed, { target: { value: "2026-10-15" } });
+      expect(props.onSelectDate).toHaveBeenCalledWith("2026-10-15");
+      // Leaving it brings the button back.
+      fireEvent.blur(typed);
+      expect(trigger().tagName).toBe("BUTTON");
+    });
   });
 });
 
@@ -418,7 +588,7 @@ describe("Today: changing the day's session from the chip", () => {
     const planChip = await screen.findByRole("button", {
       name: "Lower, heavy day, 18:00, 75 min. Change today’s session",
     });
-    expect(planChip.textContent).toBe("Lower · heavy day");
+    expect(planChip.textContent).toBe("Lower · heavy day · 18:00");
     expect(gaugeStatus().textContent).toBe(
       `${kcal(plannedWed - 1240)} kcal left today`,
     );
@@ -466,7 +636,7 @@ describe("Today: changing the day's session from the chip", () => {
     });
     await waitFor(() =>
       expect(chip(/change today’s session/i).textContent).toBe(
-        "Lower · heavy day",
+        "Lower · heavy day · 18:00",
       ),
     );
     expect(gaugeStatus().textContent).toBe(

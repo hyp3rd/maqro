@@ -28,10 +28,10 @@ export function WaterCounter({
   return (
     <div className="space-y-2.5">
       <div className="flex items-baseline justify-between gap-2">
-        <h3 className="flex items-center gap-1.5 text-sm font-semibold tracking-tight">
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold tracking-tight">
           <Droplets className="h-4 w-4 text-sky-500" />
           Water
-        </h3>
+        </h2>
         <p className="font-mono text-sm tabular-nums text-muted-foreground">
           <span
             className={cn(

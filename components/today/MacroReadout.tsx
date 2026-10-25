@@ -84,7 +84,20 @@ export function MacroReadout({
           <Stat
             key={row.key}
             size="md"
-            className="gap-y-0"
+            // Each row is its own size container: a cell too narrow for the
+            // label and "160 g left" side by side (a 2 × 2 readout on a
+            // 320 px phone) puts the detail (the `dd` after the figure's)
+            // under the figure instead of clipping the label. The calorie
+            // row has no detail, so there its "/ 1,950 kcal" takes that
+            // line: every cell is then label, figure, small line, and the
+            // figures of a pair share one line. Packed to the top
+            // (`content-start`), since the readout's grid stretches each
+            // cell to its row's height.
+            className={cn(
+              "content-start gap-y-0 @container @max-[9.5rem]:[&>dd+dd]:col-span-2 @max-[9.5rem]:[&>dd+dd]:col-start-1 @max-[9.5rem]:[&>dd+dd]:row-start-3",
+              row.key === "calories" &&
+                "@max-[9.5rem]:[&>dd:first-of-type>span]:block",
+            )}
             label={
               <span className="inline-flex items-center gap-1.5">
                 <span
@@ -96,9 +109,13 @@ export function MacroReadout({
             }
             value={show(reading.value)}
             unit={
-              reading.target !== null
-                ? `/ ${show(reading.target)} ${row.unit}`
-                : row.unit
+              // One unbroken run: a narrow cell wraps "/ 2,000 kcal" whole
+              // under the figure rather than stranding "kcal" on a line.
+              <span className="whitespace-nowrap">
+                {reading.target !== null
+                  ? `/ ${show(reading.target)} ${row.unit}`
+                  : row.unit}
+              </span>
             }
             detail={detail}
           />
