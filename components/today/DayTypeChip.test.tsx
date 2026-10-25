@@ -40,7 +40,7 @@ describe("DayTypeChip", () => {
         .getByText("Lower · heavy day · 18:00")
         .closest("[title]")
         ?.getAttribute("title"),
-    ).toBe("Lower, heavy day, 18:00, 75 min");
+    ).toBe("Lower, heavy day, 18:00, 75\u00a0min");
   });
 
   it("leaves the time off a session without a start time", () => {
@@ -95,7 +95,7 @@ describe("DayTypeChip", () => {
       />,
     );
     const button = screen.getByRole("button", {
-      name: "Lower, heavy day, 18:00, 75 min. Change Wednesday’s session",
+      name: "Lower, heavy day, 18:00, 75\u00a0min. Change Wednesday’s session",
     });
     expect(button.getAttribute("aria-haspopup")).toBe("dialog");
     fireEvent.click(button);

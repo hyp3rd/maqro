@@ -4,6 +4,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { formatNumber } from "@/lib/i18n/number";
+import {
+  TRAINING_INTENSITY_LABEL,
+  TRAINING_TYPE_LABEL,
+} from "@/lib/training-labels";
 import { cn } from "@/lib/utils";
 import { useId } from "react";
 import { useLocale } from "next-intl";
@@ -13,10 +17,6 @@ import type {
   TrainingIntensity,
   TrainingType,
 } from "@maqro/core/types";
-import {
-  TRAINING_INTENSITY_LABEL,
-  TRAINING_TYPE_LABEL,
-} from "./training-labels";
 
 /** Longest session the engine accepts (`parseTrainingDay`). */
 const MAX_DURATION_MIN = 24 * 60;
@@ -72,8 +72,8 @@ export function draftToSession(draft: SessionDraft): TrainingDay {
 }
 
 /** The session controls shared by the template's day dialog and the
- *  per-date day-type sheet: type, then (unless rest) intensity, start time
- *  and duration. */
+ *  per-date day-type sheet: type, then intensity, start time and duration
+ *  (kept in place but disabled on a rest day, in both sheets). */
 export function TrainingSessionFields({
   draft,
   onChange,
@@ -84,6 +84,7 @@ export function TrainingSessionFields({
   const locale = useLocale();
   const id = useId();
   const durationInvalid = sessionDraftInvalid(draft);
+  const rest = draft.type === "rest";
   return (
     <>
       <div className="space-y-2">
@@ -105,77 +106,85 @@ export function TrainingSessionFields({
         />
       </div>
 
-      {draft.type !== "rest" && (
-        <>
+      {/* Kept on a rest day, disabled, so the sheet never jumps in height
+          as the type changes; the draft keeps what was entered for when a
+          session is picked again. */}
+      <fieldset
+        disabled={rest}
+        className="group m-0 grid min-w-0 gap-5 border-0 p-0"
+      >
+        <div className="space-y-2">
+          <p
+            id={`${id}-intensity`}
+            className="text-label font-medium text-foreground group-disabled:text-muted-foreground"
+          >
+            Intensity
+          </p>
+          <SegmentedControl
+            aria-labelledby={`${id}-intensity`}
+            value={draft.intensity}
+            onValueChange={(intensity) => onChange({ intensity })}
+            options={TRAINING_INTENSITIES.map((i) => ({
+              value: i,
+              label: TRAINING_INTENSITY_LABEL[i],
+            }))}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
           <div className="space-y-2">
-            <p
-              id={`${id}-intensity`}
-              className="text-label font-medium text-foreground"
+            <Label
+              htmlFor={`${id}-time`}
+              className="text-label group-disabled:text-muted-foreground"
             >
-              Intensity
-            </p>
-            <SegmentedControl
-              aria-labelledby={`${id}-intensity`}
-              value={draft.intensity}
-              onValueChange={(intensity) => onChange({ intensity })}
-              options={TRAINING_INTENSITIES.map((i) => ({
-                value: i,
-                label: TRAINING_INTENSITY_LABEL[i],
-              }))}
+              Start time
+            </Label>
+            <Input
+              id={`${id}-time`}
+              type="time"
+              value={draft.time}
+              onChange={(e) => onChange({ time: e.target.value })}
             />
           </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label
-                htmlFor={`${id}-time`}
-                className="text-label"
-              >
-                Start time
-              </Label>
-              <Input
-                id={`${id}-time`}
-                type="time"
-                value={draft.time}
-                onChange={(e) => onChange({ time: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label
-                htmlFor={`${id}-duration`}
-                className="text-label"
-              >
-                Duration (min)
-              </Label>
-              <Input
-                id={`${id}-duration`}
-                type="number"
-                inputMode="numeric"
-                min={1}
-                max={MAX_DURATION_MIN}
-                step={5}
-                value={draft.duration}
-                onChange={(e) => onChange({ duration: e.target.value })}
-                placeholder="60"
-                aria-invalid={durationInvalid}
-                aria-describedby={`${id}-duration-hint`}
-                className={cn(durationInvalid && "border-warning")}
-              />
-            </div>
+          <div className="space-y-2">
+            <Label
+              htmlFor={`${id}-duration`}
+              className="text-label group-disabled:text-muted-foreground"
+            >
+              Duration (min)
+            </Label>
+            <Input
+              id={`${id}-duration`}
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={MAX_DURATION_MIN}
+              step={5}
+              value={draft.duration}
+              onChange={(e) => onChange({ duration: e.target.value })}
+              placeholder="60"
+              aria-invalid={durationInvalid}
+              aria-describedby={`${id}-duration-hint`}
+              className={cn(durationInvalid && "border-warning")}
+            />
           </div>
-          <p
-            id={`${id}-duration-hint`}
-            className={cn(
-              "text-label",
-              durationInvalid ? "text-foreground" : "text-muted-foreground",
-            )}
-          >
-            {durationInvalid
+        </div>
+        {/* Two text-label lines on a phone, where the longest hint wraps, so
+            the shorter rest-day hint doesn't move the actions below. */}
+        <p
+          id={`${id}-duration-hint`}
+          className={cn(
+            "min-h-[2.25rem] text-label sm:min-h-0",
+            durationInvalid ? "text-foreground" : "text-muted-foreground",
+          )}
+        >
+          {rest
+            ? "A rest day has no session details."
+            : durationInvalid
               ? `Enter whole minutes from 1 to ${formatNumber(MAX_DURATION_MIN, locale)}, or leave it blank.`
               : "Both optional. A long endurance session counts as a bigger day."}
-          </p>
-        </>
-      )}
+        </p>
+      </fieldset>
     </>
   );
 }

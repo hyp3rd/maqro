@@ -2,7 +2,6 @@
 
 import { useElementWidth } from "@/hooks/use-element-width";
 import { formatNumber } from "@/lib/i18n/number";
-import { dayTypeLabel } from "@/lib/today/day-type";
 import {
   type TimelineSpan,
   elapsedMinutes,
@@ -16,6 +15,7 @@ import {
   trackPercent,
   workoutSpan,
 } from "@/lib/today/timeline";
+import { dayTypeLabel } from "@/lib/training-labels";
 import { cn } from "@/lib/utils";
 import { useLocale } from "next-intl";
 import type { TrainingDayTargets } from "@maqro/core/targets";

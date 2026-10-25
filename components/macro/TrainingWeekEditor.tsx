@@ -3,10 +3,18 @@
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { Card, CardBody } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Switch } from "@/components/ui/switch";
 import { haptic } from "@/lib/haptics";
 import { formatNumber } from "@/lib/i18n/number";
+import {
+  MONDAY_FIRST,
+  TRAINING_TYPE_LABEL,
+  WEEKDAY_NAME,
+  WEEKDAY_SHORT,
+  sessionDetails,
+} from "@/lib/training-labels";
 import { cn } from "@/lib/utils";
 import { useId, useState } from "react";
 import { ChevronRight, Minus, Plus, ShieldCheck } from "lucide-react";
@@ -31,21 +39,16 @@ import {
 } from "@maqro/core/training-edit";
 import {
   type CyclingPreset,
+  KCAL_PER_KG,
   MIN_DAILY_KCAL,
   type PersonalInfo,
   type ProteinSetting,
   type TrainingDay,
   type TrainingSchedule,
 } from "@maqro/core/types";
+import { kgToDisplay } from "@maqro/core/units";
 import { TrainingDayDialog } from "./TrainingDayDialog";
 import { TrainingWeekChart } from "./TrainingWeekChart";
-import {
-  MONDAY_FIRST,
-  TRAINING_TYPE_LABEL,
-  WEEKDAY_NAME,
-  WEEKDAY_SHORT,
-  sessionDetails,
-} from "./training-labels";
 
 const CYCLING_LABEL: Record<CyclingPreset, string> = {
   off: "Off",
@@ -54,6 +57,14 @@ const CYCLING_LABEL: Record<CyclingPreset, string> = {
 };
 
 const PROTEIN_STEP = 0.1;
+
+/** A typed g/kg: digits with an optional "." or "," decimal mark (either
+ *  locale's), else `null`. Grouping never occurs at this scale. */
+function parseGramsPerKg(text: string): number | null {
+  const match = /^\s*(\d{1,3})(?:[.,](\d{1,3}))?\s*$/.exec(text);
+  if (!match) return null;
+  return Number(`${match[1]}.${match[2] ?? "0"}`);
+}
 
 /** A stepper button at its bound: looks disabled, ignores the pointer, and
  *  keeps keyboard focus. */
@@ -72,6 +83,22 @@ type Props = {
   /** Opens My measurements, where a body-fat estimate comes from. */
   onOpenMeasurements: () => void;
 };
+
+/** "Lose 0.4 kg/week", "Gain 0.1 lb/week" or "Maintain weight": what the
+ *  weekly average's own balance does (`dailyDelta`, after any safety cap:
+ *  the balance the Calculator projects), not what the goal asks for. A cut
+ *  lifted to the safety floor can plan no change, or a small surplus. One
+ *  decimal in the profile's units, as the rate is shown elsewhere
+ *  (`kgToDisplay`); a rate that rounds to nothing reads as maintenance. */
+function rateFragment(
+  dailyDelta: number,
+  units: PersonalInfo["units"],
+  locale: string,
+): string {
+  const rate = kgToDisplay((Math.abs(dailyDelta) * 7) / KCAL_PER_KG, units);
+  if (rate === 0) return "Maintain weight";
+  return `${dailyDelta < 0 ? "Lose" : "Gain"} ${formatNumber(rate, locale, 1)} ${units === "imperial" ? "lb" : "kg"}/week`;
+}
 
 /** `weekTargets` lists Monday → Sunday; `getDay()` puts Sunday first. */
 const weekIndex = (weekday: number) => (weekday + 6) % 7;
@@ -155,49 +182,68 @@ export function TrainingWeekEditor({
     onTrainingChange(withTrainingEnabled(profile.training, on));
   };
 
-  const enableRow = (
-    <div className="flex items-center justify-between gap-4">
-      <div className="min-w-0">
-        <label
-          htmlFor={`${id}-enabled`}
-          className="block text-sm font-medium text-foreground"
-        >
-          Plan targets by training day
-        </label>
-        {!enabled && (
-          <p
-            id={`${id}-enabled-hint`}
-            className="mt-0.5 text-label text-muted-foreground"
-          >
-            Your goal sets the weekly average; training moves calories between
-            days, never on top. Free on every plan.
-          </p>
-        )}
-      </div>
-      <Switch
-        id={`${id}-enabled`}
-        aria-describedby={enabled ? undefined : `${id}-enabled-hint`}
-        checked={enabled}
-        onCheckedChange={toggle}
-      />
-    </div>
-  );
-
   return (
-    <div className="max-w-2xl space-y-4">
+    // A size container: the week goes two-column by the room this page
+    // actually has (the sidebar takes 56 or 240 px of the window), not by
+    // the viewport. See `EnabledEditor`.
+    <div className="@container space-y-4">
       {/* The breadcrumb above names the page; the heading keeps the outline
           for assistive tech without spending the fold on it twice. */}
       <h2 className="sr-only">Training week</h2>
 
       {/* On, the switch is a compact header row so the week stays above the
-          fold; off, its card explains what turning it on does. */}
-      {enabled ? (
-        <div className="px-1">{enableRow}</div>
-      ) : (
-        <Card>
-          <CardBody>{enableRow}</CardBody>
-        </Card>
-      )}
+          fold; off, its card explains what turning it on does. One wrapper
+          either way, restyled rather than replaced, so the Switch is never
+          remounted and keeps keyboard focus when toggled. */}
+      <Card
+        className={cn(
+          "max-w-2xl",
+          // On, the row is only as tall as the switch: no clipping, so the
+          // switch's focus ring (drawn outside it) shows whole. Beside two
+          // columns it spans the left one only (the grid's gap-4 split),
+          // keeping the switch near its label.
+          enabled &&
+            "overflow-visible border-transparent bg-transparent @4xl:max-w-[calc(50%_-_0.5rem)]",
+        )}
+      >
+        <CardBody
+          className={cn(
+            "flex items-center justify-between gap-4",
+            enabled && "px-1 py-0 sm:px-1",
+          )}
+        >
+          <div className="min-w-0">
+            <label
+              htmlFor={`${id}-enabled`}
+              className="block text-sm font-medium text-foreground"
+            >
+              Plan targets by training day
+            </label>
+            {!enabled && (
+              <p
+                id={`${id}-enabled-hint`}
+                className="mt-0.5 text-label text-muted-foreground"
+              >
+                Your goal sets the weekly average; training moves calories
+                between days, never on top. Free on every plan.
+                {schedule && (
+                  <>
+                    {" "}
+                    Turn it back on and your week returns as you left it,
+                    including any single days you changed.
+                  </>
+                )}
+              </p>
+            )}
+          </div>
+          <Switch
+            id={`${id}-enabled`}
+            aria-describedby={enabled ? undefined : `${id}-enabled-hint`}
+            checked={enabled}
+            onCheckedChange={toggle}
+          />
+        </CardBody>
+      </Card>
 
       {enabled && schedule && week && (
         <EnabledEditor
@@ -260,6 +306,7 @@ function EnabledEditor({
   onOpenMeasurements: () => void;
 }) {
   const id = useId();
+  const locale = useLocale();
   // Today's plan sets the week-level figures (the average, the floor,
   // protein, the notes): they can step mid-week (a birthday, a goal phase
   // starting), and today's are the ones in effect.
@@ -284,7 +331,12 @@ function EnabledEditor({
   });
 
   return (
-    <>
+    // One capped column in reading order; once the page is 56rem wide
+    // (each column ~440 px, room for a day row's session details on one
+    // line) the seven days sit beside the chart, the cycling choice and
+    // protein (the last row takes any slack, so the left cards stay
+    // together at the top).
+    <div className="max-w-2xl space-y-4 @4xl:grid @4xl:max-w-none @4xl:grid-cols-2 @4xl:grid-rows-[auto_auto_1fr] @4xl:items-start @4xl:gap-4 @4xl:space-y-0">
       <Card asChild>
         <section aria-labelledby={`${id}-calories`}>
           <CardBody className="space-y-4">
@@ -294,9 +346,16 @@ function EnabledEditor({
             >
               <span className="font-mono text-3xl font-medium tabular-nums tracking-tight text-foreground">
                 {kcal(mean)}
-              </span>
+              </span>{" "}
               <span className="text-sm font-normal text-muted-foreground">
-                kcal daily average
+                kcal daily average{" · "}
+                <span className="font-medium text-foreground">
+                  {rateFragment(
+                    current?.dailyDelta ?? 0,
+                    profile.units,
+                    locale,
+                  )}
+                </span>
               </span>
             </h3>
             <TrainingWeekChart
@@ -338,7 +397,10 @@ function EnabledEditor({
       </Card>
 
       <Card asChild>
-        <section aria-labelledby={`${id}-days`}>
+        <section
+          aria-labelledby={`${id}-days`}
+          className="@4xl:col-start-2 @4xl:row-span-3 @4xl:row-start-1"
+        >
           <h3
             id={`${id}-days`}
             className="sr-only"
@@ -395,7 +457,7 @@ function EnabledEditor({
           onOpenMeasurements={onOpenMeasurements}
         />
       )}
-    </>
+    </div>
   );
 }
 
@@ -422,19 +484,29 @@ function DayRow({
       aria-current={isToday ? "date" : undefined}
       className="flex min-h-touch-10 w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:px-5"
     >
-      <span className="w-12 shrink-0">
+      {/* Today reads as on Today's week strip: a brand-outlined tile with
+          the weekday in brand text. Every row keeps the same tile box, so
+          the weekdays line up. */}
+      <span
+        className={cn(
+          "-ml-2 w-14 shrink-0 rounded-lg border px-2 py-1",
+          isToday ? "border-brand/40 bg-brand/10" : "border-transparent",
+        )}
+      >
         <span className="sr-only">Edit {WEEKDAY_NAME[weekday]}</span>
         <span
           aria-hidden
           className={cn(
-            "block text-sm font-medium",
-            isToday ? "text-foreground" : "text-muted-foreground",
+            "block text-sm",
+            isToday
+              ? "font-semibold text-brand-text"
+              : "font-medium text-muted-foreground",
           )}
         >
           {WEEKDAY_SHORT[weekday]}
         </span>
         {isToday && (
-          <span className="block text-label font-medium text-signal">
+          <span className="block text-label font-medium text-foreground">
             Today
           </span>
         )}
@@ -506,15 +578,33 @@ function ProteinCard({
   const max = PROTEIN_G_PER_KG_MAX[setting.basis];
   const atMin = setting.gPerKg <= PROTEIN_G_PER_KG_MIN;
   const atMax = setting.gPerKg >= max;
+  // The field's text while it is being typed in (`null` = show the
+  // setting), so a half-typed value never jumps around.
+  const [typed, setTyped] = useState<string | null>(null);
   const step = (dir: 1 | -1) => {
     // At a bound the button stays focusable (`aria-disabled`, not
     // `disabled`, which would drop keyboard focus to <body>) and does
     // nothing.
     if (dir === 1 ? atMax : atMin) return;
+    // A step replaces any half-typed value: where tapping a button doesn't
+    // blur the field (Safari), a later blur must not commit stale text.
+    setTyped(null);
     onChange({
       ...setting,
       gPerKg: Math.round((setting.gPerKg + dir * PROTEIN_STEP) * 10) / 10,
     });
+  };
+  const shown = formatNumber(setting.gPerKg, locale, 1);
+  const commitTyped = () => {
+    if (typed === null) return;
+    setTyped(null);
+    const value = parseGramsPerKg(typed);
+    if (value === null) return;
+    const next = Math.min(
+      max,
+      Math.max(PROTEIN_G_PER_KG_MIN, Math.round(value * 10) / 10),
+    );
+    if (next !== setting.gPerKg) onChange({ ...setting, gPerKg: next });
   };
   return (
     <Card asChild>
@@ -573,12 +663,48 @@ function ProteinCard({
               >
                 <Minus aria-hidden />
               </Button>
-              <output
-                aria-live="polite"
-                className="w-20 text-center font-mono text-base font-medium tabular-nums text-foreground"
-              >
-                {formatNumber(setting.gPerKg, locale, 1)} g/kg
-              </output>
+              {/* Tap to type (one-handed 1.2 → 3.4 in one go), or step. */}
+              <span className="flex items-baseline gap-1">
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  enterKeyHint="done"
+                  autoComplete="off"
+                  aria-labelledby={`${id}-gkg`}
+                  aria-describedby={`${id}-range`}
+                  value={typed ?? shown}
+                  onFocus={(event) => {
+                    setTyped(shown);
+                    event.currentTarget.select();
+                  }}
+                  onChange={(event) => setTyped(event.target.value)}
+                  onBlur={commitTyped}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      commitTyped();
+                    } else if (event.key === "Escape" && typed !== null) {
+                      event.preventDefault();
+                      setTyped(null);
+                    }
+                  }}
+                  className="h-touch-9 w-14 px-1 text-center font-mono text-base font-medium tabular-nums md:text-base"
+                />
+                <span
+                  aria-hidden
+                  className="text-label text-muted-foreground"
+                >
+                  g/kg
+                </span>
+                {/* The stepped value, announced (a field's value change
+                    isn't). */}
+                <span
+                  aria-live="polite"
+                  className="sr-only"
+                >
+                  {shown} g/kg
+                </span>
+              </span>
               <Button
                 type="button"
                 variant="outline"
@@ -593,43 +719,66 @@ function ProteinCard({
             </div>
           </div>
           <p className="text-label text-muted-foreground">
-            {formatNumber(PROTEIN_G_PER_KG_MIN, locale, 1)} to{" "}
-            {formatNumber(max, locale, 1)} g/kg.{" "}
-            {proteinGrams < requestedGrams
-              ? `Protein is planned at ${kcal(proteinGrams)} g a day for now, under the ${kcal(requestedGrams)} g your setting asks for, so the fat and carb minimums fit.`
-              : sameEveryDay
-                ? "Every day plans the same protein, carbs and fat."
-                : fatMoves
-                  ? `Fat moves with each day's calories; carbs stay near ${kcal(heldGrams)} g and protein stays the same.`
-                  : `Carbs move with each day's calories; fat stays near ${kcal(heldGrams)} g and protein stays the same.`}
+            <span id={`${id}-range`}>
+              {formatNumber(PROTEIN_G_PER_KG_MIN, locale, 1)} to{" "}
+              {formatNumber(max, locale, 1)} g/kg.
+            </span>{" "}
+            {macroLine({
+              proteinHeld: proteinGrams < requestedGrams,
+              sameEveryDay,
+              fatMoves,
+              fatFloorLifted,
+              held: kcal(heldGrams),
+              protein: kcal(proteinGrams),
+              requested: kcal(requestedGrams),
+            })}
           </p>
-          {fatFloorLifted && (
-            <Callout tone="info">
-              {fatMoves ? (
-                <>
-                  Carbs stay at{" "}
-                  <span className="font-mono tabular-nums">
-                    {kcal(heldGrams)}
-                  </span>{" "}
-                  g a day while you train, a little under your chosen split, so
-                  fat sits a little higher each day to keep a healthy minimum.
-                </>
-              ) : (
-                <>
-                  Fat stays at{" "}
-                  <span className="font-mono tabular-nums">
-                    {kcal(heldGrams)}
-                  </span>{" "}
-                  g a day while you train, a little above your chosen split, to
-                  keep a healthy minimum.
-                </>
-              )}
-            </Callout>
-          )}
         </CardBody>
       </section>
     </Card>
   );
+}
+
+/** What the week does with the macros, for the protein card's line: which
+ *  macro moves with each day's calories and which is held, or why none
+ *  moves. When the fat floor lifted the user's explicit fat choice
+ *  (`fatFloorLifted`), that is said in the same line, next to the held
+ *  macro's figure, rather than as a separate note repeating it. */
+function macroLine({
+  proteinHeld,
+  sameEveryDay,
+  fatMoves,
+  fatFloorLifted,
+  held,
+  protein,
+  requested,
+}: {
+  proteinHeld: boolean;
+  sameEveryDay: boolean;
+  fatMoves: boolean;
+  fatFloorLifted: boolean;
+  /** The formatted grams of the macro held all week. */
+  held: string;
+  protein: string;
+  requested: string;
+}): string {
+  if (!proteinHeld && !sameEveryDay) {
+    if (fatMoves) {
+      return fatFloorLifted
+        ? `Fat moves with each day's calories; carbs stay at ${held} g, a little under your chosen split so fat keeps a healthy minimum, and protein stays the same.`
+        : `Fat moves with each day's calories; carbs stay near ${held} g and protein stays the same.`;
+    }
+    return fatFloorLifted
+      ? `Carbs move with each day's calories; fat stays at ${held} g, a little above your chosen split to keep a healthy minimum, and protein stays the same.`
+      : `Carbs move with each day's calories; fat stays near ${held} g and protein stays the same.`;
+  }
+  const line = proteinHeld
+    ? `Protein is planned at ${protein} g a day for now, under the ${requested} g your setting asks for, so the fat and carb minimums fit.`
+    : "Every day plans the same protein, carbs and fat.";
+  if (!fatFloorLifted) return line;
+  return fatMoves
+    ? `${line} Carbs stay at ${held} g a day, a little under your chosen split, so fat keeps a healthy minimum.`
+    : `${line} Fat stays at ${held} g a day, a little above your chosen split, to keep a healthy minimum.`;
 }
 
 /** The line under the cycling control: what the choice does to this week,

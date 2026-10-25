@@ -65,9 +65,13 @@ interface ProfileViewProps {
   onTrainingChange: (next: TrainingSchedule) => void;
   /** Persist the protein setting (`patchProfile("proteinSetting", …)`). */
   onProteinSettingChange: (next: ProteinSetting) => void;
+  /** The sub-view to open on (default the hub): the Calculator's "Edit
+   *  week" link opens the training week directly. Read on mount. */
+  initialSub?: ProfileSub;
 }
 
-type Sub = "home" | "measurements" | "docs" | "billing" | "training";
+export type ProfileSub =
+  "home" | "measurements" | "docs" | "billing" | "training";
 
 /** Profile page — the home for the user's body data (gender, birthdate-derived
  *  age, weight, height, units, display name), plus tiles that open
@@ -87,8 +91,9 @@ export function ProfileView({
   planWeek,
   onTrainingChange,
   onProteinSettingChange,
+  initialSub = "home",
 }: ProfileViewProps) {
-  const [sub, setSub] = useState<Sub>("home");
+  const [sub, setSub] = useState<ProfileSub>(initialSub);
   const { user, isOfflineUnverified } = useUser();
 
   if (sub === "training") {
@@ -206,7 +211,7 @@ function ProfileHome({
   personalInfo: PersonalInfo;
   onPersonalInfoChange: (name: string, value: string | number | null) => void;
   today: string;
-  onOpen: (sub: Exclude<Sub, "home">) => void;
+  onOpen: (sub: Exclude<ProfileSub, "home">) => void;
   onSelectView?: (key: ViewKey) => void;
 }) {
   // Derive the displayed age from `birthDate` against *today* (passed in, so

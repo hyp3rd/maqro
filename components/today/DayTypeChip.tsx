@@ -1,7 +1,7 @@
 "use client";
 
-import { dayTypeDescription, dayTypeLabel } from "@/lib/today/day-type";
 import { formatClock, parseClock } from "@/lib/today/timeline";
+import { dayTypeDescription, dayTypeLabel } from "@/lib/training-labels";
 import { cn } from "@/lib/utils";
 import { Dumbbell, Moon } from "lucide-react";
 import type { TrainingDayTargets } from "@maqro/core/targets";

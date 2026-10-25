@@ -137,6 +137,9 @@ describe("TrainingWeekEditor: enable / disable", () => {
       hint,
     );
 
+    // Never turned on: nothing to come back.
+    expect(screen.queryByText(/returns as you left it/)).toBeNull();
+
     fireEvent.click(switchControl());
     expect(onTraining).toHaveBeenCalledWith(defaultTrainingSchedule());
     expect(switchControl().getAttribute("aria-checked")).toBe("true");
@@ -157,8 +160,43 @@ describe("TrainingWeekEditor: enable / disable", () => {
     fireEvent.click(switchControl());
     expect(onTraining).toHaveBeenCalledWith({ ...SCHEDULE, enabled: false });
     expect(screen.queryByRole("button", { name: /^Edit / })).toBeNull();
+    // Off, the card says what turning it back on restores: the week and
+    // any single days changed (their overrides apply again).
+    const describedBy = switchControl().getAttribute("aria-describedby");
+    expect(document.getElementById(describedBy ?? "")?.textContent).toContain(
+      "Turn it back on and your week returns as you left it, including any single days you changed.",
+    );
     fireEvent.click(switchControl());
     expect(onTraining).toHaveBeenLastCalledWith(SCHEDULE);
+  });
+
+  it("keeps keyboard focus on the switch in both directions", () => {
+    renderEditor({ initial: { ...BASE, training: SCHEDULE } });
+    const control = switchControl();
+    control.focus();
+    // Off: the row becomes the explaining card around the same switch.
+    fireEvent.click(control);
+    expect(control.getAttribute("aria-checked")).toBe("false");
+    expect(control.isConnected).toBe(true);
+    expect(document.activeElement).toBe(control);
+    // On again: the compact row, still the same, focused switch.
+    fireEvent.click(control);
+    expect(control.getAttribute("aria-checked")).toBe("true");
+    expect(control.isConnected).toBe(true);
+    expect(document.activeElement).toBe(control);
+  });
+
+  it("never clips the switch's focus ring in the compact row", () => {
+    renderEditor({ initial: { ...BASE, training: SCHEDULE } });
+    // On, the wrapper is only as tall as the switch, and the ring is drawn
+    // outside it (ring-offset): the wrapper must not clip its overflow.
+    const wrapper = () => switchControl().parentElement?.parentElement;
+    expect(wrapper()?.classList.contains("overflow-visible")).toBe(true);
+    expect(wrapper()?.classList.contains("overflow-hidden")).toBe(false);
+    // Off, the explaining card has room around the switch and keeps its
+    // rounded clip.
+    fireEvent.click(switchControl());
+    expect(wrapper()?.classList.contains("overflow-hidden")).toBe(true);
   });
 });
 
@@ -169,7 +207,7 @@ describe("TrainingWeekEditor: the week", () => {
   it("shows each day's session and planned kcal, today marked", () => {
     renderEditor({ initial: profile });
     const wednesday = row("Wednesday");
-    expect(wednesday.textContent).toContain("Lower body");
+    expect(wednesday.textContent).toContain("Lower");
     expect(wednesday.textContent).toContain("Hard · 18:00 · 75 min");
     expect(wednesday.textContent).toContain(
       fmt(week?.days[2]?.targetCalories ?? 0),
@@ -177,6 +215,134 @@ describe("TrainingWeekEditor: the week", () => {
     expect(row("Tuesday").textContent).toContain("No session");
     expect(row("Saturday").getAttribute("aria-current")).toBe("date");
     expect(row("Friday").getAttribute("aria-current")).toBeNull();
+  });
+
+  it("names the goal and its weekly rate beside the average", () => {
+    renderEditor({ initial: profile });
+    const current = week?.days[5];
+    const mean = current?.training?.meanCalories ?? 0;
+    // The average's own balance (after any safety cap), like the
+    // Calculator's projection: 2,600 maintenance, a 0.5 kg/week ask.
+    const rate = (Math.abs(current?.dailyDelta ?? 0) * 7) / 7700;
+    expect(rate).toBeCloseTo(0.5, 1);
+    expect(
+      screen.getByRole("heading", {
+        name: `${fmt(mean)} kcal daily average · Lose ${rate.toFixed(1)} kg/week`,
+      }),
+    ).toBeTruthy();
+  });
+
+  it("words the rate in the profile's units, and maintenance without one", () => {
+    const { unmount } = renderEditor({
+      initial: { ...profile, units: "imperial" },
+    });
+    expect(
+      screen.getByRole("heading", {
+        name: /daily average · Lose 1\.1 lb\/week$/,
+      }),
+    ).toBeTruthy();
+    unmount();
+    renderEditor({ initial: { ...profile, goal: "maintain" } });
+    expect(
+      screen.getByRole("heading", { name: /daily average · Maintain weight$/ }),
+    ).toBeTruthy();
+  });
+
+  // A small frame whose safety floor is the 1,200 kcal minimum (BMR ≈ 1,158).
+  const small: PersonalInfo = {
+    ...profile,
+    gender: "female",
+    weight: 50,
+    height: 155,
+  };
+
+  it("names the direction the average's balance takes, not the goal's ask", () => {
+    // A cut from an 1,100 kcal maintenance is lifted to the 1,200 floor:
+    // the week plans a small surplus, as the Calculator says.
+    const lifted = { ...small, manualTdee: 1100 };
+    expect(plan(lifted)?.days[5]?.dailyDelta).toBe(100);
+    renderEditor({ initial: lifted });
+    expect(
+      screen.getByRole("heading", {
+        name: /daily average · Gain 0\.1 kg\/week$/,
+      }),
+    ).toBeTruthy();
+  });
+
+  it("a balance that rounds to no change reads as maintenance", () => {
+    // From 1,250 the floor leaves a 50 kcal deficit: 0.05 kg/week.
+    const nearZero = { ...small, manualTdee: 1250 };
+    expect(plan(nearZero)?.days[5]?.dailyDelta).toBe(-50);
+    renderEditor({ initial: nearZero });
+    expect(
+      screen.getByRole("heading", { name: /daily average · Maintain weight$/ }),
+    ).toBeTruthy();
+  });
+
+  it("words the rate to one decimal, as the rate field shows it", () => {
+    // 0.25 kg/week reads 0.3, like Profile's rate field and the
+    // Calculator's projection (both `kgToDisplay`).
+    renderEditor({ initial: { ...profile, weeklyRateKg: 0.25 } });
+    expect(
+      screen.getByRole("heading", {
+        name: /daily average · Lose 0\.3 kg\/week$/,
+      }),
+    ).toBeTruthy();
+  });
+
+  it("marks today like Today's week strip: a brand-outlined day tile", () => {
+    renderEditor({ initial: profile });
+    const tile = (day: string) =>
+      within(row(day)).getByText(day.slice(0, 3)).parentElement;
+    const today = tile("Saturday")?.className ?? "";
+    expect(today).toContain("border-brand/40");
+    expect(today).toContain("bg-brand/10");
+    expect(within(row("Saturday")).getByText("Sat").className).toContain(
+      "text-brand-text",
+    );
+    expect(tile("Friday")?.className).not.toContain("border-brand/40");
+    // No second accent for the same idea (the cyan signal is the "now").
+    expect(row("Saturday").querySelector("[class*='signal']")).toBeNull();
+  });
+
+  it("uses the width on desktop: the day list beside the chart and protein", () => {
+    renderEditor({ initial: profile });
+    const days = screen.getByRole("region", { name: "Weekly template" });
+    const calories = screen
+      .getByRole("radiogroup", { name: "Day-to-day difference" })
+      .closest("section");
+    const protein = screen.getByRole("region", { name: /Protein:/ });
+    const grid = days.parentElement;
+    // Two columns only when the page itself has room for two (a container
+    // query on the editor, not the viewport): a 1024 px window with the
+    // sidebar expanded leaves ~736 px, two phone-narrow columns.
+    const root = grid?.parentElement;
+    expect(root?.classList.contains("@container")).toBe(true);
+    // Chart, cycling and protein on the left, the seven days on the
+    // right; one capped column (in reading order) below that.
+    expect(grid?.className).toContain("@4xl:grid-cols-2");
+    expect(grid?.className).not.toMatch(/(^|\s)lg:/);
+    expect(calories?.parentElement).toBe(grid);
+    expect(protein.parentElement).toBe(grid);
+    expect(days.className).toContain("@4xl:col-start-2");
+    expect(days.className).toContain("@4xl:row-start-1");
+    // Not held to a narrow left-aligned column once there are two.
+    expect(grid?.classList.contains("max-w-2xl")).toBe(true);
+    expect(grid?.classList.contains("@4xl:max-w-none")).toBe(true);
+  });
+
+  it("keeps the enable switch near its label beside two columns", () => {
+    renderEditor({ initial: profile });
+    // The compact row spans the left column only, not both, so the switch
+    // is not a page-width away from what it turns on.
+    const row = switchControl().parentElement?.parentElement;
+    expect(row?.classList.contains("max-w-2xl")).toBe(true);
+    expect(row?.classList.contains("@4xl:max-w-[calc(50%_-_0.5rem)]")).toBe(
+      true,
+    );
+    // Off, the explaining card stays one readable column.
+    fireEvent.click(switchControl());
+    expect(row?.classList.contains("max-w-2xl")).toBe(true);
   });
 
   it("a cycling preset change updates the planned kcal", () => {
@@ -246,7 +412,7 @@ describe("TrainingWeekEditor: editing a day", () => {
       training: withTrainingDay(SCHEDULE, 2, edited),
     });
     expect(
-      within(dialog).getByText("Heavy training day", { exact: false }),
+      within(dialog).getByText("HIIT · heavy day", { exact: false }),
     ).toBeTruthy();
     expect(dialog.textContent).toContain(
       `${fmt(preview?.days[1]?.targetCalories ?? 0)} kcal planned`,
@@ -270,7 +436,25 @@ describe("TrainingWeekEditor: editing a day", () => {
     fireEvent.click(row("Wednesday"));
     const dialog = await screen.findByRole("dialog", { name: "Wednesday" });
     fireEvent.click(within(dialog).getByRole("radio", { name: "Rest" }));
-    expect(within(dialog).queryByLabelText("Start time")).toBeNull();
+    // The session block stays (disabled), so the sheet keeps its height.
+    const start = within(dialog).getByLabelText("Start time");
+    expect(start.matches(":disabled")).toBe(true);
+    expect(
+      within(dialog).getByLabelText("Duration (min)").matches(":disabled"),
+    ).toBe(true);
+    for (const name of ["Light", "Moderate", "Hard"]) {
+      expect(
+        within(dialog).getByRole("radio", { name }).matches(":disabled"),
+      ).toBe(true);
+    }
+    expect(
+      within(dialog).getByText("A rest day has no session details."),
+    ).toBeTruthy();
+    // Back to a session, the fields are live again with the draft kept.
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Lower" }));
+    expect(start.matches(":disabled")).toBe(false);
+    expect((start as HTMLInputElement).value).toBe("18:00");
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Rest" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(onTraining).not.toHaveBeenCalled();
 
@@ -279,7 +463,7 @@ describe("TrainingWeekEditor: editing a day", () => {
     // Reopening starts from the stored session, not the abandoned draft.
     expect(
       within(again)
-        .getByRole("radio", { name: "Lower body" })
+        .getByRole("radio", { name: "Lower" })
         .getAttribute("aria-checked"),
     ).toBe("true");
     fireEvent.click(within(again).getByRole("radio", { name: "Rest" }));
@@ -349,7 +533,7 @@ describe("TrainingWeekEditor: editing a day", () => {
       ).toBe("false");
     }
     expect(
-      within(dialog).getByText("Heavy training day", { exact: false }),
+      within(dialog).getByText("Lower · heavy day", { exact: false }),
     ).toBeTruthy();
     await act(async () => {
       fireEvent.click(
@@ -365,6 +549,88 @@ describe("TrainingWeekEditor: protein", () => {
     ...BASE,
     training: SCHEDULE,
     proteinSetting: setting,
+  });
+
+  it("takes a typed g/kg in one go, either decimal mark, inside the safe range", () => {
+    const onProtein = vi.fn();
+    renderEditor({
+      initial: withSetting({ basis: "bodyweight", gPerKg: 1.2 }),
+      onProtein,
+    });
+    const field = screen.getByRole<HTMLInputElement>("textbox", {
+      name: "Grams per kg",
+    });
+    expect(field.value).toBe("1.2");
+    expect(field.getAttribute("inputmode")).toBe("decimal");
+    // 1.2 → 3.4 without 22 taps: type it, Enter.
+    fireEvent.focus(field);
+    fireEvent.change(field, { target: { value: "3.4" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(onProtein).toHaveBeenLastCalledWith({
+      basis: "bodyweight",
+      gPerKg: 3.4,
+    });
+    expect(field.value).toBe("3.4");
+    expect(
+      screen.getByRole("heading", { name: /Protein: 270 g/ }),
+    ).toBeTruthy();
+    // A comma works as the decimal mark; leaving the field commits.
+    fireEvent.change(field, { target: { value: "2,6" } });
+    fireEvent.blur(field);
+    expect(onProtein).toHaveBeenLastCalledWith({
+      basis: "bodyweight",
+      gPerKg: 2.6,
+    });
+    // Outside the range, the nearest bound; to a tenth.
+    fireEvent.change(field, { target: { value: "9" } });
+    fireEvent.blur(field);
+    expect(onProtein).toHaveBeenLastCalledWith({
+      basis: "bodyweight",
+      gPerKg: 3.4,
+    });
+    fireEvent.change(field, { target: { value: "1.84" } });
+    fireEvent.blur(field);
+    expect(onProtein).toHaveBeenLastCalledWith({
+      basis: "bodyweight",
+      gPerKg: 1.8,
+    });
+    // Not a number: nothing is written and the setting shows again.
+    const calls = onProtein.mock.calls.length;
+    fireEvent.change(field, { target: { value: "lots" } });
+    fireEvent.blur(field);
+    expect(onProtein).toHaveBeenCalledTimes(calls);
+    expect(field.value).toBe("1.8");
+    // Escape drops a half-typed value.
+    fireEvent.change(field, { target: { value: "3" } });
+    fireEvent.keyDown(field, { key: "Escape" });
+    expect(field.value).toBe("1.8");
+    fireEvent.blur(field);
+    expect(onProtein).toHaveBeenCalledTimes(calls);
+  });
+
+  it("a step replaces a half-typed value, even when the field keeps focus", () => {
+    const onProtein = vi.fn();
+    renderEditor({
+      initial: withSetting({ basis: "bodyweight", gPerKg: 2.0 }),
+      onProtein,
+    });
+    const field = screen.getByRole<HTMLInputElement>("textbox", {
+      name: "Grams per kg",
+    });
+    // Safari can leave the field focused when a button is tapped: the
+    // click arrives without a blur first.
+    fireEvent.focus(field);
+    fireEvent.change(field, { target: { value: "3.0" } });
+    fireEvent.click(screen.getByRole("button", { name: "More protein" }));
+    expect(onProtein).toHaveBeenLastCalledWith({
+      basis: "bodyweight",
+      gPerKg: 2.1,
+    });
+    expect(field.value).toBe("2.1");
+    // Leaving the field later doesn't bring the stale text back.
+    fireEvent.blur(field);
+    expect(onProtein).toHaveBeenCalledTimes(1);
+    expect(field.value).toBe("2.1");
   });
 
   it("steps g/kg by 0.1 and shows the resulting grams", () => {
@@ -500,18 +766,25 @@ describe("TrainingWeekEditor: notes from the engine's flags", () => {
   };
   const proteinCard = () => screen.getByRole("region", { name: /Protein:/ });
 
-  it("a lifted fat choice on a carb-moving diet names the week's fat", () => {
+  /** The protein card's line under the stepper: the range, then what the
+   *  week does with the macros (and, folded in, a lifted fat floor). */
+  const macroLine = () =>
+    within(proteinCard()).getByText(/protein stays the same|Every day plans/);
+
+  it("a lifted fat choice on a carb-moving diet names the week's fat in the fat line", () => {
     const week = plan(lowFatSplit);
     expect(week?.days[5]?.training?.fatFloorLifted).toBe(true);
     const fats = [...new Set(week?.days.map((d) => d.fat))];
     expect(fats).toHaveLength(1); // carbs move; fat is held
     renderEditor({ initial: lowFatSplit });
-    const note = within(proteinCard()).getByText(
-      /a little above your chosen split/,
+    expect(macroLine().textContent).toBe(
+      `1.2 to 3.4 g/kg. Carbs move with each day's calories; fat stays at ${fats[0]} g, a little above your chosen split to keep a healthy minimum, and protein stays the same.`,
     );
-    expect(note.textContent).toBe(
-      `Fat stays at ${fats[0]} g a day while you train, a little above your chosen split, to keep a healthy minimum.`,
+    // One line, not a second note repeating the fat figure.
+    expect(within(proteinCard()).getAllByText(/healthy minimum/)).toHaveLength(
+      1,
     );
+    expect(within(proteinCard()).queryByText(/stays near/)).toBeNull();
   });
 
   it("a lifted fat choice on a low-carb diet names the held carbs, never one fat figure", () => {
@@ -523,25 +796,48 @@ describe("TrainingWeekEditor: notes from the engine's flags", () => {
     const carbs = [...new Set(week?.days.map((d) => d.carbs))];
     expect(carbs).toHaveLength(1);
     renderEditor({ initial: lowCarb });
-    const note = within(proteinCard()).getByText(
-      /a little under your chosen split/,
+    expect(macroLine().textContent).toBe(
+      `1.2 to 3.4 g/kg. Fat moves with each day's calories; carbs stay at ${carbs[0]} g, a little under your chosen split so fat keeps a healthy minimum, and protein stays the same.`,
     );
-    expect(note.textContent).toBe(
-      `Carbs stay at ${carbs[0]} g a day while you train, a little under your chosen split, so fat sits a little higher each day to keep a healthy minimum.`,
+    expect(within(proteinCard()).getAllByText(/healthy minimum/)).toHaveLength(
+      1,
     );
     expect(screen.queryByText(/Fat stays at/)).toBeNull();
   });
 
+  it("a lifted fat choice on days that can't vary is folded into the same line", () => {
+    const flat: PersonalInfo = {
+      ...lowFatSplit,
+      training: { ...lowFatSplit.training, cycling: "off" } as TrainingSchedule,
+    };
+    const week = plan(flat);
+    expect(week?.days[5]?.training?.fatFloorLifted).toBe(true);
+    renderEditor({ initial: flat });
+    expect(macroLine().textContent).toBe(
+      `1.2 to 3.4 g/kg. Every day plans the same protein, carbs and fat. Fat stays at ${week?.days[5]?.fat} g a day, a little above your chosen split, to keep a healthy minimum.`,
+    );
+  });
+
   it("the protein card names the macro the week holds", () => {
-    const { unmount } = renderEditor({ initial: lowFatSplit });
-    expect(
-      within(proteinCard()).getByText(/carbs move with each day's calories/i),
-    ).toBeTruthy();
-    unmount();
-    renderEditor({ initial: { ...lowFatSplit, dietType: "lowCarb" } });
+    const { unmount } = renderEditor({
+      initial: { ...profile, training: { ...SCHEDULE, cycling: "pronounced" } },
+    });
     expect(
       within(proteinCard()).getByText(
-        /Fat moves with each day's calories; carbs stay near 200 g/,
+        /^Carbs move with each day's calories; fat stays near \d+ g and protein stays the same\.$/,
+      ),
+    ).toBeTruthy();
+    unmount();
+    renderEditor({
+      initial: {
+        ...profile,
+        dietType: "lowCarb",
+        training: { ...SCHEDULE, cycling: "pronounced" },
+      },
+    });
+    expect(
+      within(proteinCard()).getByText(
+        /^Fat moves with each day's calories; carbs stay near \d+ g and protein stays the same\.$/,
       ),
     ).toBeTruthy();
   });

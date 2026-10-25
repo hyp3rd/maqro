@@ -245,8 +245,11 @@ describe("?demo=1 first load", () => {
     expect(expected).not.toBe(2556);
     const tile = screen.getByText("Target", { selector: "p" }).parentElement;
     expect(tile).not.toBeNull();
+    // Grouped in the app locale, like every readout ("1,950").
     await waitFor(() =>
-      expect(within(tile!).getByText(String(expected))).toBeTruthy(),
+      expect(
+        within(tile!).getByText(expected.toLocaleString("en")),
+      ).toBeTruthy(),
     );
   });
 

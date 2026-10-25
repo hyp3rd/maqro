@@ -586,7 +586,7 @@ describe("Today: changing the day's session from the chip", () => {
 
     // The plan: the chip, the gauge and Wednesday's strip bar agree.
     const planChip = await screen.findByRole("button", {
-      name: "Lower, heavy day, 18:00, 75 min. Change today’s session",
+      name: "Lower, heavy day, 18:00, 75\u00a0min. Change today’s session",
     });
     expect(planChip.textContent).toBe("Lower · heavy day · 18:00");
     expect(gaugeStatus().textContent).toBe(

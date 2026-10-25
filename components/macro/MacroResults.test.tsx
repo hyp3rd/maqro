@@ -2,10 +2,10 @@
  * @vitest-environment jsdom
  */
 import { intlWrapper } from "@/lib/i18n/intl-test-wrapper";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { targetsForDate } from "@maqro/core/targets";
 import type { PersonalInfo } from "@maqro/core/types";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import MacroResults from "./MacroResults";
 
 afterEach(cleanup);
@@ -50,13 +50,18 @@ const TUESDAY = "2026-10-20";
 
 const TOTALS = { protein: 0, carbs: 0, fat: 0, calories: 0 };
 
-function renderResults(profile: PersonalInfo, date: string) {
+function renderResults(
+  profile: PersonalInfo,
+  date: string,
+  onEditWeek?: () => void,
+) {
   const values = targetsForDate(profile, date, { phasesEnabled: false });
   render(
     <MacroResults
       calculatedValues={values}
       totalMacros={TOTALS}
       units="metric"
+      onEditWeek={onEditWeek}
     />,
     { wrapper: intlWrapper() },
   );
@@ -71,7 +76,7 @@ describe("MacroResults without a training schedule", () => {
     expect(text).not.toMatch(/planned/i);
     expect(screen.getByText("Deficit")).toBeTruthy();
     expect(document.body.textContent).toMatchInlineSnapshot(
-      `"Daily TargetsBMR1780kcal/dayTDEE2600kcal/dayTarget2050kcal/dayDeficit-550 kcal≈ 0.50 kg/wkMacro TargetsProtein205g820 kcalCarbs128g512 kcalFat80g720 kcalTodayProtein0g / 205gCarbs0g / 128gFat0g / 80gCalories0 / 2050Assumes ~7700 kcal/kg of bodyweight change. If your real-world rate diverges by more than ~20% after a few weeks, override TDEE in the form to recalibrate."`,
+      `"Daily TargetsBMR1,780kcal/dayTDEE2,600kcal/dayTarget2,050kcal/dayDeficit-550 kcal≈ 0.50 kg/wkMacro TargetsProtein205g820 kcalCarbs128g512 kcalFat80g720 kcalTodayProtein0g / 205gCarbs0g / 128gFat0g / 80gCalories0 / 2050Assumes ~7700 kcal/kg of bodyweight change. If your real-world rate diverges by more than ~20% after a few weeks, override TDEE in the form to recalibrate."`,
     );
   });
 });
@@ -82,7 +87,7 @@ describe("MacroResults with a training schedule", () => {
     expect(values.training?.dayClass).toBe("heavy");
     const mean = values.training?.meanCalories ?? 0;
     expect(values.targetCalories).toBeGreaterThan(mean);
-    expect(screen.getByText("Heavy training day")).toBeTruthy();
+    expect(screen.getByText("Lower · heavy day")).toBeTruthy();
     const summary = screen.getByTestId("planned-day");
     expect(summary.textContent).toContain(
       `${values.targetCalories.toLocaleString("en")} kcal planned today`,
@@ -107,5 +112,22 @@ describe("MacroResults with a training schedule", () => {
     expect(restDay).not.toBe(weekly);
     expect(screen.getByText(`${weekly} kg/wk`, { exact: false })).toBeTruthy();
     expect(screen.getByText("Average deficit")).toBeTruthy();
+  });
+});
+
+describe("MacroResults: the planned-day row", () => {
+  it("links to the training week from the planned day", () => {
+    const onEditWeek = vi.fn();
+    renderResults(TRAINING, SATURDAY, onEditWeek);
+    const summary = screen.getByTestId("planned-day");
+    const link = screen.getByRole("button", { name: "Edit week" });
+    expect(summary.contains(link)).toBe(true);
+    fireEvent.click(link);
+    expect(onEditWeek).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows no link where there is nowhere to go", () => {
+    renderResults(TRAINING, SATURDAY);
+    expect(screen.queryByRole("button", { name: "Edit week" })).toBeNull();
   });
 });

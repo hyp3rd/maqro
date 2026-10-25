@@ -29,7 +29,7 @@ import { MyFoodsView } from "./components/macro/MyFoodsView";
 import { PairPhoneDialog } from "./components/macro/PairPhoneDialog";
 import { PantryView } from "./components/macro/PantryView";
 import PersonalInfoForm from "./components/macro/PersonalInfoForm";
-import { ProfileView } from "./components/macro/ProfileView";
+import { type ProfileSub, ProfileView } from "./components/macro/ProfileView";
 import { ProgressView } from "./components/macro/ProgressView";
 import { RecipesView } from "./components/macro/RecipesView";
 import { SaveTemplateDialog } from "./components/macro/SaveTemplateDialog";
@@ -553,6 +553,16 @@ const MacroCalculator = () => {
   const [view, setView] = useState<ViewKey>(() =>
     viewFromParam(searchParams.get("view")),
   );
+  // The Profile sub-view to open on: the Calculator's "Edit week" link opens
+  // the training week; every other way into the profile opens its hub, so
+  // the request is dropped once the profile is left (adjusted during render,
+  // like the quick-add request below).
+  const [profileEntry, setProfileEntry] = useState<ProfileSub>("home");
+  if (view !== "profile" && profileEntry !== "home") setProfileEntry("home");
+  const editTrainingWeek = () => {
+    setProfileEntry("training");
+    setView("profile");
+  };
 
   // Quick add (the mobile tab bar's centre [+]): log something now, into
   // TODAY — never into a day the user can't see. From another tab or a past
@@ -2323,6 +2333,7 @@ const MacroCalculator = () => {
                 calculatedValues={todayTargets}
                 totalMacros={totalMacros}
                 units={personalInfo.units}
+                onEditWeek={editTrainingWeek}
               />
               <AdvancedSettingsSection
                 personalInfo={personalInfo}
@@ -2338,6 +2349,7 @@ const MacroCalculator = () => {
           personalInfo={personalInfo}
           onPersonalInfoChange={handlePersonalInfoChange}
           today={today}
+          initialSub={profileEntry}
           onSelectView={setView}
           planWeek={planWeek}
           onTrainingChange={(next) => patchProfile("training", next)}

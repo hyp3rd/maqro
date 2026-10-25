@@ -118,3 +118,30 @@ describe("TrainingWeekChart: the safety-floor line", () => {
     expect(gutterLabels(container)).toEqual(["Average"]);
   });
 });
+
+describe("TrainingWeekChart: today", () => {
+  it("marks today's label in the brand accent, like Today's week strip", () => {
+    const week = days([2100, 1900, 2100, 1900, 2050, 1950, 2000]).map((d) => ({
+      ...d,
+      today: d.short === "Sat",
+    }));
+    const { container } = render(
+      <TrainingWeekChart
+        days={week}
+        mean={2000}
+        floor={1800}
+      />,
+      { wrapper: intlWrapper() },
+    );
+    resizeTo(358);
+    const label = (short: string) =>
+      Array.from(container.querySelectorAll("svg text")).find(
+        (t) => t.textContent === short,
+      );
+    expect(label("Sat")?.getAttribute("class")).toContain("fill-brand-text");
+    expect(label("Sat")?.getAttribute("class")).not.toContain("fill-signal");
+    expect(label("Fri")?.getAttribute("class")).toContain(
+      "fill-muted-foreground",
+    );
+  });
+});
