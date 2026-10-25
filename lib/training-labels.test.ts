@@ -99,6 +99,13 @@ describe("sessionDetails / sessionLabel", () => {
     expect(sessionLabel(day)).toBe("Lower · Hard · 18:00 · 75 min");
   });
 
+  it("says when the session is fasted", () => {
+    expect(sessionDetails({ type: "upper", time: "06:30", fasted: true })).toBe(
+      "06:30 · Fasted",
+    );
+    expect(sessionLabel({ type: "hiit", fasted: true })).toBe("HIIT · Fasted");
+  });
+
   it("a session without details is just its type; a rest day has none", () => {
     expect(sessionDetails({ type: "sport" })).toBe("No details yet");
     expect(sessionLabel({ type: "sport" })).toBe("Sport");

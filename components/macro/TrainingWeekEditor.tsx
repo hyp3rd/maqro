@@ -36,6 +36,7 @@ import {
   withTrainingCycling,
   withTrainingDay,
   withTrainingEnabled,
+  withWorkoutMeals,
 } from "@maqro/core/training-edit";
 import {
   type CyclingPreset,
@@ -45,8 +46,10 @@ import {
   type ProteinSetting,
   type TrainingDay,
   type TrainingSchedule,
+  type WorkoutMealSettings,
 } from "@maqro/core/types";
 import { kgToDisplay } from "@maqro/core/units";
+import { DEFAULT_WORKOUT_MEALS } from "@maqro/core/workout-meals";
 import { TrainingDayDialog } from "./TrainingDayDialog";
 import { TrainingWeekChart } from "./TrainingWeekChart";
 
@@ -457,7 +460,90 @@ function EnabledEditor({
           onOpenMeasurements={onOpenMeasurements}
         />
       )}
+
+      <WorkoutMealsCard
+        settings={schedule.workoutMeals ?? DEFAULT_WORKOUT_MEALS}
+        onChange={(next) => {
+          haptic("select");
+          onTrainingChange(withWorkoutMeals(profile.training, next));
+        }}
+      />
     </div>
+  );
+}
+
+const WORKOUT_MEAL_ROWS = [
+  {
+    key: "pre",
+    label: "Before a session",
+    hint: "1–3 h before: quick carbs and some protein, little fat or fibre.",
+  },
+  {
+    key: "post",
+    label: "After a session",
+    hint: "Within 2 h of the end: protein first.",
+  },
+] as const;
+
+/** Which workout meals a training day gets on Today (`training.workoutMeals`):
+ *  a switch each for the meal before and after the session. */
+function WorkoutMealsCard({
+  settings,
+  onChange,
+}: {
+  settings: WorkoutMealSettings;
+  onChange: (next: WorkoutMealSettings) => void;
+}) {
+  const id = useId();
+  return (
+    <Card asChild>
+      <section aria-labelledby={`${id}-title`}>
+        <CardBody className="space-y-4">
+          <div>
+            <h3
+              id={`${id}-title`}
+              className="text-sm font-semibold text-foreground"
+            >
+              Workout meals
+            </h3>
+            <p className="mt-0.5 text-label text-muted-foreground">
+              Training days get these meals on Today, timed around the session
+              and taken out of the day’s target, never added on top. A fasted
+              session skips the one before.
+            </p>
+          </div>
+          {WORKOUT_MEAL_ROWS.map((row) => (
+            <div
+              key={row.key}
+              className="flex items-start justify-between gap-4"
+            >
+              <div className="min-w-0">
+                <label
+                  htmlFor={`${id}-${row.key}`}
+                  className="block text-label font-medium text-foreground"
+                >
+                  {row.label}
+                </label>
+                <p
+                  id={`${id}-${row.key}-hint`}
+                  className="text-label text-muted-foreground"
+                >
+                  {row.hint}
+                </p>
+              </div>
+              <Switch
+                id={`${id}-${row.key}`}
+                aria-describedby={`${id}-${row.key}-hint`}
+                checked={settings[row.key]}
+                onCheckedChange={(on) =>
+                  onChange({ ...settings, [row.key]: on })
+                }
+              />
+            </div>
+          ))}
+        </CardBody>
+      </section>
+    </Card>
   );
 }
 

@@ -9,6 +9,7 @@ import {
   defaultTrainingSchedule,
   withTrainingDay,
   withTrainingEnabled,
+  withWorkoutMeals,
 } from "@maqro/core/training-edit";
 import type {
   PersonalInfo,
@@ -1030,5 +1031,62 @@ describe("TrainingWeekEditor: stored data from a newer client", () => {
       type: "yoga",
       durationMin: 30,
     });
+  });
+});
+
+describe("TrainingWeekEditor: fasted sessions and workout meals", () => {
+  const profile = { ...BASE, training: SCHEDULE };
+
+  it("marks a session fasted from its sheet, and the row says so", async () => {
+    const onTraining = vi.fn();
+    renderEditor({ initial: profile, onTraining });
+    fireEvent.click(row("Friday"));
+    const dialog = await screen.findByRole("dialog", { name: "Friday" });
+    const fasted = within(dialog).getByRole("switch", {
+      name: "I train fasted",
+    });
+    expect(fasted.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(fasted);
+    await act(async () => {
+      fireEvent.click(
+        within(dialog).getByRole("button", { name: "Save Friday" }),
+      );
+    });
+    expect(onTraining).toHaveBeenCalledWith(
+      withTrainingDay(SCHEDULE, 5, { ...SCHEDULE.days[5], fasted: true }),
+    );
+    expect(row("Friday").textContent).toContain("Fasted");
+  });
+
+  it("a rest day can't be fasted", async () => {
+    renderEditor({ initial: profile });
+    fireEvent.click(row("Monday"));
+    const dialog = await screen.findByRole("dialog", { name: "Monday" });
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Rest" }));
+    const fasted = within(dialog).getByRole("switch", {
+      name: "I train fasted",
+    });
+    expect(fasted.matches(":disabled")).toBe(true);
+    expect(fasted.getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("turns each workout meal on and off, keeping the rest of the week", () => {
+    const onTraining = vi.fn();
+    renderEditor({ initial: profile, onTraining });
+    const card = screen.getByRole("region", { name: "Workout meals" });
+    const before = within(card).getByRole("switch", {
+      name: "Before a session",
+    });
+    const after = within(card).getByRole("switch", { name: "After a session" });
+    // Both on by default.
+    expect(before.getAttribute("aria-checked")).toBe("true");
+    expect(after.getAttribute("aria-checked")).toBe("true");
+
+    fireEvent.click(before);
+    expect(onTraining).toHaveBeenLastCalledWith(
+      withWorkoutMeals(SCHEDULE, { pre: false, post: true }),
+    );
+    expect(before.getAttribute("aria-checked")).toBe("false");
+    expect(after.getAttribute("aria-checked")).toBe("true");
   });
 });
