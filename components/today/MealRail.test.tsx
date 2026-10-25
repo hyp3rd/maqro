@@ -53,17 +53,30 @@ describe("MealRail", () => {
     const nodes = [...container.querySelectorAll("[data-node]")].map((n) =>
       n.getAttribute("data-node"),
     );
-    // Lunch's food has no logged time (an auto-fill): planned, not logged.
-    expect(nodes).toEqual(["logged", "planned", "now", "open"]);
-    expect(
-      container.querySelector("[data-node=now]")?.getAttribute("class"),
-    ).toContain("bg-signal");
-    const plannedNode = container.querySelector("[data-node=planned]");
-    expect(plannedNode?.getAttribute("class")).toContain("border-dashed");
-    expect(plannedNode?.getAttribute("class")).not.toContain("bg-foreground ");
-    expect(screen.getByText("Next to log")).toBeTruthy();
+    // Lunch's food has no logged time (an auto-fill): planned, not logged —
+    // so it, not the empty dinner after it, is the next slot to log.
+    expect(nodes).toEqual(["logged", "planned", "open", "open"]);
+    const next = container.querySelector("[data-next]");
+    expect(next?.getAttribute("data-node")).toBe("planned");
+    expect(next?.getAttribute("class")).toContain("border-dashed");
+    expect(next?.getAttribute("class")).toContain("border-signal");
+    expect(next?.getAttribute("class")).not.toContain("bg-foreground ");
     const lunch = screen.getAllByRole("listitem")[1] as HTMLElement;
+    expect(within(lunch).getByText("Next to log")).toBeTruthy();
     expect(within(lunch).getByText("Planned, not logged yet")).toBeTruthy();
+    expect(screen.getAllByText("Next to log")).toHaveLength(1);
+  });
+
+  it("lights an empty next slot in the signal colour", () => {
+    const { container } = renderRail(DAY, [
+      { id: 1, name: "Breakfast", foods: [food(1, at(7, 30))] },
+      { id: 2, name: "Lunch", foods: [] },
+    ]);
+    const next = container.querySelector("[data-next]");
+    expect(next?.getAttribute("data-node")).toBe("open");
+    expect(next?.getAttribute("class")).toContain("bg-signal");
+    const lunch = screen.getAllByRole("listitem")[1] as HTMLElement;
+    expect(within(lunch).getByText("Next to log")).toBeTruthy();
   });
 
   it("shows when a meal was first logged, and no time for a planned one", () => {
@@ -97,8 +110,9 @@ describe("MealRail", () => {
     }
   });
 
-  it("has no 'now' slot on another day", () => {
+  it("has no next slot on another day", () => {
     const { container } = renderRail("2026-10-22");
-    expect(container.querySelector("[data-node=now]")).toBeNull();
+    expect(container.querySelector("[data-next]")).toBeNull();
+    expect(screen.queryByText("Next to log")).toBeNull();
   });
 });

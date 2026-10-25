@@ -587,6 +587,24 @@ describe("targetsForDate — training days", () => {
       );
     });
 
+    it("meanDay is the same day without its session's calorie shift", () => {
+      const days = weekTargets(heavyCut(), "2026-10-19", FREE)?.days ?? [];
+      expect(days).toHaveLength(7);
+      // The 2,616 mean day under the week's held 50 g fat: carbs take
+      // (2,616 − 1,360 − 450) / 4 = 201.5 → 200, on every day of the week.
+      for (const d of days)
+        expect(d.training?.meanDay).toEqual({ carbs: 200, fat: 50 });
+      // Low-carb mirrors it: the week's held 70 g carbs stay and fat takes
+      // the mean, (2,616 − 1,360 − 280) / 9 = 108.4 → 110.
+      const lowCarb =
+        weekTargets(heavyCut({ dietType: "lowCarb" }), "2026-10-19", FREE)
+          ?.days ?? [];
+      for (const d of lowCarb) {
+        expect(d.training?.meanDay.carbs).toBe(d.carbs);
+        expect(d.training?.meanDay.fat).toBe(110);
+      }
+    });
+
     it("low-carb mirrors it: carbs are one level all week, fat moves", () => {
       const days =
         weekTargets(heavyCut({ dietType: "lowCarb" }), "2026-10-19", FREE)

@@ -1,10 +1,10 @@
 /**
  * @vitest-environment jsdom
  */
-import { countDateFormats } from "@/lib/i18n/date-format-counter";
 import { intlWrapper } from "@/lib/i18n/intl-test-wrapper";
+import { countDateFormats } from "@/tests/utils/date-format-counter";
 import { afterEach, describe, expect, it } from "vitest";
-import { targetsForDate, weekTargets } from "@maqro/core/targets";
+import { targetsForDate } from "@maqro/core/targets";
 import type { PersonalInfo } from "@maqro/core/types";
 import { cleanup, render, screen } from "@testing-library/react";
 import { TrainingContext } from "./TrainingContext";
@@ -49,7 +49,6 @@ function context(date: string) {
   return (
     <TrainingContext
       day={targetsForDate(PROFILE, date, ctx)}
-      week={weekTargets(PROFILE, date, ctx)}
       today={TODAY}
     />
   );

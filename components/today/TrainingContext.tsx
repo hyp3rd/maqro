@@ -6,20 +6,20 @@ import { cn } from "@/lib/utils";
 import { useMemo } from "react";
 import { useLocale } from "next-intl";
 import { addDays, isDateKey } from "@maqro/core/date";
-import type { DateTargets, WeekTargets } from "@maqro/core/targets";
+import type { DateTargets } from "@maqro/core/targets";
 
 /** The calm line under the Today gauge on a training day: "Carbs are
  *  higher today — heavy session at 18:00" (see `trainingContextLine`).
- *  Renders nothing on a rest day, with training off, or when the day sits
- *  at the weekly average. Muted, never a warning colour. */
+ *  Renders nothing on a rest day, with training off, or when the session
+ *  left the day at the weekly average. Muted, never a warning colour;
+ *  wrapped "pretty" (where supported) so a narrow phone does not leave the
+ *  start time alone on a second line. */
 export function TrainingContext({
   day,
-  week,
   today,
   className,
 }: {
   day: DateTargets;
-  week: WeekTargets | null;
   today: string;
   className?: string;
 }) {
@@ -38,12 +38,12 @@ export function TrainingContext({
         : day.date === addDays(today, 1)
           ? "tomorrow"
           : `on ${weekday.format(localDate(day.date))}`;
-  const line = trainingContextLine(day, week, when, phrase);
+  const line = trainingContextLine(day, when, phrase);
   if (line === null) return null;
   return (
     <p
       data-part="training-context"
-      className={cn("text-label text-muted-foreground", className)}
+      className={cn("text-label text-muted-foreground text-pretty", className)}
     >
       {line}
     </p>

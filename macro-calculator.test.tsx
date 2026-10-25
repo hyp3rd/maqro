@@ -505,6 +505,52 @@ describe("macro-calculator: the day view gets the selected date's targets", () =
     },
   );
 
+  it("a stale sheet's close never closes the sheet opened after it", async () => {
+    const { rerender } = render(<MacroCalculator />);
+    await act(async () => {
+      prop<(d: string) => void>("MealPlanner", "onSelectDate")(PAST_DAY);
+    });
+    await act(async () => {
+      prop<(trigger: HTMLElement) => void>(
+        "MealPlanner",
+        "onEditDayType",
+      )(document.createElement("button"));
+    });
+    // The past day's sheet, e.g. with its save still in flight.
+    const staleClose = prop<(open: boolean) => void>(
+      "DayTypeSheet",
+      "onOpenChange",
+    );
+    // The shown date moves on (closing it), and the user opens the sheet
+    // again for the new day before the stale save settles.
+    await act(async () => {
+      prop<(d: string) => void>("MealPlanner", "onSelectDate")(TODAY);
+    });
+    await act(async () => {
+      prop<(trigger: HTMLElement) => void>(
+        "MealPlanner",
+        "onEditDayType",
+      )(document.createElement("button"));
+    });
+    expect(prop("DayTypeSheet", "targets")).toEqual(todayTargets);
+    const ownClose = prop<(open: boolean) => void>(
+      "DayTypeSheet",
+      "onOpenChange",
+    );
+
+    // The stale save settles and closes ITS sheet: today's stays open.
+    await act(async () => staleClose(false));
+    delete ui.props.DayTypeSheet;
+    rerender(<MacroCalculator />);
+    expect(prop("DayTypeSheet", "targets")).toEqual(todayTargets);
+
+    // Its own close still closes it.
+    await act(async () => ownClose(false));
+    delete ui.props.DayTypeSheet;
+    rerender(<MacroCalculator />);
+    expect(ui.props.DayTypeSheet).toBeUndefined();
+  });
+
   it("midnight, while following today, closes the sheet opened for that day", async () => {
     vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
     vi.setSystemTime(new Date(2026, 5, 10, 23, 59, 0));
@@ -1199,5 +1245,50 @@ describe("macro-calculator: every way of logging food times it on today", () => 
     expect(writtenLunch()).toEqual([
       expect.objectContaining({ name: "Tofu", loggedAt: EATEN_AT }),
     ]);
+  });
+
+  it("'I had another of these' is a new portion eaten now on today, untimed on another day", async () => {
+    const EATEN_AT = new Date(2026, 5, 10, 8, 30).getTime();
+    const eggs: FoodItem = {
+      id: 11,
+      name: "Eggs",
+      protein: 13,
+      carbs: 1,
+      fat: 10,
+      calories: 150,
+      portionSize: 100,
+      loggedAt: EATEN_AT,
+    };
+    const lunchWithEggs = MEALS.map((m) =>
+      m.id === 2 ? { ...m, foods: [eggs] } : m,
+    );
+    const duplicate = () =>
+      act(async () => {
+        prop<(mealId: number, foodId: number) => void>(
+          "MealPlanner",
+          "duplicateFood",
+        )(2, 11);
+      });
+
+    dayMeals.override = lunchWithEggs;
+    render(<MacroCalculator />);
+    await duplicate();
+    const [original, copy] = writtenLunch();
+    // The first portion keeps its time; the second was eaten just now.
+    expect(original).toEqual(eggs);
+    expect(copy).toEqual(
+      expect.objectContaining({ name: "Eggs", loggedAt: NOW }),
+    );
+    expect(copy?.id).not.toBe(eggs.id);
+
+    // Another day has no true hour for a portion added to it now.
+    cleanup();
+    writes.setMeals.mockReset();
+    dayMeals.byDate[PAST_DAY] = lunchWithEggs;
+    await renderOnPastDay();
+    await duplicate();
+    const past = writtenLunch();
+    expect(past).toHaveLength(2);
+    expect(past[1]?.loggedAt).toBeUndefined();
   });
 });

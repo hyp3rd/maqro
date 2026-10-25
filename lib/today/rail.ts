@@ -2,8 +2,11 @@ import type { Meal } from "@maqro/core/types";
 import type { RelativeDay } from "./timeline";
 
 /** The Today meal rail: one node per meal slot, echoing the timing track.
- *  Slots carry no planned time, so "now" is positional — on today, the
- *  first empty slot after the last one with food (the next thing to log).
+ *  On today, "next to log" (`RailEntry.next`) is the first slot that isn't
+ *  LOGGED and is still ahead: a planned one wherever it sits (its food is
+ *  still to log — a planned dinner before an afternoon snack logged in the
+ *  last slot), or an empty one after the last logged slot. An empty slot
+ *  skipped before a logged one is not next.
  *
  *  - `logged`: the slot has food that was logged as eaten (a filled node).
  *  - `planned`: the slot's food is intent, not a record — on today or a
@@ -15,13 +18,14 @@ import type { RelativeDay } from "./timeline";
  *    no time on the rail or the track. A past day can't tell the two apart
  *    (logging to another day never stamps a time), so its food reads as
  *    logged.
- *  - `now`: today's next slot to fill (the highlighted node).
- *  - `open`: any other empty slot — skipped, still to come, or on a past or
+ *  - `open`: an empty slot — skipped, still to come, or on a past or
  *    future day (a hollow node). */
-export type RailNode = "logged" | "planned" | "now" | "open";
+export type RailNode = "logged" | "planned" | "open";
 
 export type RailEntry = {
   node: RailNode;
+  /** Today's next slot to log (the highlighted node): open or planned. */
+  next: boolean;
   /** The rail line below this node is drawn solid: a later slot is logged,
    *  so the day has already run past it (a planned slot is still ahead). */
   lineStrong: boolean;
@@ -37,20 +41,16 @@ export function railNodes(
       (filled[i] ?? false) &&
       (when === "past" || m.foods.some((f) => f.loggedAt !== undefined)),
   );
-  const lastFilled = filled.lastIndexOf(true);
   const lastLogged = logged.lastIndexOf(true);
-  const nowIndex =
+  const nextIndex =
     when === "today"
-      ? filled.findIndex((isFilled, i) => !isFilled && i > lastFilled)
+      ? meals.findIndex(
+          (_, i) => !logged[i] && ((filled[i] ?? false) || i > lastLogged),
+        )
       : -1;
   return meals.map((_, i) => ({
-    node: logged[i]
-      ? "logged"
-      : filled[i]
-        ? "planned"
-        : i === nowIndex
-          ? "now"
-          : "open",
+    node: logged[i] ? "logged" : filled[i] ? "planned" : "open",
+    next: i === nextIndex,
     lineStrong: i < lastLogged,
   }));
 }

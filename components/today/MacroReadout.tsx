@@ -3,6 +3,7 @@
 import { meterReading } from "@/components/ui/meter";
 import { Stat } from "@/components/ui/stat";
 import { formatNumber } from "@/lib/i18n/number";
+import type { RelativeDay } from "@/lib/today/timeline";
 import { cn } from "@/lib/utils";
 import { useLocale } from "next-intl";
 
@@ -51,14 +52,18 @@ const ROWS = [
  *  then "Protein 85 / 160 g · 75 g left" and so on. Figures are rounded
  *  before they are compared (`meterReading`), so "left" and "+N" always
  *  match the numbers shown; over is a neutral "+N", never a warning. The
- *  calorie row leaves "left" to the gauge's centre. Locale-aware figures. */
+ *  calorie row leaves "left" to the gauge's centre. Locale-aware figures.
+ *  On a future day (`when`) nothing is eaten yet: the logged food is a
+ *  plan, so the energy row reads "Planned" (the gauge says "to plan"). */
 export function MacroReadout({
   eaten,
   targets,
+  when = "today",
   className,
 }: {
   eaten: Macros;
   targets: Targets;
+  when?: RelativeDay;
   className?: string;
 }) {
   const locale = useLocale();
@@ -104,7 +109,9 @@ export function MacroReadout({
                   aria-hidden
                   className={cn("h-1 w-2.5 shrink-0 rounded-full", row.swatch)}
                 />
-                {row.label}
+                {row.key === "calories" && when === "future"
+                  ? "Planned"
+                  : row.label}
               </span>
             }
             value={show(reading.value)}

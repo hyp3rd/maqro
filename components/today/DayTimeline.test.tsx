@@ -158,9 +158,11 @@ describe("DayTimeline", () => {
     ).toBeCloseTo(100, 6);
   });
 
-  // A 390px phone's track measures 358px, a 360px phone's 328px.
+  // The desktop column's track measures 384px, a 390px phone's 358px, a
+  // 360px phone's 328px.
   it.each([
-    [358, "Now 15:00"],
+    [384, "Now 15:00"],
+    [358, "15:00"],
     [328, "15:00"],
   ])(
     "keeps 12 and 18 at 15:00 on a %ipx track, flagged %s",

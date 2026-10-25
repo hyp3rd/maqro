@@ -38,6 +38,7 @@ import { supplementMicrosForDay, supplementsById } from "@/lib/supplements";
 import { useDataRev } from "@/lib/sync/data-bus";
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, Sparkles } from "lucide-react";
+import { localDateOfKey } from "@maqro/core/date";
 
 /** Micronutrients card on the Progress view (Pro-only).
  *
@@ -428,16 +429,12 @@ function trendPoints(
   return points;
 }
 
-function parseLocalDate(d: string): Date {
-  const [y, m, day] = d.split("-").map(Number);
-  return new Date(y, m - 1, day);
-}
-
+/** "Oct 24" for a `YYYY-MM-DD` key: its local calendar day
+ *  (`localDateOfKey`), so a key never names the day before west of UTC. */
 function shortLabel(d: string): string {
-  return parseLocalDate(d).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
+  const day = localDateOfKey(d);
+  if (!day) return d;
+  return day.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 /** Upgrade prompt shown to free / plus users in place of the data. */

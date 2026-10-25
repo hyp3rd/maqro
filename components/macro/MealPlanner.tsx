@@ -430,10 +430,15 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
               {/* Self-hides with no active streak, so the row stays clean
                   for first-time and lapsed users. */}
               <StreakChip />
-              <ShareTodayButton
-                totalMacros={totalMacros}
-                calculatedValues={calculatedValues}
-              />
+              {/* Today only: the card and its signed page are "Today on
+                  Maqro", and another day's numbers are a past record or a
+                  plan ahead — not today's macros. */}
+              {selectedDate === today && (
+                <ShareTodayButton
+                  totalMacros={totalMacros}
+                  calculatedValues={calculatedValues}
+                />
+              )}
             </>
           }
         />
@@ -455,7 +460,6 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
         />
         <TrainingContext
           day={calculatedValues}
-          week={week}
           today={today}
         />
         <LiveDayTimeline

@@ -249,6 +249,70 @@ describe("ProgressView", () => {
     });
   });
 
+  describe("changes in the body are stated, never judged", () => {
+    const JUDGED =
+      /emerald|green|amber|red-|rose-|lime-|orange-|destructive|success|warning/;
+
+    it("draws the waist change in a neutral colour, either way", async () => {
+      const today = todayKey();
+      await saveBodyMeasurement(addDays(today, -9), { waistCm: 88 });
+      await saveBodyMeasurement(addDays(today, -2), { waistCm: 87 });
+      render(<ProgressView {...BASE} />);
+      const down = await screen.findByText(/↓ 1\.0 cm vs prev/);
+      expect(down.className).toContain("text-muted-foreground");
+      expect(down.className).not.toMatch(JUDGED);
+      cleanup();
+
+      await saveBodyMeasurement(today, { waistCm: 88.5 });
+      render(<ProgressView {...BASE} />);
+      const up = await screen.findByText(/↑ 1\.5 cm vs prev/);
+      expect(up.className).toContain("text-muted-foreground");
+      expect(up.className).not.toMatch(JUDGED);
+    });
+
+    it("draws the week's weight change in a neutral colour", async () => {
+      render(<ProgressView {...BASE} />);
+      // The seeded week: 79.6 kg four days ago → 80.0 kg today.
+      const change = await screen.findByText(/^↑ 0\.4 kg$/);
+      expect(change.className).toContain("text-muted-foreground");
+      expect(change.className).not.toMatch(JUDGED);
+    });
+
+    it.each([
+      ["maintain", "Holding steady"],
+      ["lose", "Weight has held steady"],
+      ["gain", "Weight has held steady"],
+    ] as const)(
+      "draws a flat weight trend in neutral tokens when the goal is %s",
+      async (goal, heading) => {
+        // Three weeks at the same weight: a flat band the plateau read calls.
+        const today = todayKey();
+        for (let i = 0; i < 21; i++) {
+          await saveWeightEntry(addDays(today, -i), 80);
+        }
+        render(
+          <ProgressView
+            {...BASE}
+            goal={goal}
+          />,
+        );
+
+        const title = await screen.findByRole("heading", { name: heading });
+        const card = title.closest("div");
+        const icon = title.parentElement?.querySelector("svg");
+        expect(card).not.toBeNull();
+        expect(icon).not.toBeNull();
+        for (const el of [card, title, icon]) {
+          expect(el?.getAttribute("class") ?? "").not.toMatch(JUDGED);
+        }
+        expect(card?.className).toContain("bg-card");
+        expect(title.className).toContain("text-muted-foreground");
+        expect(icon?.getAttribute("class")).toContain("text-muted-foreground");
+        expect(screen.queryByText("Plateau detected")).toBeNull();
+      },
+    );
+  });
+
   describe("hydration chart", () => {
     beforeEach(async () => {
       const today = todayKey();

@@ -91,7 +91,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { toast } from "sonner";
-import { isDateKey } from "@maqro/core/date";
+import { isDateKey, localDateOfKey } from "@maqro/core/date";
 import { ExportReportDialog } from "./ExportReportDialog";
 
 const WINDOW_DAYS = 60;
@@ -176,16 +176,12 @@ type Props = {
   onClearPhaseTdee: (phaseId: string) => void;
 };
 
-function parseLocalDate(d: string): Date {
-  const [y, m, day] = d.split("-").map(Number);
-  return new Date(y, m - 1, day);
-}
-
+/** "Oct 24" for a `YYYY-MM-DD` key: its local calendar day
+ *  (`localDateOfKey`), so a key never names the day before west of UTC. */
 function shortLabel(d: string): string {
-  return parseLocalDate(d).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
+  const day = localDateOfKey(d);
+  if (!day) return d;
+  return day.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 /** Render minutes-since-local-midnight as a locale-aware clock ("8:15 AM").
@@ -654,45 +650,32 @@ function TrendsSection({
         </div>
       )}
 
-      {plateau.advisory &&
-        (() => {
-          // A flat trend is the GOAL when maintaining (positive/neutral); an
-          // attention signal when losing/gaining (amber).
-          const onTarget = goal === "maintain";
-          const tone = onTarget
-            ? "border-emerald-500/30 bg-emerald-500/5"
-            : "border-amber-500/30 bg-amber-500/5";
-          const accent = onTarget
-            ? "text-emerald-700 dark:text-emerald-400"
-            : "text-amber-700 dark:text-amber-400";
-          return (
-            <div className={cn("rounded-lg border px-5 py-4", tone)}>
-              <header className="mb-1.5 flex items-center gap-2">
-                <LineChart className={cn("h-3.5 w-3.5", accent)} />
-                <h3
-                  className={cn(
-                    "text-xs font-medium uppercase tracking-wider",
-                    accent,
-                  )}
-                >
-                  {onTarget ? "Holding steady" : "Plateau detected"}
-                </h3>
-              </header>
-              <p className="text-sm leading-relaxed text-foreground">
-                {plateau.advisory}
-              </p>
-              {plateau.startKg !== null && plateau.endKg !== null && (
-                <p className="mt-2 font-mono text-[11px] tabular-nums text-muted-foreground">
-                  Smoothed weight:{" "}
-                  {kgToDisplay(plateau.startKg, units).toFixed(1)} →{" "}
-                  {kgToDisplay(plateau.endKg, units).toFixed(1)} {unitLabel}{" "}
-                  over {plateau.daysFlat} days · {plateau.weighIns} weigh-in
-                  {plateau.weighIns === 1 ? "" : "s"}
-                </p>
-              )}
-            </div>
-          );
-        })()}
+      {plateau.advisory && (
+        // A flat trend is stated, never judged: the same neutral card as the
+        // adaptive-TDEE read below, whether the goal is to hold, lose or gain.
+        // The advisory copy carries the "what next"; colour adds no verdict.
+        <div className="rounded-lg border border-border/60 bg-card px-5 py-4">
+          <header className="mb-1.5 flex items-center gap-2">
+            <LineChart className="h-3.5 w-3.5 text-muted-foreground" />
+            <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              {goal === "maintain"
+                ? "Holding steady"
+                : "Weight has held steady"}
+            </h3>
+          </header>
+          <p className="text-sm leading-relaxed text-foreground">
+            {plateau.advisory}
+          </p>
+          {plateau.startKg !== null && plateau.endKg !== null && (
+            <p className="mt-2 font-mono text-[11px] tabular-nums text-muted-foreground">
+              Smoothed weight: {kgToDisplay(plateau.startKg, units).toFixed(1)}{" "}
+              → {kgToDisplay(plateau.endKg, units).toFixed(1)} {unitLabel} over{" "}
+              {plateau.daysFlat} days · {plateau.weighIns} weigh-in
+              {plateau.weighIns === 1 ? "" : "s"}
+            </p>
+          )}
+        </div>
+      )}
 
       {showAdaptive && observed !== null && (
         <div className="rounded-lg border border-border/60 bg-card px-5 py-4">
@@ -1043,15 +1026,9 @@ function EngagementSection({
               {recap.weightDeltaKg !== null && (
                 <>
                   {" · "}
-                  <span
-                    className={
-                      recap.weightDeltaKg < 0
-                        ? "text-emerald-700 dark:text-emerald-400"
-                        : recap.weightDeltaKg > 0
-                          ? "text-amber-700 dark:text-amber-400"
-                          : "text-muted-foreground"
-                    }
-                  >
+                  {/* Stated, never judged: a loss is no success and a gain
+                      no warning (a lean bulk gains on purpose). */}
+                  <span className="text-muted-foreground">
                     {recap.weightDeltaKg < 0
                       ? "↓ "
                       : recap.weightDeltaKg > 0
@@ -1972,14 +1949,6 @@ function Metric({
   units: "metric" | "imperial";
 }) {
   const delta = cm !== undefined && prevCm !== undefined ? cm - prevCm : null;
-  const deltaColor =
-    delta === null
-      ? "text-muted-foreground"
-      : delta < 0
-        ? "text-emerald-600 dark:text-emerald-400"
-        : delta > 0
-          ? "text-amber-600 dark:text-amber-400"
-          : "text-muted-foreground";
   const unitLabel = units === "imperial" ? "in" : "cm";
   const toDisplay = (value: number): number =>
     units === "imperial" ? cmToInches(value) : value;
@@ -1992,9 +1961,9 @@ function Metric({
         {cm !== undefined ? `${toDisplay(cm).toFixed(1)} ${unitLabel}` : "-"}
       </p>
       {delta !== null && (
-        <p
-          className={`mt-0.5 font-mono text-[10px] tabular-nums ${deltaColor}`}
-        >
+        // The direction is stated, in a neutral colour: a smaller waist is
+        // no success and a larger one no warning (wellbeing rule).
+        <p className="mt-0.5 font-mono text-[10px] tabular-nums text-muted-foreground">
           {delta < 0 ? "↓ " : delta > 0 ? "↑ " : ""}
           {Math.abs(toDisplay(delta)).toFixed(1)} {unitLabel} vs prev
         </p>

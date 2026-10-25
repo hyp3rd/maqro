@@ -246,27 +246,42 @@ describe("labels", () => {
     }
   });
 
-  it("says 'Now' on the flag only where an hour gap holds it", () => {
+  it("says 'Now' on the flag only where an hour gap holds it with room", () => {
     // A 360px phone (328px track): "Now 15:00" would cover 12 and 18.
     expect(nowFlagText(900, 328)).toBe("15:00");
-    // A 390px phone (358px track) and wider.
-    expect(nowFlagText(900, 358)).toBe("Now 15:00");
+    // A 390px phone (358px track): it would fit, but only half a character
+    // from 12 and 18 (~5px), where the 320 and 360 px phones' "15:00" has
+    // 11-16px. Every phone reads "15:00" beside the signal cursor.
+    expect(nowFlagText(900, 358)).toBe("15:00");
+    // Wider (the desktop column, a tablet): a full character clear.
+    expect(nowFlagText(900, 384)).toBe("Now 15:00");
     expect(nowFlagText(900, 1200)).toBe("Now 15:00");
-    // The boundary: 12 characters of 7.2px in a 6-hour gap (345.6px).
-    expect(nowFlagText(900, 345)).toBe("15:00");
-    expect(nowFlagText(900, 346)).toBe("Now 15:00");
+    // The boundary: 13 characters of 7.2px in a 6-hour gap (374.4px).
+    expect(nowFlagText(900, 374)).toBe("15:00");
+    expect(nowFlagText(900, 375)).toBe("Now 15:00");
     // An unknown width is the narrowest track's.
     expect(nowFlagText(900, 0)).toBe("15:00");
   });
 
+  it("gives the 390 px phone's flag the narrower phones' clear room", () => {
+    /** The clear px between the 15:00 flag and the 12 and 18 labels. */
+    const room = (trackPx: number) => {
+      const pxPerMin = trackPx / (24 * 60);
+      const flag = nowFlagText(900, trackPx).length * 7.2;
+      return 3 * 60 * pxPerMin - flag / 2 - 7.2;
+    };
+    const narrowest = Math.min(room(288), room(328));
+    expect(room(358)).toBeGreaterThanOrEqual(narrowest);
+  });
+
   it("clears only the hour labels the now flag actually overlaps", () => {
-    // A 390px phone's 358px track at 15:00: "Now 15:00" sits between 12
-    // and 18, and both stay readable.
-    expect(hourLabels(900, 358)).toEqual([0, 6, 12, 18, 24]);
+    // The desktop column's 384px track at 15:00: "Now 15:00" sits between
+    // 12 and 18, and both stay readable.
+    expect(hourLabels(900, 384)).toEqual([0, 6, 12, 18, 24]);
     // 11:40: only 12 is under the flag.
-    expect(hourLabels(700, 358)).toEqual([0, 6, 18, 24]);
+    expect(hourLabels(700, 384)).toEqual([0, 6, 18, 24]);
     // 23:30: the flag runs inwards from the end, over 24 only.
-    expect(hourLabels(1410, 358)).toEqual([0, 6, 12, 18]);
+    expect(hourLabels(1410, 384)).toEqual([0, 6, 12, 18]);
   });
 
   it("falls back to the narrowest track for a width that isn't known", () => {

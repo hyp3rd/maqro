@@ -84,6 +84,7 @@ import {
   type TargetContext,
   dayOverrideResolver,
   targetsForDate,
+  targetsUseBodyFat,
 } from "@maqro/core/targets";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -322,6 +323,15 @@ function ReportBody({
         : null,
     [profile, measurements],
   );
+  // That reading's row: what the body section and the PDF show when
+  // nothing was measured in the window, rather than only saying so.
+  const bodyReading = useMemo(
+    () =>
+      bodyFat
+        ? (measurements.find((m) => m.date === bodyFat.date) ?? null)
+        : null,
+    [bodyFat, measurements],
+  );
   const ctx = useMemo<TargetContext>(
     () => ({
       phasesEnabled,
@@ -484,19 +494,26 @@ function ReportBody({
       cm === undefined
         ? "—"
         : `${(units === "imperial" ? cmToInches(cm) : cm).toFixed(1)} ${cmUnitLabel}`;
-    const body = mLast
+    // Nothing measured in the window: the older reading the targets use,
+    // each figure saying when it was taken.
+    const mShown = mLast ?? bodyReading;
+    const takenOn =
+      !mLast && bodyReading
+        ? `from ${shortDateLabel(bodyReading.date)}`
+        : undefined;
+    const body = mShown
       ? {
           stats: [
-            { label: "Waist", value: lenDisplay(mLast.waistCm) },
-            { label: "Neck", value: lenDisplay(mLast.neckCm) },
-            { label: "Hips", value: lenDisplay(mLast.hipsCm) },
+            { label: "Waist", value: lenDisplay(mShown.waistCm), sub: takenOn },
+            { label: "Neck", value: lenDisplay(mShown.neckCm), sub: takenOn },
+            { label: "Hips", value: lenDisplay(mShown.hipsCm), sub: takenOn },
             {
               label: "Body fat",
               value: bodyFat ? `${bodyFat.pct.toFixed(1)}%` : "—",
-              sub: bodyFatSub(bodyFat, bodyType, mLast.date),
+              sub: bodyFatSub(bodyFat, bodyType, mLast?.date ?? null),
             },
           ],
-          notes: mLast.notes ?? null,
+          notes: mLast?.notes ?? null,
         }
       : {
           stats: [{ label: "Body", value: "—", sub: "No measurements yet" }],
@@ -1037,6 +1054,7 @@ function ReportBody({
           <BodySection
             entries={measurementsWindow}
             bodyFat={bodyFat}
+            reading={bodyReading}
             profile={profile}
             cmUnitLabel={cmUnitLabel}
             units={units}
@@ -1296,11 +1314,12 @@ function WeightSection({
 }
 
 /** The body-fat stat's sub-line: its category, and the reading's date when
- *  it isn't the measurement shown beside it (`latestDate`). */
+ *  it isn't the measurement shown beside it (`latestDate`; `null` when the
+ *  window has none, so the date always shows). */
 function bodyFatSub(
   bodyFat: { pct: number; date: string } | null,
   bodyType: "male" | "female" | null,
-  latestDate: string,
+  latestDate: string | null,
 ): string | undefined {
   if (!bodyFat || !bodyType) return undefined;
   const category = bodyFatCategory(bodyFat.pct, bodyType);
@@ -1312,6 +1331,7 @@ function bodyFatSub(
 function BodySection({
   entries,
   bodyFat,
+  reading,
   profile,
   cmUnitLabel,
   units,
@@ -1320,11 +1340,16 @@ function BodySection({
   /** The estimate the targets read (`latestBodyFatReading` over the whole
    *  history), so this section never disagrees with them. */
   bodyFat: { pct: number; date: string } | null;
+  /** The measurement that estimate comes from: shown, with its date, when
+   *  the window has no measurement of its own. */
+  reading: BodyMeasurement | null;
   profile: PersonalInfo | null;
   cmUnitLabel: string;
   units: "metric" | "imperial";
 }) {
-  if (entries.length === 0) {
+  const inWindow = entries[entries.length - 1] ?? null;
+  const latest = inWindow ?? reading;
+  if (latest === null) {
     return (
       <ReportSection title="Body composition">
         <p className="text-sm text-muted-foreground">
@@ -1333,8 +1358,6 @@ function BodySection({
       </ReportSection>
     );
   }
-  const latest = entries[entries.length - 1];
-  if (!latest) return null;
   const bodyType: "male" | "female" | null =
     profile?.gender === "male" || profile?.gender === "female"
       ? profile.gender
@@ -1343,10 +1366,20 @@ function BodySection({
     cm === undefined
       ? "—"
       : `${(units === "imperial" ? cmToInches(cm) : cm).toFixed(1)} ${cmUnitLabel}`;
+  // Only an enabled training schedule's protein reads the estimate; without
+  // one the targets don't use any reading, so the line must not claim they do.
+  const readByTargets = profile !== null && targetsUseBodyFat(profile);
   return (
     <ReportSection title="Body composition">
       <p className="mb-2 text-[11px] text-muted-foreground">
-        Latest measurements ({shortDateLabel(latest.date)})
+        {inWindow
+          ? "Latest measurements"
+          : "No measurements in this window. Latest reading"}{" "}
+        {/* The date wraps whole, never "(Oct" | "12)". */}
+        <span className="whitespace-nowrap">
+          ({shortDateLabel(latest.date)})
+        </span>
+        {inWindow ? "" : readByTargets ? ", which your targets use." : "."}
       </p>
       <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
         <Stat

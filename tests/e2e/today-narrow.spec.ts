@@ -169,6 +169,23 @@ test.describe("on a touch screen", () => {
       ).toContain("choose a day");
     }
   });
+
+  test("without a platform picker, the typed date field is 44 px tall", async ({
+    page,
+  }) => {
+    // An older WebView (before Safari 16): no showPicker().
+    await page.addInitScript(() => {
+      Reflect.deleteProperty(HTMLInputElement.prototype, "showPicker");
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/app");
+    await page.getByRole("button", { name: /, choose a day$/ }).tap();
+    const field = page.getByLabel(/, choose a day$/);
+    await expect(field).toBeFocused();
+    const box = await field.boundingBox();
+    if (!box) throw new Error("date field not laid out");
+    expect(Math.round(box.height)).toBeGreaterThanOrEqual(44);
+  });
 });
 
 test("at 390 px the readout sits beside the gauge with whole labels", async ({

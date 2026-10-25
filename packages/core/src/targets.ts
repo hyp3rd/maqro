@@ -87,6 +87,14 @@ export type TrainingDayTargets = {
   cycling: CyclingPreset;
   /** The weekly mean daily target the day is planned around. */
   meanCalories: number;
+  /** The carbs and fat (g) this day would plan at `meanCalories` — the
+   *  same week, protein and held level, only without the session's calorie
+   *  shift. The day's own carbs and fat minus these is exactly what its
+   *  session changed (one level is held all week, so a carb-moving diet
+   *  moves only carbs and a fat-moving one only fat), which a comparison
+   *  with the other days of the week can't tell apart from a goal phase
+   *  that starts mid-week or a per-date override elsewhere. */
+  meanDay: { carbs: number; fat: number };
   /** The protein basis actually used (`proteinGrams`): `bodyweight`,
    *  `leanMass` (only with a body-fat estimate), or `referenceWeight` (BMI
    *  > 30 without one: g/kg on the protein weight that tapers from the
@@ -278,6 +286,13 @@ export function targetsForDate(
     explicitFatChoice: floors.explicitFatChoice,
   };
   const macros = partitionDayMacros({ ...week, dayKcal });
+  // The same split at the mean, holding the level THIS day held (an
+  // override under the week's smallest day lowers it for its own split).
+  const meanDay = partitionDayMacros({
+    ...week,
+    weekMinKcal: Math.min(week.weekMinKcal, dayKcal),
+    dayKcal: values.targetCalories,
+  });
   return {
     ...base,
     targetCalories: dayKcal,
@@ -289,6 +304,7 @@ export function targetsForDate(
       dayClass,
       cycling: schedule.cycling,
       meanCalories: values.targetCalories,
+      meanDay: { carbs: meanDay.carbs, fat: meanDay.fat },
       proteinBasis: protein.basis,
       bodyFatWouldChangeProtein: protein.bodyFatWouldChangeProtein,
       floorsExceedMean:

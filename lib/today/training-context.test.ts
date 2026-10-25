@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { targetsForDate, weekTargets } from "@maqro/core/targets";
+import { targetsForDate } from "@maqro/core/targets";
 import type { PersonalInfo } from "@maqro/core/types";
 import { trainingContextLine } from "./training-context";
 
@@ -42,13 +42,21 @@ function line(
   profile: PersonalInfo = PROFILE,
   when: "past" | "today" | "future" = "today",
   phrase = "today",
+  context: { phasesEnabled: boolean } = ctx,
 ) {
   return trainingContextLine(
-    targetsForDate(profile, date, ctx),
-    weekTargets(profile, date, ctx),
+    targetsForDate(profile, date, context),
     when,
     phrase,
   );
+}
+
+function withTraining(
+  over: Partial<NonNullable<PersonalInfo["training"]>>,
+): PersonalInfo {
+  const template = PROFILE.training;
+  if (!template) throw new Error("the fixture has a training week");
+  return { ...PROFILE, training: { ...template, ...over } };
 }
 
 describe("trainingContextLine", () => {
@@ -84,25 +92,75 @@ describe("trainingContextLine", () => {
   });
 
   it("says nothing when the day sits at the weekly average", () => {
-    const template = PROFILE.training;
-    if (!template) throw new Error("the fixture has a training week");
-    const flat: PersonalInfo = {
-      ...PROFILE,
-      training: { ...template, cycling: "off" },
-    };
-    expect(line("2026-10-21", flat)).toBeNull();
+    expect(line("2026-10-21", withTraining({ cycling: "off" }))).toBeNull();
   });
 
-  it("says nothing with training off or no week to compare with", () => {
+  it("states only what the session changed when a goal phase starts mid-week", () => {
+    // A cut (Pro) from Friday 23 Oct: Mon–Thu plan around maintenance,
+    // Fri–Sun around the cut's lower mean. Saturday's long session moved
+    // only its carbs; the phase's lower fat is not the session's doing.
+    const phased: PersonalInfo = {
+      ...withTraining({ cycling: "pronounced" }),
+      goalPhases: [
+        {
+          id: "ph_cut",
+          kind: "cut",
+          startDate: "2026-10-23",
+          durationWeeks: 4,
+          weeklyRateKg: 0.5,
+        },
+      ],
+    };
+    const saturday = line("2026-10-24", phased, "today", "today", {
+      phasesEnabled: true,
+    });
+    expect(saturday).toBe("Carbs are higher today for the long session");
+    for (const date of ["2026-10-19", "2026-10-21", "2026-10-23"]) {
+      expect(
+        line(date, phased, "today", "today", { phasesEnabled: true }),
+      ).toMatch(/^Carbs are higher today/);
+    }
+  });
+
+  it("words a session that leaves the day under the weekly average", () => {
+    // Monday's light session in a week of hard ones: its day sits under
+    // the weekly average, so its carbs are lower than the average day's.
+    const hardWeek = withTraining({
+      days: [
+        { type: "lower", intensity: "hard" },
+        { type: "upper", intensity: "light", time: "07:15" },
+        { type: "lower", intensity: "hard" },
+        { type: "upper", intensity: "hard" },
+        { type: "lower", intensity: "hard" },
+        { type: "upper", intensity: "hard" },
+        { type: "rest" },
+      ],
+    });
+    expect(line("2026-10-19", hardWeek)).toBe(
+      "Carbs are lower today to match the light session at 07:15",
+    );
+    expect(line("2026-10-19", hardWeek, "past", "on Monday")).toBe(
+      "Carbs were lower on Monday to match the light session at 07:15",
+    );
+    // Without a start time the line ends on the session.
+    const untimed = withTraining({
+      days: [
+        { type: "lower", intensity: "hard" },
+        { type: "upper", intensity: "light" },
+        { type: "lower", intensity: "hard" },
+        { type: "upper", intensity: "hard" },
+        { type: "lower", intensity: "hard" },
+        { type: "upper", intensity: "hard" },
+        { type: "rest" },
+      ],
+    });
+    expect(line("2026-10-19", untimed, "future", "on Monday")).toBe(
+      "Carbs are lower on Monday to match the light session",
+    );
+  });
+
+  it("says nothing with training off", () => {
     const off: PersonalInfo = { ...PROFILE, training: undefined };
     expect(line("2026-10-21", off)).toBeNull();
-    expect(
-      trainingContextLine(
-        targetsForDate(PROFILE, "2026-10-21", ctx),
-        null,
-        "today",
-        "today",
-      ),
-    ).toBeNull();
   });
 });

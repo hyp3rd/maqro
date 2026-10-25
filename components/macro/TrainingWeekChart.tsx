@@ -40,6 +40,25 @@ const FLOOR_RANGE = 2;
  *  the two gutter labels would overlap (the floor sentence under the chart
  *  still gives the figure). */
 const MIN_LINE_GAP = 16;
+/** A delta label's 12 px mono figure: its ink above and below the
+ *  baseline, and the clear room it keeps from the dashed floor line (its
+ *  card-coloured halo is 2 px of that). */
+const LABEL_ASCENT = 9;
+const LABEL_DESCENT = 3;
+const LABEL_LINE_CLEAR = 4;
+/** A below-the-average label's baseline: just under its bar, else — where
+ *  that would put the figure on the floor line (a bar ending just above
+ *  it) — just under the line, so the two never cross. */
+function belowLabelBaseline(barBottom: number, floorY: number | null) {
+  const baseline = barBottom + 13;
+  if (
+    floorY === null ||
+    baseline - LABEL_ASCENT - LABEL_LINE_CLEAR >= floorY ||
+    baseline + LABEL_DESCENT + LABEL_LINE_CLEAR <= floorY
+  )
+    return baseline;
+  return floorY + LABEL_LINE_CLEAR + LABEL_ASCENT;
+}
 
 /** Signed, grouped kcal difference: "+300", "−250", "0". */
 function signed(n: number, locale: string): string {
@@ -154,10 +173,14 @@ export function TrainingWeekChart({ days, mean, floor, className }: Props) {
                   {delta !== 0 && (
                     <text
                       x={cx}
-                      y={delta > 0 ? y - 5 : y + h + 13}
+                      y={
+                        delta > 0
+                          ? y - 5
+                          : belowLabelBaseline(y + h, showFloor ? floorY : null)
+                      }
                       textAnchor="middle"
-                      // A card-coloured halo keeps the figure readable
-                      // where it crosses the dashed floor line.
+                      // A card-coloured halo keeps the figure crisp next
+                      // to a bar or a line it passes close to.
                       paintOrder="stroke"
                       strokeWidth={4}
                       strokeLinejoin="round"
