@@ -27,11 +27,12 @@ vi.mock("@/hooks/use-latest-body-fat", () => ({
 }));
 const stored = vi.hoisted(() => ({
   overrides: [] as { date: string; day: unknown; recordedAt: number }[],
+  loaded: true,
 }));
 vi.mock("@/hooks/use-day-overrides", () => ({
   useDayOverrides: () => ({
     overrides: stored.overrides,
-    loaded: true,
+    loaded: stored.loaded,
     setOverride: vi.fn(),
     clearOverride: vi.fn(),
   }),
@@ -74,9 +75,22 @@ beforeEach(() => {
   tierState.resolved = true;
   bodyFat.pct = null;
   stored.overrides = [];
+  stored.loaded = true;
 });
 
 describe("useTargets", () => {
+  it("says whether the per-date overrides have loaded (the AI entry points wait for it)", () => {
+    stored.loaded = false;
+    const { result, rerender } = renderHook(() =>
+      useTargets(PROFILE, TODAY, TODAY),
+    );
+    // Until then an overridden date would read as its template day.
+    expect(result.current.overridesLoaded).toBe(false);
+    stored.loaded = true;
+    rerender();
+    expect(result.current.overridesLoaded).toBe(true);
+  });
+
   it("a past day uses its own target, today keeps today's", () => {
     const { result } = renderHook(() => useTargets(PROFILE, TODAY, BEFORE_CUT));
     expect(result.current.todayTargets.date).toBe(TODAY);

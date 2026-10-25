@@ -124,11 +124,22 @@ export function hasBodyFatInputs(
   );
 }
 
-/** The body-fat % every target reads (`TargetContext.bodyFatPct`): the
- *  estimate from the LATEST reading that has the formula's inputs, or
- *  `null`. The app, /report, the weekly-recap email and the auto-adapt cron
- *  all derive it here, so a training-day protein target can never differ
- *  between them.
+/** The body-fat % every target reads (`TargetContext.bodyFatPct`):
+ *  `latestBodyFatReading`'s estimate, or `null`. The app, /report, the
+ *  weekly-recap email and the auto-adapt cron all derive it here, so a
+ *  training-day protein target can never differ between them. */
+export function latestBodyFatPct(
+  measurements: readonly BodyFatMeasurement[],
+  body: { gender: Gender; heightCm: number },
+): number | null {
+  return latestBodyFatReading(measurements, body)?.pct ?? null;
+}
+
+/** The reading behind `latestBodyFatPct`: the estimate (`pct`) from the
+ *  LATEST reading that has the formula's inputs, and that reading's `date`,
+ *  or `null`. Displays (Progress, /report) show this, so the body fat they
+ *  show is the one the targets use, and can say which measurement it comes
+ *  from when it isn't the newest row.
  *
  *  - Order-independent: the latest is picked by `date`.
  *  - A newer reading without the inputs (a waist-only check-in) is skipped:
@@ -137,10 +148,10 @@ export function hasBodyFatInputs(
  *    (a measurement error) the result is `null`, never an older estimate of
  *    a body that has since changed.
  *  - `null` for a gender with no published formula. */
-export function latestBodyFatPct(
+export function latestBodyFatReading(
   measurements: readonly BodyFatMeasurement[],
   body: { gender: Gender; heightCm: number },
-): number | null {
+): { pct: number; date: string } | null {
   const bodyType = bodyFatBodyType(body.gender);
   if (!bodyType) return null;
   let latest: BodyFatMeasurement | null = null;
@@ -149,13 +160,14 @@ export function latestBodyFatPct(
     if (latest === null || m.date > latest.date) latest = m;
   }
   if (latest === null) return null;
-  return estimateBodyFat({
+  const pct = estimateBodyFat({
     bodyType,
     heightCm: body.heightCm,
     waistCm: latest.waistCm ?? 0,
     neckCm: latest.neckCm ?? 0,
     hipCm: latest.hipsCm ?? undefined,
   });
+  return pct === null ? null : { pct, date: latest.date };
 }
 
 function isPositive(n: number | undefined): n is number {

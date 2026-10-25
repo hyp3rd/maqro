@@ -200,6 +200,19 @@ describe("GoalPhasesPlanner — phases without valid dates", () => {
     expect(remove.getAttribute("aria-describedby")).toBe(note.id);
   });
 
+  it("flags a cut whose weekly rate can't be read, never printing NaN", async () => {
+    await renderWith([valid, { ...valid, id: "ph_nan", weeklyRateKg: NaN }]);
+    const note = screen.getByText(/weekly rate can.t be read/i);
+    expect(note.textContent).toMatch(/isn.t used for your targets/i);
+    expect(screen.queryByText(/NaN/)).toBeNull();
+    // Only the unreadable one is flagged; the valid cut stays as it was.
+    const edits = screen.getAllByRole("button", { name: "Edit Cut phase" });
+    expect(edits.map((b) => b.getAttribute("aria-describedby"))).toEqual([
+      null,
+      note.id,
+    ]);
+  });
+
   it("leaves phases with valid dates unflagged", async () => {
     await renderWith([valid]);
     expect(screen.queryByText(/dates can.t be read/i)).toBeNull();

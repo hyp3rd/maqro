@@ -59,6 +59,21 @@ export function phaseHasValidWindow(phase: GoalPhase): boolean {
   );
 }
 
+/** Whether `phase` can drive a target: it has a valid window
+ *  (`phaseHasValidWindow`) and, for a kind that uses one (`phaseHasRate`), a
+ *  weekly rate that is a finite number. A rate synced from an older client
+ *  can be unreadable (NaN, a string, null); fed to `computeMacros` it would
+ *  make every target the phase drives NaN. Such a phase is unusable exactly
+ *  like one without a valid window: every schedule query below skips it and
+ *  the planner flags it (its editor saves only a phase with a readable
+ *  rate). */
+export function phaseIsUsable(phase: GoalPhase): boolean {
+  return (
+    phaseHasValidWindow(phase) &&
+    (!phaseHasRate(phase.kind) || Number.isFinite(phase.weeklyRateKg))
+  );
+}
+
 /** The duration half of `phaseHasValidWindow`: a positive, finite number of
  *  weeks. */
 export function isValidPhaseDuration(weeks: number): boolean {
@@ -105,8 +120,9 @@ export function sortPhases(phases: GoalPhase[]): GoalPhase[] {
 }
 
 /** The phase whose `[startDate, end)` window contains `today`; on overlap the
- *  latest-starting one wins. `null` when none cover today. A phase without a
- *  valid window is never active. */
+ *  latest-starting one wins. `null` when none cover today. An unusable phase
+ *  (`phaseIsUsable`: no valid window, or an unreadable rate) is never
+ *  active. */
 export function activePhase(
   phases: GoalPhase[] | undefined,
   today: string,
@@ -114,7 +130,7 @@ export function activePhase(
   if (!phases) return null;
   let best: GoalPhase | null = null;
   for (const phase of phases) {
-    if (!phaseHasValidWindow(phase)) continue;
+    if (!phaseIsUsable(phase)) continue;
     if (phase.startDate <= today && today < phaseEndDate(phase)) {
       if (best === null || phase.startDate > best.startDate) best = phase;
     }
@@ -122,8 +138,8 @@ export function activePhase(
   return best;
 }
 
-/** The soonest phase that starts strictly after `today` (phases without a
- *  valid window are skipped). */
+/** The soonest phase that starts strictly after `today` (unusable phases are
+ *  skipped). */
 export function nextPhase(
   phases: GoalPhase[] | undefined,
   today: string,
@@ -131,7 +147,7 @@ export function nextPhase(
   if (!phases) return null;
   let best: GoalPhase | null = null;
   for (const phase of phases) {
-    if (!phaseHasValidWindow(phase)) continue;
+    if (!phaseIsUsable(phase)) continue;
     if (phase.startDate > today) {
       if (best === null || phase.startDate < best.startDate) best = phase;
     }
@@ -305,8 +321,7 @@ export function presetLeanBulk(today: string, weightKg: number): GoalPhase[] {
 }
 
 /** All phases overlapping the window `[startDate, endDate)` (both
- *  `YYYY-MM-DD`), ordered oldest-first; phases without a valid window are
- *  skipped. Drives the phase-boundary markers on the Trends charts and scopes
+ *  `YYYY-MM-DD`), ordered oldest-first; unusable phases are skipped. Drives the phase-boundary markers on the Trends charts and scopes
  *  the per-phase TDEE read. */
 export function phasesInWindow(
   phases: GoalPhase[] | undefined,
@@ -317,7 +332,7 @@ export function phasesInWindow(
   return sortPhases(
     phases.filter(
       (p) =>
-        phaseHasValidWindow(p) &&
+        phaseIsUsable(p) &&
         p.startDate < endDate &&
         phaseEndDate(p) > startDate,
     ),
@@ -336,8 +351,7 @@ export type PhaseTdee = { phase: GoalPhase; tdee: AdaptiveTdee };
  *  (lower-confidence) estimate. Oldest-first; the caller picks the active
  *  phase. Phases with too little data come back with `observedTdee: null`
  *  (confidence "none") rather than being dropped, so the active phase always
- *  appears. Phases without a valid window have no date range to scope to and
- *  are skipped. */
+ *  appears. Unusable phases never drove a target and are skipped. */
 export function inferAdaptiveTdeePerPhase(opts: {
   weights: WeightEntry[];
   intake: { date: string; calories: number }[];
@@ -352,9 +366,7 @@ export function inferAdaptiveTdeePerPhase(opts: {
     a.date < b.date ? -1 : a.date > b.date ? 1 : 0,
   );
   const started = sortPhases(
-    opts.phases.filter(
-      (p) => phaseHasValidWindow(p) && p.startDate <= opts.today,
-    ),
+    opts.phases.filter((p) => phaseIsUsable(p) && p.startDate <= opts.today),
   );
   return started.map((phase) => {
     const end = phaseEndDate(phase);
@@ -382,10 +394,10 @@ export function inferAdaptiveTdeePerPhase(opts: {
 }
 
 /** Mint a blank phase for the "Add phase" editor (starts after the last
- *  phase, or today). Phases without a valid window have no end to start
- *  after and are skipped. */
+ *  phase, or today). Unusable phases are skipped, like everywhere else in the
+ *  schedule (one without a valid window has no end to start after). */
 export function newPhase(phases: GoalPhase[], today: string): GoalPhase {
-  const sorted = sortPhases(phases.filter(phaseHasValidWindow));
+  const sorted = sortPhases(phases.filter(phaseIsUsable));
   const last = sorted[sorted.length - 1];
   const start = last ? phaseEndDate(last) : today;
   return {

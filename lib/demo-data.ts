@@ -15,7 +15,6 @@ import {
   type WeightEntry,
 } from "./db";
 import { notifyProfileChanged } from "./profile-bus";
-import { notifyDataChanged } from "./sync/data-bus";
 
 /** Seed dataset for the "Try with sample data" funnel on the
  *  landing page. The numbers are realistic enough that a new
@@ -625,19 +624,11 @@ export async function clearDemoModeData(): Promise<void> {
       // re-running this is idempotent.
     }
   }
-  // Bump the data-bus versions for the stores we actually touched so
-  // any mounted view re-reads from the now-empty IDB and shows a brief
-  // loading state until the upcoming sync pull lands the real rows.
-  // `profile` included: the data-bus is what re-loads `useProfile` and the
-  // fasting status, which would otherwise keep showing — and on the next
-  // edit save — the sample profile. The profile-bus is a separate channel,
-  // for the readers that load the profile on their own (UserMenu,
-  // `useDisplayName`).
-  notifyDataChanged("profile");
+  // `clearDemoSeededStores` already bumped the data-bus table of every store
+  // it cleared (`DEMO_SEEDED_STORES`), so mounted views re-read the empty
+  // stores until the upcoming sync pull lands the real rows — `profile`
+  // included, which re-loads `useProfile` and the fasting status. The
+  // profile-bus is a separate channel, for the readers that load the profile
+  // on their own (UserMenu, `useDisplayName`).
   notifyProfileChanged();
-  notifyDataChanged("dailyLogs");
-  notifyDataChanged("weightHistory");
-  notifyDataChanged("waterIntake");
-  notifyDataChanged("shoppingListMeta");
-  notifyDataChanged("trainingDayOverrides");
 }

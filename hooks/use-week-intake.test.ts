@@ -58,6 +58,21 @@ describe("useWeekIntake", () => {
     await waitFor(() => expect(result.current.get("2026-10-20")).toBe(2060));
   });
 
+  it.each(["clearAllStores", "clearDemoSeededStores"] as const)(
+    "a %s wipe empties it (sign-out / the demo clear)",
+    async (wipe) => {
+      const db = await fresh();
+      await db.saveDailyLog("2026-10-21", meals([1240]));
+      const { result } = renderHook(() => db.useWeekIntake("2026-10-19"));
+      await waitFor(() => expect(result.current.get("2026-10-21")).toBe(1240));
+
+      await act(async () => {
+        await db[wipe]();
+      });
+      await waitFor(() => expect(result.current.size).toBe(0));
+    },
+  );
+
   it("never returns the previous week's read for a new week", async () => {
     const { saveDailyLog, useWeekIntake } = await fresh();
     await saveDailyLog("2026-10-21", meals([1240]));

@@ -1204,6 +1204,55 @@ describe("signing in after exploring the sample data", () => {
   });
 });
 
+describe("signing in after the sample data: tombstones of every demo store", () => {
+  let env: Awaited<ReturnType<typeof setup>>;
+  beforeEach(async () => {
+    env = await setup();
+  });
+
+  it("no DELETE reaches the account for any deletable demo-seeded store; the guest's own deletes still do", async () => {
+    const { db, sync, server, sb } = env;
+    const { openDB } = await import("idb");
+    const { getDemoProfile, clearDemoModeData } =
+      await import("@/lib/demo-data");
+    await db.saveDemoProfile(getDemoProfile());
+    // A pending tombstone for DAY in EVERY deletable store the demo clear
+    // wipes (derived from the one list, not enumerated here), plus one for
+    // a guest's own custom food, which is not demo data.
+    const demoDeletable = db.DEMO_SEEDED_STORES.filter((s) =>
+      (db.DELETABLE_STORES as readonly string[]).includes(s),
+    );
+    expect(demoDeletable.length).toBeGreaterThan(0);
+    const raw = await openDB("maqro");
+    try {
+      for (const storeName of [...demoDeletable, "customFoods"]) {
+        const rowKey =
+          storeName === "customFoods"
+            ? "33333333-3333-4333-8333-333333333333"
+            : DAY;
+        await raw.put("deletions", {
+          _key: `${storeName}:${rowKey}`,
+          storeName,
+          rowKey,
+          deletedAt: 0,
+        });
+      }
+    } finally {
+      raw.close();
+    }
+
+    // SyncManager's sign-in chain.
+    await clearDemoModeData();
+    const result = await sync.triggerSync(sb, USER_ID);
+
+    expect(result?.deletionsPushed).toBe(1);
+    expect(
+      server.attempts.filter((a) => a.op === "delete").map((a) => a.table),
+    ).toEqual(["custom_foods"]);
+    expect(await db.listDeletions()).toEqual([]);
+  });
+});
+
 describe("error isolation", () => {
   let env: Awaited<ReturnType<typeof setup>>;
   beforeEach(async () => {

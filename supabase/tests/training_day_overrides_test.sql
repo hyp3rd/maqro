@@ -11,7 +11,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(24);
+select plan(26);
 
 -- ── Fixtures (as postgres: bypasses RLS) ────────────────────────────────────
 -- alice: no MFA factor. bob: no MFA factor. carol: a verified TOTP factor.
@@ -77,6 +77,28 @@ select ok(
   ),
   'published to supabase_realtime'
 );
+
+-- updated_at is the sync engine's optimistic-concurrency token, so every
+-- UPDATE must move it. now() is this transaction's start time, so the row
+-- starts from an explicit past stamp (an INSERT doesn't fire the trigger);
+-- it is removed again so the counts below are unaffected.
+insert into public.training_day_overrides (user_id, date, day, updated_at) values
+  ('b0000000-0000-4000-8000-000000000002', '2026-10-30', '{"type": "rest"}', '2000-01-01T00:00:00Z');
+update public.training_day_overrides set day = '{"type": "upper"}'
+ where user_id = 'b0000000-0000-4000-8000-000000000002' and date = '2026-10-30';
+select ok(
+  (select updated_at > '2000-01-01T00:00:00Z'::timestamptz from public.training_day_overrides
+    where user_id = 'b0000000-0000-4000-8000-000000000002' and date = '2026-10-30'),
+  'an UPDATE bumps updated_at'
+);
+select is(
+  (select updated_at from public.training_day_overrides
+    where user_id = 'b0000000-0000-4000-8000-000000000002' and date = '2026-10-30'),
+  now(),
+  'the bumped updated_at is the update''s now() (set_updated_at)'
+);
+delete from public.training_day_overrides
+ where user_id = 'b0000000-0000-4000-8000-000000000002' and date = '2026-10-30';
 
 -- ── alice (no factor, aal1): her own rows only ──────────────────────────────
 select set_config('request.jwt.claims', '{"sub": "b0000000-0000-4000-8000-000000000001", "role": "authenticated", "aal": "aal1"}', true);

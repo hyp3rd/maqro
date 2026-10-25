@@ -572,9 +572,9 @@ describe("training day overrides", () => {
     await saveDayOverride("2026-10-21", { type: "rest" });
     await saveDayOverride("2026-10-22", { type: "rest" });
     const rows = await listDayOverrides();
-    expect(rows.map((r) => [r.date, r.day.type])).toEqual([
-      ["2026-10-21", "rest"],
-      ["2026-10-22", "rest"],
+    expect(rows.map((r) => [r.date, r.day])).toEqual([
+      ["2026-10-21", { type: "rest" }],
+      ["2026-10-22", { type: "rest" }],
     ]);
   });
 
@@ -679,6 +679,67 @@ describe("clearDemoSeededStores", () => {
     // and weigh-in for that date.
     expect(await db.listDeletions()).toEqual([]);
   });
+
+  it("wipes every demo-seeded store and drops the tombstones of exactly the deletable ones", async () => {
+    const db = await freshDb();
+    await db.listCustomFoods(); // opens the connection (runs the upgrades)
+    const raw = await openDB("maqro");
+    try {
+      // A row in every demo-seeded store, and a pending tombstone for EVERY
+      // deletable store, written the way `recordDeletion` keys them.
+      for (const name of db.DEMO_SEEDED_STORES) {
+        const store = raw.transaction(name, "readwrite").store;
+        const { keyPath } = store;
+        if (typeof keyPath !== "string") throw new Error(`keyPath of ${name}`);
+        await store.put({ [keyPath]: `seed-${name}` });
+      }
+      for (const storeName of db.DELETABLE_STORES) {
+        await raw.put("deletions", {
+          _key: `${storeName}:2026-10-22`,
+          storeName,
+          rowKey: "2026-10-22",
+          deletedAt: 0,
+        });
+      }
+
+      await db.clearDemoSeededStores();
+
+      for (const name of db.DEMO_SEEDED_STORES) {
+        expect(await raw.count(name)).toBe(0);
+      }
+      const demoDeletable = db.DELETABLE_STORES.filter((s) =>
+        (db.DEMO_SEEDED_STORES as readonly string[]).includes(s),
+      );
+      // The demo stores that are deletable lose their tombstones: the rule
+      // is derived from the one list, so none can be forgotten.
+      expect(demoDeletable).toEqual([
+        "dailyLogs",
+        "weightHistory",
+        "trainingDayOverrides",
+      ]);
+      expect((await db.listDeletions()).map((d) => d.storeName).sort()).toEqual(
+        db.DELETABLE_STORES.filter((s) => !demoDeletable.includes(s)).sort(),
+      );
+    } finally {
+      raw.close();
+    }
+  });
+
+  it("notifies the data-bus table of every store it clears, once", async () => {
+    const db = await freshDb();
+    const bus = await import("@/lib/sync/data-bus");
+    await db.listCustomFoods();
+    const before = bus.getDataVersion("pantryItems");
+    const versions = () =>
+      db.DEMO_SEEDED_STORES.map((t) => bus.getDataVersion(t));
+    const start = versions();
+
+    await db.clearDemoSeededStores();
+
+    expect(versions()).toEqual(start.map((v) => v + 1));
+    // A store the demo clear keeps is not woken.
+    expect(bus.getDataVersion("pantryItems")).toBe(before);
+  });
 });
 
 describe("clearAllStores", () => {
@@ -756,6 +817,28 @@ describe("clearAllStores", () => {
     } finally {
       raw.close();
     }
+  });
+
+  it("notifies the data-bus table of every store it wipes", async () => {
+    const db = await freshDb();
+    const bus = await import("@/lib/sync/data-bus");
+    await db.listCustomFoods();
+    const raw = await openDB("maqro");
+    const storeNames = Array.from(raw.objectStoreNames);
+    raw.close();
+    const tables = storeNames.filter(bus.isSyncedTable);
+    // Every data-bus table is a store the wipe clears (`deletions` and the
+    // other stores without readers on the bus are simply not tables).
+    expect(tables).toEqual(
+      expect.arrayContaining(["dailyLogs", "profile", "trainingDayOverrides"]),
+    );
+    const start = tables.map((t) => bus.getDataVersion(t));
+
+    await db.clearAllStores();
+
+    expect(tables.map((t) => bus.getDataVersion(t))).toEqual(
+      start.map((v) => v + 1),
+    );
   });
 
   it("is idempotent - running on an already-empty DB is a no-op", async () => {

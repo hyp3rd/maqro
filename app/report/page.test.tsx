@@ -237,6 +237,79 @@ describe("/report body fat", () => {
       expect(ctx).toMatchObject({ phasesEnabled: false, bodyFatPct: expected });
     }
   });
+
+  it("the body-composition section and the PDF show that same estimate, with its date", async () => {
+    data.query = "sections=summary,body,calories&days=30";
+    // The complete reading is inside the window but no longer the latest
+    // row: the newer one is a waist-only check-in.
+    data.measurements = [
+      measurement("2026-05-20", 88, 38),
+      measurement("2026-06-08", 86),
+    ];
+    const expected = estimateBodyFat({
+      bodyType: "male",
+      heightCm: 180,
+      waistCm: 88,
+      neckCm: 38,
+    });
+    const value = `${expected?.toFixed(1)}%`;
+    // The reading's LOCAL calendar day (month index 4 = May).
+    const from = new Date(2026, 4, 20).toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+    });
+
+    const model = (await downloadedModel()) as PdfModel & {
+      body: { stats: PdfStat[] };
+    };
+    const section = screen.getByRole("heading", { name: "Body composition" })
+      .parentElement as HTMLElement;
+    expect(section.textContent).toContain(value);
+    expect(section.textContent).toContain(`from ${from}`);
+    const bodyFat = model.body.stats.find((s) => s.label === "Body fat");
+    expect(bodyFat?.value).toBe(value);
+    expect(bodyFat?.sub).toContain(`from ${from}`);
+  });
+
+  /** A `YYYY-MM-DD` key is a calendar day, not UTC midnight: west of UTC,
+   *  parsing it as UTC named the day before (the Progress screen, which
+   *  parses it locally, named the right one). */
+  describe("west of UTC", () => {
+    const savedTz = process.env.TZ;
+    beforeAll(() => {
+      process.env.TZ = "America/New_York"; // UTC−4 in May/June
+    });
+    afterAll(() => {
+      process.env.TZ = savedTz;
+    });
+
+    const label = (month: number, day: number) =>
+      new Date(2026, month, day).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+      });
+
+    it("dates the estimate and the latest measurement by their own calendar day", async () => {
+      data.query = "sections=summary,body,calories&days=30";
+      data.measurements = [
+        measurement("2026-05-20", 88, 38),
+        measurement("2026-06-08", 86),
+      ];
+
+      const model = (await downloadedModel()) as PdfModel & {
+        body: { stats: PdfStat[] };
+      };
+      const section = screen.getByRole("heading", { name: "Body composition" })
+        .parentElement as HTMLElement;
+      expect(section.textContent).toContain(`from ${label(4, 20)}`);
+      expect(section.textContent).not.toContain(`from ${label(4, 19)}`);
+      expect(section.textContent).toContain(
+        `Latest measurements (${label(5, 8)})`,
+      );
+      const bodyFat = model.body.stats.find((s) => s.label === "Body fat");
+      expect(bodyFat?.sub).toContain(`from ${label(4, 20)}`);
+    });
+  });
 });
 
 /** The model the report POSTs to the PDF renderer, as far as these tests

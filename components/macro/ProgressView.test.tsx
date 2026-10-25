@@ -4,6 +4,7 @@
 import type { GoalPhase } from "@/components/macro/types";
 import {
   clearAllStores,
+  saveBodyMeasurement,
   saveDailyLog,
   saveWeightEntry,
   setWaterTotal,
@@ -11,6 +12,7 @@ import {
 } from "@/lib/db";
 import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { estimateBodyFat } from "@maqro/core/body-fat";
 import { addDays } from "@maqro/core/date";
 import { cleanup, render, screen } from "@testing-library/react";
 import { ProgressView } from "./ProgressView";
@@ -201,6 +203,44 @@ describe("ProgressView", () => {
     expect(chart.getAttribute("aria-label")).toMatch(/Target 2,000 kcal\./);
     expect(screen.getByText("2000 kcal average")).toBeTruthy();
     expect(screen.queryByText(/2,?300/)).toBeNull();
+  });
+
+  describe("body fat (the same estimate the targets read)", () => {
+    const expected = estimateBodyFat({
+      bodyType: "male",
+      heightCm: 180,
+      waistCm: 88,
+      neckCm: 38,
+    });
+    const card = async () =>
+      (await screen.findByText("Body fat", { selector: "p" })).parentElement;
+
+    it("shows the latest complete reading when a newer one is waist-only", async () => {
+      const today = todayKey();
+      const older = addDays(today, -40);
+      await saveBodyMeasurement(older, { waistCm: 88, neckCm: 38 });
+      await saveBodyMeasurement(addDays(today, -2), { waistCm: 86 });
+      render(<ProgressView {...BASE} />);
+
+      expect(expected).not.toBeNull();
+      const metric = await card();
+      expect(metric?.textContent).toContain(`${expected?.toFixed(1)}%`);
+      // It says which measurement the estimate comes from.
+      const [y, m, d] = older.split("-").map(Number);
+      const label = new Date(y, m - 1, d).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+      });
+      expect(metric?.textContent).toContain(`from ${label}`);
+    });
+
+    it("needs no date when the latest row is the reading", async () => {
+      await saveBodyMeasurement(todayKey(), { waistCm: 88, neckCm: 38 });
+      render(<ProgressView {...BASE} />);
+      const metric = await card();
+      expect(metric?.textContent).toContain(`${expected?.toFixed(1)}%`);
+      expect(metric?.textContent).not.toContain("from ");
+    });
   });
 
   describe("hydration chart", () => {

@@ -21,11 +21,7 @@ import {
   proteinWeightKg,
   referenceWeightKg,
 } from "@maqro/core/training";
-import type {
-  CyclingPreset,
-  TrainingDay,
-  TrainingWeek,
-} from "@maqro/core/types";
+import type { TrainingDay, TrainingWeek } from "@maqro/core/types";
 
 /** The mockup week, indexed by `getDay()` (0 = Sunday): Mon upper moderate,
  *  Tue rest, Wed lower hard, Thu rest, Fri full body moderate, Sat long
@@ -568,11 +564,25 @@ describe("distributeWeekCalories", () => {
       cycling: "modest",
       floorKcal: 1780,
     });
-    // Sun Mon Tue Wed Thu Fri Sat. The long endurance Saturday weighs as
-    // much as the heavy Wednesday. Naive per-day rounding gives 15,450; the
-    // largest remainder leaves the extra 50 off the later training day (Fri).
-    expect(days).toEqual([1950, 2300, 1950, 2500, 1950, 2250, 2500]);
+    // Sun Mon Tue Wed Thu Fri Sat. Raw days: rest ≈ 1,952, training ≈ 2,277,
+    // heavy = long endurance ≈ 2,494. Naive per-day rounding gives 15,450;
+    // of the per-group rounding choices only rest-up hits 15,400 exactly.
+    expect(days).toEqual([2000, 2250, 2000, 2450, 2000, 2250, 2450]);
     expect(sum(days)).toBe(15400);
+  });
+
+  it("days of the same weight get the same kcal", () => {
+    const days = distributeWeekCalories({
+      meanKcal: 2200,
+      classes: MOCKUP_CLASSES,
+      cycling: "modest",
+      floorKcal: 1780,
+    });
+    // Mon and Fri are both training days; the long endurance Saturday
+    // weighs as much as the heavy Wednesday.
+    expect(days[1]).toBe(days[5]);
+    expect(days[3]).toBe(days[6]);
+    expect(new Set([days[0], days[2], days[4]]).size).toBe(1);
   });
 
   it("cycling off keeps every day at the mean, unrounded", () => {
@@ -597,28 +607,43 @@ describe("distributeWeekCalories", () => {
     ).toEqual(Array(7).fill(2213));
   });
 
-  describe("rounding guarantee: 50 kcal steps, week within 25 of 7 × mean", () => {
+  describe("rounding guarantee: 50 kcal steps, equal weights ⇒ equal kcal, week within 25 × (largest off-grid group) of 7 × mean", () => {
     const templates: TrainingDayClass[][] = [
       MOCKUP_CLASSES,
       ["heavy", "rest", "rest", "rest", "rest", "rest", "rest"],
       ["rest", "heavy", "heavy", "heavy", "heavy", "heavy", "heavy"],
       ["light", "training", "rest", "endurance", "light", "heavy", "rest"],
+      ["rest", "training", "training", "rest", "training", "training", "rest"],
     ];
-    const presets: CyclingPreset[] = ["modest", "pronounced"];
+    const presets = ["modest", "pronounced"] as const;
     for (const mean of [1999, 2200, 2210, 2537, 3013]) {
       for (const cycling of presets) {
         templates.forEach((classes, t) => {
           it(`mean ${mean}, ${cycling}, template ${t}`, () => {
-            const days = distributeWeekCalories({
-              meanKcal: mean,
-              classes,
-              cycling,
-              floorKcal: 1500,
-            });
+            const input = { meanKcal: mean, classes, cycling, floorKcal: 1500 };
+            const days = distributeWeekCalories(input);
             for (const d of days) expect(d % 50).toBe(0);
+            const weight = (c: TrainingDayClass) => CYCLING_WEIGHTS[cycling][c];
+            // Equal weights ⇒ equal kcal; a heavier day never below a
+            // lighter one.
+            for (let i = 0; i < 7; i++) {
+              for (let j = 0; j < 7; j++) {
+                const [wi, wj] = [weight(classes[i]), weight(classes[j])];
+                if (wi === wj) expect(days[i]).toBe(days[j]);
+                if (wi > wj) expect(days[i]).toBeGreaterThanOrEqual(days[j]);
+              }
+            }
+            // The tolerance: 25 kcal per day of the largest weight group
+            // (an upper bound for the largest one off the 50 grid), never
+            // over 150 kcal a week.
+            const counts = new Map<number, number>();
+            for (const c of classes) {
+              counts.set(weight(c), (counts.get(weight(c)) ?? 0) + 1);
+            }
+            const largest = Math.max(...counts.values());
             const diff = sum(days) - 7 * mean;
-            expect(Math.abs(diff)).toBeLessThanOrEqual(25);
-            if ((7 * mean) % 50 === 0) expect(diff).toBe(0);
+            expect(Math.abs(diff)).toBeLessThanOrEqual(25 * largest);
+            expect(Math.abs(diff)).toBeLessThanOrEqual(150);
           });
         });
       }
@@ -627,15 +652,17 @@ describe("distributeWeekCalories", () => {
 
   it("clamps the high side to 1.25 × mean by narrowing the spread", () => {
     // Pronounced, one heavy day among six rest days: unclamped the heavy day
-    // would be ~1.45 × mean.
+    // would be ~1.45 × mean. The six rest days (≈ 1,917) round together:
+    // all up (1,950) overshoots by 100 more than all down undershoots, so
+    // the week plans 13,900 — inside the documented 25 × 6 tolerance.
     const days = distributeWeekCalories({
       meanKcal: 2000,
       classes: ["heavy", "rest", "rest", "rest", "rest", "rest", "rest"],
       cycling: "pronounced",
       floorKcal: 1200,
     });
-    expect(days).toEqual([2500, 1950, 1950, 1900, 1900, 1900, 1900]);
-    expect(sum(days)).toBe(14000);
+    expect(days).toEqual([2500, 1900, 1900, 1900, 1900, 1900, 1900]);
+    expect(sum(days)).toBe(13900);
   });
 
   it("clamps the low side to 0.80 × mean", () => {
@@ -694,12 +721,26 @@ describe("dayKcalForClass (an override day under the template week's scale)", ()
   };
 
   it("the mockup week: each class gets its template day's planned kcal", () => {
-    // Sun Mon Tue Wed Thu Fri Sat = 1950 2300 1950 2500 1950 2250 2500.
-    expect(dayKcalForClass(MOCKUP, "rest")).toBe(1950);
-    expect(dayKcalForClass(MOCKUP, "heavy")).toBe(2500);
-    expect(dayKcalForClass(MOCKUP, "endurance")).toBe(2500);
-    // T × w / mean(w) = 2,200 × 1.05 / (7.1 / 7) ≈ 2,277 → the nearest 50.
-    expect(dayKcalForClass(MOCKUP, "training")).toBe(2300);
+    // Sun Mon Tue Wed Thu Fri Sat = 2000 2250 2000 2450 2000 2250 2450.
+    expect(dayKcalForClass(MOCKUP, "rest")).toBe(2000);
+    expect(dayKcalForClass(MOCKUP, "heavy")).toBe(2450);
+    expect(dayKcalForClass(MOCKUP, "endurance")).toBe(2450);
+    // T × w / mean(w) = 2,200 × 1.05 / (7.1 / 7) ≈ 2,277 — the nearest 50
+    // would be 2,300, but an override of a weight the template uses plans
+    // what the template's days of that weight plan (its group rounding).
+    expect(dayKcalForClass(MOCKUP, "training")).toBe(2250);
+  });
+
+  it("an override of a weight the template uses matches those template days", () => {
+    for (const cycling of ["modest", "pronounced"] as const) {
+      for (const meanKcal of [1999, 2200, 2537, 3013]) {
+        const input = { ...MOCKUP, cycling, meanKcal, floorKcal: 1500 };
+        const week = distributeWeekCalories(input);
+        MOCKUP_CLASSES.forEach((c, i) => {
+          expect(dayKcalForClass(input, c)).toBe(week[i]);
+        });
+      }
+    }
   });
 
   it("a class the template doesn't use rides the same scale", () => {

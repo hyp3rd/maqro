@@ -35,7 +35,6 @@ import type {
   MicronutrientProfile,
   MicronutrientValues,
 } from "@/lib/micronutrients/types";
-import type { TrainingDay } from "@maqro/core/types";
 
 // ─── Profile ───────────────────────────────────────────────────────────────
 
@@ -202,9 +201,10 @@ export function supplementIntakeFromRow(
 export type TrainingDayOverrideRow = {
   user_id: string;
   date: string;
-  /** The session as written (jsonb). Read through `parseTrainingDay`, which
-   *  ignores a malformed one — never trusted here. */
-  day: TrainingDay;
+  /** The session as written (jsonb), `unknown` until a reader validates it
+   *  with `parseTrainingDay` (which ignores a malformed one) — never trusted
+   *  here. */
+  day: unknown;
   recorded_at: string;
   updated_at: string;
 };

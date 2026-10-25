@@ -34,3 +34,14 @@ export function isDateKey(value: unknown): value is string {
     dt.getUTCDate() === d
   );
 }
+
+/** The calendar day a `YYYY-MM-DD` key names, as LOCAL midnight: the `Date`
+ *  to hand `toLocaleDateString` when labelling a key. `new Date(key)` parses
+ *  a date-only string as UTC midnight, which west of UTC is the evening
+ *  before, so its label names the wrong day. Null for anything that is not
+ *  a real calendar key. */
+export function localDateOfKey(key: string): Date | null {
+  if (!isDateKey(key)) return null;
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}

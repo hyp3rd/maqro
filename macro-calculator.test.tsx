@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type WeekTargets,
+  dayOverrideResolver,
   targetsForDate,
   weekTargets,
 } from "@maqro/core/targets";
@@ -87,6 +88,13 @@ const SIGNED_IN = {
   isUnconfigured: false,
 };
 const auth = vi.hoisted(() => ({ state: null as unknown }));
+/** The stored per-date session overrides' read: settled with no rows unless
+ *  a test holds it open (`pending`) to see what runs before it lands. */
+const overridesRead = vi.hoisted(() => ({
+  pending: null as Promise<
+    { date: string; day: unknown; recordedAt: number }[]
+  > | null,
+}));
 /** The day's meal slots `useDailyLog` reports, when a test renames them or
  *  gives a date its own. `loaded`, when set, lists the dates whose log has
  *  loaded: any other date reports `isHydrated: false` and still holds the
@@ -143,6 +151,7 @@ vi.mock("./lib/db", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./lib/db")>()),
   listCustomFoods: async () => [],
   listDailyLogs: async () => [],
+  listDayOverrides: () => overridesRead.pending ?? Promise.resolve([]),
   listMealSchedules: async () => [],
   listMicronutrientProfiles: async () => [],
   listPantryItems: async () => [],
@@ -286,6 +295,7 @@ beforeEach(() => {
   dayMeals.byDate = {};
   dayMeals.loaded = null;
   dayMeals.last = null;
+  overridesRead.pending = null;
   for (const key of Object.keys(ui.props)) delete ui.props[key];
   refreshAiUsage.mockReset();
   requestAiMealPlan.mockReset();
@@ -485,6 +495,72 @@ describe("macro-calculator: the day view gets the selected date's targets", () =
     });
     expect(prop("MealPlanner", "selectedDate")).toBe("2026-06-11");
     expect(ui.props.DayTypeSheet).toBeUndefined();
+  });
+
+  it("nothing plans with AI or suggests against the template day until the overrides have loaded", async () => {
+    // Every day a hard lower-body session; today stored as a rest day.
+    const lower = { type: "lower", intensity: "hard" } as const;
+    const training: TrainingSchedule = {
+      enabled: true,
+      days: [lower, lower, lower, lower, lower, lower, lower],
+      cycling: "modest",
+    };
+    stored.profile = { ...PROFILE, training };
+    const rows = [{ date: TODAY, day: { type: "rest" }, recordedAt: 0 }];
+    let land: (r: typeof rows) => void = () => {};
+    overridesRead.pending = new Promise((resolve) => {
+      land = resolve;
+    });
+    const template = targetsForDate(stored.profile, TODAY, pro);
+    const restDay = targetsForDate(stored.profile, TODAY, {
+      ...pro,
+      bodyFatPct: null,
+      overrideFor: dayOverrideResolver(rows),
+    });
+    expect(restDay.targetCalories).toBeLessThan(template.targetCalories);
+
+    render(<MacroCalculator />);
+    // Still loading: no AI request, no suggestion dialog, no slot budget
+    // or meal-insight goal built on the template day.
+    await act(async () => {
+      await prop<() => Promise<void>>("MealPlanner", "generateMealPlan")();
+      await prop<(r: string) => Promise<void>>(
+        "MealPlanner",
+        "onRefineMealPlan",
+      )("more protein");
+      await prop<(id: number) => Promise<void>>(
+        "MealPlanner",
+        "onRegenerateMeal",
+      )(1);
+      prop<() => void>("MealPlanner", "onOpenSuggestDay")();
+    });
+    expect(requestAiMealPlan).not.toHaveBeenCalled();
+    expect(ui.props.SuggestDayDialog).toBeUndefined();
+    expect(prop("ApplyRecipeDialog", "slotBudget")).toBeUndefined();
+    expect(prop("MealHubSheet", "goal")).toBeUndefined();
+    expect(prop<string>("MealPlanner", "mealPlanMessage")).toMatch(
+      /still loading/i,
+    );
+
+    // Loaded: the suggestion asked for opens against today's real session,
+    // and AI plans use it.
+    await act(async () => {
+      land(rows);
+    });
+    expect(prop("SuggestDayDialog", "target")).toEqual(macros(restDay));
+    expect(prop("MealHubSheet", "goal")).toEqual({
+      calories: restDay.targetCalories,
+      protein: restDay.protein,
+      carbs: restDay.carbs,
+      fat: restDay.fat,
+    });
+    await act(async () => {
+      await prop<() => Promise<void>>("MealPlanner", "generateMealPlan")();
+    });
+    expect(requestAiMealPlan).toHaveBeenCalledTimes(1);
+    expect(requestAiMealPlan.mock.calls[0]?.[0].targets).toEqual(
+      macros(restDay),
+    );
   });
 
   it("an AI call that is not debited does not refresh usage", async () => {

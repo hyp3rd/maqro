@@ -15,7 +15,7 @@ import type {
   WaterIntake,
   WeightEntry,
 } from "@/lib/db";
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   bloodPressureFromRow,
   bloodPressureToRow,
@@ -44,6 +44,7 @@ import {
   profileToRow,
   recipeFromRow,
   recipeToRow,
+  type TrainingDayOverrideRow,
   trainingDayOverrideFromRow,
   trainingDayOverrideToRow,
   waterFromRow,
@@ -226,6 +227,21 @@ describe("training day override mappers", () => {
       updated_at: "2026-10-22T07:30:00.000Z",
     });
     expect(back).toEqual(ENTRY);
+  });
+
+  it("carries a malformed day through untouched, typed unknown for its readers", () => {
+    // jsonb any client version wrote: the mapper never validates or repairs
+    // it, and its type makes every reader go through `parseTrainingDay`.
+    expectTypeOf<TrainingDayOverride["day"]>().toBeUnknown();
+    expectTypeOf<TrainingDayOverrideRow["day"]>().toBeUnknown();
+    const back = trainingDayOverrideFromRow({
+      user_id: USER,
+      date: "2026-10-22",
+      day: { type: "yoga", durationMin: "long" },
+      recorded_at: "2026-10-22T07:30:00.000Z",
+      updated_at: "2026-10-22T07:30:00.000Z",
+    });
+    expect(back.day).toEqual({ type: "yoga", durationMin: "long" });
   });
 
   it("drops the sync bookkeeping a local row carries", () => {

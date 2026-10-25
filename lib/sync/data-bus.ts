@@ -90,6 +90,11 @@ const versions: Record<SyncedTable, number> = {
   micronutrientProfiles: 0,
 };
 
+/** Whether `name` (e.g. an IndexedDB store name) is a data-bus table. */
+export function isSyncedTable(name: string): name is SyncedTable {
+  return Object.hasOwn(versions, name);
+}
+
 /** Fire all subscribers registered for `table` and bump the persistent
  *  version. Errors in one subscriber don't block the rest. */
 export function notifyDataChanged(table: SyncedTable): void {

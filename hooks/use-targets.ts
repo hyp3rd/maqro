@@ -18,6 +18,13 @@ import type { GoalPhase, PersonalInfo, TrainingDay } from "@maqro/core/types";
 export type AppTargets = {
   /** Whether goal phases drive targets (Pro, from the shared cached tier). */
   phasesEnabled: boolean;
+  /** Whether this device's per-date session overrides have loaded. Until
+   *  they have, an overridden date resolves as its TEMPLATE day, so nothing
+   *  that plans with AI or derives suggestions from a target (auto-fill,
+   *  refine, regenerate, suggest-day, recipe slot budgets, meal insights)
+   *  may run on these targets yet; the display may (it re-renders when they
+   *  land). */
+  overridesLoaded: boolean;
   /** Today's targets — the Calculator, Progress and the phase planner. */
   todayTargets: DateTargets;
   /** The displayed day's targets — the day view and everything that plans
@@ -62,7 +69,7 @@ export function useTargets(
   const { tier } = useTier();
   const phasesEnabled = tier !== null && FEATURES.canUseGoalPhases(tier);
   const bodyFatPct = useLatestBodyFatPct(profile);
-  const { overrides } = useDayOverrides();
+  const { overrides, loaded: overridesLoaded } = useDayOverrides();
   const templateCtx = useMemo<TargetContext>(
     () => ({ phasesEnabled, bodyFatPct }),
     [phasesEnabled, bodyFatPct],
@@ -112,6 +119,7 @@ export function useTargets(
 
   return {
     phasesEnabled,
+    overridesLoaded,
     todayTargets,
     dayTargets,
     targetForPhases,
