@@ -10,6 +10,7 @@
     "./batch-apply": "./src/batch-apply.ts",
     "./blood-pressure": "./src/blood-pressure.ts",
     "./body-fat": "./src/body-fat.ts",
+    "./clock": "./src/clock.ts",
     "./date": "./src/date.ts",
     "./diet": "./src/diet.ts",
     "./fasting": "./src/fasting.ts",
