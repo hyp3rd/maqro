@@ -33,6 +33,7 @@ import {
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import type { DateTargets, WeekTargets } from "@maqro/core/targets";
+import type { WorkoutMealsPlan } from "@maqro/core/workout-meals";
 import {
   Food,
   FoodItem,
@@ -69,6 +70,9 @@ interface MealPlannerProps {
    *  chip becomes its button (training on) and is passed as the sheet's
    *  focus-return target. */
   onEditDayType?: (trigger: HTMLElement) => void;
+  /** The shown day's workout meals (`workoutMealsForDay`): their eating
+   *  windows on the timeline, their time and aims on their meal cards. */
+  workoutMeals?: WorkoutMealsPlan | null;
   totalMacros: {
     protein: number;
     carbs: number;
@@ -223,6 +227,7 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
   calculatedValues,
   week,
   onEditDayType,
+  workoutMeals = null,
   totalMacros,
   macroBreakdown,
   meals,
@@ -467,6 +472,7 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
           date={selectedDate}
           today={today}
           training={calculatedValues.training}
+          workoutMeals={workoutMeals}
         />
       </section>
 
@@ -758,6 +764,7 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
                   regenerating={isGeneratingMealPlan}
                   regeneratingThisMeal={generatingMealId === meal.id}
                   issues={issuesByMeal.get(meal.name) ?? []}
+                  workoutMeals={workoutMeals}
                 />
               )}
             />

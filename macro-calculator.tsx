@@ -1,10 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import { orderDayMeals } from "@maqro/core/meal-order";
 import { offCodeFromFoodId } from "@maqro/core/off";
 import { quickAddMealId } from "@maqro/core/quick-add";
+import type { DateTargets } from "@maqro/core/targets";
+import {
+  type WorkoutMealsPlan,
+  dayMealsWithWorkout,
+  withoutEmptyWorkoutMeals,
+  workoutMealAt,
+  workoutMealSettings,
+  workoutMealsForDay,
+  workoutRole,
+} from "@maqro/core/workout-meals";
 import type { ResolvedMealPhoto } from "./app/api/identify-meal/route";
 import { SignInPromptDialog } from "./components/auth/SignInPromptDialog";
 import { AdvancedSettingsSection } from "./components/macro/AdvancedSettingsSection";
@@ -62,6 +73,7 @@ import { useProfile } from "./hooks/use-profile";
 import { useTargets } from "./hooks/use-targets";
 import { useToday } from "./hooks/use-today";
 import { useUser } from "./hooks/use-user";
+import { useUsualMealMinutes } from "./hooks/use-usual-meal-minutes";
 import { addedFoodMessage } from "./lib/add-food-constants";
 import { requestAiMealPlan } from "./lib/ai-plan";
 import type { CoherenceIssue } from "./lib/ai/plan-coherence";
@@ -144,6 +156,13 @@ const DEFAULT_MEALS: Meal[] = [
   { id: 3, name: "Dinner", foods: [] },
   { id: 4, name: "Snacks", foods: [] },
 ];
+
+/** A day's regular meals: what the AI and formula planners, the recipe
+ *  schedules and the day suggester fill (workout meals join the planners
+ *  with role-aware planning). */
+function regularOf(meals: readonly Meal[]): Meal[] {
+  return meals.filter((m) => workoutRole(m) === null);
+}
 
 /** Shown when a whole-day plan is dropped because the day changed while the
  *  request was in flight (see `applyDayPlan`). */
@@ -358,12 +377,88 @@ const MacroCalculator = () => {
   // setMeals isn't a functional updater, and a bare setMeals would land on
   // whichever day is displayed at that moment.
   const {
-    meals,
-    setMeals,
+    meals: storedMeals,
+    setMeals: setStoredMeals,
     isHydrated: dayHydrated,
     day,
-    commitToDay,
+    commitToDay: commitStoredDay,
   } = useDailyLog(selectedDate, DEFAULT_MEALS);
+
+  // Calorie/macro targets, all from the shared `targetsForDate` resolver
+  // (the same one /report and the emails use). Goal phases (Pro) drive them
+  // when the tier allows — the shared, cached tier, so an offline Pro user
+  // keeps their phase target. `todayTargets` feeds the Calculator, Progress
+  // and the phase planner; `dayTargets` is the DISPLAYED day's target, so a
+  // past day is compared with (and AI-planned against) its own target.
+  const {
+    phasesEnabled: goalPhasesEnabled,
+    overridesLoaded,
+    todayTargets,
+    dayTargets,
+    targetForPhases,
+    targetsFor,
+    targetCaloriesForDate,
+    planWeek,
+    selectedWeek,
+    previewDayTargets,
+  } = useTargets(personalInfo, today, selectedDate);
+
+  // A training day's workout meals (@maqro/core/workout-meals): one before
+  // and one after the day's session, sized out of the day's target and shown
+  // among the regular meals by time. In storage a workout meal exists only
+  // while it holds food, so the day view works on the meals AS SHOWN — the
+  // stored ones plus the planned, still-empty workout meals — and every
+  // write goes back through `withoutEmptyWorkoutMeals`: a first food stores
+  // a workout meal, emptying it drops it. Every handler below reads `meals`
+  // and writes through `setMeals` / `commitToDay`, so none of them needs to
+  // know. Until the per-date overrides have loaded the shown day may still
+  // be its template day, so no workout meal is planned yet (one stored with
+  // food still shows).
+  const workoutSettings = useMemo(
+    () => workoutMealSettings(personalInfo.training),
+    [personalInfo.training],
+  );
+  const usualMinutes = useUsualMealMinutes(today);
+  const workoutMealsFor = useCallback(
+    (targets: DateTargets) =>
+      overridesLoaded ? workoutMealsForDay(targets, workoutSettings) : null,
+    [overridesLoaded, workoutSettings],
+  );
+  const workoutMeals = useMemo(
+    () => workoutMealsFor(dayTargets),
+    [workoutMealsFor, dayTargets],
+  );
+  const mealsAsShown = useCallback(
+    (date: string, plan: WorkoutMealsPlan | null, stored: Meal[]) =>
+      orderDayMeals(dayMealsWithWorkout(stored, plan), {
+        date,
+        usual: usualMinutes,
+        plan,
+      }),
+    [usualMinutes],
+  );
+  const meals = useMemo(
+    () => mealsAsShown(selectedDate, workoutMeals, storedMeals),
+    [mealsAsShown, selectedDate, workoutMeals, storedMeals],
+  );
+  const setMeals = useCallback(
+    (next: Meal[]) => setStoredMeals(withoutEmptyWorkoutMeals(next)),
+    [setStoredMeals],
+  );
+  const commitToDay = useCallback(
+    (target: DayTarget, update: (latest: Meal[]) => Meal[] | null) =>
+      commitStoredDay(target, (latest) => {
+        // The target day as it is shown: its own workout meals, also when
+        // the user has moved to another day since the edit started.
+        const plan = workoutMealsFor(targetsFor(target.date));
+        const next = update(mealsAsShown(target.date, plan, latest));
+        return next === null ? null : withoutEmptyWorkoutMeals(next);
+      }),
+    [commitStoredDay, workoutMealsFor, targetsFor, mealsAsShown],
+  );
+  // The regular meals: what the recipe schedules and the day suggester
+  // plan.
+  const regularMeals = useMemo(() => regularOf(meals), [meals]);
 
   // State for new food being added
   const [newFood, setNewFood] = useState<FoodItem>({
@@ -604,7 +699,13 @@ const MacroCalculator = () => {
       setQuickAddAt(null);
     } else if (dayHydrated) {
       setQuickAddAt(null);
-      setLogFlowMealId(quickAddMealId(meals, quickAddAt));
+      // Inside a workout meal's eating window, that meal; else the meal the
+      // time of day suggests.
+      const slot = workoutMealAt(workoutMeals, quickAddAt);
+      const workoutMeal = slot
+        ? meals.find((m) => workoutRole(m) === slot.role)
+        : undefined;
+      setLogFlowMealId(workoutMeal?.id ?? quickAddMealId(meals, quickAddAt));
       setLogMealOpen(true);
     }
   }
@@ -759,23 +860,6 @@ const MacroCalculator = () => {
   const upgradeDialogOpen =
     urlPlan !== null && authLoaded && user !== null && !upgradeDialogDismissed;
 
-  // Calorie/macro targets, all from the shared `targetsForDate` resolver
-  // (the same one /report and the emails use). Goal phases (Pro) drive them
-  // when the tier allows — the shared, cached tier, so an offline Pro user
-  // keeps their phase target. `todayTargets` feeds the Calculator, Progress
-  // and the phase planner; `dayTargets` is the DISPLAYED day's target, so a
-  // past day is compared with (and AI-planned against) its own target.
-  const {
-    phasesEnabled: goalPhasesEnabled,
-    overridesLoaded,
-    todayTargets,
-    dayTargets,
-    targetForPhases,
-    targetCaloriesForDate,
-    planWeek,
-    selectedWeek,
-    previewDayTargets,
-  } = useTargets(personalInfo, today, selectedDate);
   const activeGoalPhase = todayTargets.phase;
   // Until the per-date session overrides have loaded, `dayTargets` of an
   // overridden date is its TEMPLATE day: nothing plans with AI or derives a
@@ -1930,6 +2014,64 @@ const MacroCalculator = () => {
     return applied;
   };
 
+  /** What the whole-day planners (Auto-fill, refine and the formula
+   *  fallback) plan the regular meals to: the day's target less the food
+   *  already in its workout meals, which keep that food (`withWorkoutMeals`)
+   *  — so the day still adds up. */
+  const regularMealsTarget = (base: readonly Meal[]) => {
+    const kept = base
+      .filter((m) => workoutRole(m) !== null)
+      .flatMap((m) => m.foods);
+    const left = (
+      target: number,
+      k: "protein" | "carbs" | "fat" | "calories",
+    ) => Math.max(target - kept.reduce((sum, f) => sum + f[k], 0), 0);
+    return {
+      protein: left(dayTargets.protein, "protein"),
+      carbs: left(dayTargets.carbs, "carbs"),
+      fat: left(dayTargets.fat, "fat"),
+      calories: left(dayTargets.targetCalories, "calories"),
+    };
+  };
+  /** The macro budget a recipe for `mealId` is ranked against. A planned
+   *  workout meal's own aims; else an even split of what the day leaves the
+   *  regular meals after its planned workout meals — stable while the user
+   *  fills them one at a time (the denominator is every regular meal, not
+   *  the empty ones), so the ranking is the same across opens. Zeros when
+   *  there's nothing to split: the dialog keeps its natural order. */
+  const recipeSlotBudget = (mealId: number | null) => {
+    const meal = meals.find((m) => m.id === mealId);
+    const role = meal ? workoutRole(meal) : null;
+    const slot =
+      role === "preWorkout"
+        ? workoutMeals?.pre
+        : role === "postWorkout"
+          ? workoutMeals?.post
+          : null;
+    if (slot) {
+      const { protein, carbs, fat } = slot.aims;
+      return { protein, carbs, fat };
+    }
+    const planned = [workoutMeals?.pre, workoutMeals?.post].flatMap((s) =>
+      s ? [s.aims] : [],
+    );
+    const left = (target: number, k: "protein" | "carbs" | "fat") =>
+      Math.max(target - planned.reduce((sum, a) => sum + a[k], 0), 0);
+    return computeSlotBudget(
+      {
+        protein: left(dayTargets.protein, "protein"),
+        carbs: left(dayTargets.carbs, "carbs"),
+        fat: left(dayTargets.fat, "fat"),
+      },
+      regularMeals.length,
+    );
+  };
+  /** A plan of the regular meals with `base`'s workout meals as they are. */
+  const withWorkoutMeals = (base: readonly Meal[], plan: Meal[]) => [
+    ...plan,
+    ...base.filter((m) => workoutRole(m) !== null),
+  ];
+
   // Generate a full day meal plan that hits the daily macro targets.
   // Try the AI route first (when configured + user signed in) for more
   // coherent food combinations; fall back to the deterministic 3×3
@@ -1952,12 +2094,8 @@ const MacroCalculator = () => {
         // Fine - proceed with builtin only.
       }
 
-      const daily = {
-        protein: dayTargets.protein,
-        carbs: dayTargets.carbs,
-        fat: dayTargets.fat,
-        calories: dayTargets.targetCalories,
-      };
+      const daily = regularMealsTarget(baseMeals);
+      const planMeals = regularOf(baseMeals);
 
       // Pull the soft-bias signals (recent rotation + pantry on hand)
       // the server bakes into the system prompt so plans pick from
@@ -1971,7 +2109,7 @@ const MacroCalculator = () => {
       const ai = await requestAiMealPlan({
         targets: daily,
         dietPreference: personalInfo.dietPreference,
-        mealNames: baseMeals.map((m) => m.name),
+        mealNames: planMeals.map((m) => m.name),
         customFoods,
         cuisinePreferences: personalInfo.cuisinePreferences ?? [],
         allergies: personalInfo.allergies ?? [],
@@ -1989,7 +2127,13 @@ const MacroCalculator = () => {
         // recipe, so editing or removing an auto-filled food restores
         // its share, and replacing a logged plan doesn't leak its old
         // draws.
-        if (!(await applyDayPlan(forDay, baseMeals, ai.meals))) {
+        if (
+          !(await applyDayPlan(
+            forDay,
+            baseMeals,
+            withWorkoutMeals(baseMeals, ai.meals),
+          ))
+        ) {
           setMealPlanMessage(STALE_PLAN_MESSAGE);
           setTimeout(() => setMealPlanMessage(""), 6000);
           return;
@@ -2028,13 +2172,19 @@ const MacroCalculator = () => {
       // Yield once so the spinner paints before the synchronous solve.
       await new Promise((resolve) => setTimeout(resolve, 50));
 
-      const planned = planDay(baseMeals, foodDatabase, daily, {
+      const planned = planDay(planMeals, foodDatabase, daily, {
         customFoods,
         dietPreference: personalInfo.dietPreference,
       });
       const summary = summarisePlan(planned, daily);
 
-      if (!(await applyDayPlan(forDay, baseMeals, planned))) {
+      if (
+        !(await applyDayPlan(
+          forDay,
+          baseMeals,
+          withWorkoutMeals(baseMeals, planned),
+        ))
+      ) {
         setMealPlanMessage(STALE_PLAN_MESSAGE);
         setTimeout(() => setMealPlanMessage(""), 6000);
         return;
@@ -2086,24 +2236,20 @@ const MacroCalculator = () => {
       } catch {
         // Proceed with builtins only.
       }
-      const daily = {
-        protein: dayTargets.protein,
-        carbs: dayTargets.carbs,
-        fat: dayTargets.fat,
-        calories: dayTargets.targetCalories,
-      };
+      const daily = regularMealsTarget(baseMeals);
+      const planMeals = regularOf(baseMeals);
       const { recentlyEatenFoods, pantryItems: aiPantryBias } =
         await loadAiBiasSignals();
       const ai = await requestAiMealPlan({
         targets: daily,
         dietPreference: personalInfo.dietPreference,
-        mealNames: baseMeals.map((m) => m.name),
+        mealNames: planMeals.map((m) => m.name),
         customFoods,
         cuisinePreferences: personalInfo.cuisinePreferences ?? [],
         allergies: personalInfo.allergies ?? [],
         dislikedFoods: personalInfo.dislikedFoods ?? [],
         refinement,
-        previousMeals: baseMeals,
+        previousMeals: planMeals,
         recentlyEatenFoods,
         pantryItems: aiPantryBias,
         market: getMarket(),
@@ -2111,7 +2257,13 @@ const MacroCalculator = () => {
       if (ai.kind === "ok") {
         // The server debited this call — bring the shared counter up to date.
         refreshAiUsage();
-        if (!(await applyDayPlan(forDay, baseMeals, ai.meals))) {
+        if (
+          !(await applyDayPlan(
+            forDay,
+            baseMeals,
+            withWorkoutMeals(baseMeals, ai.meals),
+          ))
+        ) {
           setMealPlanMessage(STALE_PLAN_MESSAGE);
           setTimeout(() => setMealPlanMessage(""), 6000);
           return;
@@ -2168,7 +2320,9 @@ const MacroCalculator = () => {
     const forDay = day;
     const baseMeals = meals;
     const target = baseMeals.find((m) => m.id === mealId);
-    if (!target) return;
+    // AI planning fills the regular meals (MealItem offers no regenerate on
+    // a workout meal).
+    if (!target || workoutRole(target) !== null) return;
     setIsGeneratingMealPlan(true);
     setGeneratingMealId(mealId);
     // The global banner is preserved as an accessibility / screen-
@@ -2196,12 +2350,16 @@ const MacroCalculator = () => {
       const ai = await requestAiMealPlan({
         targets: daily,
         dietPreference: personalInfo.dietPreference,
-        mealNames: baseMeals.map((m) => m.name),
+        mealNames: regularOf(baseMeals).map((m) => m.name),
         customFoods,
         cuisinePreferences: personalInfo.cuisinePreferences ?? [],
         allergies: personalInfo.allergies ?? [],
         dislikedFoods: personalInfo.dislikedFoods ?? [],
-        previousMeals: baseMeals,
+        // The rest of the day as context: a workout meal only once it holds
+        // food.
+        previousMeals: baseMeals.filter(
+          (m) => workoutRole(m) === null || m.foods.length > 0,
+        ),
         targetMealName: target.name,
         recentlyEatenFoods,
         pantryItems: aiPantryBias,
@@ -2367,6 +2525,7 @@ const MacroCalculator = () => {
         <MealPlanner
           calculatedValues={dayTargets}
           week={selectedWeek}
+          workoutMeals={workoutMeals}
           onEditDayType={(chip) => {
             haptic("tap");
             dayTypeChipRef.current = chip;
@@ -2542,7 +2701,7 @@ const MacroCalculator = () => {
       {view === "recipes" && (
         <RecipesView
           profile={personalInfo}
-          currentMeals={meals}
+          currentMeals={regularMeals}
         />
       )}
 
@@ -2716,23 +2875,8 @@ const MacroCalculator = () => {
             : "Meal"
         }
         dietPreference={personalInfo.dietPreference}
-        // Per-slot macro budget. Even split: dailyTarget / mealSlots.
-        // Stable while the user fills slots one at a time (denominator
-        // is total slot count, not remaining empty slots), which keeps
-        // the ranking consistent across opens. Helper returns zeros
-        // when the day has no slots — the dialog falls back to natural
-        // order on a zero budget.
         slotBudget={
-          overridesLoaded
-            ? computeSlotBudget(
-                {
-                  protein: dayTargets.protein,
-                  carbs: dayTargets.carbs,
-                  fat: dayTargets.fat,
-                },
-                meals.length,
-              )
-            : undefined
+          overridesLoaded ? recipeSlotBudget(applyRecipeMealId) : undefined
         }
         onApply={handleApplyRecipe}
         onBack={logFlowMealId !== null ? backToMethod : undefined}
@@ -2868,7 +3012,7 @@ const MacroCalculator = () => {
         <SuggestDayDialog
           open={suggestDayOpen}
           onOpenChange={setSuggestDayOpen}
-          meals={meals}
+          meals={regularMeals}
           target={{
             protein: dayTargets.protein,
             carbs: dayTargets.carbs,

@@ -9,7 +9,13 @@ import { useRef, useState } from "react";
 import { IDBFactory } from "fake-indexeddb";
 import "fake-indexeddb/auto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { orderDayMeals } from "@maqro/core/meal-order";
 import { targetsForDate, weekTargets } from "@maqro/core/targets";
+import {
+  DEFAULT_WORKOUT_MEALS,
+  dayMealsWithWorkout,
+  workoutMealsForDay,
+} from "@maqro/core/workout-meals";
 import {
   cleanup,
   fireEvent,
@@ -655,5 +661,72 @@ describe("Today: changing the day's session from the chip", () => {
     expect(stripDays()[2]?.getAttribute("aria-label")).toContain(
       `of ${kcal(plannedWed)} kcal`,
     );
+  });
+});
+
+describe("Today: a training day's workout meals", () => {
+  const day = targetsForDate(PROFILE, TODAY, { phasesEnabled: false });
+  const plan = workoutMealsForDay(day, DEFAULT_WORKOUT_MEALS);
+  const shown = orderDayMeals(dayMealsWithWorkout(MEALS, plan), {
+    date: TODAY,
+    usual: {},
+    plan,
+  });
+
+  it("each names its time and aims, and while empty what it's for", () => {
+    renderPlanner({ meals: shown, workoutMeals: plan });
+    const pre = plan?.pre?.aims;
+    const preCard = screen
+      .getByRole("heading", { name: "Pre-workout · 16:30" })
+      .closest("div.rounded-lg") as HTMLElement;
+    expect(preCard.textContent).toContain(
+      `Aim ${pre?.calories} kcal · P${pre?.protein} · C${pre?.carbs} · F${pre?.fat}`,
+    );
+    expect(
+      within(preCard).getByText(
+        "Quick carbs and some protein, little fat or fibre.",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(preCard).getByText("General guidance, not medical advice."),
+    ).toBeTruthy();
+    // A 75-minute session from 18:00: post-workout aims at 19:45.
+    const postCard = screen
+      .getByRole("heading", { name: "Post-workout · 19:45" })
+      .closest("div.rounded-lg") as HTMLElement;
+    expect(
+      within(postCard).getByText("Protein first, within 2 hours of training."),
+    ).toBeTruthy();
+  });
+
+  it("a workout meal offers no AI generate; a regular meal does", async () => {
+    renderPlanner({ meals: shown, workoutMeals: plan });
+    const menu = async (meal: string) => {
+      await act(async () => {
+        fireEvent.keyDown(
+          screen.getByRole("button", { name: `${meal} actions` }),
+          { key: "Enter" },
+        );
+      });
+      return screen.getByRole("menu");
+    };
+    expect(
+      within(await menu("Pre-workout")).queryByRole("menuitem", {
+        name: /generate/i,
+      }),
+    ).toBeNull();
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    expect(
+      within(await menu("Dinner")).getByRole("menuitem", {
+        name: "Generate (AI)",
+      }),
+    ).toBeTruthy();
+  });
+
+  it("brackets their eating windows on the timeline", () => {
+    renderPlanner({ meals: shown, workoutMeals: plan });
+    expect(
+      screen.getByRole("img", { name: /Pre-workout window, 15:00 to 17:00/ }),
+    ).toBeTruthy();
   });
 });

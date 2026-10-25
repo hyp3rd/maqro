@@ -13,6 +13,7 @@ import {
   relativeDay,
   timelineSummary,
   trackPercent,
+  workoutMealSpans,
   workoutSpan,
 } from "@/lib/today/timeline";
 import { dayTypeLabel } from "@/lib/training-labels";
@@ -20,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { useLocale } from "next-intl";
 import type { TrainingDayTargets } from "@maqro/core/targets";
 import type { Meal } from "@maqro/core/types";
+import type { WorkoutMealsPlan } from "@maqro/core/workout-meals";
 
 const ANCHOR = {
   start: "translate-x-0",
@@ -34,7 +36,8 @@ const HOURS = Array.from({ length: 25 }, (_, h) => h);
  *  first logged food with the meal's kcal above it (meals without a logged
  *  time stay off the track); the day's session as an accent block (time +
  *  duration: the date's override when there is one, else the training
- *  template's) when training is on; and, today only, a signal-coloured now
+ *  template's) when training is on, with its workout meals' eating windows
+ *  as lighter brackets either side; and, today only, a signal-coloured now
  *  cursor, flagged "Now HH:MM" (just "HH:MM" on a narrow phone, see
  *  `nowFlagText`).
  *
@@ -50,6 +53,7 @@ export function DayTimeline({
   today,
   now,
   training,
+  workoutMeals = null,
   className,
 }: {
   meals: readonly Meal[];
@@ -59,6 +63,8 @@ export function DayTimeline({
   /** The selected day's training (`DateTargets.training`); absent while
    *  training is off. */
   training?: Pick<TrainingDayTargets, "day" | "dayClass">;
+  /** The day's workout meals (`workoutMealsForDay`), if any. */
+  workoutMeals?: WorkoutMealsPlan | null;
   className?: string;
 }) {
   // The track's measured width, so only the hour labels the now flag
@@ -71,7 +77,10 @@ export function DayTimeline({
   const workout = training
     ? workoutSpan(training.day, dayTypeLabel(training))
     : null;
-  const spans: TimelineSpan[] = workout ? [workout] : [];
+  const spans: TimelineSpan[] = [
+    ...(workout ? [workout] : []),
+    ...workoutMealSpans(workoutMeals),
+  ].sort((a, b) => a.startMin - b.startMin);
   const locale = useLocale();
   const formatKcal = (kcal: number) => formatNumber(kcal, locale);
   const summary = timelineSummary({ ticks, spans, nowMinute, formatKcal });
@@ -138,7 +147,12 @@ export function DayTimeline({
             key={`${span.kind}-${span.startMin}`}
             aria-hidden
             data-part={span.kind}
-            className="absolute top-1/2 h-2 min-w-1 -translate-y-1/2 rounded-sm bg-brand"
+            className={cn(
+              "absolute top-1/2 min-w-1 -translate-y-1/2",
+              span.kind === "workout"
+                ? "h-2 rounded-sm bg-brand"
+                : "h-1 rounded-full bg-brand/35",
+            )}
             style={{
               left: `${trackPercent(span.startMin)}%`,
               width: `${trackPercent(span.endMin - span.startMin)}%`,
