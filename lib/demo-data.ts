@@ -78,7 +78,9 @@ export function getDemoProfile(now: number = Date.now()): PersonalInfo {
     // Training week editor and planned per-day targets populated: three
     // strength sessions (Wednesday's leg day hard) and a long Saturday run
     // around three rest days, on the default modest cycling. Indexed by
-    // `getDay()` (0 = Sunday). Protein keeps the 2.0 g/kg default.
+    // `getDay()` (0 = Sunday). Protein keeps the 2.0 g/kg default. The
+    // morning sessions come before her 16:8 eating window (noon–8pm), so
+    // they are fasted: no pre-workout meal on those days.
     training: {
       enabled: true,
       cycling: "modest",
@@ -91,19 +93,21 @@ export function getDemoProfile(now: number = Date.now()): PersonalInfo {
           durationMin: 60,
         },
         { type: "rest" },
-        { type: "lower", intensity: "hard", time: "18:00", durationMin: 75 },
+        { type: "lower", intensity: "hard", time: "17:30", durationMin: 75 },
         { type: "rest" },
         {
           type: "fullBody",
           intensity: "moderate",
           time: "07:00",
           durationMin: 60,
+          fasted: true,
         },
         {
           type: "endurance",
           intensity: "moderate",
           time: "09:00",
           durationMin: 90,
+          fasted: true,
         },
       ],
     },
@@ -174,8 +178,14 @@ const DEMO_MEAL_HOUR: Record<number, number> = {
   1: 12.25, // "Breakfast" (first meal) 12:15
   2: 14.5, // Lunch 14:30
   4: 16.75, // Snacks 16:45
+  6: 19.25, // Post-workout 19:15, after the evening session, before dinner
   3: 19.5, // Dinner 19:30
 };
+
+/** The `getDay()` weekdays whose training session ends in the evening
+ *  (Monday at 18:00, Wednesday at 17:30): they log a post-workout meal,
+ *  which Today places before the 19:30 dinner. */
+const EVENING_SESSION_DAYS: ReadonlySet<number> = new Set([1, 3]);
 
 /** Minimal per-100g shape we use to scale a food into a logged
  *  FoodItem at a chosen portion. Mirrors what `addFood` would
@@ -454,6 +464,20 @@ const DAY_TEMPLATES: DayTemplate[] = [
   ],
 ];
 
+/** The post-workout meal of an evening session day: yogurt and a banana as
+ *  the session ends, before dinner. */
+function postWorkoutMeal(i: number): Meal {
+  return {
+    id: 6,
+    name: "Post-workout",
+    role: "postWorkout",
+    foods: [
+      item(i + 20, "Greek Yogurt", 200, 6),
+      item(i + 21, "Banana", 100, 6),
+    ],
+  };
+}
+
 /** Produce 7 days of meal logs ending on `today`. The current day
  *  is included so the user lands on the planner with today already
  *  populated - feels live, not historical-only. */
@@ -465,15 +489,18 @@ export function getDemoMealLogs(
   for (let offset = 6; offset >= 0; offset--) {
     const date = addDays(today, -offset);
     const template = DAY_TEMPLATES[offset % DAY_TEMPLATES.length];
+    const [y, m, d] = date.split("-").map(Number);
+    const dayMidnight = new Date(y, m - 1, d).getTime();
     const meals = template(offset * 100);
+    if (EVENING_SESSION_DAYS.has(new Date(dayMidnight).getDay())) {
+      meals.push(postWorkoutMeal(offset * 100));
+    }
     // Stamp a believable per-food `loggedAt` so the IF features (eating
     // window, fast timer, streak) populate. Each food's time = that day's
     // local midnight + its slot's hour, foods within a slot a minute apart.
     // For TODAY only stamp meals whose time has already passed, so the live
     // fast timer reads coherently (last eaten = most recent past meal)
     // instead of counting a not-yet-eaten dinner.
-    const [y, m, d] = date.split("-").map(Number);
-    const dayMidnight = new Date(y, m - 1, d).getTime();
     const stampedMeals: Meal[] = meals.map((meal) => ({
       ...meal,
       foods: meal.foods.map((food, idx) => {
