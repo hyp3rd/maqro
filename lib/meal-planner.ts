@@ -5,6 +5,12 @@ import type {
   Meal,
 } from "@/components/macro/types";
 import { filterByDiet } from "@/lib/diet";
+import type { WorkoutMealRole } from "@maqro/core/types";
+import {
+  mealTargetsForDay,
+  type WorkoutMealsPlan,
+  workoutRole,
+} from "@maqro/core/workout-meals";
 
 /** Lower bound for solid foods. Fat-dominant foods (oils, butters) override
  * this with a smaller minimum since 10g of olive oil is a real portion. */
@@ -26,20 +32,19 @@ export type MealTargets = PlannedTotals;
 
 export type DailyTargets = PlannedTotals;
 
-/** How daily macros are split across the four canonical meals. */
-const DEFAULT_DISTRIBUTION: Record<number, number> = {
-  1: 0.25, // Breakfast
-  2: 0.35, // Lunch
-  3: 0.3, // Dinner
-  4: 0.1, // Snacks
-};
-
 /** Map UI meal names to the `mealTypes` tags in the food database. */
 function mealTypeKey(mealName: string): string {
   const n = mealName.toLowerCase();
   if (n === "snacks") return "snack";
   return n;
 }
+
+/** The food-database tags a workout meal draws from: light, quick foods
+ *  before a session; anything after it (the solver leans on protein). */
+const WORKOUT_MEAL_TYPES: Record<WorkoutMealRole, readonly string[]> = {
+  preWorkout: ["snack", "breakfast"],
+  postWorkout: ["snack", "breakfast", "lunch", "dinner"],
+};
 
 type DominantMacro = "protein" | "carbs" | "fat";
 
@@ -308,37 +313,52 @@ export function summarisePlan(
   };
 }
 
-/** Build a full-day plan, one meal at a time. Custom foods (passed via
- * `customFoods`) are eligible for every meal since they have no mealTypes
- * tag — the user added them deliberately. */
+/** Build a full-day plan, one meal at a time, each meal sized by
+ * `mealTargetsForDay` (a planned workout meal takes its aims; the regular
+ * meals split the rest). A workout meal the day doesn't plan — kept for its
+ * food after the day flipped to rest — is left as it is. Custom foods
+ * (passed via `customFoods`) are eligible for every meal since they have no
+ * mealTypes tag — the user added them deliberately. */
 export function planDay(
   meals: Meal[],
   foodDatabase: Food[],
   daily: DailyTargets,
   options: {
     customFoods?: Food[];
-    distribution?: Record<number, number>;
     dietPreference?: DietPreference;
+    /** The day's workout meals (`workoutMealsForDay`), if it has any. */
+    workout?: WorkoutMealsPlan | null;
   } = {},
 ): Meal[] {
-  const distribution = options.distribution ?? DEFAULT_DISTRIBUTION;
+  const workout = options.workout ?? null;
+  const targetsById = mealTargetsForDay(meals, daily, workout);
   const customFoods = options.customFoods ?? [];
   let nextId = Date.now();
   return meals.map((meal) => {
-    const share = distribution[meal.id] ?? 0.25;
-    const targets: MealTargets = {
-      protein: daily.protein * share,
-      carbs: daily.carbs * share,
-      fat: daily.fat * share,
-      calories: daily.calories * share,
+    const role = workoutRole(meal);
+    const slot =
+      role === null
+        ? null
+        : role === "preWorkout"
+          ? workout?.pre
+          : workout?.post;
+    if (role !== null && !slot) return meal;
+    const targets: MealTargets = targetsById.get(meal.id) ?? {
+      protein: 0,
+      carbs: 0,
+      fat: 0,
+      calories: 0,
     };
-    const mealKey = mealTypeKey(meal.name);
+    const mealTypes =
+      role === null ? [mealTypeKey(meal.name)] : WORKOUT_MEAL_TYPES[role];
     const available = [
-      ...foodDatabase.filter((f) => f.mealTypes?.includes(mealKey)),
+      ...foodDatabase.filter((f) =>
+        f.mealTypes?.some((t) => mealTypes.includes(t)),
+      ),
       ...customFoods,
     ];
     const foods = planMeal(available, targets, nextId, {
-      withVegetable: meal.id === 2 || meal.id === 3,
+      withVegetable: role === null && (meal.id === 2 || meal.id === 3),
       dietPreference: options.dietPreference,
     });
     nextId += foods.length;
