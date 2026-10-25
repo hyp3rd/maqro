@@ -15,6 +15,12 @@ import Link from "next/link";
  *       the page chrome gives an explicit escape hatch on every
  *       state.
  *
+ *  Renders as a `<header>` so the bar is a landmark. Every caller
+ *  mounts it as a sibling of the page's `<main>` (never inside a
+ *  sectioning element), where `<header>` maps to the `banner` role;
+ *  a plain `<div>` left the back link outside every landmark and
+ *  tripped axe's `region` rule on /terms and /privacy.
+ *
  *  Stays sync (not async with server-side `getTranslations`)
  *  because one caller — `/t/import` — is a Client Component, and
  *  client code cannot render an async server component directly.
@@ -30,7 +36,7 @@ export function PageTopBar({
   label?: string;
 }) {
   return (
-    <div className="sticky top-0 z-30 border-b border-border/60 bg-background/85 pt-safe backdrop-blur">
+    <header className="sticky top-0 z-30 border-b border-border/60 bg-background/85 pt-safe backdrop-blur">
       <div className="mx-auto flex h-11 max-w-3xl items-center px-safe-or-5">
         <Link
           href={href}
@@ -40,6 +46,6 @@ export function PageTopBar({
           {label}
         </Link>
       </div>
-    </div>
+    </header>
   );
 }
