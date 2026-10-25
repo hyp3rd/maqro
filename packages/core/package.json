@@ -33,6 +33,7 @@
     "./trends": "./src/trends.ts",
     "./types": "./src/types.ts",
     "./units": "./src/units.ts",
-    "./weekly-recap": "./src/weekly-recap.ts"
+    "./weekly-recap": "./src/weekly-recap.ts",
+    "./workout-meals": "./src/workout-meals.ts"
   }
 }
