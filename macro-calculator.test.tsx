@@ -257,8 +257,12 @@ vi.mock("./components/macro/SupplementsSection", () => ({
 vi.mock("./components/macro/TemplatesView", () => ({
   TemplatesView: ui.stub("TemplatesView"),
 }));
+// Two instances render side by side (the URL-driven one, reason
+// "settings", and the AI-cap one), so each records under its reason:
+// `UpgradeDialog:settings`, `UpgradeDialog:ai-cap`.
 vi.mock("./components/macro/UpgradeDialog", () => ({
-  UpgradeDialog: ui.stub("UpgradeDialog"),
+  UpgradeDialog: (p: Record<string, unknown>) =>
+    ui.stub(`UpgradeDialog:${String(p.reason)}`)(p),
 }));
 vi.mock("./components/macro/VoiceLogSheet", () => ({
   VoiceLogSheet: ui.stub("VoiceLogSheet"),
@@ -605,7 +609,11 @@ describe("macro-calculator: Today-first landing", () => {
     nav.search = "upgrade=pro";
     render(<MacroCalculator />);
     expect(rendered().today).toBe(true);
-    expect(prop("UpgradeDialog", "open")).toBe(false);
+    // The URL-driven dialog, open on the plan the link names — not the
+    // AI-cap one, which stays closed.
+    expect(prop("UpgradeDialog:settings", "open")).toBe(true);
+    expect(prop("UpgradeDialog:settings", "defaultPlan")).toBe("pro");
+    expect(prop("UpgradeDialog:ai-cap", "open")).toBe(false);
   });
 
   it("finishing onboarding lands on Today even from another view", async () => {
@@ -671,9 +679,10 @@ describe("macro-calculator: the day view's heading names the day it shows", () =
 });
 
 describe("macro-calculator: quick add (the tab bar's centre [+])", () => {
-  const quickAdd = async () => {
+  /** Taps the [+] (the tab bar hands over the button it rendered). */
+  const quickAdd = async (plus = document.createElement("button")) => {
     await act(async () => {
-      prop<() => void>("AppShell", "onQuickAdd")();
+      prop<(trigger: HTMLElement) => void>("AppShell", "onQuickAdd")(plus);
     });
   };
   const launcher = () => ({
@@ -745,14 +754,18 @@ describe("macro-calculator: quick add (the tab bar's centre [+])", () => {
 
     it("waits for today's slots, then targets today's", async () => {
       const view = await onPastDayBeforeTodayLoads();
+      expect(prop("AppShell", "quickAddPending")).toBe(false);
       await quickAdd();
       expect(prop("MealPlanner", "selectedDate")).toBe(TODAY);
-      // Still showing the past day's slots: no launcher yet.
+      // Still showing the past day's slots: no launcher yet, and the [+]
+      // says it is working on it.
       expect(launcher().open).toBe(false);
+      expect(prop("AppShell", "quickAddPending")).toBe(true);
 
       dayMeals.loaded?.add(TODAY);
       view.rerender(<MacroCalculator />);
       expect(launcher()).toEqual({ open: true, mealId: 2, dayLabel: "Today" });
+      expect(prop("AppShell", "quickAddPending")).toBe(false);
     });
 
     it.each([
@@ -801,6 +814,16 @@ describe("macro-calculator: quick add (the tab bar's centre [+])", () => {
       prop<() => void>("FoodSearchSheet", "onBack")();
     });
     expect(launcher()).toEqual({ open: true, mealId: 2, dayLabel: "Today" });
+  });
+
+  it("the launcher returns focus to the [+] that opened it", async () => {
+    render(<MacroCalculator />);
+    const plus = document.createElement("button");
+    await quickAdd(plus);
+    expect(
+      prop<RefObject<HTMLElement | null>>("LogMealSheet", "returnFocusTo")
+        .current,
+    ).toBe(plus);
   });
 
   it("dismissing the launcher ends the quick add", async () => {

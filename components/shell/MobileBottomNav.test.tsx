@@ -11,7 +11,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { MORE_SHEET, NAV, type ViewKey } from "./nav";
+import { MORE_SHEET, NAV, TAB_BAR, type ViewKey } from "./nav";
 
 const haptic = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/haptics", () => ({ haptic }));
@@ -26,7 +26,7 @@ afterEach(() => {
   cleanup();
 });
 
-function renderNav(current: ViewKey = "plan") {
+function renderNav(current: ViewKey = "plan", quickAddPending = false) {
   const onSelect = vi.fn();
   const onQuickAdd = vi.fn();
   render(
@@ -34,6 +34,7 @@ function renderNav(current: ViewKey = "plan") {
       current={current}
       onSelect={onSelect}
       onQuickAdd={onQuickAdd}
+      quickAddPending={quickAddPending}
     />,
   );
   const bar = screen.getByRole("navigation", {
@@ -83,10 +84,121 @@ describe("MobileBottomNav", () => {
 
   it("the centre button asks for a quick add with a tap haptic", () => {
     const { bar, onQuickAdd, onSelect } = renderNav("settings");
-    fireEvent.click(within(bar).getByRole("button", { name: "Quick add" }));
-    expect(onQuickAdd).toHaveBeenCalledTimes(1);
+    const plus = within(bar).getByRole("button", { name: "Quick add" });
+    fireEvent.click(plus);
+    // Hands over itself: the launcher's focus-return target (iOS Safari
+    // doesn't focus a tapped button, so focus can't be read back later).
+    expect(onQuickAdd.mock.calls).toEqual([[plus]]);
     expect(onSelect).not.toHaveBeenCalled();
     expect(haptic).toHaveBeenCalledWith("tap");
+  });
+
+  it("the centre button says it opens a dialog", () => {
+    const { bar } = renderNav("plan");
+    const add = within(bar).getByRole("button", { name: "Quick add" });
+    expect(add.getAttribute("aria-haspopup")).toBe("dialog");
+    expect(add.getAttribute("aria-busy")).toBeNull();
+  });
+
+  it("while today loads before the launcher opens, the centre button shows it is busy", () => {
+    const { bar } = renderNav("progress", true);
+    const add = within(bar).getByRole("button", { name: "Quick add" });
+    expect(add.getAttribute("aria-busy")).toBe("true");
+    expect(add.dataset.pending).toBe("true");
+  });
+
+  describe("the busy spinner", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    function spinnerShown(add: HTMLElement): boolean {
+      return add.querySelector("svg.lucide-loader-circle") !== null;
+    }
+
+    it("waits 200 ms, so a quick load keeps the Plus (aria-busy is immediate)", () => {
+      const props = {
+        current: "progress" as const,
+        onSelect: vi.fn(),
+        onQuickAdd: vi.fn(),
+      };
+      const { rerender } = render(
+        <MobileBottomNav
+          {...props}
+          quickAddPending
+        />,
+      );
+      const add = screen.getByRole("button", { name: "Quick add" });
+      expect(add.getAttribute("aria-busy")).toBe("true");
+      expect(spinnerShown(add)).toBe(false);
+      act(() => {
+        vi.advanceTimersByTime(199);
+      });
+      expect(spinnerShown(add)).toBe(false);
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(spinnerShown(add)).toBe(true);
+
+      // Loaded: back to the Plus, and the next wait starts from zero.
+      rerender(
+        <MobileBottomNav
+          {...props}
+          quickAddPending={false}
+        />,
+      );
+      expect(spinnerShown(add)).toBe(false);
+      expect(add.getAttribute("aria-busy")).toBeNull();
+      rerender(
+        <MobileBottomNav
+          {...props}
+          quickAddPending
+        />,
+      );
+      expect(spinnerShown(add)).toBe(false);
+      act(() => {
+        vi.advanceTimersByTime(200);
+      });
+      expect(spinnerShown(add)).toBe(true);
+    });
+
+    it("a load that finishes inside the wait never shows it", () => {
+      const props = {
+        current: "progress" as const,
+        onSelect: vi.fn(),
+        onQuickAdd: vi.fn(),
+      };
+      const { rerender } = render(
+        <MobileBottomNav
+          {...props}
+          quickAddPending
+        />,
+      );
+      act(() => {
+        vi.advanceTimersByTime(150);
+      });
+      rerender(
+        <MobileBottomNav
+          {...props}
+          quickAddPending={false}
+        />,
+      );
+      act(() => {
+        vi.advanceTimersByTime(500);
+      });
+      const add = screen.getByRole("button", { name: "Quick add" });
+      expect(spinnerShown(add)).toBe(false);
+    });
+  });
+
+  it("lays the bar out with one column per slot", () => {
+    const { bar } = renderNav();
+    expect(bar.style.gridTemplateColumns).toBe(
+      `repeat(${TAB_BAR.length}, minmax(0, 1fr))`,
+    );
   });
 
   it("the centre button fills with brand-strong, the fill behind a brand-foreground label", () => {

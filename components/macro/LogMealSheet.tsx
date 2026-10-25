@@ -1,7 +1,7 @@
 "use client";
 
 import { mealIcon } from "@/lib/meal-icon";
-import { useRef, useState } from "react";
+import { type RefObject, useRef, useState } from "react";
 import {
   Camera,
   ChevronLeft,
@@ -12,13 +12,8 @@ import {
   Soup,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "../ui/dialog";
+import { BottomSheetHeader, BottomSheetTitle } from "../ui/bottom-sheet";
+import { Dialog, DialogContent, DialogDescription } from "../ui/dialog";
 import { QuickAddFoods } from "./QuickAddFoods";
 import type { Food, Meal } from "./types";
 
@@ -49,6 +44,11 @@ type Props = {
   /** One-tap log of a recent food straight from the method step, so the common
    *  "re-add what I usually eat" path skips search entirely. */
   onQuickLog: (food: Food, mealId: number, portion: number) => void;
+  /** Where focus goes on close: the control that opened the launcher (the
+   *  tab bar's [+]). Needed because iOS Safari doesn't focus a tapped
+   *  button, so what had focus at open time is <body>. Without it, focus
+   *  returns to whatever had focus when the launcher opened. */
+  returnFocusTo?: RefObject<HTMLElement | null>;
 };
 
 type MethodTile = {
@@ -101,11 +101,13 @@ export function LogMealSheet({
   initialMealId,
   onMethod,
   onQuickLog,
+  returnFocusTo,
 }: Props) {
   // The launcher has no Radix trigger (the tab bar's [+] opens it), so Radix
-  // has nowhere to return focus on close and it falls to <body>. Remember
-  // what had focus when it opened, before focus moves in, and hand it back.
-  const returnFocusTo = useRef<HTMLElement | null>(null);
+  // has nowhere to return focus on close and it falls to <body>. Hand it to
+  // the explicit `returnFocusTo`, else to what had focus when it opened
+  // (remembered before focus moves in).
+  const focusedAtOpen = useRef<HTMLElement | null>(null);
   return (
     <Dialog
       open={open}
@@ -115,12 +117,12 @@ export function LogMealSheet({
         className="gap-3"
         onOpenAutoFocus={() => {
           const el = document.activeElement;
-          returnFocusTo.current =
+          focusedAtOpen.current =
             el instanceof HTMLElement && el !== document.body ? el : null;
         }}
         onCloseAutoFocus={(event) => {
-          const el = returnFocusTo.current;
-          returnFocusTo.current = null;
+          const el = returnFocusTo?.current ?? focusedAtOpen.current;
+          focusedAtOpen.current = null;
           // A method hands off to its tool, whose own dialog already holds
           // focus by now: leave it there.
           const active = document.activeElement;
@@ -166,18 +168,18 @@ function LogMealFlow({
 
   return (
     <>
-      <DialogHeader>
-        <DialogTitle className="text-left">
+      <BottomSheetHeader>
+        <BottomSheetTitle>
           {mealId === null
             ? `Log a meal · ${dayLabel}`
             : `Add to ${targetMeal?.name ?? "meal"} · ${dayLabel}`}
-        </DialogTitle>
-        <DialogDescription className="text-left">
+        </BottomSheetTitle>
+        <DialogDescription>
           {mealId === null
             ? "Where does this go?"
             : "How do you want to log it?"}
         </DialogDescription>
-      </DialogHeader>
+      </BottomSheetHeader>
 
       <AnimatePresence
         mode="wait"

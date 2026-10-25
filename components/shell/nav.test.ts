@@ -1,3 +1,5 @@
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_VIEW,
@@ -7,6 +9,7 @@ import {
   TAB_BAR,
   VIEW_KEYS,
   YOU_HUB,
+  YOU_TAB,
   activeTabSlot,
   navPlace,
   viewFromParam,
@@ -42,6 +45,21 @@ describe("nav registry", () => {
     }
   });
 
+  it("Today wears the Instrument design's two concentric rings; Targets no rings at all", () => {
+    /** The `r` of every circle the icon draws. */
+    const radii = (icon: (typeof NAV)[ViewKey]["icon"]) =>
+      [
+        ...renderToStaticMarkup(createElement(icon)).matchAll(
+          /<circle[^>]*\sr="([\d.]+)"/g,
+        ),
+      ].map((m) => m[1]);
+    expect(radii(NAV.plan.icon)).toEqual(["8.5", "3.5"]);
+    expect(radii(NAV.calculator.icon)).toEqual([]);
+    expect(
+      renderToStaticMarkup(createElement(NAV.calculator.icon)),
+    ).not.toMatch(/\sa[\d.]+ [\d.]+ 0 1 [01]/);
+  });
+
   it("the day view is 'plan', labelled Today, and is the default", () => {
     expect(DEFAULT_VIEW).toBe("plan");
     expect(NAV.plan.label).toBe("Today");
@@ -56,8 +74,19 @@ describe("nav registry", () => {
       [null, ["plan", "progress"]],
       ["Library", ["foods", "recipes", "templates"]],
       ["Kitchen", ["shopping", "pantry"]],
-      ["You", ["profile", "calculator", "health", "settings"]],
+      ["You", ["profile", "calculator"]],
+      [null, ["health", "settings"]],
     ]);
+  });
+
+  it("the sidebar's You group is the phone's You tab: its view and its hub tiles", () => {
+    const you = SIDEBAR_GROUPS.find((g) => g.label === "You");
+    expect(you?.items).toEqual([YOU_TAB, ...YOU_HUB.map((t) => t.key)]);
+  });
+
+  it("the You tab's screen is headed You, as the tab reads", () => {
+    expect(NAV[YOU_TAB].title).toBe(NAV[YOU_TAB].shortLabel);
+    expect(NAV.profile.title).toBe("You");
   });
 
   it("tab bar: Today · Progress · quick add · More · You", () => {

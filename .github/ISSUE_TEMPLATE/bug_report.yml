@@ -35,7 +35,7 @@ body:
       placeholder: |
         1. Open https://maqro.app on iOS Safari
         2. Sign in with email OTP
-        3. Land on the Calculator tab
+        3. Land on Today
         4. Notice the protein/carbs/fat targets all show 0
     validations:
       required: true

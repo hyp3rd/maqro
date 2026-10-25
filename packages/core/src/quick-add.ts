@@ -59,7 +59,10 @@ export function slotKindAt(minuteOfDay: number): MealSlotKind {
 
 /** The part of the day a slot name qualifies itself with ("Morning snack",
  *  "Late-night snack"), or `null`. Whole words only, so "Chocolate snack"
- *  says nothing about the time. */
+ *  says nothing about the time. "Morning" never wins a snack tap by name
+ *  (no snack window is in the morning: see `snackPartAt`); it marks the
+ *  slot as another part of the day's, which keeps it out of the positional
+ *  pick in `snackSlotAt`. */
 function namedDayPart(name: string): DayPart | null {
   const n = name.toLowerCase();
   if (/\bmorning\b/.test(n)) return "morning";
@@ -68,18 +71,19 @@ function namedDayPart(name: string): DayPart | null {
   return null;
 }
 
-/** 04:00–12:00 morning, 12:00–17:00 afternoon, 17:00–04:00 evening. */
-function dayPartAt(m: number): DayPart {
-  if (m >= DAY_START && m < 12 * 60) return "morning";
-  if (m >= 12 * 60 && m < 17 * 60) return "afternoon";
-  return "evening";
+/** The part of the day of a snack-window minute `m` (already wrapped): the
+ *  15:00–17:00 window is the afternoon, the 22:00–04:00 one the evening
+ *  (see `slotKindAt`). */
+function snackPartAt(m: number): Exclude<DayPart, "morning"> {
+  return m >= 15 * 60 && m < 17 * 60 ? "afternoon" : "evening";
 }
 
 type Slot = { id: number; name: string; index: number };
 
-/** Of several snack slots, the one for minute `m` (already wrapped):
+/** Of several snack slots, the one for snack-window minute `m` (already
+ *  wrapped):
  *  1. one whose name carries this part of the day ("Afternoon snack" at
- *     15:30);
+ *     15:30, "Evening snack" at 23:00);
  *  2. otherwise, among the slots whose name names no other part of the day
  *     (or all of them, if every one does), the first listed after the most
  *     recent main meal whose window has opened — the snack after Lunch at
@@ -91,7 +95,7 @@ function snackSlotAt(
   snacks: readonly Slot[],
   m: number,
 ): Slot | undefined {
-  const part = dayPartAt(m);
+  const part = snackPartAt(m);
   const named = snacks.find((s) => namedDayPart(s.name) === part);
   if (named) return named;
 

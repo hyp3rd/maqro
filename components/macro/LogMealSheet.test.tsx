@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   cleanup,
@@ -99,6 +99,53 @@ describe("LogMealSheet focus", () => {
       </>
     );
   }
+
+  it("closing focuses the explicit return target even if tapping it never focused it", async () => {
+    // iOS Safari doesn't focus a tapped <button>, so at open time focus is
+    // still on <body>; the launcher must use the [+] it was handed.
+    function TapOpener() {
+      const [open, setOpen] = useState(false);
+      const plus = useRef<HTMLButtonElement | null>(null);
+      return (
+        <>
+          <button
+            ref={plus}
+            type="button"
+            onClick={() => setOpen(true)}
+          >
+            Quick add
+          </button>
+          <LogMealSheet
+            open={open}
+            onOpenChange={setOpen}
+            meals={MEALS}
+            dayLabel="Today"
+            aiAvailable
+            initialMealId={2}
+            onMethod={() => {}}
+            onQuickLog={() => {}}
+            returnFocusTo={plus}
+          />
+        </>
+      );
+    }
+    render(<TapOpener />);
+    const plus = screen.getByRole("button", { name: "Quick add" });
+    expect(document.activeElement).toBe(document.body);
+    fireEvent.click(plus);
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() => {
+      expect(dialog.contains(document.activeElement)).toBe(true);
+    });
+
+    fireEvent.keyDown(document.activeElement ?? dialog, { key: "Escape" });
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(plus);
+    });
+  });
 
   it("closing hands focus back to what opened it", async () => {
     render(<Opener />);

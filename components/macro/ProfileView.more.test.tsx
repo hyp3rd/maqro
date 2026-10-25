@@ -67,7 +67,14 @@ describe("You hub without a More tab", () => {
         onSelectView={onSelectView}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: /^More/ }));
+    // With the hub's other tiles, above the long Body form.
+    const more = screen.getByRole("button", { name: /^More/ });
+    expect(
+      more.compareDocumentPosition(
+        screen.getByRole("heading", { name: "Body" }),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    fireEvent.click(more);
     const sheet = screen.getByRole("dialog", { name: "More" });
     await act(async () => {
       fireEvent.click(within(sheet).getByRole("button", { name: "Pantry" }));

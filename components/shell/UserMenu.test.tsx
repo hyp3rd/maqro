@@ -234,20 +234,62 @@ describe("UserMenu while offline-unverified", () => {
     ).toBeTruthy();
   });
 
-  it("the mobile menu holds no navigation (the tab bar and More sheet do)", async () => {
+  it("the mobile menu's only navigation is Settings (the tab bar and More sheet hold the rest)", async () => {
     const { UserMenu } = await import("./UserMenu");
+    const onSelectView = vi.fn();
     renderWithIntl(
       <UserMenu
         compact
-        onSelectView={() => {}}
+        onSelectView={onSelectView}
       />,
     );
     fireEvent.keyDown(screen.getByRole("button", { name: /account menu/i }), {
       key: "Enter",
     });
     await screen.findByRole("menuitem", { name: /notifications/i });
-    for (const name of [/settings/i, /templates/i, /health/i, /profile/i]) {
+    for (const name of [/templates/i, /health/i, /profile/i, /pantry/i]) {
       expect(screen.queryByRole("menuitem", { name })).toBeNull();
     }
+    fireEvent.click(screen.getByRole("menuitem", { name: "Settings" }));
+    expect(onSelectView).toHaveBeenCalledWith("settings");
+  });
+});
+
+describe("UserMenu in the desktop sidebar footer (signed in)", () => {
+  it("offers Settings from the registry, and keeps the phone-only extras out", async () => {
+    const { UserMenu } = await import("./UserMenu");
+    const onSelectView = vi.fn();
+    // The sidebar footer: not compact, wired to the view switch.
+    renderWithIntl(<UserMenu onSelectView={onSelectView} />);
+    fireEvent.keyDown(
+      await screen.findByRole("button", { name: /a@example\.com/i }),
+      { key: "Enter" },
+    );
+    const settings = await screen.findByRole("menuitem", { name: "Settings" });
+    // Notifications and the theme have their own topbar controls on desktop.
+    expect(
+      screen.queryByRole("menuitem", { name: /notifications/i }),
+    ).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: /theme/i })).toBeNull();
+    // Settings leads the actions in a group of its own (as on the phone,
+    // where it shares it with Notifications and Theme), apart from the
+    // outbound homepage link and from Sign out. "|" is a separator.
+    const sequence = Array.from(
+      screen
+        .getByRole("menu")
+        .querySelectorAll('[role="menuitem"], [role="separator"]'),
+    ).map((el) =>
+      el.getAttribute("role") === "separator" ? "|" : el.textContent?.trim(),
+    );
+    expect(sequence).toEqual([
+      "|",
+      "Settings",
+      "|",
+      "Visit homepage",
+      "|",
+      "Sign out",
+    ]);
+    fireEvent.click(settings);
+    expect(onSelectView).toHaveBeenCalledWith("settings");
   });
 });

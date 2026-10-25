@@ -1,7 +1,8 @@
+import { TodayRings } from "@/components/icons/TodayRings";
 import {
   Apple,
+  Calculator,
   ChefHat,
-  CircleDot,
   HeartPulse,
   LayoutGrid,
   LineChart,
@@ -9,7 +10,6 @@ import {
   Package,
   Settings,
   ShoppingCart,
-  Target,
   UserRound,
 } from "lucide-react";
 
@@ -34,8 +34,11 @@ export type ViewKey =
   | "health"
   | "settings";
 
-/** Desktop sidebar section. */
-export type NavGroup = "main" | "library" | "kitchen" | "you";
+/** Desktop sidebar section. "you" holds exactly what the phone's You tab
+ *  holds (the tab's own view and its hub tiles), so the two places named
+ *  "You" list the same things; "other" is the rest of the phone's More
+ *  sheet (Health & fasting, Settings), unlabelled. */
+export type NavGroup = "main" | "library" | "kitchen" | "you" | "other";
 
 /** Where the destination lives on a phone: its own tab, the More sheet, or
  *  a tile in the You hub (the Profile view), which shows `hint` under it. */
@@ -64,7 +67,7 @@ export const NAV = {
     label: "Today",
     shortLabel: "Today",
     title: "Today",
-    icon: CircleDot,
+    icon: TodayRings,
     group: "main",
     mobile: "tab",
     keywords: [
@@ -134,7 +137,8 @@ export const NAV = {
   profile: {
     label: "Profile",
     shortLabel: "You",
-    title: "Profile",
+    // The screen the You tab opens is headed as the tab reads.
+    title: "You",
     icon: UserRound,
     group: "you",
     mobile: "tab",
@@ -144,7 +148,9 @@ export const NAV = {
     label: "Targets",
     shortLabel: "Targets",
     title: "Targets",
-    icon: Target,
+    // Not a target/rings glyph: that would sit beside Today's rings as a
+    // near-twin in the sidebar. The calculator is what this view is.
+    icon: Calculator,
     group: "you",
     mobile: "you",
     hint: "Calories, macros & goal",
@@ -155,7 +161,7 @@ export const NAV = {
     shortLabel: "Health",
     title: "Health & fasting",
     icon: HeartPulse,
-    group: "you",
+    group: "other",
     mobile: "more",
     keywords: [
       "fasting",
@@ -176,7 +182,7 @@ export const NAV = {
     shortLabel: "Settings",
     title: "Settings",
     icon: Settings,
-    group: "you",
+    group: "other",
     mobile: "more",
     keywords: [
       "account",
@@ -238,10 +244,12 @@ const GROUP_LABELS: Record<NavGroup, string | null> = {
   library: "Library",
   kitchen: "Kitchen",
   you: "You",
+  other: null,
 };
 
 /** The desktop sidebar's sections, in order, each listing its destinations
- *  in registry order. `label` is null for the unlabelled first section. */
+ *  in registry order. `label` is null for an unlabelled section (the first,
+ *  and the last). */
 export const SIDEBAR_GROUPS: readonly {
   id: NavGroup;
   label: string | null;

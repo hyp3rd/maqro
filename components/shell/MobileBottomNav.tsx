@@ -3,7 +3,7 @@
 import { haptic } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
 import * as React from "react";
-import { Ellipsis, type LucideIcon, Plus } from "lucide-react";
+import { Ellipsis, LoaderCircle, type LucideIcon, Plus } from "lucide-react";
 import { motion } from "motion/react";
 import { MoreSheet } from "./MoreSheet";
 import { activeTabSlot, NAV, TAB_BAR, type ViewKey } from "./nav";
@@ -12,8 +12,12 @@ type Props = {
   current: ViewKey;
   onSelect: (key: ViewKey) => void;
   /** The centre [+]: log something now. The parent switches to Today on
-   *  today's date first, then opens the guided launcher. */
-  onQuickAdd: () => void;
+   *  today's date first, then opens the guided launcher, returning focus to
+   *  `trigger` (this button) when it closes. */
+  onQuickAdd: (trigger: HTMLElement) => void;
+  /** A quick add is waiting for today's log to load before the launcher
+   *  opens (from another view or day): the [+] shows it is busy. */
+  quickAddPending: boolean;
 };
 
 /** Mobile-only tab bar ("Instrument"): the slots come from the nav registry
@@ -21,18 +25,31 @@ type Props = {
  *  over the content with a hairline top edge; the active slot carries an
  *  LED-style indicator on that edge. Pinned to the viewport bottom, clear of
  *  the iOS home indicator via the safe-area inset. */
-export function MobileBottomNav({ current, onSelect, onQuickAdd }: Props) {
+export function MobileBottomNav({
+  current,
+  onSelect,
+  onQuickAdd,
+  quickAddPending,
+}: Props) {
   const lit = activeTabSlot(current);
+  // aria-busy is immediate; the spinner waits, so a quick read keeps the
+  // Plus instead of flashing a spinner for a few frames.
+  const showSpinner = useAfterDelay(quickAddPending, SPINNER_DELAY_MS);
   return (
     <nav
       aria-label="Primary navigation (mobile)"
       // Hook for app/globals.css: while this bar is mounted (and visible
       // below `md`) toasts are lifted above it via --toast-offset-bottom.
       data-mobile-bottom-nav=""
+      // One equal column per registry slot, so adding or dropping a slot
+      // (the Suggestions change drops More) needs no edit here.
+      style={{
+        gridTemplateColumns: `repeat(${TAB_BAR.length}, minmax(0, 1fr))`,
+      }}
       className={cn(
         // Height: 6px top padding + 52px slots + 8px (plus the home-indicator
         // inset) below, plus the 1px hairline: ~67px in a browser tab.
-        "fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 items-center border-t border-border/60 bg-background/90 px-1.5 backdrop-blur-lg",
+        "fixed inset-x-0 bottom-0 z-40 grid items-center border-t border-border/60 bg-background/90 px-1.5 backdrop-blur-lg",
         "pt-1.5 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] md:hidden",
       )}
     >
@@ -46,9 +63,13 @@ export function MobileBottomNav({ current, onSelect, onQuickAdd }: Props) {
               <button
                 type="button"
                 aria-label="Quick add"
-                onClick={() => {
+                // It opens the launcher, a dialog.
+                aria-haspopup="dialog"
+                aria-busy={quickAddPending || undefined}
+                data-pending={quickAddPending ? "true" : undefined}
+                onClick={(event) => {
                   haptic("tap");
-                  onQuickAdd();
+                  onQuickAdd(event.currentTarget);
                 }}
                 className={cn(
                   // `brand-strong`, not `brand`: the token contract's fill
@@ -58,11 +79,19 @@ export function MobileBottomNav({ current, onSelect, onQuickAdd }: Props) {
                   "motion-safe:active:scale-95",
                 )}
               >
-                <Plus
-                  aria-hidden
-                  className="size-6"
-                  strokeWidth={2.2}
-                />
+                {showSpinner ? (
+                  <LoaderCircle
+                    aria-hidden
+                    className="size-6 motion-safe:animate-spin"
+                    strokeWidth={2.2}
+                  />
+                ) : (
+                  <Plus
+                    aria-hidden
+                    className="size-6"
+                    strokeWidth={2.2}
+                  />
+                )}
               </button>
             </div>
           );
@@ -100,6 +129,25 @@ export function MobileBottomNav({ current, onSelect, onQuickAdd }: Props) {
       })}
     </nav>
   );
+}
+
+/** How long the [+] stays a Plus while busy before it shows a spinner:
+ *  under it, today's log usually loads before the spinner would appear. */
+const SPINNER_DELAY_MS = 200;
+
+/** `active`, but only once it has held for `delayMs`; false again (and the
+ *  wait restarts) as soon as it drops. */
+function useAfterDelay(active: boolean, delayMs: number): boolean {
+  const [held, setHeld] = React.useState(false);
+  React.useEffect(() => {
+    if (!active) return;
+    const id = window.setTimeout(() => setHeld(true), delayMs);
+    return () => window.clearTimeout(id);
+  }, [active, delayMs]);
+  // Reset during render (React's "storing information from previous
+  // renders" pattern) so the next wait starts from zero.
+  if (!active && held) setHeld(false);
+  return active && held;
 }
 
 type TabButtonProps = Omit<

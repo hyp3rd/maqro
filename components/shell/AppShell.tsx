@@ -17,6 +17,7 @@ import { SyncManager } from "./SyncManager";
 import { SyncModeController } from "./SyncModeController";
 import { Topbar } from "./Topbar";
 import { UpdateBanner } from "./UpdateBanner";
+import { FastingCardVisibilityProvider } from "./fasting-card-visibility";
 import type { ViewKey } from "./nav";
 
 type Props = {
@@ -25,8 +26,11 @@ type Props = {
    *  Topbar). */
   title?: string;
   onSelect: (key: ViewKey) => void;
-  /** The mobile tab bar's centre [+] (see MobileBottomNav). */
-  onQuickAdd: () => void;
+  /** The mobile tab bar's centre [+], with the button itself (see
+   *  MobileBottomNav). */
+  onQuickAdd: (trigger: HTMLElement) => void;
+  /** A quick add is waiting for today's log (see MobileBottomNav). */
+  quickAddPending: boolean;
   children: React.ReactNode;
 };
 
@@ -37,12 +41,24 @@ type Props = {
  * (`h-screen`), the main column is the only thing that scrolls. This keeps
  * the sidebar footer (UserMenu) pinned to the bottom and the mobile bottom
  * nav above the keyboard. The animated wrapper keys off `current` so
- * switching nav items produces a soft fade/translate transition. */
-export function AppShell({
+ * switching nav items produces a soft fade/translate transition.
+ *
+ * The Topbar's fasting chip and the day view's Fasting card share whether
+ * the card is on screen (see fasting-card-visibility). */
+export function AppShell(props: Props) {
+  return (
+    <FastingCardVisibilityProvider>
+      <AppShellLayout {...props} />
+    </FastingCardVisibilityProvider>
+  );
+}
+
+function AppShellLayout({
   current,
   title,
   onSelect,
   onQuickAdd,
+  quickAddPending,
   children,
 }: Props) {
   return (
@@ -115,6 +131,7 @@ export function AppShell({
         current={current}
         onSelect={onSelect}
         onQuickAdd={onQuickAdd}
+        quickAddPending={quickAddPending}
       />
       <InstallPrompt />
       <UpdateBanner />
