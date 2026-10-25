@@ -18,6 +18,7 @@
     "./hydration": "./src/hydration.ts",
     "./log-food": "./src/log-food.ts",
     "./macros": "./src/macros.ts",
+    "./meal-order": "./src/meal-order.ts",
     "./meal-schedule": "./src/meal-schedule.ts",
     "./off": "./src/off.ts",
     "./quick-add": "./src/quick-add.ts",
