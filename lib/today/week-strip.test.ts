@@ -57,8 +57,42 @@ describe("dayCalories", () => {
       },
       { id: 3, name: "Dinner", foods: [] },
     ];
-    expect(dayCalories(meals)).toBeCloseTo(519.6, 6);
-    expect(dayCalories([])).toBe(0);
+    expect(dayCalories(meals, "past")).toBeCloseTo(519.6, 6);
+    expect(dayCalories([], "today")).toBe(0);
+  });
+
+  it("counts only food logged as eaten on today", () => {
+    const meals: Meal[] = [
+      {
+        id: 2,
+        name: "Lunch",
+        foods: [
+          {
+            id: 1,
+            name: "Rice",
+            protein: 3,
+            carbs: 28,
+            fat: 0,
+            calories: 300,
+            portionSize: 100,
+            loggedAt: new Date(2026, 9, 26, 12, 30).getTime(),
+          },
+          // Planned for later.
+          {
+            id: 2,
+            name: "Yogurt",
+            protein: 10,
+            carbs: 8,
+            fat: 3,
+            calories: 120,
+            portionSize: 150,
+          },
+        ],
+      },
+    ];
+    expect(dayCalories(meals, "today")).toBe(300);
+    expect(dayCalories(meals, "past")).toBe(420);
+    expect(dayCalories(meals, "future")).toBe(420);
   });
 });
 

@@ -126,6 +126,8 @@ import { reportStorageError } from "./lib/storage-status";
 import { bumpPending, useSyncStatus } from "./lib/sync-status";
 import { useDataRev } from "./lib/sync/data-bus";
 import { formatDayLabel } from "./lib/today/day-label";
+import { dayIntake } from "./lib/today/intake";
+import { relativeDay } from "./lib/today/timeline";
 
 const DEFAULT_PROFILE: PersonalInfo = {
   displayName: null,
@@ -880,7 +882,8 @@ const MacroCalculator = () => {
     ? dietBreakNudge(personalInfo.goalPhases, today)
     : null;
 
-  // Derived: aggregate macros across all logged foods.
+  // Derived: aggregate macros across all the day's food, eaten or planned
+  // (the Calculator's results, the day suggester).
   const totalMacros = useMemo<TotalMacros>(() => {
     let protein = 0;
     let carbs = 0;
@@ -903,6 +906,12 @@ const MacroCalculator = () => {
       calories: Math.round(calories),
     };
   }, [meals]);
+  // The same food split into eaten and still planned for Today: the gauge,
+  // the week strip and the share card count only what was eaten.
+  const intake = useMemo(
+    () => dayIntake(meals, relativeDay(selectedDate, today)),
+    [meals, selectedDate, today],
+  );
 
   /** Derived: optional macro-breakdown (sugars / fiber / fat subtypes).
    *  Returns only the keys at least one food in today's meals
@@ -2540,7 +2549,9 @@ const MacroCalculator = () => {
             dayTypeChipRef.current = chip;
             setDayTypeSheetDate(selectedDate);
           }}
-          totalMacros={totalMacros}
+          usualMinutes={usualMinutes}
+          totalMacros={intake.eaten}
+          plannedMacros={intake.planned}
           macroBreakdown={macroBreakdown}
           meals={meals}
           dayHydrated={dayHydrated}

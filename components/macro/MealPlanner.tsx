@@ -32,6 +32,7 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
+import type { UsualMealMinutes } from "@maqro/core/meal-order";
 import type { DateTargets, WeekTargets } from "@maqro/core/targets";
 import type { WorkoutMealsPlan } from "@maqro/core/workout-meals";
 import {
@@ -40,6 +41,7 @@ import {
   type GoalPhase,
   MacroBreakdown,
   Meal,
+  type TotalMacros,
 } from "../../components/macro/types";
 import type { ViewKey } from "../shell/nav";
 import { Button } from "../ui/button";
@@ -73,12 +75,15 @@ interface MealPlannerProps {
   /** The shown day's workout meals (`workoutMealsForDay`): their eating
    *  windows on the timeline, their time and aims on their meal cards. */
   workoutMeals?: WorkoutMealsPlan | null;
-  totalMacros: {
-    protein: number;
-    carbs: number;
-    fat: number;
-    calories: number;
-  };
+  /** Each regular meal's usual time (`useUsualMealMinutes`): where the
+   *  timeline puts a planned meal without a time of its own. */
+  usualMinutes?: UsualMealMinutes;
+  /** The shown day's food as eaten (`dayIntake`): on today, only what was
+   *  logged as eaten — the gauge, the week strip and the share card. */
+  totalMacros: TotalMacros;
+  /** Today's food not eaten yet (`dayIntake`'s `planned`): dashed on the
+   *  gauge and stated in its readout. Zero on another day. */
+  plannedMacros?: TotalMacros;
   /** Optional sub-macro totals (sugars / fiber / fat subtypes). Only
    *  keys actually contributed by today's foods are populated; the
    *  display layer hides rows for unknown values. */
@@ -228,7 +233,9 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
   week,
   onEditDayType,
   workoutMeals = null,
+  usualMinutes,
   totalMacros,
+  plannedMacros,
   macroBreakdown,
   meals,
   dayHydrated,
@@ -296,12 +303,12 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
   const dayIsEmpty = meals.every((m) => m.foods.length === 0);
   const titleId = React.useId();
 
-  // The week strip: that week's logged kcal from IndexedDB, with the shown
+  // The week strip: that week's eaten kcal from IndexedDB, with the shown
   // day's live total over its stored one (the day log saves behind edits).
   // Only once that day has loaded: until then `meals` (and so `totalMacros`)
   // are still the previous day's or the empty default, and the stored value
   // is the better reading.
-  const weekIntake = useWeekIntake(week?.weekStart ?? null);
+  const weekIntake = useWeekIntake(week?.weekStart ?? null, today);
   const eatenByDate = React.useMemo(
     () =>
       dayHydrated
@@ -459,6 +466,7 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
         <DailyTotals
           calculatedValues={calculatedValues}
           totalMacros={totalMacros}
+          plannedMacros={plannedMacros}
           breakdown={macroBreakdown}
           selectedDate={selectedDate}
           today={today}
@@ -473,6 +481,7 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
           today={today}
           training={calculatedValues.training}
           workoutMeals={workoutMeals}
+          usualMinutes={usualMinutes}
         />
       </section>
 
