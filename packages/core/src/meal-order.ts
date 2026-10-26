@@ -1,4 +1,4 @@
-import { mealStartMinute } from "./clock";
+import { mealStartMinute, parseClock } from "./clock";
 import type { DailyLog } from "./records";
 import type { Meal } from "./types";
 import { type WorkoutMealsPlan, workoutRole } from "./workout-meals";
@@ -7,9 +7,10 @@ import { type WorkoutMealsPlan, workoutRole } from "./workout-meals";
  *  regular meals keep their order; each workout meal goes before the first
  *  regular meal that comes at or after it in the day, and never after
  *  Snacks, which stays last (snacks happen all day, so they have no one
- *  time). A meal's time is when its first food was logged that day, else
- *  its usual time from recent days (`usualMealMinutes`), else a default;
- *  a workout meal's is the plan's aim. Pure. */
+ *  time). A meal's time is `mealMinute`: when its first food was logged
+ *  that day, else the time it is planned for, else (a workout meal) the
+ *  plan's aim, else its usual time from recent days (`usualMealMinutes`),
+ *  else a default. Pure. */
 
 /** The id of Snacks, the regular meal that always stays last. */
 export const SNACKS_MEAL_ID = 4;
@@ -63,25 +64,38 @@ export function usualMealMinutes(logs: readonly DailyLog[]): UsualMealMinutes {
   return out;
 }
 
+/** What places a day's meals in time: the date, each regular meal's usual
+ *  time and the day's workout meals. */
+export type MealTimeContext = {
+  date: string;
+  usual: UsualMealMinutes;
+  plan: WorkoutMealsPlan | null;
+};
+
+/** A meal's minute of the day on `ctx.date`: when its first food was
+ *  logged that day; else the time it is planned for (`Meal.plannedTime`);
+ *  else, for a workout meal, the plan's aim; else its usual time, else a
+ *  default. `null` for a meal with none (Snacks, an untimed workout meal).
+ *  Where Today lists the meal and puts a planned one on the timeline. */
+export function mealMinute(meal: Meal, ctx: MealTimeContext): number | null {
+  const logged = mealStartMinute(meal, ctx.date);
+  if (logged !== null) return logged;
+  const planned = parseClock(meal.plannedTime);
+  if (planned !== null) return planned;
+  const role = workoutRole(meal);
+  if (role !== null) {
+    const slot = role === "preWorkout" ? ctx.plan?.pre : ctx.plan?.post;
+    return slot?.aimMinute ?? null;
+  }
+  return ctx.usual[meal.id] ?? DEFAULT_MEAL_MINUTES[meal.id] ?? null;
+}
+
 /** `meals` (`dayMealsWithWorkout`'s list) in the order to show on `date`. */
 export function orderDayMeals(
   meals: readonly Meal[],
-  input: {
-    date: string;
-    usual: UsualMealMinutes;
-    plan: WorkoutMealsPlan | null;
-  },
+  input: MealTimeContext,
 ): Meal[] {
-  const minuteOf = (meal: Meal): number | null => {
-    const logged = mealStartMinute(meal, input.date);
-    if (logged !== null) return logged;
-    const role = workoutRole(meal);
-    if (role !== null) {
-      const slot = role === "preWorkout" ? input.plan?.pre : input.plan?.post;
-      return slot?.aimMinute ?? null;
-    }
-    return input.usual[meal.id] ?? DEFAULT_MEAL_MINUTES[meal.id] ?? null;
-  };
+  const minuteOf = (meal: Meal) => mealMinute(meal, input);
   const out = meals.filter((m) => workoutRole(m) === null);
   // Pre-workout first, so the post-workout meal is placed after it.
   const rank = (m: Meal) => (workoutRole(m) === "preWorkout" ? 0 : 1);

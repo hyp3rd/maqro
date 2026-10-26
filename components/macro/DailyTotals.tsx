@@ -13,7 +13,14 @@ import {
 
 interface DailyTotalsProps {
   calculatedValues: CalculatedValues;
+  /** What the day's food adds up to as eaten: on today, only food logged
+   *  as eaten (`dayIntake`'s `eaten`). The centre, the readout and the
+   *  "target reached" note count this. */
   totalMacros: TotalMacros;
+  /** Today's food not eaten yet (`dayIntake`'s `planned`): the energy arc
+   *  carries on in dashes over it and the readout states it. Absent or
+   *  zero on another day. */
+  plannedMacros?: TotalMacros;
   /** Optional per-day sub-macro totals - sugars / fiber / fat subtypes.
    *  Rendered as a collapsible breakdown below the gauge. Only rows whose
    *  value the aggregator populated render (others were never seen in
@@ -69,7 +76,8 @@ const SUB_MACRO_LABELS: Record<keyof MacroBreakdown, string> = {
 };
 
 /** The Today energy panel (Instrument): the ring gauge (eaten vs the
- *  displayed day's own target, with the three macro arcs) beside its mono
+ *  displayed day's own target, with the three macro arcs; on today, the
+ *  food still planned dashed on past what was eaten) beside its mono
  *  readout, then the sub-macro breakdown (the logging streak and Share
  *  sit in the Today header's row). The
  *  gauge's centre is the headline — how many kcal are left, worded for the
@@ -78,6 +86,7 @@ const SUB_MACRO_LABELS: Record<keyof MacroBreakdown, string> = {
 const DailyTotals: React.FC<DailyTotalsProps> = ({
   calculatedValues,
   totalMacros,
+  plannedMacros,
   breakdown,
   selectedDate,
   today,
@@ -110,12 +119,14 @@ const DailyTotals: React.FC<DailyTotalsProps> = ({
         >
           <TodayGauge
             eaten={totalMacros}
+            planned={plannedMacros}
             targets={calculatedValues}
             when={when}
             className="w-[10.5rem] sm:w-44"
           />
           <MacroReadout
             eaten={totalMacros}
+            planned={plannedMacros}
             targets={calculatedValues}
             when={when}
             className="w-full grid-cols-2 gap-x-4 @min-[22rem]:w-auto @min-[22rem]:min-w-0 @min-[22rem]:flex-1 @min-[22rem]:grid-cols-1"

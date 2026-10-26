@@ -31,6 +31,10 @@ const meals = (kcal: number[]): Meal[] => [
   },
 ];
 
+/** A day of the week read with no log of its own, so every log read
+ *  counts all of its food (on today only what was eaten counts). */
+const TODAY = "2026-10-23";
+
 describe("useWeekIntake", () => {
   it("reads only that week's logs as kcal per day", async () => {
     const { saveDailyLog, useWeekIntake } = await fresh();
@@ -39,7 +43,7 @@ describe("useWeekIntake", () => {
     await saveDailyLog("2026-10-21", meals([1240]));
     await saveDailyLog("2026-10-26", meals([777])); // the Monday after
 
-    const { result } = renderHook(() => useWeekIntake("2026-10-19"));
+    const { result } = renderHook(() => useWeekIntake("2026-10-19", TODAY));
     await waitFor(() => expect(result.current.size).toBe(2));
     expect([...result.current]).toEqual([
       ["2026-10-19", 2280],
@@ -49,7 +53,7 @@ describe("useWeekIntake", () => {
 
   it("refreshes when a day log is saved (the data-bus)", async () => {
     const { saveDailyLog, useWeekIntake } = await fresh();
-    const { result } = renderHook(() => useWeekIntake("2026-10-19"));
+    const { result } = renderHook(() => useWeekIntake("2026-10-19", TODAY));
     await waitFor(() => expect(result.current.size).toBe(0));
 
     await act(async () => {
@@ -63,7 +67,9 @@ describe("useWeekIntake", () => {
     async (wipe) => {
       const db = await fresh();
       await db.saveDailyLog("2026-10-21", meals([1240]));
-      const { result } = renderHook(() => db.useWeekIntake("2026-10-19"));
+      const { result } = renderHook(() =>
+        db.useWeekIntake("2026-10-19", TODAY),
+      );
       await waitFor(() => expect(result.current.get("2026-10-21")).toBe(1240));
 
       await act(async () => {
@@ -78,7 +84,7 @@ describe("useWeekIntake", () => {
     await saveDailyLog("2026-10-21", meals([1240]));
     await saveDailyLog("2026-10-28", meals([1900]));
     const { result, rerender } = renderHook(
-      ({ weekStart }) => useWeekIntake(weekStart),
+      ({ weekStart }) => useWeekIntake(weekStart, TODAY),
       { initialProps: { weekStart: "2026-10-19" } },
     );
     await waitFor(() => expect(result.current.get("2026-10-21")).toBe(1240));
@@ -90,9 +96,28 @@ describe("useWeekIntake", () => {
     expect(result.current.has("2026-10-21")).toBe(false);
   });
 
+  it("counts only food logged as eaten on today", async () => {
+    const { saveDailyLog, useWeekIntake } = await fresh();
+    // 450 eaten at 08:00, 650 planned for later.
+    const [breakfast] = meals([450, 650]);
+    const eatenAt = new Date(2026, 9, 21, 8, 0).getTime();
+    await saveDailyLog("2026-10-21", [
+      {
+        ...breakfast,
+        foods: breakfast.foods.map((f, i) =>
+          i === 0 ? { ...f, loggedAt: eatenAt } : f,
+        ),
+      },
+    ]);
+    const { result } = renderHook(() =>
+      useWeekIntake("2026-10-19", "2026-10-21"),
+    );
+    await waitFor(() => expect(result.current.get("2026-10-21")).toBe(450));
+  });
+
   it("is empty without a week", async () => {
     const { useWeekIntake } = await fresh();
-    const { result } = renderHook(() => useWeekIntake(null));
+    const { result } = renderHook(() => useWeekIntake(null, TODAY));
     expect(result.current.size).toBe(0);
   });
 });

@@ -5,6 +5,7 @@ import {
   minuteOfDay,
   parseClock,
 } from "@maqro/core/clock";
+import { type MealTimeContext, mealMinute } from "@maqro/core/meal-order";
 import type { Meal, TrainingDay, WorkoutMealRole } from "@maqro/core/types";
 import type { WorkoutMealsPlan } from "@maqro/core/workout-meals";
 
@@ -52,16 +53,22 @@ export function elapsedMinutes(
   return minuteOfDay(now, date) ?? 0;
 }
 
-/** One meal on the track: at its first logged food, labelled with the
- *  whole meal's kcal. `lane` 1 lifts a label that would overlap the
- *  previous one in lane 0; `null` = no label, because both lanes are
- *  taken there (the tick stays, and the meal's kcal is in the track's
- *  summary and on the rail). */
+/** One meal on the track. An eaten meal sits at its first food logged
+ *  that day, labelled with the kcal logged as eaten (on a past day, all of
+ *  its food — the day can't tell eaten from planned). A planned meal — on
+ *  today or a future day, food with none of it logged as eaten, as the
+ *  rail's planned node — sits at the time it is planned for
+ *  (`mealMinute`), labelled with its kcal, and is drawn hollow; one with
+ *  no time (Snacks, an untimed workout meal) stays off the track. `lane` 1
+ *  lifts a label that would overlap the previous one in lane 0; `null` =
+ *  no label, because both lanes are taken there (the tick stays, and the
+ *  meal's kcal is in the track's summary and on the rail). */
 export type MealTick = {
   mealId: number;
   name: string;
   minutes: number;
   kcal: number;
+  planned: boolean;
   lane: 0 | 1 | null;
 };
 
@@ -109,11 +116,35 @@ function labelExtent(
   }
 }
 
-export function mealTicks(meals: readonly Meal[], date: string): MealTick[] {
-  const timed = meals
-    .map((meal) => ({ meal, minutes: mealStartMinute(meal, date) }))
-    .filter((t): t is { meal: Meal; minutes: number } => t.minutes !== null)
-    .sort((a, b) => a.minutes - b.minutes);
+/** `meals`' ticks on `ctx.date`, a day that is `when`, in time order. */
+export function mealTicks(
+  meals: readonly Meal[],
+  ctx: MealTimeContext,
+  when: RelativeDay,
+): MealTick[] {
+  const timed: {
+    meal: Meal;
+    minutes: number;
+    kcal: number;
+    planned: boolean;
+  }[] = [];
+  for (const meal of meals) {
+    if (meal.foods.length === 0) continue;
+    const eaten =
+      when === "past"
+        ? meal.foods
+        : meal.foods.filter((f) => f.loggedAt !== undefined);
+    const planned = eaten.length === 0;
+    const minutes = planned
+      ? mealMinute(meal, ctx)
+      : mealStartMinute(meal, ctx.date);
+    if (minutes === null) continue;
+    const kcal = Math.round(
+      (planned ? meal.foods : eaten).reduce((sum, f) => sum + f.calories, 0),
+    );
+    timed.push({ meal, minutes, kcal, planned });
+  }
+  timed.sort((a, b) => a.minutes - b.minutes);
   // Where the last label placed in each lane ends. Ticks come in time
   // order and every label covers its own tick, so a later label can only
   // collide with the previous one's right end.
@@ -122,15 +153,14 @@ export function mealTicks(meals: readonly Meal[], date: string): MealTick[] {
     const end = laneEnd[lane];
     return end === null || from - end >= LABEL_PAD_MIN;
   };
-  return timed.map(({ meal, minutes }) => {
-    const kcal = Math.round(meal.foods.reduce((sum, f) => sum + f.calories, 0));
+  return timed.map(({ meal, minutes, kcal, planned }) => {
     const extent = labelExtent(minutes, labelChars(kcal));
     // Lane 0 when it has room, else lane 1 when that has room; with both
     // taken (three meals close together) the label is left off rather
     // than printed over another.
     const lane = fits(0, extent.from) ? 0 : fits(1, extent.from) ? 1 : null;
     if (lane !== null) laneEnd[lane] = extent.to;
-    return { mealId: meal.id, name: meal.name, minutes, kcal, lane };
+    return { mealId: meal.id, name: meal.name, minutes, kcal, planned, lane };
   });
 }
 
@@ -273,7 +303,7 @@ export function timelineSummary(input: {
   const parts = [
     ...input.ticks.map(
       (t) =>
-        `${t.name} at ${formatClock(t.minutes)}, ${input.formatKcal(t.kcal)} kcal.`,
+        `${t.name}${t.planned ? " planned" : ""} at ${formatClock(t.minutes)}, ${input.formatKcal(t.kcal)} kcal.`,
     ),
     ...input.spans.map((s) => {
       if (s.kind !== "workout") {

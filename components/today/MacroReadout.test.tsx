@@ -33,6 +33,36 @@ describe("MacroReadout", () => {
     ]);
   });
 
+  it("states today's plan under the energy figure: how much, and where the day lands", () => {
+    render(
+      <MacroReadout
+        eaten={{ calories: 1240, protein: 85, carbs: 140, fat: 38 }}
+        planned={{ calories: 650, protein: 40, carbs: 80, fat: 15 }}
+        targets={TARGETS}
+      />,
+      { wrapper: intlWrapper() },
+    );
+    expect(rows()).toEqual([
+      "Eaten1,240 / 2,500 kcal+650 planned 1,890 after plan",
+      // The macros stay what was eaten.
+      "Protein85 / 160 g75 g left",
+      "Carbs140 / 308 g168 g left",
+      "Fat38 / 70 g32 g left",
+    ]);
+  });
+
+  it("says nothing more without planned food", () => {
+    render(
+      <MacroReadout
+        eaten={{ calories: 1240, protein: 85, carbs: 140, fat: 38 }}
+        planned={{ calories: 0, protein: 0, carbs: 0, fat: 0 }}
+        targets={TARGETS}
+      />,
+      { wrapper: intlWrapper() },
+    );
+    expect(rows()[0]).toBe("Eaten1,240 / 2,500 kcal");
+  });
+
   it("states a macro past its target as a neutral '+N', never a warning", () => {
     const { container } = render(
       <MacroReadout

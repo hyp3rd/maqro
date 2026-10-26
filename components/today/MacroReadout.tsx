@@ -54,20 +54,27 @@ const ROWS = [
  *  match the numbers shown; over is a neutral "+N", never a warning. The
  *  calorie row leaves "left" to the gauge's centre. Locale-aware figures.
  *  On a future day (`when`) nothing is eaten yet: the logged food is a
- *  plan, so the energy row reads "Planned" (the gauge says "to plan"). */
+ *  plan, so the energy row reads "Planned" (the gauge says "to plan").
+ *  Today's planned food (`planned`) is stated under the energy figure:
+ *  how much is planned, then where the day lands with it — two short
+ *  lines, so each fits a cell of the 2 × 2 readout on a 320 px phone. */
 export function MacroReadout({
   eaten,
+  planned,
   targets,
   when = "today",
   className,
 }: {
   eaten: Macros;
+  /** Today's planned food (`dayIntake`). */
+  planned?: Macros;
   targets: Targets;
   when?: RelativeDay;
   className?: string;
 }) {
   const locale = useLocale();
   const show = (n: number) => formatNumber(n, locale);
+  const plannedKcal = Math.round(planned?.calories ?? 0);
 
   return (
     <dl className={cn("grid content-center gap-y-2", className)}>
@@ -125,7 +132,19 @@ export function MacroReadout({
               </span>
             }
             detail={detail}
-          />
+          >
+            {row.key === "calories" && plannedKcal > 0 ? (
+              <span
+                data-part="planned"
+                className="block font-mono text-xs tabular-nums text-muted-foreground"
+              >
+                <span className="block">+{show(plannedKcal)} planned</span>{" "}
+                <span className="block">
+                  {show(reading.value + plannedKcal)} after plan
+                </span>
+              </span>
+            ) : undefined}
+          </Stat>
         );
       })}
     </dl>

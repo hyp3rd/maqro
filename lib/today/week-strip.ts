@@ -27,11 +27,14 @@ export function stripBar(eaten: number, target: number): StripBar {
   };
 }
 
-/** Total kcal of a day's meals. */
-export function dayCalories(meals: readonly Meal[]): number {
+/** A day's kcal on the strip, for a day that is `when`: all of its food,
+ *  but on today only what was logged as eaten — food planned for later
+ *  isn't eaten yet (the gauge shows it, dashed; see `dayIntake`). */
+export function dayCalories(meals: readonly Meal[], when: RelativeDay): number {
   let sum = 0;
   for (const meal of meals) {
     for (const food of meal.foods) {
+      if (when === "today" && food.loggedAt === undefined) continue;
       if (Number.isFinite(food.calories)) sum += food.calories;
     }
   }

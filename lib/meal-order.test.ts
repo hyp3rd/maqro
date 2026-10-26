@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  mealMinute,
   orderDayMeals,
   USUAL_TIME_MIN_DAYS,
   usualMealMinutes,
@@ -273,5 +274,59 @@ describe("usualMealMinutes", () => {
       ]),
     );
     expect(usualMealMinutes(logs)).toEqual({});
+  });
+});
+
+describe("mealMinute", () => {
+  const ctx = { date: DATE, usual: { 2: 13 * 60 }, plan: null };
+
+  it("logged time first, then the planned time, then the usual one", () => {
+    const lunch: Meal = { id: 2, name: "Lunch", foods: [food()] };
+    expect(mealMinute(lunch, ctx)).toBe(13 * 60);
+    expect(mealMinute({ ...lunch, plannedTime: "12:15" }, ctx)).toBe(
+      12 * 60 + 15,
+    );
+    expect(
+      mealMinute(
+        { ...lunch, plannedTime: "12:15", foods: [food(at(DATE, 14))] },
+        ctx,
+      ),
+    ).toBe(14 * 60);
+  });
+
+  it("ignores a malformed planned time; Snacks has none of its own", () => {
+    const dinner: Meal = {
+      id: 3,
+      name: "Dinner",
+      foods: [],
+      plannedTime: "7pm",
+    };
+    expect(mealMinute(dinner, ctx)).toBe(19 * 60 + 30);
+    expect(mealMinute({ id: 4, name: "Snacks", foods: [] }, ctx)).toBeNull();
+    expect(
+      mealMinute(
+        { id: 4, name: "Snacks", foods: [], plannedTime: "16:00" },
+        ctx,
+      ),
+    ).toBe(16 * 60);
+  });
+
+  it("a planned time moves the workout meals around it", () => {
+    const p = plan(EVENING);
+    // Dinner planned early, at 16:00: before the pre-workout meal (16:30).
+    const meals = dayMealsWithWorkout(
+      regular().map((m) => (m.id === 3 ? { ...m, plannedTime: "16:00" } : m)),
+      p,
+    );
+    expect(
+      names(orderDayMeals(meals, { date: DATE, usual: {}, plan: p })),
+    ).toEqual([
+      "Breakfast",
+      "Lunch",
+      "Dinner",
+      "Pre-workout",
+      "Post-workout",
+      "Snacks",
+    ]);
   });
 });

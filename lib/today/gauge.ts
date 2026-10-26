@@ -100,6 +100,43 @@ export function ringStrokes(arc: RingArc): RingStrokes {
   };
 }
 
+/** The dash and gap (viewBox units) of a ring's planned stretch. */
+export const PLANNED_DASH = 3;
+export const PLANNED_GAP = 2.5;
+
+/** How a ring draws today's planned food: from the end of the eaten arc on
+ *  to where eaten + planned reaches, in short dashes so it reads as not yet
+ *  eaten. It stops at the target index — past it the eaten arc already
+ *  shows an overshoot, and the readout says where the plan lands. One
+ *  `stroke-dasharray` (no offset): an empty run to the eaten arc's end,
+ *  the dashes, then the rest of the lap empty, its total longer than the
+ *  lap so the pattern never repeats. `null` when there is nothing to draw:
+ *  no plan, no target, or the eaten arc already at the index. */
+export function plannedStroke(
+  eaten: number,
+  planned: number,
+  target: number,
+  radius: number,
+): { dashArray: string } | null {
+  if (!(Number.isFinite(target) && target > 0)) return null;
+  if (!(Number.isFinite(planned) && planned > 0)) return null;
+  const c = circumference(radius);
+  const e = Number.isFinite(eaten) && eaten > 0 ? eaten : 0;
+  const start = Math.min(e / target, 1) * c;
+  const length = Math.min((e + planned) / target, 1) * c - start;
+  if (length <= 0) return null;
+  const parts = [0, start];
+  for (let drawn = 0; drawn < length;) {
+    const dash = Math.min(PLANNED_DASH, length - drawn);
+    drawn += dash;
+    const gap = Math.min(PLANNED_GAP, length - drawn);
+    drawn += gap;
+    parts.push(dash, gap);
+  }
+  parts.push(0, c);
+  return { dashArray: parts.map(round3).join(" ") };
+}
+
 /** The bezel's 60 tick marks as a dash pattern, offset so the first tick
  *  is centred on 12 o'clock. */
 export function bezelDash(): { dashArray: string; dashOffset: number } {
