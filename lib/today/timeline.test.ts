@@ -9,6 +9,7 @@ import {
   labelAnchor,
   localDate,
   mealStartMinute,
+  type MealTick,
   mealTicks,
   minuteOfDay,
   nowFlagText,
@@ -24,6 +25,9 @@ const DAY = "2026-10-21";
  *  so the tests hold in every timezone. */
 const at = (h: number, m: number, day = 21) =>
   new Date(2026, 9, day, h, m).getTime();
+
+/** No usual times or workout meals: the default meal times apply. */
+const CTX = { date: DAY, usual: {}, plan: null };
 
 const food = (calories: number, loggedAt?: number) => ({
   id: Math.round(calories * 1000 + (loggedAt ?? 0) / 60000),
@@ -113,19 +117,63 @@ describe("mealTicks", () => {
       foods: [food(300, at(7, 40)), food(220, at(7, 30))],
     },
     { id: 2, name: "Lunch", foods: [food(720, at(12, 45))] },
-    // Planned / copied without a time: stays off the track.
+    // Food not logged as eaten: planned on today, at Dinner's usual time.
     { id: 3, name: "Dinner", foods: [food(650)] },
     { id: 4, name: "Snacks", foods: [] },
   ];
+  const shown = (ticks: MealTick[]) =>
+    ticks.map(({ name, minutes, kcal, planned }) => ({
+      name,
+      minutes,
+      kcal,
+      planned,
+    }));
 
-  it("places each meal at its earliest logged food with the whole meal's kcal", () => {
-    const ticks = mealTicks(meals, DAY);
-    expect(
-      ticks.map(({ name, minutes, kcal }) => ({ name, minutes, kcal })),
-    ).toEqual([
-      { name: "Breakfast", minutes: 450, kcal: 520 },
-      { name: "Lunch", minutes: 765, kcal: 720 },
+  it("places each eaten meal at its earliest logged food, a planned one at its time", () => {
+    expect(shown(mealTicks(meals, CTX, "today"))).toEqual([
+      { name: "Breakfast", minutes: 450, kcal: 520, planned: false },
+      { name: "Lunch", minutes: 765, kcal: 720, planned: false },
+      { name: "Dinner", minutes: 1170, kcal: 650, planned: true },
     ]);
+    // A usual time, then the meal's own planned time, win over the default.
+    expect(
+      mealTicks(meals, { ...CTX, usual: { 3: 1200 } }, "today")[2]?.minutes,
+    ).toBe(1200);
+    const timed = meals.map((m) =>
+      m.id === 3 ? { ...m, plannedTime: "18:45" } : m,
+    );
+    expect(mealTicks(timed, CTX, "today")[2]?.minutes).toBe(1125);
+  });
+
+  it("labels an eaten meal with only what was logged as eaten", () => {
+    // Lunch half eaten: 300 logged, 250 still planned.
+    const half: Meal[] = [
+      { id: 2, name: "Lunch", foods: [food(300, at(12, 45)), food(250)] },
+    ];
+    expect(shown(mealTicks(half, CTX, "today"))).toEqual([
+      { name: "Lunch", minutes: 765, kcal: 300, planned: false },
+    ]);
+    // A past day counts all of it.
+    expect(mealTicks(half, CTX, "past")[0]?.kcal).toBe(550);
+  });
+
+  it("keeps a past day's untimed meals and a planned meal with no time off the track", () => {
+    expect(shown(mealTicks(meals, CTX, "past")).map((t) => t.name)).toEqual([
+      "Breakfast",
+      "Lunch",
+    ]);
+    // Snacks has no usual time.
+    const snack: Meal[] = [{ id: 4, name: "Snacks", foods: [food(180)] }];
+    expect(mealTicks(snack, CTX, "today")).toEqual([]);
+  });
+
+  it("plans a future day's meals at their times", () => {
+    expect(
+      shown(mealTicks(meals.slice(2), CTX, "future")).map((t) => [
+        t.name,
+        t.planned,
+      ]),
+    ).toEqual([["Dinner", true]]);
   });
 
   it("reads a meal's start minute (or none) for the rail", () => {
@@ -140,7 +188,7 @@ describe("mealTicks", () => {
       { id: 2, name: "Lunch", foods: [food(600, at(12, 45))] },
       { id: 3, name: "Dinner", foods: [food(700, at(19, 0))] },
     ];
-    const ticks = mealTicks(close, DAY);
+    const ticks = mealTicks(close, CTX, "today");
     expect(ticks.map((t) => [t.name, t.lane])).toEqual([
       ["Lunch", 0],
       ["Snacks", 1],
@@ -157,7 +205,9 @@ describe("mealTicks", () => {
       { id: 3, name: "Dinner", foods: [food(1340, at(13, 20))] },
       { id: 4, name: "Snacks", foods: [food(1340, at(16, 0))] },
     ];
-    expect(mealTicks(crowded, DAY).map((t) => [t.name, t.lane])).toEqual([
+    expect(
+      mealTicks(crowded, CTX, "today").map((t) => [t.name, t.lane]),
+    ).toEqual([
       ["Breakfast", 0],
       ["Lunch", 1],
       ["Dinner", null],
@@ -168,8 +218,12 @@ describe("mealTicks", () => {
       { id: 1, name: "Breakfast", foods: [food(kcal, at(8, 0))] },
       { id: 2, name: "Lunch", foods: [food(kcal, at(10, 30))] },
     ];
-    expect(mealTicks(apart(720), DAY).map((t) => t.lane)).toEqual([0, 0]);
-    expect(mealTicks(apart(1340), DAY).map((t) => t.lane)).toEqual([0, 1]);
+    expect(mealTicks(apart(720), CTX, "today").map((t) => t.lane)).toEqual([
+      0, 0,
+    ]);
+    expect(mealTicks(apart(1340), CTX, "today").map((t) => t.lane)).toEqual([
+      0, 1,
+    ]);
   });
 
   it("keeps a character's gap between two labels in one lane", () => {
@@ -179,7 +233,7 @@ describe("mealTicks", () => {
       { id: 1, name: "Lunch", foods: [food(1821, at(12, 0))] },
       { id: 2, name: "Snacks", foods: [food(437, at(14, 13))] },
     ];
-    expect(mealTicks(near, DAY).map((t) => t.lane)).toEqual([0, 1]);
+    expect(mealTicks(near, CTX, "today").map((t) => t.lane)).toEqual([0, 1]);
   });
 
   it("measures a label at a track end from the end it is anchored to", () => {
@@ -190,7 +244,7 @@ describe("mealTicks", () => {
       { id: 2, name: "Snacks", foods: [food(1050, at(23, 15))] },
     ];
     expect(labelAnchor(23 * 60 + 15)).toBe("end");
-    expect(mealTicks(late, DAY).map((t) => t.lane)).toEqual([0, 1]);
+    expect(mealTicks(late, CTX, "today").map((t) => t.lane)).toEqual([0, 1]);
   });
 });
 
@@ -299,7 +353,22 @@ describe("labels", () => {
     expect(
       timelineSummary({
         ticks: [
-          { mealId: 1, name: "Breakfast", minutes: 450, kcal: 520, lane: 0 },
+          {
+            mealId: 1,
+            name: "Breakfast",
+            minutes: 450,
+            kcal: 520,
+            planned: false,
+            lane: 0,
+          },
+          {
+            mealId: 3,
+            name: "Dinner",
+            minutes: 1170,
+            kcal: 650,
+            planned: true,
+            lane: 0,
+          },
         ],
         spans: [
           {
@@ -313,7 +382,7 @@ describe("labels", () => {
         formatKcal: String,
       }),
     ).toBe(
-      "Breakfast at 07:30, 520 kcal. Workout, Lower · heavy day, 18:00 to 19:15. Now 15:10.",
+      "Breakfast at 07:30, 520 kcal. Dinner planned at 19:30, 650 kcal. Workout, Lower · heavy day, 18:00 to 19:15. Now 15:10.",
     );
     expect(
       timelineSummary({
@@ -329,7 +398,14 @@ describe("labels", () => {
     expect(
       timelineSummary({
         ticks: [
-          { mealId: 1, name: "Lunch", minutes: 765, kcal: 1050, lane: 0 },
+          {
+            mealId: 1,
+            name: "Lunch",
+            minutes: 765,
+            kcal: 1050,
+            planned: false,
+            lane: 0,
+          },
         ],
         spans: [],
         nowMinute: null,

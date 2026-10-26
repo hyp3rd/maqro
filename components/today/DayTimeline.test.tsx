@@ -111,7 +111,7 @@ describe("DayTimeline", () => {
     );
   });
 
-  it("places each timed meal at its first logged food, labelled with its kcal", () => {
+  it("places each eaten meal at its first logged food, labelled with its kcal", () => {
     const { container } = render(
       <DayTimeline
         meals={MEALS}
@@ -122,11 +122,54 @@ describe("DayTimeline", () => {
       { wrapper: intlWrapper() },
     );
     const ticks = container.querySelectorAll("[data-part=meal-tick]");
-    expect(ticks).toHaveLength(2);
+    expect(ticks).toHaveLength(3);
     expect(left(ticks[0] ?? null)).toBeCloseTo((450 / 1440) * 100, 6);
     expect(left(ticks[1] ?? null)).toBeCloseTo((765 / 1440) * 100, 6);
+    expect(ticks[0]?.hasAttribute("data-planned")).toBe(false);
     expect(screen.getByText("520")).toBeTruthy();
     expect(screen.getByText("720")).toBeTruthy();
+  });
+
+  it("draws a planned meal hollow at the time it is planned for", () => {
+    const meals: Meal[] = [
+      ...MEALS.slice(0, 3),
+      { id: 4, name: "Snacks", plannedTime: "16:15", foods: [food(4, 180)] },
+    ];
+    const { container } = render(
+      <DayTimeline
+        meals={meals}
+        date={DAY}
+        today={DAY}
+        now={at(15, 10)}
+        usualMinutes={{ 3: 20 * 60 }}
+      />,
+      { wrapper: intlWrapper() },
+    );
+    const planned = container.querySelectorAll(
+      "[data-part=meal-tick][data-planned]",
+    );
+    expect(planned).toHaveLength(2);
+    // Snacks at its own time, Dinner at its usual one.
+    expect(left(planned[0] ?? null)).toBeCloseTo((975 / 1440) * 100, 6);
+    expect(left(planned[1] ?? null)).toBeCloseTo((1200 / 1440) * 100, 6);
+    expect(screen.getByText("600")).toBeTruthy();
+    expect(screen.getByRole("img").getAttribute("aria-label")).toContain(
+      "Snacks planned at 16:15, 180 kcal. Dinner planned at 20:00, 600 kcal.",
+    );
+    // A past day can't tell planned from eaten: untimed food stays off.
+    cleanup();
+    const past = render(
+      <DayTimeline
+        meals={meals}
+        date="2026-10-20"
+        today={DAY}
+        now={at(15, 10)}
+      />,
+      { wrapper: intlWrapper() },
+    );
+    expect(
+      past.container.querySelector("[data-part=meal-tick][data-planned]"),
+    ).toBeNull();
   });
 
   it("puts a 'Now' cursor at the current minute, today only", () => {
@@ -299,7 +342,7 @@ describe("DayTimeline", () => {
     expect(left(post)).toBeCloseTo((1155 / 1440) * 100, 6);
     expect(
       screen.getByRole("img", {
-        name: "Day timeline: Breakfast at 07:30, 520 kcal. Lunch at 12:45, 720 kcal. Pre-workout window, 15:00 to 17:00. Workout, Lower · heavy day, 18:00 to 19:15. Post-workout window, 19:15 to 21:15. Now 15:10.",
+        name: "Day timeline: Breakfast at 07:30, 520 kcal. Lunch at 12:45, 720 kcal. Dinner planned at 19:30, 600 kcal. Pre-workout window, 15:00 to 17:00. Workout, Lower · heavy day, 18:00 to 19:15. Post-workout window, 19:15 to 21:15. Now 15:10.",
       }),
     ).toBeTruthy();
     // Untimed or no workout meals: no brackets.
@@ -336,7 +379,7 @@ describe("DayTimeline", () => {
     );
     expect(
       screen.getByRole("img", {
-        name: "Day timeline: Breakfast at 07:30, 520 kcal. Lunch at 12:45, 720 kcal. Workout, Lower · heavy day, 18:00 to 19:15. Now 15:10.",
+        name: "Day timeline: Breakfast at 07:30, 520 kcal. Lunch at 12:45, 720 kcal. Dinner planned at 19:30, 600 kcal. Workout, Lower · heavy day, 18:00 to 19:15. Now 15:10.",
       }),
     ).toBeTruthy();
   });

@@ -14,10 +14,10 @@ import type { RelativeDay } from "./timeline";
  *    presents as logging stamps one on today (search, recipe, template,
  *    a scheduled recipe, "Log this day", a photo), so this is the Meals
  *    card's AI Auto-fill, the demo's later meals, or anything put on a
- *    future day. A distinct node, and
- *    no time on the rail or the track. A past day can't tell the two apart
- *    (logging to another day never stamps a time), so its food reads as
- *    logged.
+ *    future day. A distinct node with no time on the rail; the track
+ *    draws it hollow at the time it is planned for (`mealTicks`). A past
+ *    day can't tell the two apart (logging to another day never stamps a
+ *    time), so its food reads as logged.
  *  - `open`: an empty slot — skipped, still to come, or on a past or
  *    future day (a hollow node). */
 export type RailNode = "logged" | "planned" | "open";

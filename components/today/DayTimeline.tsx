@@ -19,6 +19,7 @@ import {
 import { dayTypeLabel } from "@/lib/training-labels";
 import { cn } from "@/lib/utils";
 import { useLocale } from "next-intl";
+import type { UsualMealMinutes } from "@maqro/core/meal-order";
 import type { TrainingDayTargets } from "@maqro/core/targets";
 import type { Meal } from "@maqro/core/types";
 import type { WorkoutMealsPlan } from "@maqro/core/workout-meals";
@@ -32,9 +33,10 @@ const ANCHOR = {
 const HOURS = Array.from({ length: 25 }, (_, h) => h);
 
 /** The Today 24-hour timing track (Instrument): hour ticks across one local
- *  day with the part that has passed drawn brighter; a tick per meal at its
- *  first logged food with the meal's kcal above it (meals without a logged
- *  time stay off the track); the day's session as an accent block (time +
+ *  day with the part that has passed drawn brighter; a tick per meal with
+ *  its kcal above it — an eaten meal's at its first logged food, a planned
+ *  one's hollow at the time it is planned for (`mealTicks`; a meal with no
+ *  time stays off the track); the day's session as an accent block (time +
  *  duration: the date's override when there is one, else the training
  *  template's) when training is on, with its workout meals' eating windows
  *  as lighter brackets either side; and, today only, a signal-coloured now
@@ -54,6 +56,7 @@ export function DayTimeline({
   now,
   training,
   workoutMeals = null,
+  usualMinutes = {},
   className,
 }: {
   meals: readonly Meal[];
@@ -65,15 +68,22 @@ export function DayTimeline({
   training?: Pick<TrainingDayTargets, "day" | "dayClass">;
   /** The day's workout meals (`workoutMealsForDay`), if any. */
   workoutMeals?: WorkoutMealsPlan | null;
+  /** Each regular meal's usual time (`useUsualMealMinutes`): where a
+   *  planned meal without a time of its own sits. */
+  usualMinutes?: UsualMealMinutes;
   className?: string;
 }) {
   // The track's measured width, so only the hour labels the now flag
   // really covers give way (until measured, the narrowest track's).
   const [trackRef, trackWidth] = useElementWidth<HTMLDivElement>();
-  const isToday = relativeDay(date, today) === "today";
-  const nowMinute = isToday && now > 0 ? minuteOfDay(now, date) : null;
+  const when = relativeDay(date, today);
+  const nowMinute = when === "today" && now > 0 ? minuteOfDay(now, date) : null;
   const elapsed = elapsedMinutes(date, today, now);
-  const ticks = mealTicks(meals, date);
+  const ticks = mealTicks(
+    meals,
+    { date, usual: usualMinutes, plan: workoutMeals },
+    when,
+  );
   const workout = training
     ? workoutSpan(training.day, dayTypeLabel(training))
     : null;
@@ -106,7 +116,8 @@ export function DayTimeline({
             <span
               key={t.mealId}
               className={cn(
-                "absolute whitespace-nowrap font-mono text-xs leading-4 tabular-nums text-muted-foreground",
+                "absolute whitespace-nowrap font-mono text-xs leading-4 tabular-nums",
+                t.planned ? "text-faint-foreground" : "text-muted-foreground",
                 t.lane === 1 ? "bottom-4" : "bottom-0",
                 ANCHOR[labelAnchor(t.minutes)],
               )}
@@ -164,7 +175,14 @@ export function DayTimeline({
             key={t.mealId}
             aria-hidden
             data-part="meal-tick"
-            className="absolute inset-y-0 w-0.5 -translate-x-1/2 rounded-full bg-foreground"
+            data-planned={t.planned || undefined}
+            className={cn(
+              "absolute inset-y-0 -translate-x-1/2 rounded-full",
+              // Planned, not eaten yet: hollow, like the rail's node.
+              t.planned
+                ? "w-1.5 border border-foreground/70 bg-background"
+                : "w-0.5 bg-foreground",
+            )}
             style={{ left: `${trackPercent(t.minutes)}%` }}
           />
         ))}
