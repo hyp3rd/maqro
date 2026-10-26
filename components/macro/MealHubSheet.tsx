@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../ui/dialog";
+import { EatenNowToggle, type LaterChoice } from "./EatenNowToggle";
 import { FoodSearchSheet } from "./FoodSearchSheet";
 import { MealDetail, type DailyGoal } from "./MealDetailSheet";
 import { QuickAddFoods } from "./QuickAddFoods";
@@ -62,6 +63,9 @@ type Props = {
   /** The day's workout meals (`workoutMealsForDay`): which of its workout
    *  meals the AI can generate. */
   workoutMeals?: WorkoutMealsPlan | null;
+  /** "Eaten now / Later" above the "Log this again" strip, when the meal is
+   *  today's; the hub's adds and its search sheet follow it. */
+  laterChoice?: LaterChoice;
 };
 
 /** Per-meal hub you "step into" from a meal card: quick-add recents (one tap
@@ -85,6 +89,7 @@ export function MealHubSheet({
   regeneratingThisMeal,
   onOpenChange,
   workoutMeals = null,
+  laterChoice,
 }: Props) {
   const [searchOpen, setSearchOpen] = useState(false);
 
@@ -128,6 +133,7 @@ export function MealHubSheet({
               regenerating={regenerating}
               regeneratingThisMeal={regeneratingThisMeal}
               workoutMeals={workoutMeals}
+              laterChoice={laterChoice}
               onOpenSearch={() => setSearchOpen(true)}
               onClose={() => onOpenChange(false)}
             />
@@ -150,6 +156,7 @@ export function MealHubSheet({
             setSearchOpen(false);
             onOpenChange(false);
           }}
+          laterChoice={laterChoice}
         />
       )}
     </>
@@ -169,6 +176,7 @@ function MealHubBody({
   regenerating,
   regeneratingThisMeal,
   workoutMeals,
+  laterChoice,
   onOpenSearch,
   onClose,
 }: {
@@ -184,6 +192,7 @@ function MealHubBody({
   regenerating: boolean;
   regeneratingThisMeal: boolean;
   workoutMeals: WorkoutMealsPlan | null;
+  laterChoice: LaterChoice | undefined;
   onOpenSearch: () => void;
   onClose: () => void;
 }) {
@@ -211,12 +220,15 @@ function MealHubBody({
   // The dominant path: re-log a staple into THIS slot in one tap. Scoped to the
   // slot's own history (topped up from global recents when sparse), renders
   // nothing when the user has no recents at all. Logs + toasts + keeps the hub
-  // open for repeat adds.
+  // open for repeat adds. On today, "Eaten now / Later" sits above it.
   const logAgainStrip = (
-    <QuickAddFoods
-      slotName={meal.name}
-      onAdd={(food, portion) => onQuickLog(food, meal.id, portion)}
-    />
+    <>
+      {laterChoice && <EatenNowToggle choice={laterChoice} />}
+      <QuickAddFoods
+        slotName={meal.name}
+        onAdd={(food, portion) => onQuickLog(food, meal.id, portion)}
+      />
+    </>
   );
 
   return (

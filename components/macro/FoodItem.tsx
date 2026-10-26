@@ -1,5 +1,5 @@
 import React from "react";
-import { Edit2, GripVertical, Search, Trash2 } from "lucide-react";
+import { Check, Edit2, GripVertical, Search, Trash2 } from "lucide-react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Food, FoodItem as FoodItemType } from "../../components/macro/types";
@@ -39,6 +39,13 @@ interface FoodItemProps {
   handleReplacementSearch: (e: React.ChangeEvent<HTMLInputElement>) => void;
   replaceFood: (newFood: Food) => void;
   removeFood: (mealId: number, foodId: number) => void;
+  /** Marks this food eaten now, when it is today's planned food (not
+   *  logged as eaten): a check before the row's actions. Absent on another
+   *  day. */
+  onAteIt?: () => void;
+  /** The meal is partly eaten: a planned row says "planned" beside its
+   *  name, to tell it from the eaten ones. */
+  mealPartlyEaten?: boolean;
 }
 
 const FoodItem: React.FC<FoodItemProps> = ({
@@ -56,7 +63,10 @@ const FoodItem: React.FC<FoodItemProps> = ({
   handleReplacementSearch,
   replaceFood,
   removeFood,
+  onAteIt,
+  mealPartlyEaten = false,
 }) => {
+  const ateIt = food.loggedAt === undefined ? onAteIt : undefined;
   const isEditing = editingFood.foodId === food.id;
   const isReplacing = replacingFood.foodId === food.id;
   const sortableId = `${mealId}:${food.id}`;
@@ -135,7 +145,14 @@ const FoodItem: React.FC<FoodItemProps> = ({
               )}
           </div>
         ) : (
-          <span className="text-foreground">{food.name}</span>
+          <>
+            <span className="text-foreground">{food.name}</span>
+            {ateIt && mealPartlyEaten && (
+              <span className="ml-2 font-mono text-xs text-muted-foreground">
+                planned
+              </span>
+            )}
+          </>
         )}
       </td>
       <td className="px-3 py-2.5 text-center font-mono text-xs tabular-nums text-muted-foreground">
@@ -204,6 +221,24 @@ const FoodItem: React.FC<FoodItemProps> = ({
           </Button>
         ) : (
           <div className="flex items-center justify-end gap-0.5">
+            {ateIt && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      onClick={ateIt}
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Ate ${food.name}`}
+                      className="h-7 w-7 text-muted-foreground"
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Ate it</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>

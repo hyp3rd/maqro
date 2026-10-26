@@ -74,6 +74,45 @@ describe("LogMealSheet names its target", () => {
   });
 });
 
+describe("LogMealSheet eaten now or later", () => {
+  function renderWithChoice(later: boolean | null) {
+    const onLaterChange = vi.fn();
+    render(
+      <LogMealSheet
+        open
+        onOpenChange={() => {}}
+        meals={MEALS}
+        dayLabel="Today"
+        aiAvailable
+        initialMealId={2}
+        onMethod={() => {}}
+        onQuickLog={() => {}}
+        laterChoice={later === null ? undefined : { later, onLaterChange }}
+      />,
+    );
+    return { onLaterChange };
+  }
+
+  it("offers 'Eaten now / Later' on the method step, eaten now first", () => {
+    const { onLaterChange } = renderWithChoice(false);
+    expect(
+      screen.getByRole("radiogroup", { name: "When you eat it" }),
+    ).toBeTruthy();
+    expect(
+      screen
+        .getByRole("radio", { name: "Eaten now" })
+        .getAttribute("aria-checked"),
+    ).toBe("true");
+    fireEvent.click(screen.getByRole("radio", { name: "Later" }));
+    expect(onLaterChange).toHaveBeenCalledWith(true);
+  });
+
+  it("has no choice on another day", () => {
+    renderWithChoice(null);
+    expect(screen.queryByRole("radiogroup")).toBeNull();
+  });
+});
+
 describe("LogMealSheet focus", () => {
   /** The launcher has no Radix trigger: the tab bar's [+] opens it. */
   function Opener() {

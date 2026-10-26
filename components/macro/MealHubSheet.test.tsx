@@ -4,12 +4,26 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Meal } from "@maqro/core/types";
 import type { WorkoutMealsPlan } from "@maqro/core/workout-meals";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { MealHubSheet } from "./MealHubSheet";
 
 // The hub's data-backed children: stubs keep this test on its own actions.
 vi.mock("@/hooks/use-past-meals", () => ({ usePastMealsForSlot: () => [] }));
-vi.mock("./FoodSearchSheet", () => ({ FoodSearchSheet: () => null }));
+const search = vi.hoisted(() => ({
+  props: null as Record<string, unknown> | null,
+}));
+vi.mock("./FoodSearchSheet", () => ({
+  FoodSearchSheet: (p: Record<string, unknown>) => {
+    search.props = p;
+    return null;
+  },
+}));
 vi.mock("./QuickAddFoods", () => ({ QuickAddFoods: () => null }));
 vi.mock("./MealDetailSheet", () => ({ MealDetail: () => null }));
 
@@ -78,5 +92,44 @@ describe("MealHubSheet: an empty meal's shortcuts", () => {
     expect(
       within(hub).queryByRole("button", { name: "AI generate" }),
     ).toBeNull();
+  });
+});
+
+describe("MealHubSheet: eaten now or later", () => {
+  it("on today, offers the choice above the recents and hands it to its search", () => {
+    const onLaterChange = vi.fn();
+    const laterChoice = { later: true, onLaterChange };
+    render(
+      <MealHubSheet
+        meal={{ id: 3, name: "Dinner", foods: [] }}
+        customFoodsRev={0}
+        onLogFood={vi.fn()}
+        onQuickLog={vi.fn()}
+        intent="add"
+        onRemoveFood={vi.fn()}
+        onCopyMeal={vi.fn()}
+        onAddFromTemplate={vi.fn()}
+        onApplyRecipe={vi.fn()}
+        onRegenerate={vi.fn()}
+        regenerating={false}
+        regeneratingThisMeal={false}
+        onOpenChange={vi.fn()}
+        laterChoice={laterChoice}
+      />,
+    );
+    const hub = screen.getByRole("dialog");
+    expect(
+      within(hub)
+        .getByRole("radio", { name: "Later" })
+        .getAttribute("aria-checked"),
+    ).toBe("true");
+    fireEvent.click(within(hub).getByRole("radio", { name: "Eaten now" }));
+    expect(onLaterChange).toHaveBeenCalledWith(false);
+    expect(search.props?.laterChoice).toBe(laterChoice);
+  });
+
+  it("has no choice on another day", () => {
+    const hub = renderHub({ id: 3, name: "Dinner", foods: [] });
+    expect(within(hub).queryByRole("radiogroup")).toBeNull();
   });
 });

@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import {
+  Check,
   ChevronRight,
   Copy,
   GripVertical,
@@ -65,6 +66,13 @@ interface Props {
   replaceFood: (newFood: Food) => void;
   removeFood: (mealId: number, foodId: number) => void;
   duplicateFood: (mealId: number, foodId: number) => void;
+  /** Marks this food eaten now, when it is today's planned food (not
+   *  logged as eaten): the sheet leads with "Ate it". Absent on another
+   *  day. */
+  onAteIt?: () => void;
+  /** The meal is partly eaten: a planned row says "planned", to tell it
+   *  from the eaten ones. */
+  mealPartlyEaten?: boolean;
 }
 
 const FoodMobileCard: React.FC<Props> = ({
@@ -83,8 +91,11 @@ const FoodMobileCard: React.FC<Props> = ({
   replaceFood,
   removeFood,
   duplicateFood,
+  onAteIt,
+  mealPartlyEaten = false,
 }) => {
   const [sheetOpen, setSheetOpen] = useState(false);
+  const ateIt = food.loggedAt === undefined ? onAteIt : undefined;
   // Remove asks for an in-sheet confirm step before deleting, so every
   // delete is a bottom-sheet confirmation (never a silent removal).
   const [confirming, setConfirming] = useState(false);
@@ -124,6 +135,12 @@ const FoodMobileCard: React.FC<Props> = ({
       </span>
       <span style={{ color: "hsl(var(--macro-carbs))" }}>C{food.carbs}</span>
       <span style={{ color: "hsl(var(--macro-fat))" }}>F{food.fat}</span>
+      {ateIt && mealPartlyEaten && (
+        <>
+          <span className="text-muted-foreground/50">·</span>
+          <span className="text-muted-foreground">planned</span>
+        </>
+      )}
     </span>
   );
 
@@ -328,6 +345,16 @@ const FoodMobileCard: React.FC<Props> = ({
             </div>
           ) : (
             <div className="space-y-0.5 pt-1">
+              {ateIt && (
+                <SheetAction
+                  icon={Check}
+                  label="Ate it"
+                  onClick={() => {
+                    ateIt();
+                    setSheetOpen(false);
+                  }}
+                />
+              )}
               <SheetAction
                 icon={SlidersHorizontal}
                 label="Edit portion"

@@ -8,6 +8,7 @@ import {
 } from "@/lib/today/timeline";
 import { cn } from "@/lib/utils";
 import type * as React from "react";
+import { type MealTimeContext, mealMinute } from "@maqro/core/meal-order";
 import type { Meal } from "@maqro/core/types";
 
 const NODE = {
@@ -28,8 +29,9 @@ const NEXT = {
 
 /** The Today meal list on a rail that echoes the timing track: a filled
  *  node per logged meal (with the time its first food was logged), a
- *  dashed node for a planned one (food with no logged time — an AI
- *  auto-fill, a template; no time either), hollow nodes for empty slots,
+ *  dashed node for a planned one (food with no logged time — "Later", an
+ *  AI auto-fill — with the time it is planned for, fainter, when
+ *  `mealTimes` places it), hollow nodes for empty slots,
  *  and today's next slot to log — the first after the last LOGGED meal,
  *  empty or planned — highlighted. The time column is there
  *  only when some meal has a time, so an
@@ -40,17 +42,25 @@ export function MealRail({
   meals,
   date,
   today,
+  mealTimes,
   renderMeal,
   className,
 }: {
   meals: readonly Meal[];
   date: string;
   today: string;
+  /** What places a planned meal in time (`mealMinute`); without it a
+   *  planned meal has no time on the rail. */
+  mealTimes?: MealTimeContext;
   renderMeal: (meal: Meal) => React.ReactNode;
   className?: string;
 }) {
   const entries = railNodes(meals, relativeDay(date, today));
-  const starts = meals.map((meal) => mealStartMinute(meal, date));
+  const starts = meals.map((meal, i) =>
+    entries[i]?.node === "planned" && mealTimes
+      ? mealMinute(meal, mealTimes)
+      : mealStartMinute(meal, date),
+  );
   const timed = starts.some((start) => start !== null);
 
   return (
@@ -79,7 +89,12 @@ export function MealRail({
             {timed && (
               <span
                 data-part="time"
-                className="pt-[1.125rem] text-right font-mono text-xs leading-4 tabular-nums text-muted-foreground"
+                className={cn(
+                  "pt-[1.125rem] text-right font-mono text-xs leading-4 tabular-nums",
+                  entry.node === "planned"
+                    ? "text-faint-foreground"
+                    : "text-muted-foreground",
+                )}
               >
                 {start !== null ? formatClock(start) : ""}
               </span>

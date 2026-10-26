@@ -12,11 +12,12 @@ import type { RelativeDay } from "./timeline";
  *  - `planned`: the slot's food is intent, not a record — on today or a
  *    future day, none of its foods carries a `loggedAt`. Every path the UI
  *    presents as logging stamps one on today (search, recipe, template,
- *    a scheduled recipe, "Log this day", a photo), so this is the Meals
- *    card's AI Auto-fill, the demo's later meals, or anything put on a
- *    future day. A distinct node with no time on the rail; the track
- *    draws it hollow at the time it is planned for (`mealTicks`). A past
- *    day can't tell the two apart (logging to another day never stamps a
+ *    a scheduled recipe, "Log this day", a photo) unless the add flow
+ *    says "Later", so this is food added for later, the Meals card's AI
+ *    Auto-fill, the demo's later meals, or anything put on a future day.
+ *    A distinct node; the rail and the track show it at the time it is
+ *    planned for (`mealMinute`), the track's tick hollow. A past day
+ *    can't tell the two apart (logging to another day never stamps a
  *    time), so its food reads as logged.
  *  - `open`: an empty slot — skipped, still to come, or on a past or
  *    future day (a hollow node). */

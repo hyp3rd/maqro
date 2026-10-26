@@ -7,6 +7,7 @@ import {
   PORTION_PRESETS,
   SOURCE_LABEL,
   addedFoodMessage,
+  plannedFoodMessage,
 } from "@/lib/add-food-constants";
 import { cn } from "@/lib/utils";
 import { useRef, useState } from "react";
@@ -15,6 +16,7 @@ import { ChevronLeft, Loader2, Minus, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
+import { EatenNowToggle, type LaterChoice } from "./EatenNowToggle";
 import { MarketSwitcher } from "./MarketSwitcher";
 import { QuickAddFoods } from "./QuickAddFoods";
 import type { Food } from "./types";
@@ -35,6 +37,9 @@ type Props = {
    *  (not just up one step like `onBack`). Surfaced as a "Done" button so
    *  the user isn't left hunting for an exit after logging a few foods. */
   onDone: () => void;
+  /** "Eaten now / Later" under the search box, when adding to today: the
+   *  adds follow it (and their toast says which). */
+  laterChoice?: LaterChoice;
 };
 
 function clampGrams(n: number): number {
@@ -59,6 +64,7 @@ export function FoodSearchSheet({
   onLogFood,
   onBack,
   onDone,
+  laterChoice,
 }: Props) {
   // Scroll-lock, Escape, focus trap + restore — the shared overlay contract.
   // The search Input's autoFocus wins the initial focus (the hook honors it).
@@ -86,6 +92,7 @@ export function FoodSearchSheet({
           onLogFood={onLogFood}
           onBack={onBack}
           onDone={onDone}
+          laterChoice={laterChoice}
         />
       </div>
     </div>,
@@ -100,6 +107,7 @@ function FoodSearchBody({
   onLogFood,
   onBack,
   onDone,
+  laterChoice,
 }: {
   mealId: number | null;
   mealName: string;
@@ -107,6 +115,7 @@ function FoodSearchBody({
   onLogFood: (food: Food, mealId: number, grams: number) => void;
   onBack: () => void;
   onDone: () => void;
+  laterChoice: LaterChoice | undefined;
 }) {
   const [query, setQuery] = useState("");
   // The expanded result (its key) + the grams in its inline editor.
@@ -128,7 +137,10 @@ function FoodSearchBody({
     const wasInlineAdd = openKey === foodKey(food);
     onLogFood(food, mealId, portion);
     const kcal = Math.round((food.calories * portion) / 100);
-    toast.success(addedFoodMessage(food.name, portion, kcal, mealName));
+    const message = laterChoice?.later
+      ? plannedFoodMessage(food.name, portion, kcal, mealName)
+      : addedFoodMessage(food.name, portion, kcal, mealName);
+    toast.success(message);
     setOpenKey(null);
     if (wasInlineAdd) searchInputRef.current?.focus();
   }
@@ -194,6 +206,12 @@ function FoodSearchBody({
             <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
           )}
         </div>
+        {laterChoice && (
+          <EatenNowToggle
+            choice={laterChoice}
+            className="mt-2"
+          />
+        )}
       </div>
 
       <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto px-3 pt-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
