@@ -128,6 +128,11 @@ export type Meal = {
    *  older client keeps or drops it, so readers identify a workout meal
    *  with `workoutRole` (role, else name, else id). */
   role?: WorkoutMealRole;
+  /** The local time (`HH:MM`, 24 h) the meal is planned for, set when the
+   *  user times a planned meal; absent = its usual time (`mealMinute`).
+   *  Rides the `meals` JSONB like `role`; anything but a valid `HH:MM` is
+   *  ignored. */
+  plannedTime?: string;
 };
 
 /** One ingredient in a saved Recipe. We store the catalog reference by
