@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import { localInstant } from "@maqro/core/clock";
 import { orderDayMeals } from "@maqro/core/meal-order";
 import { offCodeFromFoodId } from "@maqro/core/off";
 import { quickAddMealId } from "@maqro/core/quick-add";
@@ -26,6 +27,7 @@ import { BodySummaryStrip } from "./components/macro/BodySummaryStrip";
 import { CameraSheet } from "./components/macro/CameraSheet";
 import { CustomFoodForm } from "./components/macro/CustomFoodForm";
 import { DayTypeSheet } from "./components/macro/DayTypeSheet";
+import type { LaterChoice } from "./components/macro/EatenNowToggle";
 import { FastingView } from "./components/macro/FastingView";
 import { FoodSearchSheet } from "./components/macro/FoodSearchSheet";
 import { GoalPhasesPlanner } from "./components/macro/GoalPhasesPlanner";
@@ -75,7 +77,7 @@ import { useTargets } from "./hooks/use-targets";
 import { useToday } from "./hooks/use-today";
 import { useUser } from "./hooks/use-user";
 import { useUsualMealMinutes } from "./hooks/use-usual-meal-minutes";
-import { addedFoodMessage } from "./lib/add-food-constants";
+import { addedFoodMessage, plannedFoodMessage } from "./lib/add-food-constants";
 import { aiWorkoutContext, requestAiMealPlan } from "./lib/ai-plan";
 import type { CoherenceIssue } from "./lib/ai/plan-coherence";
 import { toAiCustomFoods } from "./lib/ai/request-payload";
@@ -106,6 +108,7 @@ import { waterGoalMl } from "./lib/hydration";
 import { addFoodBasis, scaleFoodToItem } from "./lib/log-food";
 import { rescaleFoodMacros, scaleSubMacros } from "./lib/macros";
 import { getMarket, setHomeMarket } from "./lib/market";
+import { markEaten, unmarkEaten, withPlannedTime } from "./lib/meal-eaten";
 import { planDay, summarisePlan } from "./lib/meal-planner";
 import { recipeIngredientToFood } from "./lib/meal-prep-batch";
 import { aggregateBreakdownWithProfiles } from "./lib/micronutrients/aggregate";
@@ -127,7 +130,7 @@ import { bumpPending, useSyncStatus } from "./lib/sync-status";
 import { useDataRev } from "./lib/sync/data-bus";
 import { formatDayLabel } from "./lib/today/day-label";
 import { dayIntake } from "./lib/today/intake";
-import { relativeDay } from "./lib/today/timeline";
+import { formatClock, minuteOfDay, relativeDay } from "./lib/today/timeline";
 
 const DEFAULT_PROFILE: PersonalInfo = {
   displayName: null,
@@ -367,12 +370,6 @@ const MacroCalculator = () => {
   // the log launcher names the day it logs into with it, so nothing claims
   // "Today" while another day is on screen.
   const dayLabel = formatDayLabel(selectedDate, today);
-  // When food logged right now was eaten: now, on today. Logging to any other
-  // day (back-filling a past one, planning ahead) has no true hour, so it gets
-  // no time. Every path the UI presents as logging stamps its foods with this;
-  // only genuine planning (the Meals card's AI Auto-fill) leaves it unset, so
-  // the rail, the timeline and the fasting window can tell eaten from planned.
-  const eatenAt = (now: number) => (selectedDate === today ? now : undefined);
 
   // `day` + `commitToDay` serve the deferred writers (Undo toasts, AI plan
   // results) that resolve seconds after the render that started them,
@@ -625,6 +622,41 @@ const MacroCalculator = () => {
   // read-only insights body (see MealHubSheet's entry-dependent ordering).
   const [mealDetailId, setMealDetailId] = useState<number | null>(null);
   const [mealHubIntent, setMealHubIntent] = useState<MealHubIntent>("add");
+  // "Eaten now / Later" in the add flow on today (`EatenNowToggle`), held
+  // here so the launcher's choice carries into the tool it opens. Back to
+  // eaten now whenever no add surface is open, so every flow starts there
+  // and a direct action (a duplicate, a scheduled recipe's "Log") is never
+  // planned by a choice made in an earlier flow. Adjusted during render,
+  // like the quick-add request below; a hand-off between surfaces (launcher
+  // to tool, camera to the photo review) lands in one commit, so the flow
+  // never reads as closed in between.
+  const [logLater, setLogLater] = useState(false);
+  const addFlowOpen =
+    logMealOpen ||
+    foodSearchOpen ||
+    mealDetailId !== null ||
+    cameraSheetOpen ||
+    voiceSheetOpen ||
+    pairPhoneOpen ||
+    mealPhotoResult !== null ||
+    templateDialog?.kind === "apply" ||
+    applyRecipeMealId !== null;
+  if (logLater && !addFlowOpen) setLogLater(false);
+  const loggingLater = selectedDate === today && logLater;
+  const laterChoice: LaterChoice | undefined =
+    selectedDate === today
+      ? { later: logLater, onLaterChange: setLogLater }
+      : undefined;
+  // When food logged right now was eaten: now, on today. Logging to any other
+  // day (back-filling a past one, planning ahead) has no true hour, so it gets
+  // no time. Every path the UI presents as logging stamps its foods with this;
+  // only planning leaves it unset — "Later" in the add flow, or the Meals
+  // card's AI Auto-fill — so the rail, the timeline and the fasting window
+  // can tell eaten from planned.
+  const eatenAt = (now: number) =>
+    selectedDate === today && !logLater ? now : undefined;
+  // The add toast's words, for the same choice.
+  const foodAddedMessage = loggingLater ? plannedFoodMessage : addedFoodMessage;
   // Pulse signal for the most-recently-logged meal slot. A fresh object
   // each log (identity, not value, drives the consumer's effect) so the
   // target MealItem flashes + scrolls into view even when the same meal
@@ -1454,7 +1486,7 @@ const MacroCalculator = () => {
     const dest = meals.find((m) => m.id === mealId);
     if (!dest) return;
     const kcal = Math.round((food.calories * grams) / 100);
-    toast.success(addedFoodMessage(food.name, grams, kcal, dest.name));
+    toast.success(foodAddedMessage(food.name, grams, kcal, dest.name));
   };
 
   // Add the desktop inline form's current food to its target meal. Resolves the
@@ -1649,6 +1681,45 @@ const MacroCalculator = () => {
     });
   };
 
+  /** "Ate it": meal `mealId`'s planned foods `foodIds` eaten now (`minute`
+   *  null) or at `minute` earlier today — never later than now — with an
+   *  Undo. Today only: another day has no planned food to eat. */
+  const markFoodsEaten = (
+    mealId: number,
+    foodIds: readonly number[],
+    minute: number | null,
+  ) => {
+    const meal = meals.find((m) => m.id === mealId);
+    if (selectedDate !== today || !meal || foodIds.length === 0) return;
+    const now = Date.now();
+    const when =
+      minute === null ? now : Math.min(localInstant(today, minute), now);
+    setMeals(markEaten(meals, mealId, foodIds, when));
+    haptic("success");
+    // One food is named; the whole meal by the meal's name.
+    const one =
+      foodIds.length === 1 ? meal.foods.find((f) => f.id === foodIds[0]) : null;
+    const eatenMinute = minuteOfDay(when, today);
+    const at = eatenMinute === null ? "" : ` at ${formatClock(eatenMinute)}`;
+    toast(`${one?.name ?? meal.name} eaten${at}`, {
+      action: {
+        label: "Undo",
+        onClick: () =>
+          restoreIntoDay(
+            day,
+            (ms) => unmarkEaten(ms, mealId, foodIds, when),
+            [],
+          ),
+      },
+    });
+  };
+
+  /** Plans meal `mealId` for `time` (`HH:MM`), or back at its usual time
+   *  (`undefined`): where it sits on the timeline until it is eaten. */
+  const planMealFor = (mealId: number, time: string | undefined) => {
+    setMeals(withPlannedTime(meals, mealId, time));
+  };
+
   /** Re-insert an undone food at its original position (clamped) on the day
    *  it was removed from — the Undo path for `removeFood`. */
   const restoreRemovedFood = (
@@ -1724,7 +1795,9 @@ const MacroCalculator = () => {
       ...source,
       id: now + Math.random(),
       pantrySource: drawDown ?? undefined,
-      loggedAt: eatenAt(now),
+      // Another portion of what was eaten is eaten now; of a planned food,
+      // it is planned too.
+      loggedAt: source.loggedAt === undefined ? undefined : eatenAt(now),
     };
     const updatedMeals = meals.map((meal) => {
       if (meal.id !== mealId) return meal;
@@ -2648,6 +2721,14 @@ const MacroCalculator = () => {
             setMealDetailId(mealId);
             setMealHubIntent(intent ?? "add");
           }}
+          // "Ate it" on today's planned food; a planned time for a meal on
+          // today or a day ahead (a past day's food all counts as eaten).
+          onAteIt={selectedDate === today ? markFoodsEaten : undefined}
+          onPlanFor={
+            relativeDay(selectedDate, today) === "past"
+              ? undefined
+              : planMealFor
+          }
         />
       )}
 
@@ -2765,7 +2846,7 @@ const MacroCalculator = () => {
             logFoodToMeal(food, logTargetMealId, 100);
             if (dest)
               toast.success(
-                addedFoodMessage(
+                foodAddedMessage(
                   food.name,
                   100,
                   Math.round(food.calories),
@@ -2932,6 +3013,7 @@ const MacroCalculator = () => {
         regenerating={isGeneratingMealPlan}
         regeneratingThisMeal={generatingMealId === mealDetailId}
         workoutMeals={workoutMeals}
+        laterChoice={laterChoice}
         onOpenChange={(o) => {
           if (!o) setMealDetailId(null);
         }}
@@ -2951,6 +3033,7 @@ const MacroCalculator = () => {
         initialMealId={logFlowMealId}
         onMethod={handleLogMethod}
         onQuickLog={quickLogFood}
+        laterChoice={laterChoice}
         returnFocusTo={quickAddTriggerRef}
       />
 
@@ -2971,6 +3054,7 @@ const MacroCalculator = () => {
           setFoodSearchOpen(false);
           setLogFlowMealId(null);
         }}
+        laterChoice={laterChoice}
       />
 
       <OnboardingWizard
