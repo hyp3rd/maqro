@@ -1,5 +1,6 @@
 import { formatNumber } from "@/lib/i18n/number";
 import { describe, expect, it } from "vitest";
+import { localInstant } from "@maqro/core/clock";
 import type { Meal } from "@maqro/core/types";
 import {
   DAY_MINUTES,
@@ -62,6 +63,12 @@ describe("clock helpers", () => {
     expect(minuteOfDay(at(0, 30, 22), DAY)).toBeNull();
     expect(minuteOfDay(at(23, 30, 20), DAY)).toBeNull();
     expect(minuteOfDay(Number.NaN, DAY)).toBeNull();
+  });
+
+  it("builds the instant of a wall-clock minute on a day", () => {
+    expect(localInstant(DAY, 735)).toBe(at(12, 15));
+    expect(minuteOfDay(localInstant(DAY, 0), DAY)).toBe(0);
+    expect(minuteOfDay(localInstant(DAY, 1439), DAY)).toBe(1439);
   });
 
   it("uses the wall clock on a daylight-saving day (23 h long)", () => {
