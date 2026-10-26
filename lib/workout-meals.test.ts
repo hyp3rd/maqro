@@ -13,6 +13,7 @@ import {
   WORKOUT_MEALS_MAX_KCAL_SHARE,
   WORKOUT_MEALS_MAX_MACRO_SHARE,
   withoutEmptyWorkoutMeals,
+  plansMeal,
   withWorkoutMeal,
   workoutMealAt,
   workoutMealSettings,
@@ -452,6 +453,38 @@ describe("withWorkoutMeal / withoutEmptyWorkoutMeals", () => {
     ]);
     // Never the caller's array.
     expect(shown.map((m) => m.id)).toEqual([1, 2, 5, 6, 3, 4]);
+  });
+});
+
+describe("plansMeal", () => {
+  const monday = plan(day(MON));
+  const pre: Meal = {
+    id: 5,
+    name: "Pre-workout",
+    role: "preWorkout",
+    foods: [],
+  };
+  const post: Meal = {
+    id: 6,
+    name: "Post-workout",
+    role: "postWorkout",
+    foods: [SHAKE],
+  };
+
+  it("every regular meal, and the workout meals the day plans", () => {
+    for (const m of REGULAR) {
+      expect(plansMeal(m, monday)).toBe(true);
+      expect(plansMeal(m, null)).toBe(true);
+    }
+    expect(plansMeal(pre, monday)).toBe(true);
+    expect(plansMeal(post, monday)).toBe(true);
+  });
+
+  it("not a workout meal kept for its food on a rest day, or one turned off", () => {
+    expect(plansMeal(post, null)).toBe(false);
+    expect(plansMeal(pre, plan(day(MON), { pre: false, post: true }))).toBe(
+      false,
+    );
   });
 });
 

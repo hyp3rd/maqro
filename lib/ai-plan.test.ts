@@ -1,4 +1,4 @@
-import type { Food } from "@/components/macro/types";
+import type { Food, Meal } from "@/components/macro/types";
 import {
   AI_MAX_BIAS_ITEMS,
   AI_MAX_CUSTOM_FOODS,
@@ -8,7 +8,12 @@ import {
   AI_MAX_UNIT_CHARS,
 } from "@/lib/ai/request-limits";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { type AiPlanRequest, requestAiMealPlan } from "./ai-plan";
+import type { WorkoutMealsPlan } from "@maqro/core/workout-meals";
+import {
+  type AiPlanRequest,
+  aiWorkoutContext,
+  requestAiMealPlan,
+} from "./ai-plan";
 
 const { mockClientFetch } = vi.hoisted(() => ({ mockClientFetch: vi.fn() }));
 
@@ -134,5 +139,76 @@ describe("requestAiMealPlan", () => {
     await requestAiMealPlan(req);
 
     expect(sentBody()).toEqual(req);
+  });
+});
+
+describe("aiWorkoutContext", () => {
+  const AIMS = { protein: 30, carbs: 40, fat: 10, calories: 370 };
+  const PLAN: WorkoutMealsPlan = {
+    session: {
+      type: "upper",
+      intensity: "moderate",
+      time: "18:00",
+      durationMin: 60,
+    },
+    heavyOrLong: false,
+    fasted: false,
+    earlySession: false,
+    pre: {
+      role: "preWorkout",
+      id: 5,
+      name: "Pre-workout",
+      aims: AIMS,
+      window: { start: 15 * 60, end: 17 * 60 },
+      aimMinute: 16 * 60 + 30,
+    },
+    post: {
+      role: "postWorkout",
+      id: 6,
+      name: "Post-workout",
+      aims: AIMS,
+      window: null,
+      aimMinute: null,
+    },
+  };
+  const MEALS: Meal[] = [
+    { id: 1, name: "Breakfast", foods: [] },
+    { id: 5, name: "Pre-workout", role: "preWorkout", foods: [] },
+    // Renamed or renumbered by an older client: still the post-workout meal.
+    { id: 7, name: "Post-workout", foods: [] },
+  ];
+
+  it("each planned workout meal by its name, with its aims and window, and the session", () => {
+    expect(aiWorkoutContext(MEALS, PLAN)).toEqual({
+      workoutMeals: [
+        {
+          name: "Pre-workout",
+          role: "preWorkout",
+          aims: AIMS,
+          window: "15:00–17:00",
+        },
+        { name: "Post-workout", role: "postWorkout", aims: AIMS },
+      ],
+      session: "Upper · Moderate · 18:00 · 60 min",
+    });
+  });
+
+  it("nothing on a day without workout meals, or for meals the day doesn't show", () => {
+    expect(aiWorkoutContext(MEALS, null)).toEqual({});
+    expect(aiWorkoutContext([MEALS[0]], PLAN)).toEqual({});
+  });
+
+  it("the payload carries them as they are", async () => {
+    mockClientFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ meals: [] }), { status: 200 }),
+    );
+    await requestAiMealPlan(request(aiWorkoutContext(MEALS, PLAN)));
+    const body = JSON.parse(
+      (mockClientFetch.mock.lastCall?.[1] as { body: string }).body,
+    ) as AiPlanRequest;
+    expect(body.workoutMeals).toEqual(
+      aiWorkoutContext(MEALS, PLAN).workoutMeals,
+    );
+    expect(body.session).toBe("Upper · Moderate · 18:00 · 60 min");
   });
 });

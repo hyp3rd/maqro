@@ -123,6 +123,9 @@ const dayMeals = vi.hoisted(() => ({
 const writes = vi.hoisted(() => ({
   setMeals: vi.fn<(meals: Meal[]) => void>(),
   recipes: [] as Recipe[],
+  /** What each deferred edit (`commitToDay`) would write: its update run
+   *  against the day's stored meals (`null` = rejected as stale). */
+  commits: [] as (Meal[] | null)[],
 }));
 
 vi.mock("next/navigation", () => ({
@@ -155,7 +158,13 @@ vi.mock("./hooks/use-daily-log", () => ({
       setMeals: writes.setMeals,
       isHydrated,
       day: { date, epoch: 0 },
-      commitToDay: async () => true,
+      commitToDay: async (
+        _target: unknown,
+        update: (latest: Meal[]) => Meal[] | null,
+      ) => {
+        writes.commits.push(update(own));
+        return true;
+      },
     };
   },
 }));
@@ -163,7 +172,11 @@ vi.mock("./hooks/use-food-search", () => ({
   useFoodSearch: () => ({ results: [], isSearchingRemote: false }),
 }));
 vi.mock("./hooks/use-mobile", () => ({ useIsMobile: () => false }));
-vi.mock("./lib/ai-plan", () => ({ requestAiMealPlan }));
+vi.mock("./lib/ai-plan", async (importOriginal) => ({
+  // The real request builders (pure); only the network call is stubbed.
+  ...(await importOriginal<typeof import("./lib/ai-plan")>()),
+  requestAiMealPlan,
+}));
 vi.mock("./lib/db", async (importOriginal) => ({
   // The real `todayKey` (local day off the faked clock) and pure helpers;
   // every IndexedDB read the component makes is served empty.
@@ -324,6 +337,7 @@ beforeEach(() => {
   overridesRead.pending = null;
   writes.setMeals.mockReset();
   writes.recipes = [];
+  writes.commits = [];
   for (const key of Object.keys(ui.props)) delete ui.props[key];
   refreshAiUsage.mockReset();
   requestAiMealPlan.mockReset();
@@ -1412,7 +1426,64 @@ describe("macro-calculator: workout meals", () => {
     expect(writes.setMeals.mock.lastCall?.[0]).toEqual(MEALS);
   });
 
-  it("Auto-fill plans the regular meals to what the workout meals leave", async () => {
+  it("Auto-fill plans every meal the day plans, workout meals by their aims", async () => {
+    await renderTraining();
+    const BANANA: FoodItem = { ...SHAKE, id: 88, name: "Banana", protein: 1 };
+    // The route numbers its meals by position: never the app's ids.
+    requestAiMealPlan.mockResolvedValue({
+      kind: "ok",
+      meals: names(prop<Meal[]>("MealPlanner", "meals")).map((name, i) => ({
+        id: i + 1,
+        name,
+        foods: name === "Pre-workout" ? [BANANA] : [],
+      })),
+    });
+    await act(async () => {
+      await prop<() => Promise<void>>("MealPlanner", "generateMealPlan")();
+    });
+    const req = requestAiMealPlan.mock.lastCall?.[0];
+    expect(req?.mealNames).toEqual([
+      "Breakfast",
+      "Lunch",
+      "Pre-workout",
+      "Post-workout",
+      "Dinner",
+      "Snacks",
+    ]);
+    // The whole day; the workout meals carry their own aims and windows.
+    expect(req?.targets).toEqual({
+      protein: day.protein,
+      carbs: day.carbs,
+      fat: day.fat,
+      calories: day.targetCalories,
+    });
+    expect(req?.workoutMeals).toEqual([
+      {
+        name: "Pre-workout",
+        role: "preWorkout",
+        aims: plan?.pre?.aims,
+        window: "15:00–17:00",
+      },
+      {
+        name: "Post-workout",
+        role: "postWorkout",
+        aims: plan?.post?.aims,
+        window: "19:00–21:00",
+      },
+    ]);
+    expect(req?.session).toBe("Upper · Moderate · 18:00 · 60\u00a0min");
+    // The plan lands on the app's own meals: the pre-workout food in the
+    // pre-workout meal (id 5, its role kept), the empty post-workout meal
+    // not stored.
+    const written = writes.commits.at(-1) ?? [];
+    expect(written.map((m) => m.id)).toEqual([1, 2, 3, 4, 5]);
+    expect(written[4]).toMatchObject({ role: "preWorkout" });
+    expect(written[4]?.foods.map((f) => f.name)).toEqual(["Banana"]);
+  });
+
+  it("a workout meal kept for its food on a rest day keeps it; the day plans around it", async () => {
+    // A rest day (Monday): no plan, a post-workout meal kept with food.
+    vi.setSystemTime(new Date(2026, 5, 8, 12, 0, 0));
     dayMeals.override = [
       ...MEALS,
       { id: 6, name: "Post-workout", role: "postWorkout", foods: [SHAKE] },
@@ -1421,23 +1492,58 @@ describe("macro-calculator: workout meals", () => {
     await act(async () => {
       await prop<() => Promise<void>>("MealPlanner", "generateMealPlan")();
     });
+    const rest = targetsForDate(TRAINING, "2026-06-08", pro);
     const req = requestAiMealPlan.mock.lastCall?.[0];
     expect(req?.mealNames).toEqual(names(MEALS));
+    expect(req?.workoutMeals).toBeUndefined();
     expect(req?.targets).toEqual({
-      protein: day.protein - SHAKE.protein,
-      carbs: day.carbs - SHAKE.carbs,
-      fat: day.fat - SHAKE.fat,
-      calories: day.targetCalories - SHAKE.calories,
+      protein: rest.protein - SHAKE.protein,
+      carbs: rest.carbs - SHAKE.carbs,
+      fat: rest.fat - SHAKE.fat,
+      calories: rest.targetCalories - SHAKE.calories,
     });
+    expect(writes.commits.at(-1)?.at(-1)).toEqual(dayMeals.override[4]);
   });
 
-  it("regenerate never runs on a workout meal", async () => {
+  it("regenerate fills a workout meal against its aims and keeps its role", async () => {
     await renderTraining();
+    const BANANA: FoodItem = { ...SHAKE, id: 88, name: "Banana", protein: 1 };
+    requestAiMealPlan.mockResolvedValue({
+      kind: "ok",
+      meals: [{ id: 1, name: "Pre-workout", foods: [BANANA] }],
+    });
     await act(async () => {
       await prop<(mealId: number) => Promise<void>>(
         "MealPlanner",
         "onRegenerateMeal",
       )(5);
+    });
+    const req = requestAiMealPlan.mock.lastCall?.[0];
+    expect(req?.targetMealName).toBe("Pre-workout");
+    expect(req?.workoutMeals?.map((w) => w.name)).toEqual([
+      "Pre-workout",
+      "Post-workout",
+    ]);
+    const written = writes.commits.at(-1) ?? [];
+    expect(written.find((m) => m.id === 5)).toMatchObject({
+      name: "Pre-workout",
+      role: "preWorkout",
+      foods: [BANANA],
+    });
+  });
+
+  it("regenerate never runs on a workout meal kept for its food on a rest day", async () => {
+    vi.setSystemTime(new Date(2026, 5, 8, 12, 0, 0));
+    dayMeals.override = [
+      ...MEALS,
+      { id: 6, name: "Post-workout", role: "postWorkout", foods: [SHAKE] },
+    ];
+    await renderTraining();
+    await act(async () => {
+      await prop<(mealId: number) => Promise<void>>(
+        "MealPlanner",
+        "onRegenerateMeal",
+      )(6);
     });
     expect(requestAiMealPlan).not.toHaveBeenCalled();
   });

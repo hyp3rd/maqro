@@ -13,7 +13,9 @@ export type CoherenceIssue = {
     | "fish-and-meat"
     | "naked-carb"
     | "snack-monster"
-    | "low-day-protein";
+    | "low-day-protein"
+    | "pre-workout-fat"
+    | "post-workout-protein";
   message: string;
   /** Name of the meal slot the issue applies to (matches `Meal.name`).
    *  Absent for day-level checks like `low-day-protein` which apply
@@ -206,6 +208,24 @@ const LOW_DAY_PROTEIN_FRACTION = 0.6;
  *  one Breakfast slot, etc.). */
 const FULL_DAY_MIN_MEALS = 3;
 
+/** A pre-workout meal whose fat brings more than this share of its kcal is
+ *  flagged: fat slows digestion right before a session. */
+const PRE_WORKOUT_MAX_FAT_FRACTION = 0.3;
+/** A pre-workout meal under this many kcal is too small for the fat share
+ *  to matter. */
+const PRE_WORKOUT_MIN_KCAL = 100;
+/** A post-workout meal with less protein than this share of its aim is
+ *  flagged - the same slack the day-level protein rule gives. */
+const POST_WORKOUT_MIN_PROTEIN_FRACTION = 0.6;
+
+/** A training day's workout meal as the planner was asked for it: which
+ *  slot (by name), what it's for, and its protein aim (g). */
+export type WorkoutMealCheck = {
+  name: string;
+  role: "preWorkout" | "postWorkout";
+  aims: { protein: number };
+};
+
 function lowerName(f: FoodItem): string {
   return f.name.toLowerCase();
 }
@@ -335,6 +355,32 @@ function checkSnackMonster(meal: Meal): CoherenceIssue | null {
   };
 }
 
+function checkPreWorkoutFat(meal: Meal): CoherenceIssue | null {
+  const kcal = totalKcal(meal);
+  if (kcal < PRE_WORKOUT_MIN_KCAL) return null;
+  const fatFrac = totalFatKcal(meal) / kcal;
+  if (fatFrac <= PRE_WORKOUT_MAX_FAT_FRACTION) return null;
+  return {
+    code: "pre-workout-fat",
+    message: `${meal.name} gets ${Math.round(fatFrac * 100)}% of its kcal from fat - fat slows digestion right before training. Swap the fatty food for quick carbs such as fruit, bread or rice.`,
+    mealName: meal.name,
+  };
+}
+
+function checkPostWorkoutProtein(
+  meal: Meal,
+  aimProtein: number,
+): CoherenceIssue | null {
+  if (aimProtein <= 0) return null;
+  const protein = meal.foods.reduce((acc, f) => acc + f.protein, 0);
+  if (protein >= POST_WORKOUT_MIN_PROTEIN_FRACTION * aimProtein) return null;
+  return {
+    code: "post-workout-protein",
+    message: `${meal.name} has only ${Math.round(protein)} g protein (aim ${aimProtein} g). Add a protein source such as Greek yogurt, eggs, chicken or a protein shake.`,
+    mealName: meal.name,
+  };
+}
+
 function checkLowDayProtein(
   meals: Meal[],
   targets: { protein: number },
@@ -359,16 +405,21 @@ function checkLowDayProtein(
  *  array means the plan passed every check. The route feeds the
  *  `message`s back to the AI on a retry; the client surfaces them to
  *  the user when the loop exhausts iterations without producing a
- *  clean plan. */
+ *  clean plan. `workoutMeals` (a training day's) adds their own rules:
+ *  a light pre-workout meal, a protein-forward post-workout one. */
 export function validatePlanCoherence(
   meals: Meal[],
   targets: { protein: number; calories: number },
+  workoutMeals: readonly WorkoutMealCheck[] = [],
 ): CoherenceIssue[] {
   const issues: CoherenceIssue[] = [];
   for (const meal of meals) {
     // Skip empty meals - they're a different kind of problem (handled
     // by the route's "every meal empty" 502 path).
     if (meal.foods.length === 0) continue;
+    const workout = workoutMeals.find(
+      (w) => w.name.toLowerCase() === meal.name.toLowerCase(),
+    );
     const perMeal = [
       checkStandaloneFat(meal),
       checkMultiFish(meal),
@@ -376,6 +427,10 @@ export function validatePlanCoherence(
       checkFishAndMeat(meal),
       checkNakedCarb(meal),
       checkSnackMonster(meal),
+      workout?.role === "preWorkout" ? checkPreWorkoutFat(meal) : null,
+      workout?.role === "postWorkout"
+        ? checkPostWorkoutProtein(meal, workout.aims.protein)
+        : null,
     ].filter((x): x is CoherenceIssue => x !== null);
     issues.push(...perMeal);
   }

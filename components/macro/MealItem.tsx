@@ -22,7 +22,11 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import type { WorkoutMealRole } from "@maqro/core/types";
-import { type WorkoutMealsPlan, workoutRole } from "@maqro/core/workout-meals";
+import {
+  type WorkoutMealsPlan,
+  plansMeal,
+  workoutRole,
+} from "@maqro/core/workout-meals";
 import {
   Food,
   FoodItem as FoodItemType,
@@ -311,9 +315,9 @@ const MealItem: React.FC<MealItemProps> = ({
                   <DropdownMenuSeparator />
                 </>
               )}
-              {/* AI planning fills the regular meals; a workout meal has no
-                  AI generate until the planner sizes it by its role. */}
-              {role === null && (
+              {/* Any meal the day plans; not a workout meal kept for its
+                  food after the day flipped to rest (it has no aims). */}
+              {plansMeal(meal, workoutMeals) && (
                 <DropdownMenuItem
                   onClick={() => onRegenerate(meal.id)}
                   disabled={regenerating}

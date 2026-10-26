@@ -97,6 +97,21 @@ const MealWire = z.object({
   foods: z.array(FoodItemWire).max(AI_MAX_FOODS_PER_MEAL),
 });
 
+/** A training day's workout meal (@maqro/core/workout-meals), named as one
+ *  of `mealNames`: what it's for, its own aims and, when the session has a
+ *  start time, its eating window as the app shows it ("14:30–16:30"). */
+const WorkoutMealWire = z.object({
+  name: MealSlotName,
+  role: z.enum(["preWorkout", "postWorkout"]),
+  aims: z.object({
+    protein: z.number().nonnegative(),
+    carbs: z.number().nonnegative(),
+    fat: z.number().nonnegative(),
+    calories: z.number().nonnegative(),
+  }),
+  window: z.string().max(AI_MAX_LABEL_CHARS).optional(),
+});
+
 const BodySchema = z.object({
   targets: z.object({
     protein: z.number().nonnegative(),
@@ -124,7 +139,21 @@ const BodySchema = z.object({
   /** ISO shopping-market code that biases the AI's Open Food Facts lookups
    *  toward that country (matches the manual search). Absent → global. */
   market: z.string().max(8).optional(),
+  /** A training day's workout meals among `mealNames`: each gets its own
+   *  aims and role rules. Absent on a rest day (and from older clients). */
+  workoutMeals: z.array(WorkoutMealWire).max(2).optional(),
+  /** The day's training session as the app names it ("Lower · Hard ·
+   *  17:30 · 75 min"), for the workout meals' context. */
+  session: z.string().max(AI_MAX_LABEL_CHARS).optional(),
 });
+
+/** What each workout meal is for, in the planner's own terms. */
+const WORKOUT_MEAL_RULES: Record<"preWorkout" | "postWorkout", string> = {
+  preWorkout:
+    "Eaten before training: light and quick to digest - carbs (fruit, bread, rice, oats) with some protein (yogurt, milk, eggs), little fat and fibre. A snack, not a full plate.",
+  postWorkout:
+    "Eaten after training: protein first (Greek yogurt, eggs, chicken, fish, tofu, a protein shake) with carbs to refuel.",
+};
 
 /** Static type the route uses after parseBody returns. Same shape as
  *  the Zod inference but with the wire-stripped Food/Meal swapped
@@ -226,10 +255,28 @@ export async function POST(req: Request): Promise<NextResponse> {
     .map((d) => d.trim().toLowerCase())
     .filter(Boolean);
 
+  // A training day's workout meals take their own aims; the other meals
+  // share the rest of the day the usual way.
+  const workoutMeals = body.workoutMeals ?? [];
+  const workoutNames = new Set(workoutMeals.map((w) => w.name.toLowerCase()));
+  const regularSlots = body.mealNames.filter(
+    (n) => !workoutNames.has(n.toLowerCase()),
+  );
   const distributionHint =
-    body.mealNames.length === 4
-      ? "Roughly 25% Breakfast, 35% Lunch, 30% Dinner, 10% Snacks."
+    regularSlots.length === 4
+      ? workoutMeals.length > 0
+        ? "The workout meals take their own aims (below); split the rest roughly 25% Breakfast, 35% Lunch, 30% Dinner, 10% Snacks."
+        : "Roughly 25% Breakfast, 35% Lunch, 30% Dinner, 10% Snacks."
       : "Spread the targets across the meal slots in a sensible way.";
+  const workoutBlock =
+    workoutMeals.length > 0
+      ? `\n- WORKOUT MEALS - today has a training session${body.session ? ` (${body.session})` : ""}. Hit each one's aim closely; plan the other meals to the rest of the day's targets:\n${workoutMeals
+          .map(
+            (w) =>
+              `  - "${w.name}"${w.window ? ` (eaten ${w.window})` : ""}: about ${w.aims.protein} g protein, ${w.aims.carbs} g carbs, ${w.aims.fat} g fat (${w.aims.calories} kcal). ${WORKOUT_MEAL_RULES[w.role]}`,
+          )
+          .join("\n")}`
+      : "";
 
   const catalogLines = seedCatalog
     .map(
@@ -343,7 +390,7 @@ OTHER RULES:
 - Distribution: ${distributionHint}
 - ${cuisineLine}
 - ${allergyLine}
-- ${dislikeLine}${refinementBlock}${targetMealBlock}${recentEatenBlock}${pantryBlock}
+- ${dislikeLine}${workoutBlock}${refinementBlock}${targetMealBlock}${recentEatenBlock}${pantryBlock}
 
 FOOD LOOKUP:
 
@@ -616,10 +663,14 @@ Plan the day. Use search_open_food_facts as needed, then call submit_meal_plan.`
         const skipCoherence = !!targetMealName;
         const coherenceIssues = skipCoherence
           ? []
-          : validatePlanCoherence(previewMeals, {
-              protein: body.targets.protein,
-              calories: body.targets.calories,
-            });
+          : validatePlanCoherence(
+              previewMeals,
+              {
+                protein: body.targets.protein,
+                calories: body.targets.calories,
+              },
+              workoutMeals,
+            );
         if (coherenceIssues.length > 0 && !isLastIteration) {
           toolResults.push({
             type: "tool_result",

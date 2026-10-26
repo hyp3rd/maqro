@@ -104,7 +104,11 @@ monthly AI cap:
 - **`/api/meal-plan`** - Sonnet 4.6 multi-turn agent loop with
   programmatic coherence validation (rejects single-fat meals,
   multi-fish dinners, etc.) and a retry loop that surfaces complaints
-  back to the model. Falls back to the deterministic solver.
+  back to the model. On a training day the request names the workout
+  meals (role, aims, eating window) and the session: the prompt gives
+  them their own aims and rules, and the validator checks that a
+  pre-workout meal stays light on fat and a post-workout one brings its
+  protein. Falls back to the deterministic solver.
 - **`/api/recipes/generate`** - Haiku 4.5 generates one recipe
   (4–10 ingredients) honoring diet / cuisine / allergy settings.
 - **`/api/identify-meal`** - Sonnet 4.6 vision: photo → structured

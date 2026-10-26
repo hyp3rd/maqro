@@ -377,6 +377,17 @@ export function withoutEmptyWorkoutMeals(stored: readonly Meal[]): Meal[] {
     .sort((a, b) => a.id - b.id);
 }
 
+/** Whether the day plans `meal` — what the planners (AI and formula) fill:
+ *  every regular meal and the workout meals in `plan`, but not a workout
+ *  meal kept for its food after the day flipped to rest (it has no aims). */
+export function plansMeal(
+  meal: Pick<Meal, "id" | "name" | "role">,
+  plan: WorkoutMealsPlan | null,
+): boolean {
+  const role = workoutRole(meal);
+  return role === null || planned(plan, role) !== null;
+}
+
 /** The workout meal whose eating window holds `minute` (minutes after local
  *  midnight), or `null`: what to log into right now around a session. */
 export function workoutMealAt(

@@ -516,3 +516,192 @@ describe("/api/meal-plan POST — metering", () => {
     expect(mockCreate).not.toHaveBeenCalled();
   });
 });
+
+describe("/api/meal-plan POST — a training day's workout meals", () => {
+  beforeEach(() => {
+    mockCreate.mockReset();
+    vi.mocked(offSearch.searchOpenFoodFactsServer).mockReset();
+  });
+
+  const TRAINING_DAY = {
+    targets: { protein: 160, carbs: 260, fat: 85, calories: 2450 },
+    dietPreference: "omnivore" as const,
+    mealNames: [
+      "Breakfast",
+      "Lunch",
+      "Pre-workout",
+      "Post-workout",
+      "Dinner",
+      "Snacks",
+    ],
+    workoutMeals: [
+      {
+        name: "Pre-workout",
+        role: "preWorkout",
+        aims: { protein: 30, carbs: 55, fat: 5, calories: 385 },
+        window: "14:30–16:30",
+      },
+      {
+        name: "Post-workout",
+        role: "postWorkout",
+        aims: { protein: 30, carbs: 55, fat: 15, calories: 475 },
+        window: "18:45–20:45",
+      },
+    ],
+    session: "Lower · Hard · 17:30 · 75 min",
+  };
+
+  /** A full day the coherence rules accept; `post` is the post-workout
+   *  meal's foods. */
+  const dayPlan = (post: { name: string; portionGrams: number }[]) => ({
+    meals: [
+      {
+        name: "Breakfast",
+        foods: [
+          { name: "Oats", portionGrams: 60 },
+          { name: "Greek Yogurt", portionGrams: 200 },
+        ],
+      },
+      {
+        name: "Lunch",
+        foods: [
+          { name: "Chicken Breast", portionGrams: 150 },
+          { name: "Brown Rice", portionGrams: 200 },
+        ],
+      },
+      {
+        name: "Pre-workout",
+        foods: [
+          { name: "Banana", portionGrams: 120 },
+          { name: "Greek Yogurt", portionGrams: 150 },
+        ],
+      },
+      { name: "Post-workout", foods: post },
+      {
+        name: "Dinner",
+        foods: [
+          { name: "Chicken Breast", portionGrams: 150 },
+          { name: "White Rice", portionGrams: 200 },
+        ],
+      },
+      { name: "Snacks", foods: [{ name: "Apple", portionGrams: 150 }] },
+    ],
+  });
+
+  const submit = (id: string, input: unknown) => ({
+    id,
+    content: [
+      { type: "tool_use", id: `t-${id}`, name: "submit_meal_plan", input },
+    ],
+    stop_reason: "tool_use",
+  });
+
+  const systemText = (params: { system: unknown }) =>
+    (params.system as Array<{ text: string }>).map((b) => b.text).join("\n");
+
+  it("gives each workout meal its aims, window and rules in the prompt", async () => {
+    const captured: Array<{ system: unknown }> = [];
+    mockCreate.mockImplementation(async (params: { system: unknown }) => {
+      captured.push(structuredClone(params));
+      return submit(
+        "m1",
+        dayPlan([
+          { name: "Greek Yogurt", portionGrams: 300 },
+          { name: "Banana", portionGrams: 120 },
+        ]),
+      );
+    });
+
+    const res = await POST(makeRequest(TRAINING_DAY));
+    expect(res.status).toBe(200);
+    const text = systemText(captured[0]);
+    expect(text).toContain(
+      "WORKOUT MEALS - today has a training session (Lower · Hard · 17:30 · 75 min)",
+    );
+    expect(text).toContain(
+      '"Pre-workout" (eaten 14:30–16:30): about 30 g protein, 55 g carbs, 5 g fat (385 kcal). Eaten before training: light and quick to digest',
+    );
+    expect(text).toContain(
+      '"Post-workout" (eaten 18:45–20:45): about 30 g protein, 55 g carbs, 15 g fat (475 kcal). Eaten after training: protein first',
+    );
+    expect(text).toContain(
+      "The workout meals take their own aims (below); split the rest roughly 25% Breakfast, 35% Lunch, 30% Dinner, 10% Snacks.",
+    );
+    const json = (await res.json()) as { meals: { name: string }[] };
+    expect(json.meals.map((m) => m.name)).toEqual(TRAINING_DAY.mealNames);
+  });
+
+  it("a request without workout meals keeps today's prompt", async () => {
+    const captured: Array<{ system: unknown }> = [];
+    mockCreate.mockImplementation(async (params: { system: unknown }) => {
+      captured.push(structuredClone(params));
+      return submit("m1", {
+        meals: [
+          {
+            name: "Breakfast",
+            foods: [
+              { name: "Oats", portionGrams: 60 },
+              { name: "Greek Yogurt", portionGrams: 200 },
+            ],
+          },
+        ],
+      });
+    });
+    const res = await POST(
+      makeRequest({
+        ...SAMPLE_BODY,
+        mealNames: ["Breakfast", "Lunch", "Dinner", "Snacks"],
+      }),
+    );
+    expect(res.status).toBe(200);
+    const text = systemText(captured[0]);
+    expect(text).toContain(
+      "Roughly 25% Breakfast, 35% Lunch, 30% Dinner, 10% Snacks.",
+    );
+    expect(text).not.toContain("WORKOUT MEALS");
+  });
+
+  it("sends a post-workout meal short of its protein aim back to be fixed", async () => {
+    const captured: Array<{ messages: unknown[] }> = [];
+    const scripted = [
+      // Apple alone: well under 60% of the 30 g aim.
+      submit("m1", dayPlan([{ name: "Apple", portionGrams: 200 }])),
+      submit(
+        "m2",
+        dayPlan([
+          { name: "Greek Yogurt", portionGrams: 300 },
+          { name: "Banana", portionGrams: 120 },
+        ]),
+      ),
+    ];
+    mockCreate.mockImplementation(async (params: { messages: unknown[] }) => {
+      captured.push(structuredClone(params));
+      const next = scripted.shift();
+      if (!next) throw new Error("unexpected extra mockCreate call");
+      return next;
+    });
+
+    const res = await POST(makeRequest(TRAINING_DAY));
+    expect(res.status).toBe(200);
+    expect(captured).toHaveLength(2);
+    const turn2 = captured[1].messages;
+    const retry = turn2[turn2.length - 1] as {
+      content: Array<{ is_error?: boolean; content?: string }>;
+    };
+    expect(retry.content[0].is_error).toBe(true);
+    expect(retry.content[0].content).toMatch(
+      /Post-workout has only \d+ g protein \(aim 30 g\)/,
+    );
+  });
+
+  it("rejects a workout meal with an unknown role before any model call", async () => {
+    const res = await POST(
+      makeRequest({
+        ...TRAINING_DAY,
+        workoutMeals: [{ ...TRAINING_DAY.workoutMeals[0], role: "midWorkout" }],
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+});
