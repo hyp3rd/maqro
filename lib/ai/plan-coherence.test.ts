@@ -240,3 +240,86 @@ describe("validatePlanCoherence", () => {
     expect(lowProtein?.mealName).toBeUndefined();
   });
 });
+
+describe("validatePlanCoherence — a training day's workout meals", () => {
+  const WORKOUT = [
+    { name: "Pre-workout", role: "preWorkout" as const, aims: { protein: 30 } },
+    {
+      name: "Post-workout",
+      role: "postWorkout" as const,
+      aims: { protein: 30 },
+    },
+  ];
+
+  it("flags a fatty pre-workout meal", () => {
+    const meals = [
+      ...baselineMeals(),
+      meal("Pre-workout", [
+        food("Banana", { protein: 1, carbs: 23, fat: 0 }, 120),
+        food("Greek Yogurt", { protein: 10, carbs: 4, fat: 0 }, 150),
+        food("Almonds", { protein: 21, carbs: 22, fat: 50 }, 30),
+      ]),
+    ];
+    const issues = validatePlanCoherence(meals, DEFAULT_TARGETS, WORKOUT);
+    const fat = issues.find((i) => i.code === "pre-workout-fat");
+    expect(fat?.mealName).toBe("Pre-workout");
+    expect(fat?.message).toMatch(/% of its kcal from fat/);
+  });
+
+  it("a light, carb-led pre-workout meal passes", () => {
+    const meals = [
+      ...baselineMeals(),
+      meal("Pre-workout", [
+        food("Banana", { protein: 1, carbs: 23, fat: 0.3 }, 120),
+        food("Greek Yogurt", { protein: 10, carbs: 4, fat: 0.4 }, 150),
+      ]),
+    ];
+    expect(
+      validatePlanCoherence(meals, DEFAULT_TARGETS, WORKOUT).filter(
+        (i) => i.mealName === "Pre-workout",
+      ),
+    ).toEqual([]);
+  });
+
+  it("flags a post-workout meal well under its protein aim", () => {
+    const low = meal("Post-workout", [
+      food("Rice Cakes", { protein: 2, carbs: 30, fat: 1 }, 40),
+      food("Apple", { protein: 0.3, carbs: 14, fat: 0.2 }, 150),
+    ]);
+    const issues = validatePlanCoherence(
+      [...baselineMeals(), low],
+      DEFAULT_TARGETS,
+      WORKOUT,
+    );
+    const protein = issues.find((i) => i.code === "post-workout-protein");
+    expect(protein?.mealName).toBe("Post-workout");
+    expect(protein?.message).toMatch(/aim 30 g/);
+    // 17 + 1 = 18 g is exactly 60% of 30: enough.
+    const enough = meal("Post-workout", [
+      food("Greek Yogurt", { protein: 17, carbs: 8, fat: 0.8 }, 200),
+      food("Banana", { protein: 1, carbs: 23, fat: 0.3 }, 100),
+    ]);
+    expect(
+      validatePlanCoherence(
+        [...baselineMeals(), enough],
+        DEFAULT_TARGETS,
+        WORKOUT,
+      ).filter((i) => i.code === "post-workout-protein"),
+    ).toEqual([]);
+  });
+
+  it("no workout rules without workout meals, whatever the slot is called", () => {
+    const meals = [
+      ...baselineMeals(),
+      meal("Pre-workout", [
+        food("Almonds", { protein: 21, carbs: 22, fat: 50 }, 40),
+        food("Banana", { protein: 1, carbs: 23, fat: 0 }, 120),
+      ]),
+    ];
+    expect(
+      validatePlanCoherence(meals, DEFAULT_TARGETS).filter((i) =>
+        i.code.includes("workout"),
+      ),
+    ).toEqual([]);
+  });
+});
