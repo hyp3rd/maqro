@@ -16,6 +16,14 @@ import {
 } from "@/lib/ai/request-payload";
 import { clientFetch } from "@/lib/auth/client-fetch";
 import type { MarketCode } from "@/lib/markets";
+import { formatClock } from "@/lib/today/timeline";
+import { sessionLabel } from "@/lib/training-labels";
+import type { WorkoutMealRole } from "@maqro/core/types";
+import {
+  type MacroAims,
+  type WorkoutMealsPlan,
+  workoutRole,
+} from "@maqro/core/workout-meals";
 
 export type AiPlanRequest = {
   targets: { protein: number; carbs: number; fat: number; calories: number };
@@ -55,7 +63,43 @@ export type AiPlanRequest = {
   /** Optional: the active shopping market — biases the AI's Open Food Facts
    *  lookups toward that country (matches the manual food search). */
   market?: MarketCode;
+  /** Optional: a training day's workout meals among `mealNames`, each with
+   *  its own aims and eating window (`aiWorkoutContext`). */
+  workoutMeals?: {
+    name: string;
+    role: WorkoutMealRole;
+    aims: MacroAims;
+    window?: string;
+  }[];
+  /** Optional: the day's session as the app names it, for their context. */
+  session?: string;
 };
+
+/** The workout-meal part of a plan request for `meals` (the day as shown):
+ *  each workout meal the day plans, by the name it has there, with its aims
+ *  and eating window, and the session. Empty on a day without them. */
+export function aiWorkoutContext(
+  meals: readonly Meal[],
+  plan: WorkoutMealsPlan | null,
+): Pick<AiPlanRequest, "workoutMeals" | "session"> {
+  if (!plan) return {};
+  const workoutMeals = [plan.pre, plan.post].flatMap((slot) => {
+    const meal = slot && meals.find((m) => workoutRole(m) === slot.role);
+    if (!slot || !meal) return [];
+    return [
+      {
+        name: meal.name,
+        role: slot.role,
+        aims: slot.aims,
+        ...(slot.window && {
+          window: `${formatClock(slot.window.start)}–${formatClock(slot.window.end)}`,
+        }),
+      },
+    ];
+  });
+  if (workoutMeals.length === 0) return {};
+  return { workoutMeals, session: sessionLabel(plan.session) };
+}
 
 /** Result of asking the AI for a meal plan. `kind: "ok"` always carries
  * a usable `meals` array; everything else carries enough info for the

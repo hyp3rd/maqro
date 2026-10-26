@@ -4,7 +4,7 @@ import { usePastMealsForSlot } from "@/hooks/use-past-meals";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { LayoutGrid, Plus, Soup, Sparkles, Trash2 } from "lucide-react";
-import { workoutRole } from "@maqro/core/workout-meals";
+import { type WorkoutMealsPlan, plansMeal } from "@maqro/core/workout-meals";
 import { Button } from "../ui/button";
 import {
   Dialog,
@@ -59,6 +59,9 @@ type Props = {
   regenerating: boolean;
   regeneratingThisMeal: boolean;
   onOpenChange: (open: boolean) => void;
+  /** The day's workout meals (`workoutMealsForDay`): which of its workout
+   *  meals the AI can generate. */
+  workoutMeals?: WorkoutMealsPlan | null;
 };
 
 /** Per-meal hub you "step into" from a meal card: quick-add recents (one tap
@@ -81,6 +84,7 @@ export function MealHubSheet({
   regenerating,
   regeneratingThisMeal,
   onOpenChange,
+  workoutMeals = null,
 }: Props) {
   const [searchOpen, setSearchOpen] = useState(false);
 
@@ -123,6 +127,7 @@ export function MealHubSheet({
               onRegenerate={onRegenerate}
               regenerating={regenerating}
               regeneratingThisMeal={regeneratingThisMeal}
+              workoutMeals={workoutMeals}
               onOpenSearch={() => setSearchOpen(true)}
               onClose={() => onOpenChange(false)}
             />
@@ -163,6 +168,7 @@ function MealHubBody({
   onRegenerate,
   regenerating,
   regeneratingThisMeal,
+  workoutMeals,
   onOpenSearch,
   onClose,
 }: {
@@ -177,14 +183,15 @@ function MealHubBody({
   onRegenerate: (mealId: number) => void;
   regenerating: boolean;
   regeneratingThisMeal: boolean;
+  workoutMeals: WorkoutMealsPlan | null;
   onOpenSearch: () => void;
   onClose: () => void;
 }) {
   const pastMeals = usePastMealsForSlot(meal.name);
   const hasFoods = meal.foods.length > 0;
-  // AI planning fills the regular meals; a workout meal has no AI generate
-  // until the planner sizes it by its role.
-  const aiGenerates = workoutRole(meal) === null;
+  // Any meal the day plans; not a workout meal kept for its food after the
+  // day flipped to rest (it has no aims).
+  const aiGenerates = plansMeal(meal, workoutMeals);
   const totalKcal = Math.round(meal.foods.reduce((s, f) => s + f.calories, 0));
 
   // A single prominent action that opens the dedicated food-search sheet

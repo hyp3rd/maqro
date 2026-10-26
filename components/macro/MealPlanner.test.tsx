@@ -699,28 +699,44 @@ describe("Today: a training day's workout meals", () => {
     ).toBeTruthy();
   });
 
-  it("a workout meal offers no AI generate; a regular meal does", async () => {
+  const menu = async (meal: string) => {
+    await act(async () => {
+      fireEvent.keyDown(
+        screen.getByRole("button", { name: `${meal} actions` }),
+        { key: "Enter" },
+      );
+    });
+    return screen.getByRole("menu");
+  };
+
+  it("a planned workout meal offers AI generate, like a regular meal", async () => {
     renderPlanner({ meals: shown, workoutMeals: plan });
-    const menu = async (meal: string) => {
-      await act(async () => {
-        fireEvent.keyDown(
-          screen.getByRole("button", { name: `${meal} actions` }),
-          { key: "Enter" },
-        );
-      });
-      return screen.getByRole("menu");
-    };
     expect(
-      within(await menu("Pre-workout")).queryByRole("menuitem", {
-        name: /generate/i,
+      within(await menu("Pre-workout")).getByRole("menuitem", {
+        name: "Generate (AI)",
       }),
-    ).toBeNull();
+    ).toBeTruthy();
     fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
     expect(
       within(await menu("Dinner")).getByRole("menuitem", {
         name: "Generate (AI)",
       }),
     ).toBeTruthy();
+  });
+
+  it("a workout meal kept for its food on a rest day has no AI generate", async () => {
+    const kept: Meal = {
+      id: 6,
+      name: "Post-workout",
+      role: "postWorkout",
+      foods: [food(9, 210)],
+    };
+    renderPlanner({ meals: [...MEALS, kept], workoutMeals: null });
+    expect(
+      within(await menu("Post-workout")).queryByRole("menuitem", {
+        name: /generate/i,
+      }),
+    ).toBeNull();
   });
 
   it("brackets their eating windows on the timeline", () => {

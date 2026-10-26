@@ -3,6 +3,7 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Meal } from "@maqro/core/types";
+import type { WorkoutMealsPlan } from "@maqro/core/workout-meals";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { MealHubSheet } from "./MealHubSheet";
 
@@ -14,7 +15,25 @@ vi.mock("./MealDetailSheet", () => ({ MealDetail: () => null }));
 
 afterEach(() => cleanup());
 
-function renderHub(meal: Meal) {
+const PRE: Meal = { id: 5, name: "Pre-workout", role: "preWorkout", foods: [] };
+const AIMS = { protein: 30, carbs: 40, fat: 10, calories: 370 };
+const PLAN: WorkoutMealsPlan = {
+  session: { type: "upper", time: "18:00", durationMin: 60 },
+  heavyOrLong: false,
+  fasted: false,
+  earlySession: false,
+  pre: {
+    role: "preWorkout",
+    id: 5,
+    name: "Pre-workout",
+    aims: AIMS,
+    window: { start: 15 * 60, end: 17 * 60 },
+    aimMinute: 16 * 60 + 30,
+  },
+  post: null,
+};
+
+function renderHub(meal: Meal, workoutMeals: WorkoutMealsPlan | null = null) {
   render(
     <MealHubSheet
       meal={meal}
@@ -30,6 +49,7 @@ function renderHub(meal: Meal) {
       regenerating={false}
       regeneratingThisMeal={false}
       onOpenChange={vi.fn()}
+      workoutMeals={workoutMeals}
     />,
   );
   return screen.getByRole("dialog");
@@ -43,13 +63,15 @@ describe("MealHubSheet: an empty meal's shortcuts", () => {
     }
   });
 
-  it("a workout meal has no AI generate yet", () => {
-    const hub = renderHub({
-      id: 5,
-      name: "Pre-workout",
-      role: "preWorkout",
-      foods: [],
-    });
+  it("a workout meal the day plans offers AI generate", () => {
+    const hub = renderHub(PRE, PLAN);
+    expect(
+      within(hub).getByRole("button", { name: "AI generate" }),
+    ).toBeTruthy();
+  });
+
+  it("a workout meal the day doesn't plan has no AI generate", () => {
+    const hub = renderHub(PRE, null);
     expect(
       within(hub).getByRole("button", { name: "Apply recipe" }),
     ).toBeTruthy();
