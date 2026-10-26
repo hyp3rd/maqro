@@ -101,6 +101,46 @@ describe("TodayGauge", () => {
     );
   });
 
+  it("continues the energy arc in dashes for today's planned food; the centre counts what was eaten", () => {
+    const { container } = render(
+      <TodayGauge
+        eaten={{ calories: 1240, protein: 85, carbs: 140, fat: 38 }}
+        planned={{ calories: 650, protein: 40, carbs: 80, fat: 15 }}
+        targets={TARGETS}
+        when="today"
+      />,
+      { wrapper: intlWrapper() },
+    );
+    expect(screen.getByRole("status").textContent).toBe(
+      "1,260 kcal left today",
+    );
+    const planned = ring(container, "energy", "planned");
+    const parts = (planned?.getAttribute("stroke-dasharray") ?? "")
+      .split(" ")
+      .map(Number);
+    const c = circumference(ENERGY_RING.radius);
+    // An empty run to the eaten arc's end, then the planned share in dashes.
+    expect(parts[1]).toBeCloseTo((1240 / 2500) * c, 2);
+    expect(parts.slice(2, -2).reduce((sum, n) => sum + n, 0)).toBeCloseTo(
+      (650 / 2500) * c,
+      2,
+    );
+    // Only the energy arc shows the plan.
+    for (const macro of ["protein", "carbs", "fat"]) {
+      expect(ring(container, macro, "planned")).toBeNull();
+    }
+  });
+
+  it("draws no plan without planned food", () => {
+    const { container } = renderGauge({
+      calories: 1240,
+      protein: 85,
+      carbs: 140,
+      fat: 38,
+    });
+    expect(ring(container, "energy", "planned")).toBeNull();
+  });
+
   it("shows the day's target before anything is logged", () => {
     renderGauge({ calories: 0, protein: 0, carbs: 0, fat: 0 });
     expect(screen.getByRole("status").textContent).toBe("2,500 kcal target");

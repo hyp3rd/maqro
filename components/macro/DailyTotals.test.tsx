@@ -170,6 +170,42 @@ describe("DailyTotals remaining-kcal line", () => {
   });
 });
 
+describe("DailyTotals planned food", () => {
+  const PLANNED = { protein: 40, carbs: 80, fat: 15, calories: 650 };
+
+  it("today: counts what was eaten and states the plan beside it", () => {
+    const { container } = render(
+      <DailyTotals
+        calculatedValues={TARGET}
+        totalMacros={EATEN}
+        plannedMacros={PLANNED}
+        selectedDate="2026-06-10"
+        today="2026-06-10"
+      />,
+      { wrapper: intlWrapper() },
+    );
+    expect(screen.getByRole("status").textContent).toBe("600 kcal left today");
+    expect(container.textContent).toContain("+650 planned 2,650 after plan");
+    expect(
+      container.querySelector('[data-ring="energy"][data-part="planned"]'),
+    ).not.toBeNull();
+  });
+
+  it("planned food never sets off the target-reached note", () => {
+    render(
+      <DailyTotals
+        calculatedValues={TARGET}
+        totalMacros={EATEN}
+        plannedMacros={PLANNED}
+        selectedDate="2026-06-10"
+        today="2026-06-10"
+      />,
+      { wrapper: intlWrapper() },
+    );
+    expect(toast).not.toHaveBeenCalled();
+  });
+});
+
 describe("DailyTotals target-reached note", () => {
   it("notes reaching today's target once, neutrally, without praise", () => {
     const props = {

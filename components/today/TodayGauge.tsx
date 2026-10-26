@@ -9,6 +9,7 @@ import {
   MACRO_RINGS,
   bezelDash,
   gaugeCenter,
+  plannedStroke,
   quarterMarksPath,
   ringArc,
   ringStrokes,
@@ -44,17 +45,21 @@ const ARC_MOTION =
 function Ring({
   name,
   value,
+  planned = 0,
   target,
   radius,
   width,
 }: {
   name: keyof typeof TONE;
   value: number;
+  /** Food still planned on top of `value` (today): drawn dashed after it. */
+  planned?: number;
   target: number;
   radius: number;
   width: number;
 }) {
   const strokes = ringStrokes(ringArc(value, target, radius));
+  const plan = plannedStroke(value, planned, target, radius);
   const circle = {
     cx: GAUGE_CENTER,
     cy: GAUGE_CENTER,
@@ -91,6 +96,15 @@ function Ring({
           strokeDashoffset={strokes.over.dashOffset}
         />
       )}
+      {plan && (
+        <circle
+          {...arc}
+          data-ring={name}
+          data-part="planned"
+          className={TONE[name].over}
+          strokeDasharray={plan.dashArray}
+        />
+      )}
     </>
   );
 }
@@ -99,19 +113,24 @@ function Ring({
  *  and a target index at 12 o'clock, the energy arc (eaten vs that day's
  *  own target) and three thin concentric macro arcs — protein outer, carbs,
  *  fat inner. Past a target an arc carries on beyond the index in the same
- *  hue at lower intensity. The centre says what is left, worded for the day
- *  (left today / under target / to plan) or a neutral "over".
+ *  hue at lower intensity. Today's planned food (`planned`) continues the
+ *  energy arc in lighter dashes, up to the index. The centre says what is
+ *  left of what was eaten, worded for the day (left today / under target /
+ *  to plan) or a neutral "over".
  *
  *  The drawing is decorative (`aria-hidden`); the centre is a polite live
  *  region so logging food is announced, and the readout beside the gauge
  *  carries every figure. */
 export function TodayGauge({
   eaten,
+  planned,
   targets,
   when,
   className,
 }: {
   eaten: Macros;
+  /** Today's planned food (`dayIntake`), drawn on the energy arc. */
+  planned?: Macros;
   targets: Targets;
   when: RelativeDay;
   className?: string;
@@ -147,6 +166,7 @@ export function TodayGauge({
         <Ring
           name="energy"
           value={eaten.calories}
+          planned={planned?.calories}
           target={targets.targetCalories}
           radius={ENERGY_RING.radius}
           width={ENERGY_RING.width}

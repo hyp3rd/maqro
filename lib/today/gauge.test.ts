@@ -3,9 +3,12 @@ import {
   BEZEL,
   ENERGY_RING,
   GAUGE_CENTER,
+  PLANNED_DASH,
+  PLANNED_GAP,
   bezelDash,
   circumference,
   gaugeCenter,
+  plannedStroke,
   quarterMarksPath,
   ringArc,
   ringStrokes,
@@ -163,5 +166,44 @@ describe("gaugeCenter", () => {
       figure: 830,
       label: "kcal eaten",
     });
+  });
+});
+
+describe("plannedStroke", () => {
+  const R = ENERGY_RING.radius;
+  const C = circumference(R);
+  /** The dash pattern as numbers: [0, start, dash, gap, …, 0, lap]. */
+  const parse = (s: { dashArray: string } | null) =>
+    s?.dashArray.split(" ").map(Number) ?? [];
+  const drawn = (parts: number[]) =>
+    parts.slice(2, -2).reduce((sum, n) => sum + n, 0);
+
+  it("runs from the eaten arc's end for the planned share of the lap", () => {
+    const parts = parse(plannedStroke(1000, 500, 2000, R));
+    expect(parts[0]).toBe(0);
+    expect(parts[1]).toBeCloseTo(C / 2, 2);
+    expect(drawn(parts)).toBeCloseTo(C / 4, 2);
+    // Dashes, then the rest of the lap empty: never repeating in the lap.
+    expect(parts.slice(2, 4)).toEqual([PLANNED_DASH, PLANNED_GAP]);
+    expect(parts.slice(-2)).toEqual([0, Math.round(C * 1000) / 1000]);
+    expect(parts.length % 2).toBe(0);
+  });
+
+  it("stops at the target index", () => {
+    const parts = parse(plannedStroke(1500, 2000, 2000, R));
+    expect(parts[1]).toBeCloseTo((C * 3) / 4, 2);
+    expect(drawn(parts)).toBeCloseTo(C / 4, 2);
+  });
+
+  it("nothing to draw without a plan, a target, or room before the index", () => {
+    expect(plannedStroke(1000, 0, 2000, R)).toBeNull();
+    expect(plannedStroke(1000, 500, 0, R)).toBeNull();
+    expect(plannedStroke(2100, 500, 2000, R)).toBeNull();
+  });
+
+  it("starts at 12 o'clock when nothing is eaten yet", () => {
+    const parts = parse(plannedStroke(0, 2000, 2000, R));
+    expect(parts[1]).toBe(0);
+    expect(drawn(parts)).toBeCloseTo(C, 2);
   });
 });
