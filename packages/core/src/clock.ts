@@ -38,6 +38,20 @@ export function minuteOfDay(ms: number, date: string): number | null {
   return d.getHours() * 60 + d.getMinutes();
 }
 
+/** Epoch ms of the local wall-clock `minute` (0–1439) on the calendar day
+ *  `date` (`YYYY-MM-DD`): the inverse of `minuteOfDay`. A minute a
+ *  daylight-saving switch skips lands on the one after the gap. */
+export function localInstant(date: string, minute: number): number {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(
+    y ?? Number.NaN,
+    (m ?? Number.NaN) - 1,
+    d ?? Number.NaN,
+    Math.floor(minute / 60),
+    minute % 60,
+  ).getTime();
+}
+
 /** The minute the meal's first timed food was logged on `date`, or `null`
  *  when none of its foods carries a `loggedAt` on that day (planned,
  *  copied or AI-filled foods have no time). */

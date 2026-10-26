@@ -28,3 +28,14 @@ export function addedFoodMessage(
 ): string {
   return `Added ${name} (${grams} g, ${kcal} kcal) to ${mealName}`;
 }
+
+/** `addedFoodMessage`'s counterpart for food added for later ("Later" in
+ *  the add flow): planned, not eaten yet. */
+export function plannedFoodMessage(
+  name: string,
+  grams: number,
+  kcal: number,
+  mealName: string,
+): string {
+  return `Planned ${name} (${grams} g, ${kcal} kcal) for ${mealName}`;
+}

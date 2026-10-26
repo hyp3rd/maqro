@@ -2,13 +2,16 @@
 
 import type { CoherenceIssue } from "@/lib/ai/plan-coherence";
 import type { MealSchedule } from "@/lib/db";
-import { formatClock } from "@/lib/today/timeline";
+import { plannedFoodIds } from "@/lib/meal-eaten";
+import { formatClock, parseClock } from "@/lib/today/timeline";
 import React, { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle,
   BookmarkPlus,
   CalendarCheck,
+  Check,
   ChefHat,
+  Clock,
   Loader2,
   MoreHorizontal,
   Plus,
@@ -43,6 +46,13 @@ import {
 import FoodItem from "./FoodItem";
 import FoodMobileCard from "./FoodMobileCard";
 import type { MealHubIntent } from "./MealHubSheet";
+import { MealTimeDialog, type MealTimeRequest } from "./MealTimeDialog";
+
+/** The current local minute of the day. */
+function minuteNow(): number {
+  const d = new Date();
+  return d.getHours() * 60 + d.getMinutes();
+}
 
 /** What a workout meal is for, shown on it while it's empty. */
 function workoutMealHint(
@@ -126,6 +136,20 @@ interface MealItemProps {
   /** The day's workout meals (`workoutMealsForDay`): on a workout meal the
    *  day plans, the card names its time and aims. */
   workoutMeals?: WorkoutMealsPlan | null;
+  /** "Ate it" on today's planned food (food not logged as eaten): marks
+   *  meal `mealId`'s foods `foodIds` eaten now (`minute` null) or at
+   *  `minute` earlier today. Absent on another day. */
+  onAteIt?: (
+    mealId: number,
+    foodIds: readonly number[],
+    minute: number | null,
+  ) => void;
+  /** Plans the meal for a time (`HH:MM`), or back at its usual time
+   *  (`undefined`). Present on today and the days ahead. */
+  onPlanFor?: (mealId: number, time: string | undefined) => void;
+  /** The meal's minute on its day (`mealMinute`): where "Plan for…" and
+   *  "Ate it earlier…" start. */
+  plannedMinute?: number | null;
 }
 
 const MealItem: React.FC<MealItemProps> = ({
@@ -156,8 +180,48 @@ const MealItem: React.FC<MealItemProps> = ({
   regeneratingThisMeal,
   issues,
   workoutMeals = null,
+  onAteIt,
+  onPlanFor,
+  plannedMinute = null,
 }) => {
   const role = workoutRole(meal);
+  // Today's food not logged as eaten yet, and whether all of the meal is
+  // plan (the rail's planned node): the one a time can be planned for.
+  const plannedIds = plannedFoodIds(meal);
+  const allPlanned =
+    meal.foods.length > 0 && plannedIds.length === meal.foods.length;
+  const partlyEaten = plannedIds.length > 0 && !allPlanned;
+  // The time dialog ("Ate it earlier…", "Plan for…"); the request outlives
+  // `timeOpen` so the dialog keeps its words while it closes.
+  const [timeRequest, setTimeRequest] = useState<MealTimeRequest | null>(null);
+  const [timeOpen, setTimeOpen] = useState(false);
+  const askTime = (request: MealTimeRequest) => {
+    setTimeRequest(request);
+    setTimeOpen(true);
+  };
+  const askEatenAt = (ateIt: NonNullable<typeof onAteIt>) => {
+    const now = minuteNow();
+    askTime({
+      title: `When did you eat ${meal.name}?`,
+      description: "Any time earlier today.",
+      initial: formatClock(Math.min(plannedMinute ?? now, now)),
+      latest: formatClock(now),
+      confirmLabel: "Ate it",
+      onConfirm: (time) => ateIt(meal.id, plannedIds, parseClock(time)),
+    });
+  };
+  const askPlannedTime = (planFor: NonNullable<typeof onPlanFor>) =>
+    askTime({
+      title: `Plan ${meal.name} for`,
+      description: "Where it sits on the day's timeline until it's eaten.",
+      initial: meal.plannedTime ?? formatClock(plannedMinute ?? minuteNow()),
+      confirmLabel: "Save",
+      onConfirm: (time) => planFor(meal.id, time),
+      reset:
+        meal.plannedTime === undefined
+          ? undefined
+          : { label: "Usual time", onReset: () => planFor(meal.id, undefined) },
+    });
   // The slot the day plans for this workout meal: none for a regular meal,
   // nor for one kept for its food after the day flipped to rest.
   const slot =
@@ -317,6 +381,17 @@ const MealItem: React.FC<MealItemProps> = ({
               )}
               {/* Any meal the day plans; not a workout meal kept for its
                   food after the day flipped to rest (it has no aims). */}
+              {/* A planned meal's time: where it sits on the day until
+                  it's eaten (today and the days ahead). */}
+              {onPlanFor && allPlanned && (
+                <DropdownMenuItem
+                  onClick={() => askPlannedTime(onPlanFor)}
+                  className="gap-2"
+                >
+                  <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                  Plan for…
+                </DropdownMenuItem>
+              )}
               {plansMeal(meal, workoutMeals) && (
                 <DropdownMenuItem
                   onClick={() => onRegenerate(meal.id)}
@@ -500,6 +575,10 @@ const MealItem: React.FC<MealItemProps> = ({
                 replaceFood={replaceFood}
                 removeFood={removeFood}
                 duplicateFood={duplicateFood}
+                onAteIt={
+                  onAteIt ? () => onAteIt(meal.id, [food.id], null) : undefined
+                }
+                mealPartlyEaten={partlyEaten}
               />
             ))}
           </ul>
@@ -540,6 +619,12 @@ const MealItem: React.FC<MealItemProps> = ({
                     handleReplacementSearch={handleReplacementSearch}
                     replaceFood={replaceFood}
                     removeFood={removeFood}
+                    onAteIt={
+                      onAteIt
+                        ? () => onAteIt(meal.id, [food.id], null)
+                        : undefined
+                    }
+                    mealPartlyEaten={partlyEaten}
                   />
                 ))}
               </tbody>
@@ -547,6 +632,44 @@ const MealItem: React.FC<MealItemProps> = ({
           </div>
         </SortableContext>
       )}
+
+      {/* Today's planned food: one tap when it's eaten, or the time it was
+          eaten earlier. A half-eaten meal marks the rest. */}
+      {onAteIt && plannedIds.length > 0 && (
+        <div
+          data-part="ate-it"
+          className="mt-2 flex flex-wrap items-center gap-2"
+        >
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-touch-9 gap-1.5"
+            onClick={() => onAteIt(meal.id, plannedIds, null)}
+            // The visible words first, then which meal (one per card).
+            aria-label={`Ate it: ${meal.name}`}
+          >
+            <Check className="h-4 w-4" />
+            Ate it
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-touch-9 text-muted-foreground"
+            onClick={() => askEatenAt(onAteIt)}
+            aria-label={`Ate it earlier…: ${meal.name}`}
+          >
+            Ate it earlier…
+          </Button>
+        </div>
+      )}
+
+      <MealTimeDialog
+        open={timeOpen}
+        request={timeRequest}
+        onClose={() => setTimeOpen(false)}
+      />
     </div>
   );
 };

@@ -32,7 +32,7 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
-import type { UsualMealMinutes } from "@maqro/core/meal-order";
+import { type UsualMealMinutes, mealMinute } from "@maqro/core/meal-order";
 import type { DateTargets, WeekTargets } from "@maqro/core/targets";
 import type { WorkoutMealsPlan } from "@maqro/core/workout-meals";
 import {
@@ -211,6 +211,15 @@ interface MealPlannerProps {
   /** Open the per-meal hub for a slot. `intent` decides what the hub leads
    *  with: "add" (the recents strip) vs "insights" (the breakdown body). */
   onOpenMealDetail: (mealId: number, intent?: MealHubIntent) => void;
+  /** "Ate it" on today's planned food (see MealItem). Today only. */
+  onAteIt?: (
+    mealId: number,
+    foodIds: readonly number[],
+    minute: number | null,
+  ) => void;
+  /** Plans a meal for a time, or back at its usual time (see MealItem).
+   *  Today and the days ahead. */
+  onPlanFor?: (mealId: number, time: string | undefined) => void;
 }
 
 /** The timing track on the minute clock (0 until hydrated) for its "Now"
@@ -298,8 +307,17 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
   onLogScheduled,
   onOpenSuggestDay,
   onOpenMealDetail,
+  onAteIt,
+  onPlanFor,
 }) => {
   const isError = mealPlanMessage.toLowerCase().includes("error");
+  // What places the day's meals in time: the rail's planned times and where
+  // a meal's time dialogs start.
+  const mealTimes = {
+    date: selectedDate,
+    usual: usualMinutes ?? {},
+    plan: workoutMeals,
+  };
   const dayIsEmpty = meals.every((m) => m.foods.length === 0);
   const titleId = React.useId();
 
@@ -741,6 +759,7 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
               meals={meals}
               date={selectedDate}
               today={today}
+              mealTimes={mealTimes}
               // The size container MealItem's table ↔ card switch reads.
               className="@container px-2 py-1"
               renderMeal={(meal) => (
@@ -774,6 +793,9 @@ const MealPlanner: React.FC<MealPlannerProps> = ({
                   regeneratingThisMeal={generatingMealId === meal.id}
                   issues={issuesByMeal.get(meal.name) ?? []}
                   workoutMeals={workoutMeals}
+                  onAteIt={onAteIt}
+                  onPlanFor={onPlanFor}
+                  plannedMinute={mealMinute(meal, mealTimes)}
                 />
               )}
             />

@@ -26,7 +26,8 @@ import {
   workoutMealsForDay,
 } from "@maqro/core/workout-meals";
 import type { User } from "@supabase/supabase-js";
-import { act, cleanup, render } from "@testing-library/react";
+import { act, cleanup, fireEvent, render } from "@testing-library/react";
+import type { LaterChoice } from "./components/macro/EatenNowToggle";
 
 /** The app's wiring: everything on the day view (totals, the meal hub, the
  *  recipe slot budget, and every AI plan payload) must get the SELECTED
@@ -128,6 +129,11 @@ const writes = vi.hoisted(() => ({
   commits: [] as (Meal[] | null)[],
 }));
 
+// The real toast, its calls recorded: an Undo is its action.
+vi.mock("sonner", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("sonner")>();
+  return { ...actual, toast: Object.assign(vi.fn(), actual.toast) };
+});
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(nav.search),
 }));
@@ -158,11 +164,15 @@ vi.mock("./hooks/use-daily-log", () => ({
       setMeals: writes.setMeals,
       isHydrated,
       day: { date, epoch: 0 },
+      // Runs against the day's stored meals when it lands, as the real
+      // hook does: a deferred edit (an Undo) sees what was written since.
       commitToDay: async (
         _target: unknown,
         update: (latest: Meal[]) => Meal[] | null,
       ) => {
-        writes.commits.push(update(own));
+        writes.commits.push(
+          update(dayMeals.byDate[date] ?? dayMeals.override ?? MEALS),
+        );
         return true;
       },
     };
@@ -1310,6 +1320,200 @@ describe("macro-calculator: every way of logging food times it on today", () => 
     const past = writtenLunch();
     expect(past).toHaveLength(2);
     expect(past[1]?.loggedAt).toBeUndefined();
+  });
+});
+
+describe("macro-calculator: eaten now or later", () => {
+  /** The faked clock (12:00 on TODAY). */
+  const NOW = new Date(2026, 5, 10, 12, 0, 0).getTime();
+  const OATS = {
+    foodName: "Oats",
+    macrosPer100g: { protein: 13, carbs: 60, fat: 7, calories: 380 },
+    portionGrams: 80,
+  };
+  const RECIPE: Recipe = {
+    id: "r1",
+    name: "Porridge",
+    ingredients: [OATS],
+    createdAt: 0,
+    updatedAt: 0,
+  };
+  const RICE: Food = {
+    id: "rice",
+    name: "Rice",
+    protein: 3,
+    carbs: 28,
+    fat: 0,
+    calories: 130,
+  };
+  /** Lunch planned: rice with no time yet. */
+  const PLANNED_RICE: FoodItem = {
+    id: 21,
+    name: "Rice",
+    protein: 3,
+    carbs: 28,
+    fat: 0,
+    calories: 130,
+    portionSize: 100,
+  };
+  const lunchPlanned = () =>
+    MEALS.map((m) => (m.id === 2 ? { ...m, foods: [PLANNED_RICE] } : m));
+
+  const later = () =>
+    prop<LaterChoice | undefined>("LogMealSheet", "laterChoice");
+  const lunch = (meals: Meal[] | null | undefined) =>
+    meals?.find((m) => m.id === 2)?.foods ?? [];
+  const quickAdd = () =>
+    act(async () => {
+      prop<(trigger: HTMLElement) => void>(
+        "AppShell",
+        "onQuickAdd",
+      )(document.createElement("button"));
+    });
+
+  it("'Later' in the launcher plans what its tool adds; the flow's end goes back to eaten now", async () => {
+    render(<MacroCalculator />);
+    await quickAdd();
+    expect(later()?.later).toBe(false);
+    await act(async () => later()?.onLaterChange(true));
+    expect(later()?.later).toBe(true);
+    // The recipe picker it opens follows the choice.
+    await act(async () => {
+      prop<(m: string, id: number) => void>("LogMealSheet", "onMethod")(
+        "recipe",
+        2,
+      );
+    });
+    await act(async () => {
+      prop<(r: Recipe) => void>("ApplyRecipeDialog", "onApply")(RECIPE);
+    });
+    const added = lunch(writes.setMeals.mock.lastCall?.[0]);
+    expect(added.length).toBeGreaterThan(0);
+    for (const food of added) expect(food.loggedAt).toBeUndefined();
+    // Closing the picker ends the flow: the next one starts at eaten now.
+    await act(async () => {
+      prop<(open: boolean) => void>("ApplyRecipeDialog", "onOpenChange")(false);
+    });
+    expect(later()?.later).toBe(false);
+  });
+
+  it("a recent's one-tap log says it was planned", async () => {
+    render(<MacroCalculator />);
+    await quickAdd();
+    await act(async () => later()?.onLaterChange(true));
+    const success = vi.spyOn(toast, "success");
+    await act(async () => {
+      prop<(f: Food, id: number, g: number) => void>(
+        "LogMealSheet",
+        "onQuickLog",
+      )(RICE, 2, 100);
+    });
+    expect(success).toHaveBeenCalledWith(
+      "Planned Rice (100 g, 130 kcal) for Lunch",
+    );
+    expect(
+      lunch(writes.setMeals.mock.lastCall?.[0])[0]?.loggedAt,
+    ).toBeUndefined();
+  });
+
+  it("offers the choice on today only", async () => {
+    render(<MacroCalculator />);
+    expect(prop("MealHubSheet", "laterChoice")).toBeDefined();
+    expect(prop("FoodSearchSheet", "laterChoice")).toBeDefined();
+    cleanup();
+    await renderOnPastDay();
+    expect(later()).toBeUndefined();
+    expect(prop("MealHubSheet", "laterChoice")).toBeUndefined();
+    expect(prop("FoodSearchSheet", "laterChoice")).toBeUndefined();
+  });
+
+  it("'Ate it' times today's planned food, with an Undo", async () => {
+    dayMeals.override = lunchPlanned();
+    render(<MacroCalculator />);
+    await act(async () => {
+      prop<(id: number, foods: number[], minute: number | null) => void>(
+        "MealPlanner",
+        "onAteIt",
+      )(2, [21], 11 * 60 + 30);
+    });
+    const eatenAt = new Date(2026, 5, 10, 11, 30).getTime();
+    expect(lunch(writes.setMeals.mock.lastCall?.[0])).toEqual([
+      { ...PLANNED_RICE, loggedAt: eatenAt },
+    ]);
+    const [message, options] = vi.mocked(toast).mock.lastCall ?? [];
+    expect(message).toBe("Rice eaten at 11:30");
+    const action = options?.action;
+    if (!action || typeof action !== "object" || !("onClick" in action)) {
+      throw new Error("the toast has no Undo");
+    }
+    // Undo, once the eaten rice is stored, puts it back to planned: its
+    // button, as the toast renders it.
+    dayMeals.override = writes.setMeals.mock.lastCall?.[0] ?? null;
+    const undo = render(
+      <button
+        type="button"
+        onClick={action.onClick}
+      >
+        {action.label}
+      </button>,
+    );
+    await act(async () => {
+      fireEvent.click(undo.getByRole("button", { name: "Undo" }));
+    });
+    expect(lunch(writes.commits.at(-1))).toEqual([PLANNED_RICE]);
+
+    // Now, and never later than now.
+    await act(async () => {
+      prop<(id: number, foods: number[], minute: number | null) => void>(
+        "MealPlanner",
+        "onAteIt",
+      )(2, [21], 13 * 60);
+    });
+    expect(lunch(writes.setMeals.mock.lastCall?.[0])[0]?.loggedAt).toBe(NOW);
+  });
+
+  it("'Ate it' is today's; a time can be planned today and ahead", async () => {
+    render(<MacroCalculator />);
+    expect(prop("MealPlanner", "onAteIt")).toBeTypeOf("function");
+    expect(prop("MealPlanner", "onPlanFor")).toBeTypeOf("function");
+    cleanup();
+    await renderOnPastDay();
+    expect(prop("MealPlanner", "onAteIt")).toBeUndefined();
+    expect(prop("MealPlanner", "onPlanFor")).toBeUndefined();
+  });
+
+  it("plans a meal for a time, and back at its usual time", async () => {
+    dayMeals.override = lunchPlanned();
+    render(<MacroCalculator />);
+    const planFor = (time: string | undefined) =>
+      act(async () => {
+        prop<(id: number, time: string | undefined) => void>(
+          "MealPlanner",
+          "onPlanFor",
+        )(2, time);
+      });
+    await planFor("13:15");
+    const written = () =>
+      writes.setMeals.mock.lastCall?.[0].find((m) => m.id === 2);
+    expect(written()?.plannedTime).toBe("13:15");
+    await planFor(undefined);
+    expect(written()).toBeDefined();
+    expect(written()).not.toHaveProperty("plannedTime");
+  });
+
+  it("a duplicate of planned food is planned too", async () => {
+    dayMeals.override = lunchPlanned();
+    render(<MacroCalculator />);
+    await act(async () => {
+      prop<(mealId: number, foodId: number) => void>(
+        "MealPlanner",
+        "duplicateFood",
+      )(2, 21);
+    });
+    const [original, copy] = lunch(writes.setMeals.mock.lastCall?.[0]);
+    expect(original).toEqual(PLANNED_RICE);
+    expect(copy?.name).toBe("Rice");
+    expect(copy?.loggedAt).toBeUndefined();
   });
 });
 

@@ -746,3 +746,185 @@ describe("Today: a training day's workout meals", () => {
     ).toBeTruthy();
   });
 });
+
+describe("MealPlanner: planned meals", () => {
+  // Lunch half eaten (Food 2 logged, Food 3 planned); Dinner all planned,
+  // usually at 20:00.
+  const PLANNED: Meal[] = [
+    { id: 1, name: "Breakfast", foods: [food(1, 520, at(7, 30))] },
+    { id: 2, name: "Lunch", foods: [food(2, 720, at(12, 45)), food(3, 180)] },
+    { id: 3, name: "Dinner", foods: [food(4, 650)] },
+    { id: 4, name: "Snacks", foods: [] },
+  ];
+  const USUAL = { 3: 20 * 60 };
+  const card = (meal: string) =>
+    screen
+      .getByRole("heading", { name: meal })
+      .closest("div.rounded-lg") as HTMLElement;
+  const menu = async (meal: string) => {
+    await act(async () => {
+      fireEvent.keyDown(
+        screen.getByRole("button", { name: `${meal} actions` }),
+        { key: "Enter" },
+      );
+    });
+    return screen.getByRole("menu");
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("on today, 'Ate it' marks a meal's planned food eaten now", () => {
+    const onAteIt = vi.fn();
+    renderPlanner({ meals: PLANNED, usualMinutes: USUAL, onAteIt });
+    expect(
+      within(card("Breakfast")).queryByRole("button", { name: /^Ate it/ }),
+    ).toBeNull();
+    fireEvent.click(
+      within(card("Dinner")).getByRole("button", { name: "Ate it: Dinner" }),
+    );
+    expect(onAteIt).toHaveBeenLastCalledWith(3, [4], null);
+    // A half-eaten meal marks the rest.
+    fireEvent.click(
+      within(card("Lunch")).getByRole("button", { name: "Ate it: Lunch" }),
+    );
+    expect(onAteIt).toHaveBeenLastCalledWith(2, [3], null);
+  });
+
+  it("'Ate it earlier…' takes a time today, never later than now", () => {
+    const onAteIt = vi.fn();
+    renderPlanner({ meals: PLANNED, usualMinutes: USUAL, onAteIt });
+    fireEvent.click(
+      within(card("Dinner")).getByRole("button", {
+        name: "Ate it earlier…: Dinner",
+      }),
+    );
+    const dialog = screen.getByRole("dialog", {
+      name: "When did you eat Dinner?",
+    });
+    const field = within(dialog).getByLabelText("Time") as HTMLInputElement;
+    // Dinner's usual 20:00 is still ahead: the field starts at now.
+    expect(field.value).toBe("15:10");
+    fireEvent.change(field, { target: { value: "16:00" } });
+    expect(within(dialog).getByText(/later than now/).textContent).toBeTruthy();
+    const confirm = within(dialog).getByRole("button", { name: "Ate it" });
+    expect((confirm as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(field, { target: { value: "13:05" } });
+    fireEvent.click(confirm);
+    expect(onAteIt).toHaveBeenCalledWith(3, [4], 13 * 60 + 5);
+  });
+
+  it("marks one planned food eaten from its row", () => {
+    const onAteIt = vi.fn();
+    renderPlanner({ meals: PLANNED, usualMinutes: USUAL, onAteIt });
+    const lunch = card("Lunch");
+    // The wide table's check, beside the row saying "planned".
+    fireEvent.click(within(lunch).getByRole("button", { name: "Ate Food 3" }));
+    expect(onAteIt).toHaveBeenCalledWith(2, [3], null);
+    expect(
+      within(lunch).queryByRole("button", { name: "Ate Food 2" }),
+    ).toBeNull();
+    // Partly eaten: its planned row says so; an all-planned meal's don't.
+    expect(within(lunch).getAllByText("planned").length).toBeGreaterThan(0);
+    expect(within(card("Dinner")).queryByText("planned")).toBeNull();
+    // The narrow card's action sheet leads with it.
+    onAteIt.mockClear();
+    fireEvent.click(
+      within(lunch).getByRole("button", { name: "Food 3 — open actions" }),
+    );
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Food 3" })).getByRole(
+        "button",
+        { name: "Ate it" },
+      ),
+    );
+    expect(onAteIt).toHaveBeenCalledWith(2, [3], null);
+    // An eaten food's sheet has no "Ate it".
+    fireEvent.click(
+      within(lunch).getByRole("button", { name: "Food 2 — open actions" }),
+    );
+    expect(
+      within(screen.getByRole("dialog", { name: "Food 2" })).queryByRole(
+        "button",
+        { name: "Ate it" },
+      ),
+    ).toBeNull();
+  });
+
+  it("plans an all-planned meal for a time, and back at its usual time", async () => {
+    const onPlanFor = vi.fn();
+    renderPlanner({ meals: PLANNED, usualMinutes: USUAL, onPlanFor });
+    // Half eaten: no time to plan.
+    expect(
+      within(await menu("Lunch")).queryByRole("menuitem", {
+        name: "Plan for…",
+      }),
+    ).toBeNull();
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+    await act(async () => {
+      fireEvent.click(
+        within(await menu("Dinner")).getByRole("menuitem", {
+          name: "Plan for…",
+        }),
+      );
+    });
+    const dialog = screen.getByRole("dialog", { name: "Plan Dinner for" });
+    const field = within(dialog).getByLabelText("Time") as HTMLInputElement;
+    expect(field.value).toBe("20:00");
+    // A plan has no "Usual time" to go back to yet.
+    expect(
+      within(dialog).queryByRole("button", { name: "Usual time" }),
+    ).toBeNull();
+    fireEvent.change(field, { target: { value: "19:15" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    expect(onPlanFor).toHaveBeenCalledWith(3, "19:15");
+  });
+
+  it("offers the usual time back once a meal has its own", async () => {
+    const onPlanFor = vi.fn();
+    const timed = PLANNED.map((m) =>
+      m.id === 3 ? { ...m, plannedTime: "19:15" } : m,
+    );
+    renderPlanner({ meals: timed, usualMinutes: USUAL, onPlanFor });
+    await act(async () => {
+      fireEvent.click(
+        within(await menu("Dinner")).getByRole("menuitem", {
+          name: "Plan for…",
+        }),
+      );
+    });
+    const dialog = screen.getByRole("dialog", { name: "Plan Dinner for" });
+    expect(
+      (within(dialog).getByLabelText("Time") as HTMLInputElement).value,
+    ).toBe("19:15");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Usual time" }));
+    expect(onPlanFor).toHaveBeenCalledWith(3, undefined);
+  });
+
+  it("puts a planned meal's time on the rail, an eaten one's start as before", () => {
+    renderPlanner({ meals: PLANNED, usualMinutes: USUAL });
+    const times = screen
+      .getAllByText(/^\d\d:\d\d$/, { selector: "[data-part=time]" })
+      .map((t) => [t.textContent, t.className.includes("text-faint")]);
+    expect(times).toEqual([
+      ["07:30", false],
+      ["12:45", false],
+      ["20:00", true],
+    ]);
+  });
+
+  it("offers neither on another day without the actions", async () => {
+    renderPlanner({ meals: PLANNED, usualMinutes: USUAL });
+    expect(screen.queryByRole("button", { name: /^Ate it/ })).toBeNull();
+    expect(
+      within(await menu("Dinner")).queryByRole("menuitem", {
+        name: "Plan for…",
+      }),
+    ).toBeNull();
+  });
+});

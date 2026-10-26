@@ -14,6 +14,7 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import { BottomSheetHeader, BottomSheetTitle } from "../ui/bottom-sheet";
 import { Dialog, DialogContent, DialogDescription } from "../ui/dialog";
+import { EatenNowToggle, type LaterChoice } from "./EatenNowToggle";
 import { QuickAddFoods } from "./QuickAddFoods";
 import type { Food, Meal } from "./types";
 
@@ -44,6 +45,9 @@ type Props = {
   /** One-tap log of a recent food straight from the method step, so the common
    *  "re-add what I usually eat" path skips search entirely. */
   onQuickLog: (food: Food, mealId: number, portion: number) => void;
+  /** "Eaten now / Later" on the method step, when logging into today; the
+   *  method's tool and a recent's one-tap log follow it. */
+  laterChoice?: LaterChoice;
   /** Where focus goes on close: the control that opened the launcher (the
    *  tab bar's [+]). Needed because iOS Safari doesn't focus a tapped
    *  button, so what had focus at open time is <body>. Without it, focus
@@ -101,6 +105,7 @@ export function LogMealSheet({
   initialMealId,
   onMethod,
   onQuickLog,
+  laterChoice,
   returnFocusTo,
 }: Props) {
   // The launcher has no Radix trigger (the tab bar's [+] opens it), so Radix
@@ -139,6 +144,7 @@ export function LogMealSheet({
           initialMealId={initialMealId ?? null}
           onMethod={onMethod}
           onQuickLog={onQuickLog}
+          laterChoice={laterChoice}
         />
       </DialogContent>
     </Dialog>
@@ -152,6 +158,7 @@ function LogMealFlow({
   initialMealId,
   onMethod,
   onQuickLog,
+  laterChoice,
 }: {
   meals: Meal[];
   dayLabel: string;
@@ -159,6 +166,7 @@ function LogMealFlow({
   initialMealId: number | null;
   onMethod: (method: LogMethod, mealId: number) => void;
   onQuickLog: (food: Food, mealId: number, portion: number) => void;
+  laterChoice: LaterChoice | undefined;
 }) {
   // `null` = step 1 (pick a meal). Seeded from `initialMealId` so a
   // tool's "Back" returns straight to the method step.
@@ -234,6 +242,8 @@ function LogMealFlow({
               <ChevronLeft className="h-3.5 w-3.5" />
               Change meal
             </button>
+
+            {laterChoice && <EatenNowToggle choice={laterChoice} />}
 
             <QuickAddFoods
               onAdd={(food, portion) => onQuickLog(food, mealId, portion)}
