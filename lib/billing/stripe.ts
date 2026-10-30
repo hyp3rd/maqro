@@ -28,7 +28,7 @@ export function getStripe(): Stripe | null {
     // resolve those warnings by either bumping here (with a
     // changelog read) or pinning the account default in the
     // Stripe dashboard.
-    apiVersion: "2026-09-30.endive",
+    apiVersion: "2026-10-28.endive",
     typescript: true,
     // App identifier for Stripe's analytics — helps them attribute
     // traffic and helps us when contacting support.
